@@ -57,6 +57,8 @@ endar_softlock.cpp
 endar_softlock.h
 engine_actionbar.cpp
 engine_actionbar.h
+engine_app.cpp
+engine_app.h
 engine_area.cpp
 engine_area.h
 engine_compass.cpp

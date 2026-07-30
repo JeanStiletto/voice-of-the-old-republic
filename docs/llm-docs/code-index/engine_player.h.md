@@ -47,8 +47,9 @@ authoritative; client +0x24/+0x30 is a parallel cache).
 - L179 — `bool PartyTableIsNPCSelectable(int npcSlot)`
 - L190 — `bool GetPartyNpcNameForSlot(int npcSlot, char* outBuf, size_t bufSize)`
   note: client universal-name accessor first, then server stats.first_name/tag (covers the Endar Spire slot-0 occupant Trask — a live server object invisible to the client namespace), then a hardcoded fixed-roster table.
-- L195 — `constexpr uintptr_t kAddrAppManagerPtr = 0x007A39FC`
-- L196 — `constexpr size_t kAppManagerClientAppOffset = 0x4`
+- `kAddrAppManagerPtr` and `kAppManagerClientAppOffset` MOVED to `engine_app.h`
+  (Phase-3 B1 slice 1). This header includes it, so every existing includer
+  still sees them unqualified.
 - L198 — `const uintptr_t kAddrGetPlayerCreature = R(0x005ED540)`
 - L199 — `const uintptr_t kAddrCSWSObjectGetArea = R(0x004CB120)`
 - L202 — `constexpr size_t kClientObjectServerObjectOffset = 0xf8`
@@ -58,8 +59,8 @@ authoritative; client +0x24/+0x30 is a parallel cache).
 - L212 — `constexpr size_t kClientAppPlayerControlOffset = 0x2a0`
 - L214 — `const uintptr_t kAddrCSWPlayerControlSetEnabled = R(0x006792E0)`
 - L217 — `const uintptr_t kAddrCClientExoAppGetPlayerCharacterName = R(0x005EDAB0)`
-- L228 — `constexpr size_t kAppManagerServerOffsetPlayer  = 0x8`
-- L229 — `constexpr size_t kServerExoAppInternalOffset    = 0x4`
+- `kAppManagerServerOffsetPlayer` / `kServerExoAppInternalOffset` REMOVED —
+  the facade and internal hops are `engine_app.h`'s `GetServerAppInternal()`.
 - L230 — `constexpr size_t kServerInternalPartyTableOffset = 0x1b770`
   note: party_table lives in the INTERNAL at +0x1b770 (not the public facade) — earlier walks reading facade+0x1b770 returned garbage (all-1s avail/selectable arrays).
 - L234 — `constexpr size_t kPartyTableNumMembersOffset = 0x0`, `kPartyTableMemberIdsOffset` = 0x4, `kPartyTableSoloModeOffset` = 0x190

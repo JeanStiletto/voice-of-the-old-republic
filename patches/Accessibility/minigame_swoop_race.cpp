@@ -18,10 +18,10 @@
 #include <cstdio>
 #include <cstring>
 
+#include "engine_app.h"       // GetServerApp (real race-timer read — see
+                              //   TickRaceTimer)
 #include "engine_area.h"      // GetClientArea + map-pin chain (back-pointer)
 #include "engine_offsets.h"   // Vector
-#include "engine_player.h"    // kAddrAppManagerPtr (server-app chain for the
-                              //   real race-timer read — see TickRaceTimer)
 #include "log.h"
 #include "audio_bus.h"        // PlayCue — non-positional "you can shift now" cue
 #include "audio_cues.h"       // NavCue + GetNavCueResref (shift-ready resref)
@@ -304,8 +304,6 @@ const uintptr_t kAddrCWorldTimerGetWorldTime = acc::addr::R(0x004ade40);
 const uintptr_t kAddrCServerExoAppGetGlobalVarTable = acc::addr::R(0x004aee60);
 const uintptr_t kAddrGlobalVarTableGetValueNumber = acc::addr::R(0x00529240);
 constexpr size_t    kWorldTimerMinutesPerHourOffset     = 0x38;  // byte
-// AppManager (global ptr kAddrAppManagerPtr) + 0x8 → CServerExoApp.
-constexpr size_t    kAppManagerServerExoAppOffset       = 0x8;
 
 typedef void* (__thiscall* PFN_GetWorldTimer)(void* server);
 typedef void  (__thiscall* PFN_GetWorldTime)(void* timer, uint32_t* outDay,
@@ -317,18 +315,6 @@ typedef void  (__thiscall* PFN_GetValueNumber)(void* table, void* nameExoStr,
 // Matches CExoString { char* c_string; ulong length; }. GetValueNumber only
 // reads it (hash + compare), never frees — a stack literal is safe.
 struct EngineExoString { const char* c_string; uint32_t length; };
-
-void* GetServerApp() {
-    __try {
-        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appManager) return nullptr;
-        return *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appManager) +
-            kAppManagerServerExoAppOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
 
 // One global NUMBER (engine stores it as a byte) by name. -1 on failure; the
 // engine writes 0 for an unknown name.
@@ -438,7 +424,7 @@ void TickRaceTimer(void* miniGame) {
     if (speed <= 1.0f) return;     // countdown / not launched yet
     if (maxSpeed <= 0.0f) return;  // race already ended — envelope cleared
 
-    void* server = GetServerApp();
+    void* server = acc::engine::GetServerApp();
     if (!server) return;
 
     // Cache the fixed start stamp once the heartbeat has written THIS race's

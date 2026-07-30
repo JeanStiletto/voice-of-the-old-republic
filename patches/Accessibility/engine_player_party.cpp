@@ -19,6 +19,7 @@
 #include <windows.h>
 #include <cstdint>
 
+#include "engine_app.h"     // GetServerAppInternal
 #include "engine_area.h"
 #include "engine_reads.h"
 #include "log.h"
@@ -325,25 +326,14 @@ int GetPartyMembers(uint32_t* outHandles, int maxCount) {
 }
 
 void* GetServerPartyTable() {
-    __try {
-        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appManager) return nullptr;
-        void* serverApp = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appManager) +
-            kAppManagerServerOffsetPlayer);
-        if (!serverApp) return nullptr;
-        // CServerExoApp facade → CServerExoAppInternal at +0x4 (mirrors
-        // the CClientExoApp / *Internal split). The party_table is
-        // embedded inside the internal at +0x1b770.
-        void* serverInternal = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(serverApp) +
-            kServerExoAppInternalOffset);
-        if (!serverInternal) return nullptr;
-        return reinterpret_cast<unsigned char*>(serverInternal) +
-               kServerInternalPartyTableOffset;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
+    // The party_table is embedded in CServerExoAppInternal at +0x1b770 —
+    // inside the INTERNAL, not the facade (engine_player.h records what the
+    // facade-relative walk returned instead). Address arithmetic only from
+    // here, no dereference, so no guard is needed past the resolve.
+    void* serverInternal = GetServerAppInternal();
+    if (!serverInternal) return nullptr;
+    return reinterpret_cast<unsigned char*>(serverInternal) +
+           kServerInternalPartyTableOffset;
 }
 
 bool GetSoloMode() {

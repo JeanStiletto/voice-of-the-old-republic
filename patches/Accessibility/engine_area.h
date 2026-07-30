@@ -368,8 +368,8 @@ private:
 // (NULL-passable per PositionWalkable's decomp).
 const uintptr_t kAddrCSWSAreaGetRoom = acc::addr::R(0x004BB600);
 
-// Handle-resolution chain (server-side master object table).
-constexpr size_t    kAppManagerServerOffset      = 0x8;
+// Handle-resolution chain (server-side master object table). The
+// AppManager → CServerExoApp hop itself is engine_app.h's GetServerApp().
 const uintptr_t kAddrCServerExoAppGetObjectArray = acc::addr::R(0x004AED70);
 const uintptr_t kAddrCGameObjectArrayGetGameObject = acc::addr::R(0x004D8230);
 

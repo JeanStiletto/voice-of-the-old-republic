@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <cstring>
 
+#include "engine_app.h"      // GetServerApp — SetPauseState `this`
 #include "engine_panels.h"   // ResolveGuiInGame, IdentifyPanel, PanelKind
 #include "log.h"
 #include "engine_rebase.h"
@@ -55,8 +56,6 @@ using PFN_SetPauseState =
 const uintptr_t kAddrSetPauseState = acc::addr::R(0x004ae9a0);
 using PFN_SetSoundMode = void(__thiscall*)(void* self, int mode);
 const uintptr_t kAddrSetSoundMode = acc::addr::R(0x005d5e80);
-constexpr uintptr_t kAddrAppManagerPtr  = 0x007A39FC;
-constexpr size_t    kAppManagerServerOff = 0x08;
 constexpr uintptr_t kAddrExoSoundPtr    = 0x007a39ec;
 constexpr unsigned char kPauseBitMenu   = 0x02;
 
@@ -74,12 +73,9 @@ const char* s_activeHint    = nullptr;   // -> s_activeHintBuf while active
 bool        s_paused        = false;     // we issued the pause
 
 void SetPause(bool on) {
+    void* server = acc::engine::GetServerApp();
+    if (!server) return;
     __try {
-        void* appMgr = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appMgr) return;
-        void* server = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appMgr) + kAppManagerServerOff);
-        if (!server) return;
         reinterpret_cast<PFN_SetPauseState>(kAddrSetPauseState)(
             server, kPauseBitMenu, on ? 1u : 0u);
     } __except (EXCEPTION_EXECUTE_HANDLER) {

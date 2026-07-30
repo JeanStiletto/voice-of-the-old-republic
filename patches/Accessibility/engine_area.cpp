@@ -5,7 +5,8 @@
 #include <cstdint>
 #include <cstring>
 
-#include "engine_player.h"  // GetPlayerArea, kAddrAppManagerPtr
+#include "engine_app.h"     // GetServerApp
+#include "engine_player.h"  // GetPlayerArea
 #include "engine_reads.h"   // ExtractTextOrStrRef, ReadCExoString
 #include "log.h"            // seam-filter telemetry
 #include "strings.h"        // door state suffix lookup (DoorOpen/DoorLocked)
@@ -23,18 +24,13 @@ typedef bool  (__thiscall* PFN_GetGameObject)(void* this_,
                                               uint32_t id,
                                               void** out);
 
-// Walk *kAddrAppManagerPtr → AppManager + 0x8 → CServerExoApp* →
-// GetObjectArray() → CGameObjectArray*. SEH-guarded for the same reason as
-// the rest of engine_*: the chain may not be populated during engine
-// teardown / very early init.
+// CServerExoApp → GetObjectArray() → CGameObjectArray*. The walk to the
+// server app is guarded inside GetServerApp(); the __try here covers the
+// engine call, which can still fault during teardown / very early init.
 void* GetServerObjectArray() {
+    void* serverApp = GetServerApp();
+    if (!serverApp) return nullptr;
     __try {
-        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appManager) return nullptr;
-        void* serverApp = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appManager) +
-            kAppManagerServerOffset);
-        if (!serverApp) return nullptr;
         auto fn = reinterpret_cast<PFN_GetObjectArray>(
             kAddrCServerExoAppGetObjectArray);
         return fn(serverApp);

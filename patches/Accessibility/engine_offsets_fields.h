@@ -1091,10 +1091,6 @@ constexpr size_t    kExoLocStringStrRefOffset       = 0x4;
 constexpr size_t    kBaseItemWeaponTypeOffset        = 0x09;
 constexpr size_t    kBaseItemItemTypeOffset          = 0xac;
 
-// AppManager indirection to CServerExoApp. AppManager+0x8 → CServerExoApp*.
-// (Same constant as engine_player.h's kAppManagerServerOffsetPlayer.)
-constexpr size_t    kAppManagerServerExoAppOffset          = 0x8;
-
 // CSWGuiInGameJournal — quest journal panel (the "Aufträge" sub-screen).
 //
 // Layout (from SARIF):

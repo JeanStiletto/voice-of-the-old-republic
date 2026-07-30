@@ -20,7 +20,7 @@
 #include <cstdint>
 #include <cstring>
 
-#include "engine_player.h"  // kAddrAppManagerPtr
+#include "engine_app.h"     // GetServerApp
 #include "log.h"
 
 namespace acc::engine {
@@ -32,22 +32,7 @@ typedef void*    (__thiscall* PFN_GetItemByGameObjectID)(void* this_,
 
 uint32_t ClientToServerObjectId(uint32_t clientHandle) {
     if (clientHandle == 0 || clientHandle == 0xffffffff) return 0;
-    void* appMgr = nullptr;
-    __try {
-        appMgr = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return 0;
-    }
-    if (!appMgr) return 0;
-
-    void* serverApp = nullptr;
-    __try {
-        serverApp = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appMgr) +
-            kAppManagerServerExoAppOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return 0;
-    }
+    void* serverApp = GetServerApp();
     if (!serverApp) return 0;
 
     uint32_t serverHandle = 0;
@@ -66,22 +51,7 @@ void* ResolveItemFromClientHandle(uint32_t clientHandle) {
     uint32_t serverHandle = ClientToServerObjectId(clientHandle);
     if (serverHandle == 0) return nullptr;
 
-    void* appMgr = nullptr;
-    __try {
-        appMgr = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-    if (!appMgr) return nullptr;
-
-    void* serverApp = nullptr;
-    __try {
-        serverApp = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appMgr) +
-            kAppManagerServerExoAppOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
+    void* serverApp = GetServerApp();
     if (!serverApp) return nullptr;
 
     void* item = nullptr;
@@ -121,22 +91,7 @@ constexpr uint32_t kActionIdTagItem     = 0x40000000;
 
 static void* ResolveItemFromServerHandle(uint32_t serverHandle) {
     if (serverHandle == 0 || serverHandle == 0xffffffff) return nullptr;
-    void* appMgr = nullptr;
-    __try {
-        appMgr = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-    if (!appMgr) return nullptr;
-
-    void* serverApp = nullptr;
-    __try {
-        serverApp = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appMgr) +
-            kAppManagerServerExoAppOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
+    void* serverApp = GetServerApp();
     if (!serverApp) return nullptr;
 
     void* item = nullptr;

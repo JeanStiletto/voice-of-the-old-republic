@@ -21,6 +21,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "engine_app.h"
 #include "engine_offsets.h"
 #include "engine_rebase.h"
 
@@ -191,9 +192,8 @@ bool GetPartyNpcNameForSlot(int npcSlot, char* outBuf, size_t bufSize);
 
 }  // namespace acc::engine
 
-// *kAddrAppManagerPtr → AppManager; +0x4 → CClientExoApp.
-constexpr uintptr_t kAddrAppManagerPtr           = 0x007A39FC;
-constexpr size_t    kAppManagerClientAppOffset   = 0x4;
+// kAddrAppManagerPtr and the client/server hop offsets live in engine_app.h
+// (included above) — one home for the whole resolve chain.
 
 const uintptr_t kAddrGetPlayerCreature = acc::addr::R(0x005ED540);
 const uintptr_t kAddrCSWSObjectGetArea = acc::addr::R(0x004CB120);
@@ -224,9 +224,8 @@ const uintptr_t kAddrCClientExoAppGetPlayerCharacterName = acc::addr::R(0x005EDA
 //
 // Earlier walks read from facade+0x1b770 — wrong; returned random heap
 // (all 1s) for avail/selectable arrays. Internal+0x1b770 matches the
-// per-portrait flag word the engine sets in OnPanelAdded.
-constexpr size_t    kAppManagerServerOffsetPlayer  = 0x8;
-constexpr size_t    kServerExoAppInternalOffset    = 0x4;
+// per-portrait flag word the engine sets in OnPanelAdded. The facade and
+// internal hops themselves are engine_app.h's GetServerAppInternal().
 constexpr size_t    kServerInternalPartyTableOffset = 0x1b770;
 constexpr size_t    kPartyTableNumMembersOffset    = 0x0;
 constexpr size_t    kPartyTableMemberIdsOffset     = 0x4;
