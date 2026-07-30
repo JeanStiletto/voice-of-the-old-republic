@@ -22,9 +22,8 @@ KOTOR 2 (TSL), which runs a very similar engine but a different executable
 ## per-phase sections further down, which are history)
 
 - **Active phase:** Phase 3. Sections A and F are done. Section B is
-  **five of seven items done**: B1, B3, B4, B6 executed AND play-tested;
-  B2 executed 2026-07-30 (five functions, five commits) and **NOT yet
-  play-tested**. **Remaining: B5, B7.**
+  **five of seven items done and ALL FIVE PLAY-TESTED**: B1, B3, B4, B6
+  and B2. **Remaining: B5, B7 — that is where the next session starts.**
 - **Phase 2:** done and verified in game (the gate was lifted 2026-07-29).
 - **Branch:** `refactor/phase2-coupling`, cut from main @ 4c4e216. Not yet
   merged to main. Phase 1 is already on main.
@@ -35,18 +34,17 @@ KOTOR 2 (TSL), which runs a very similar engine but a different executable
 
 ### START HERE NEXT SESSION
 
-1. Read the "Phase 3 Section B" blocks below for what B1/B3/B4/B6 actually
-   did — several corrected the report's own framing, and those corrections
-   are the useful part.
-2. **The one piece of verification still owed is the manual installer
-   pass** (details in the block below). Everything else is play-tested.
-3. **B2 needs its in-game pass** — the list is in the B2 block below. It is
-   the only unverified work on the branch.
-4. Then walk B5 or B7 with the user, ONE ITEM AT A TIME. Do not present
-   them as a bulk list. Verify each item's claims against the code first —
-   in four of the five Section B items so far the scan's framing or counts
-   were wrong, sometimes in ways that changed what the right fix was. (B2
-   was the exception: its sixteen line counts were all accurate.)
+1. **Nothing is owed. Go straight to B5 or B7.** Every executed item on
+   this branch is play-tested; the installer pass is deliberately deferred
+   (see the ledger below — it is a decision, not a gap).
+2. Read the "Phase 3 Section B" blocks below for what B1/B2/B3/B4/B6
+   actually did — several corrected the report's own framing, and those
+   corrections are the useful part.
+3. Walk B5 or B7 with the user, ONE ITEM AT A TIME. Do not present them as
+   a bulk list. Verify each item's claims against the code first — in four
+   of the five Section B items so far the scan's framing or counts were
+   wrong, sometimes in ways that changed what the right fix was. (B2 was
+   the exception: its sixteen line counts were all accurate.)
 
 ### THE VERIFICATION LEDGER (what is and is not actually tested)
 
@@ -62,12 +60,19 @@ the stale-DLL trap does not apply to any of these results:
   build?" scare. The `session start utc=... local=...` header line settles
   it.)
 
-**NOT yet verified — the only outstanding item: the manual installer pass.**
-No installer log newer than 2026-07-10 exists anywhere under the user
-profile, so this has definitely not been run yet. It now covers F3-F6, B4
-and both B6 hold-backs at once, and it is end-user-facing, so it should
-happen before the next release. One real install + uninstall cycle with a
-screen reader:
+- B2 (all five functions) — DLL 14:24:36, plus the two finding-fixes at
+  14:39:15 and the class-icon fix at 14:44:51. Confirmed working by the
+  user after the last of those.
+
+**THE INSTALLER PASS IS DEFERRED ON THE USER'S EXPLICIT DECISION
+(2026-07-30). Do not re-raise it as an outstanding gap.** Their reasoning:
+they will trust the code review until there is a real KOTOR 2 port to test
+against, and at that point the installer has to be reworked anyway (it
+grows K2 detection, a second game path, K2CP wiring), so a manual pass now
+would be spent twice. This is a decision with a trigger, not an oversight —
+**the trigger is the K2 port starting.** When it does, run the pass below
+BEFORE shipping anything K2-facing, because it is the accumulated debt of
+F3-F6, B4 and both B6 hold-backs, and it is all end-user-facing:
 - browse to a WRONG folder — the reason must be spoken, and the
   Install-button enable/disable transition announced (F3, F4, F6, B4)
 - run an uninstall — progress must be spoken (F5, B4)
@@ -1392,3 +1397,71 @@ freed panels during teardown. `IdentifyPanel` is safe against a stale
 panel *by construction* because it never dereferences one (it compares the
 pointer against CGuiInGame slots); that is why the steps gated on it never
 needed a guard and the four above did.
+
+## SESSION END 2026-07-30 (afternoon) — B2 done, tested, and two bugs fixed
+
+Eleven commits `6acf591..34b0f95`. Section B is now five of seven, all
+play-tested. **Next session: B5 or B7, nothing else is owed.**
+
+### B2 is VERIFIED IN GAME
+User tested the full list (menus broadly, chain nav, unified action menu,
+room shape) against freshness-checked DLLs and reported everything working
+except one thing, which turned out to be a pre-existing bug — below.
+
+### The class-icon double-announce: pre-existing, found by testing B2
+
+Chargen class icons announced twice on the first pass. The user correctly
+called it as NOT caused by the refactoring; `patch-20260725-215552.log`
+carries the identical signature five days earlier.
+
+**It took two attempts, and the first was wrong, so record the shape.**
+
+There are THREE paths that can speak a focused control, and they run in
+this order:
+1. `AnnounceControl` (menus_monitors.cpp) — the chain-step path. Its
+   success branch speaks, calls `MarkSpoken(0, text)`, AND primes
+   `s_focusMonitorControl` / `s_focusMonitorText`.
+2. `DrainPendingAnnounce` (menus.cpp) — drains the engine's
+   SetActiveControl echo a tick later, via `SpeakIfChanged(0, text)`.
+3. `MonitorFocusedControl` (menus_monitors.cpp) — the per-frame re-extract.
+
+Two dedup mechanisms, and they are NOT the same thing:
+- channel-0 `s_lastSpoken` — `MarkSpoken` primes it, `SpeakIfChanged`
+  checks it. `AnnounceControl` and the monitor both used to speak with
+  raw `prism::Speak`, which neither checks nor marks.
+- `s_focusMonitorControl` / `s_focusMonitorText` — what actually keeps the
+  monitor quiet in the normal case, and it is primed only by
+  `AnnounceControl`'s SUCCESS branch.
+
+The bug: step 9c's per-icon class-name cache starts cold, so on a first
+visit `AnnounceControl`'s `FromControl` returns nullptr (visible as
+`SetActive src=none`) and it leaves via its class-icon early-out — having
+neither spoken NOR primed. The cursor warp then makes active_control the
+icon, `DrainPendingAnnounce` fills the cache and speaks, and the unprimed
+monitor speaks the same line again. On a revisit the cache is warm,
+`AnnounceControl` wins and primes, and there is no double. That is why it
+presented as "doubles when arrowing down, stops when arrowing up" — the
+user's first pass was downward. In the same log, arrowing DOWN over
+already-visited icons announces once.
+
+Fix: the monitor now speaks via `SpeakIfChanged(0, text)` instead of
+`prism::Speak`, so it both checks and marks.
+
+**The failed first attempt is the lesson.** I added `MarkSpoken` to the
+monitor — right dedup, wrong direction, because I had the speaker order
+backwards. The log said so plainly and I read it too fast: the
+`cache+speak` line sits immediately BEFORE the first `Speech.spoke`, which
+identifies the cache-filling call as the FIRST speaker, not the monitor.
+**When ordering matters, tag the speak sites rather than inferring order
+from adjacent log lines.**
+
+Residual risk now carried: if two adjacent controls have identical text
+AND `AnnounceControl` is gated on both, the monitor will suppress the
+second. Only the class-icon path is gated that way today and its six
+labels are distinct. **A focus change that goes SILENT is the failure mode
+to listen for** — on any screen, not just chargen.
+
+Also still untouched and still fine: the monitor's other speak site (the
+text-changed re-announce) has the same raw-`prism::Speak` shape. It was
+explicitly checked and is NOT involved here — it logs
+`"focused=%p text changed"` and that line appears nowhere in the traces.
