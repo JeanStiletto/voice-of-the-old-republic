@@ -18,15 +18,9 @@ namespace acc::engine {
 // Declared in engine_player_internal.h (with the chain-walk rationale) —
 // no longer file-static because the party and input-lock TUs read it too.
 void* GetPlayerServerObject() {
+    void* exoApp = GetClientApp();
+    if (!exoApp) return nullptr;
     __try {
-        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appManager) return nullptr;
-
-        void* exoApp = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appManager) +
-            kAppManagerClientAppOffset);
-        if (!exoApp) return nullptr;
-
         auto getCreature = reinterpret_cast<PFN_GetPlayerCreature>(
             kAddrGetPlayerCreature);
         void* clientCreature = getCreature(exoApp);
@@ -95,17 +89,9 @@ bool GetCameraPosition(Vector& out) {
     constexpr size_t kClientInternalModuleOffset = 0x18;
     constexpr size_t kCSWCModuleCameraOffset     = 0x40;
     constexpr size_t kCameraGobPositionOffset    = 0x7c;  // Camera+0x04 + Gob+0x78
+    void* clientInternal = GetClientAppInternal();
+    if (!clientInternal) return false;
     __try {
-        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appManager) return false;
-        void* clientApp = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appManager) +
-            kAppManagerClientAppOffset);
-        if (!clientApp) return false;
-        void* clientInternal = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(clientApp) +
-            kClientExoAppInternalOffset);
-        if (!clientInternal) return false;
         void* module = *reinterpret_cast<void**>(
             reinterpret_cast<unsigned char*>(clientInternal) +
             kClientInternalModuleOffset);
@@ -127,17 +113,9 @@ bool GetCameraYawRadians(float& outRad) {
     constexpr size_t kClientInternalModuleOffset = 0x18;
     constexpr size_t kCSWCModuleCameraOffset     = 0x40;
     constexpr size_t kCameraOrientationOffset    = 0x88;  // Camera+0x04 + Gob+0x84
+    void* clientInternal = GetClientAppInternal();
+    if (!clientInternal) return false;
     __try {
-        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appManager) return false;
-        void* clientApp = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appManager) +
-            kAppManagerClientAppOffset);
-        if (!clientApp) return false;
-        void* clientInternal = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(clientApp) +
-            kClientExoAppInternalOffset);
-        if (!clientInternal) return false;
         void* module = *reinterpret_cast<void**>(
             reinterpret_cast<unsigned char*>(clientInternal) +
             kClientInternalModuleOffset);

@@ -46,15 +46,24 @@ constexpr uintptr_t kAddrAppManagerPtr = 0x007A39FC;
 constexpr size_t kAppManagerClientAppOffset = 0x4;
 constexpr size_t kAppManagerServerAppOffset = 0x8;
 
-// CServerExoApp mirrors the client facade/internal split: the public facade is
-// 8 bytes (vtable@0, internal@4) and the internal carries the state. Verified
-// via CServerExoApp::GetPartyTable @0x004aee70 (MOV EAX,[ECX+4]; ADD EAX,...).
+// Both facades are 8 bytes (vtable@0, internal@4) and the *Internal carries
+// the state. Server side verified via CServerExoApp::GetPartyTable @0x004aee70
+// (MOV EAX,[ECX+4]; ADD EAX,...); the client split is the same shape.
+constexpr size_t kClientExoAppInternalOffset = 0x4;
 constexpr size_t kServerExoAppInternalOffset = 0x4;
 
 namespace acc::engine {
 
 // *kAddrAppManagerPtr. Null during very early init and after teardown.
 void* GetAppManager();
+
+// CClientExoApp facade (AppManager +0x4). The client side owns the UI, the
+// GUI manager, camera and player control.
+void* GetClientApp();
+
+// CClientExoAppInternal (facade +0x4) — the real client state: player_control
+// @+0x2a0, CGuiInGame, the options block, input_class @+0x9c.
+void* GetClientAppInternal();
 
 // CServerExoApp facade (AppManager +0x8). The server side owns world truth,
 // AI and the party table.

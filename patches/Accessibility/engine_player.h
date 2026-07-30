@@ -204,11 +204,8 @@ constexpr size_t kClientObjectServerObjectOffset = 0xf8;
 constexpr size_t kServerObjectPositionOffset    = 0x90;
 constexpr size_t kServerObjectOrientationOffset = 0x9c;
 
-// CClientExoApp facade is 8 bytes (vtable@0, internal@4);
-// CClientExoAppInternal carries the real state.
-constexpr size_t kClientExoAppInternalOffset = 0x4;
-
-// CClientExoAppInternal.player_control @+0x2a0.
+// CClientExoAppInternal.player_control @+0x2a0. The facade → internal hop
+// itself is engine_app.h's GetClientAppInternal().
 constexpr size_t kClientAppPlayerControlOffset = 0x2a0;
 
 const uintptr_t kAddrCSWPlayerControlSetEnabled = acc::addr::R(0x006792E0);

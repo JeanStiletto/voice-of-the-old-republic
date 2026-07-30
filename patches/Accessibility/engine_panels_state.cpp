@@ -172,10 +172,8 @@ bool CloseInGameMenuToWorld() {
                       acc::addr::ActiveBuildName());
         return false;
     }
-    void* appMgr = *reinterpret_cast<void**>(kAddrAppManagerPtr);
     void* gui = ResolveGuiInGame();
-    void* client = appMgr ? *reinterpret_cast<void**>(
-        reinterpret_cast<unsigned char*>(appMgr) + kAppManagerClientAppOffset) : nullptr;
+    void* client = GetClientApp();
     if (!gui || !client) {
         acclog::Write("CloseInGameMenu", "skipped: gui=%p client=%p", gui, client);
         return false;
@@ -206,17 +204,11 @@ bool CloseInGameMenuToWorld() {
 
 // Read the live input_class (CClientExoAppInternal +0x9c). 0/4 = in-world,
 // 2 = a menu/sub-screen owns input (mouse shown). Diagnostic + gating helper.
-// Chain: *kAddrAppManagerPtr → +0x4 CClientExoApp → +0x4 Internal → +0x9c.
+// Chain: GetClientAppInternal() → +0x9c.
 int GetInputClass() {
+    void* internal = GetClientAppInternal();
+    if (!internal) return -1;
     __try {
-        void* appMgr = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appMgr) return -1;
-        void* client = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appMgr) + kAppManagerClientAppOffset);
-        if (!client) return -1;
-        void* internal = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(client) + 0x04);
-        if (!internal) return -1;
         return *reinterpret_cast<int*>(
             reinterpret_cast<unsigned char*>(internal) + 0x9c);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
@@ -232,9 +224,7 @@ int GetInputClass() {
 // the manager's nav codes (181-185), so the wizard sits unreachable on the
 // modal stack (the "frozen until Escape" limbo).
 bool SetGuiInputClass(int klass) {
-    void* appMgr = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-    void* client = appMgr ? *reinterpret_cast<void**>(
-        reinterpret_cast<unsigned char*>(appMgr) + kAppManagerClientAppOffset) : nullptr;
+    void* client = GetClientApp();
     if (!client) {
         acclog::Write("InputClass", "SetGuiInputClass(%d) skipped: no client", klass);
         return false;

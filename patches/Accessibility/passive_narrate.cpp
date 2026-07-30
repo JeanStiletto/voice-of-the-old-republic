@@ -9,7 +9,8 @@
 #include "combat_query.h"   // BuildTargetCombatBrief enrichment
 #include "discovery.h"      // organic-discovery recording
 #include "engine_area.h"
-#include "engine_player.h"  // kAddrAppManagerPtr + kClientExoAppInternalOffset chain
+#include "engine_app.h"     // GetClientAppInternal
+#include "engine_player.h"  // GetPartyMembers, GetPlayerPosition
 #include "filter_objects.h"
 #include "log.h"
 #include "narrated_target.h"
@@ -399,25 +400,9 @@ void Tick() {
         }
         s_qe.retry_armed = false;
 
-        // Walk *kAddrAppManagerPtr → CClientExoApp → CClientExoAppInternal.
-        // SEH around every deref — this runs on every frame the user
-        // taps Q/E and we don't want a stray null to fault the engine.
-        void* internal = nullptr;
-        __try {
-            void* appMgr = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-            if (appMgr) {
-                void* exoApp = *reinterpret_cast<void**>(
-                    reinterpret_cast<unsigned char*>(appMgr) +
-                    kAppManagerClientAppOffset);
-                if (exoApp) {
-                    internal = *reinterpret_cast<void**>(
-                        reinterpret_cast<unsigned char*>(exoApp) +
-                        kClientExoAppInternalOffset);
-                }
-            }
-        } __except (EXCEPTION_EXECUTE_HANDLER) {
-            internal = nullptr;
-        }
+        // Guarded inside GetClientAppInternal() — this runs on every frame
+        // the user taps Q/E and a stray null must not fault the engine.
+        void* internal = acc::engine::GetClientAppInternal();
         if (!internal) {
             acclog::Write("PassiveNarrate",
                 "Q/E retry: no client-internal, aborted");

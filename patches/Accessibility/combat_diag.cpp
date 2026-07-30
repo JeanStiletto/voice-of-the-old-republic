@@ -118,18 +118,6 @@ int ReadOuterQueueSize(void* serverCreature) {
     }
 }
 
-void* GetExoApp() {
-    __try {
-        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appManager) return nullptr;
-        return *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appManager) +
-            kAppManagerClientAppOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
-
 int CallGetAutoPaused(void* exoApp) {
     if (!exoApp) return -1;
     __try {
@@ -196,7 +184,7 @@ void ReadState(State& s) {
 
     void* server = acc::engine::GetPlayerServerCreature();
     void* client = acc::engine::GetClientLeader();
-    void* exoApp = GetExoApp();
+    void* exoApp = acc::engine::GetClientApp();
 
     s.cm  = ReadCombatModeBit(client);
     s.qs  = ReadQueueSize(server);

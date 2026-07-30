@@ -9,6 +9,7 @@
 #include "engine_area.h"
 #include "engine_input.h"
 #include "engine_offsets.h"
+#include "engine_app.h"     // GetClientApp
 #include "engine_player.h"
 #include "engine_subscreen.h" // Begin/EndOverlayPause — freeze the world while open
 #include "hotkeys.h"
@@ -334,20 +335,8 @@ int AppendFeatRows(void* serverCreature, char rows[][192],
 typedef uint32_t (__thiscall* PFN_GetLastTarget)(void* this_);
 const uintptr_t kAddrCClientExoAppGetLastTargetLocal = acc::addr::R(0x005EDD80);
 
-void* GetClientExoAppLocal() {
-    __try {
-        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appManager) return nullptr;
-        return *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appManager) +
-            kAppManagerClientAppOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
-
 uint32_t ReadLastTargetHandle() {
-    void* exoApp = GetClientExoAppLocal();
+    void* exoApp = acc::engine::GetClientApp();
     if (!exoApp) return 0;
     __try {
         auto fn = reinterpret_cast<PFN_GetLastTarget>(

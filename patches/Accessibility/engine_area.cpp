@@ -109,24 +109,12 @@ namespace {
 typedef void* (__thiscall* PFN_CClientGetGameObject)(void* this_,
                                                     uint32_t handle);
 
-void* GetClientExoApp() {
-    __try {
-        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appManager) return nullptr;
-        return *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appManager) +
-            kAppManagerClientAppOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
-
 }  // namespace
 
 void* ResolveClientObject(uint32_t handle) {
     if (IsSentinelHandle(handle)) return nullptr;
 
-    void* clientApp = GetClientExoApp();
+    void* clientApp = GetClientApp();
     if (!clientApp) return nullptr;
 
     __try {
@@ -465,16 +453,7 @@ bool GetObjectDisplayNameByHandle(uint32_t handle,
     outBuf[0] = '\0';
     if (IsSentinelHandle(handle)) return false;
 
-    void* clientApp = nullptr;
-    __try {
-        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appManager) return false;
-        clientApp = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appManager) +
-            kAppManagerClientAppOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
+    void* clientApp = GetClientApp();
     if (!clientApp) return false;
 
     // Try the handle as-is first. Then, if that fails AND the handle
@@ -807,7 +786,7 @@ bool MaybeDrivePassiveSelection() {
 
     static bool s_driving = false;  // rising-edge log latch
 
-    void* clientApp = GetClientExoApp();
+    void* clientApp = GetClientApp();
     if (!clientApp) { s_driving = false; return false; }
 
     __try {

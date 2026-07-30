@@ -32,13 +32,9 @@ void* GetPlayerServerCreature() {
 }
 
 void* GetClientLeader() {
+    void* exoApp = GetClientApp();
+    if (!exoApp) return nullptr;
     __try {
-        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appManager) return nullptr;
-        void* exoApp = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appManager) +
-            kAppManagerClientAppOffset);
-        if (!exoApp) return nullptr;
         auto fn = reinterpret_cast<PFN_GetPlayerCreature>(
             kAddrGetPlayerCreature);
         return fn(exoApp);
@@ -82,17 +78,9 @@ bool IsAnyPartyMemberInCombat() {
     const uintptr_t kAddrCSWPartyGetCharacter = acc::addr::R(0x006346C0); // __thiscall(int) -> CSWCCreature*
     constexpr int       kPartyScanCap                 = 8;          // KOTOR party <=3; generous cap
     typedef void* (__thiscall* PFN_GetCharacter)(void* this_, int index);
+    void* internal = GetClientAppInternal();
+    if (!internal) return false;
     __try {
-        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appManager) return false;
-        void* exoApp = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appManager) +
-            kAppManagerClientAppOffset);
-        if (!exoApp) return false;
-        void* internal = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(exoApp) +
-            kClientExoAppInternalOffset);
-        if (!internal) return false;
         void* party = *reinterpret_cast<void**>(
             reinterpret_cast<unsigned char*>(internal) + kInternalPartyOffset);
         if (!party) return false;
@@ -262,13 +250,9 @@ bool GetActiveLeaderName(char* outBuf, size_t bufSize) {
 bool GetPlayerCharacterName(char* outBuf, size_t bufSize) {
     if (!outBuf || bufSize < 2) return false;
     outBuf[0] = '\0';
+    void* exoApp = GetClientApp();
+    if (!exoApp) return false;
     __try {
-        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appManager) return false;
-        void* exoApp = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appManager) +
-            kAppManagerClientAppOffset);
-        if (!exoApp) return false;
         auto fn = reinterpret_cast<PFN_GetPlayerCharacterName>(
             kAddrCClientExoAppGetPlayerCharacterName);
         void* exoStr = fn(exoApp);

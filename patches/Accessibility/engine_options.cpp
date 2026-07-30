@@ -3,29 +3,17 @@
 #include <windows.h>
 #include <cstdint>
 
-#include "engine_player.h"  // kAddrAppManagerPtr, kAppManagerClientAppOffset,
-                            // kClientExoAppInternalOffset
+#include "engine_app.h"     // GetClientAppInternal
 
 namespace acc::engine {
 
-// Walk *kAddrAppManagerPtr → CClientExoApp → CClientExoAppInternal →
-// CClientOptions. Distinct from GetPlayerServerObject's chain (different
-// final destination). Returns nullptr at any null link or SEH fault.
+// CClientExoAppInternal → CClientOptions. Distinct from
+// GetPlayerServerObject's chain (different final destination). Returns
+// nullptr at any null link or SEH fault.
 void* GetClientOptions() {
+    void* internal = GetClientAppInternal();
+    if (!internal) return nullptr;
     __try {
-        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appManager) return nullptr;
-
-        void* exoApp = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appManager) +
-            kAppManagerClientAppOffset);
-        if (!exoApp) return nullptr;
-
-        void* internal = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(exoApp) +
-            kClientExoAppInternalOffset);
-        if (!internal) return nullptr;
-
         return *reinterpret_cast<void**>(
             reinterpret_cast<unsigned char*>(internal) +
             kClientAppOptionsOffset);

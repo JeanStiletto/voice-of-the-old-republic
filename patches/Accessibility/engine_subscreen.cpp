@@ -156,24 +156,21 @@ void DispatchUnpauseCleanup(const char* trigger) {
 // public CClientExoApp pointer (AppManager + 0x4). paused 1=pause/0=resume,
 // source 4 = the value the pause key passes, force 0.
 const uintptr_t kAddrSetPausedByCombat = acc::addr::R(0x005edc20);
-constexpr size_t    kAppManagerClientOffset  = 0x4;
 using PFN_SetPausedByCombat =
     void(__thiscall *)(void* clientApp, int paused, int source, int force);
 
 void DispatchOverlayPause(const char* trigger, int paused) {
     acclog::Write("PauseToggle", "%s: SetPausedByCombat(%d,4,0)", trigger, paused);
+    if (!acc::engine::GetAppManager()) {
+        acclog::Write("PauseToggle", "overlay-pause skipped: AppManager NULL");
+        return;
+    }
+    void* client = acc::engine::GetClientApp();
+    if (!client) {
+        acclog::Write("PauseToggle", "overlay-pause skipped: client NULL");
+        return;
+    }
     __try {
-        void* appMgr = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appMgr) {
-            acclog::Write("PauseToggle", "overlay-pause skipped: AppManager NULL");
-            return;
-        }
-        void* client = *reinterpret_cast<void**>(
-            static_cast<unsigned char*>(appMgr) + kAppManagerClientOffset);
-        if (!client) {
-            acclog::Write("PauseToggle", "overlay-pause skipped: client NULL");
-            return;
-        }
         auto fn = reinterpret_cast<PFN_SetPausedByCombat>(kAddrSetPausedByCombat);
         // The pause propagates to the server pause-bit synchronously inside
         // this call, which re-enters OnSetPauseState — flag it as our own so
@@ -244,18 +241,16 @@ bool ResumeWorldIfPaused(const char* reason) {
     // an overlay pause at all).
     g_overlayPauseOwners = 0;
     acclog::Write("PauseToggle", "%s: resume world SetPausedByCombat(0,4,0)", tag);
+    if (!acc::engine::GetAppManager()) {
+        acclog::Write("PauseToggle", "resume skipped: AppManager NULL");
+        return false;
+    }
+    void* client = acc::engine::GetClientApp();
+    if (!client) {
+        acclog::Write("PauseToggle", "resume skipped: client NULL");
+        return false;
+    }
     __try {
-        void* appMgr = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appMgr) {
-            acclog::Write("PauseToggle", "resume skipped: AppManager NULL");
-            return false;
-        }
-        void* client = *reinterpret_cast<void**>(
-            static_cast<unsigned char*>(appMgr) + kAppManagerClientOffset);
-        if (!client) {
-            acclog::Write("PauseToggle", "resume skipped: client NULL");
-            return false;
-        }
         // Deliberately NOT flagged as our own call: we WANT OnSetPauseState to
         // fire un-suppressed so the engine's resume cue ("Fortgesetzt") speaks
         // as the menu-close announcement.

@@ -20,6 +20,30 @@ void* GetAppManager() {
     }
 }
 
+void* GetClientApp() {
+    void* appManager = GetAppManager();
+    if (!appManager) return nullptr;
+    __try {
+        return *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(appManager) +
+            kAppManagerClientAppOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
+void* GetClientAppInternal() {
+    void* clientApp = GetClientApp();
+    if (!clientApp) return nullptr;
+    __try {
+        return *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(clientApp) +
+            kClientExoAppInternalOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
 void* GetServerApp() {
     void* appManager = GetAppManager();
     if (!appManager) return nullptr;

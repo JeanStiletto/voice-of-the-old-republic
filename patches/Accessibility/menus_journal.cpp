@@ -1,7 +1,7 @@
 #include "menus_journal.h"
 
 #include "engine_offsets.h"
-#include "engine_player.h"  // kAddrAppManagerPtr, kAppManagerClientAppOffset
+#include "engine_app.h"     // GetClientApp
 #include "engine_rebase.h"
 #include "engine_reads.h"
 #include "log.h"
@@ -186,13 +186,9 @@ void LogEntryCounts(void* panel) {
                       "address unresolved on build %s", acc::addr::ActiveBuildName());
         return;
     }
+    void* client = acc::engine::GetClientApp();
+    if (!client) return;
     __try {
-        void* appMgr = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appMgr) return;
-        void* client = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appMgr) + kAppManagerClientAppOffset);
-        if (!client) return;
-
         auto getJournal = reinterpret_cast<PFN_ClientGetter>(addrGetQuestJournal);
         auto getGui     = reinterpret_cast<PFN_ClientGetter>(addrGetInGameGui);
         void* journal = getJournal(client);

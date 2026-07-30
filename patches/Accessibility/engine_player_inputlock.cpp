@@ -14,6 +14,7 @@
 // Declarations stay in engine_player.h; GetPlayerServerObject comes from
 // engine_player_internal.h.
 
+#include "engine_app.h"     // GetClientApp
 #include "engine_player.h"
 #include "engine_player_internal.h"
 
@@ -59,24 +60,13 @@ int    g_lastLoggedQueueDepth = -2;  // ActionQueue.Diag delta tracker
 
 typedef void (__thiscall* PFN_CSWPlayerControlSetEnabled)(void* this_, int enabled);
 
-// Walk *kAddrAppManagerPtr → CClientExoApp → CClientExoAppInternal →
-// CSWPlayerControl. Distinct from GetPlayerServerObject's chain — different
-// destination. Returns nullptr on any failure.
+// CClientExoAppInternal → CSWPlayerControl. Distinct from
+// GetPlayerServerObject's chain — different destination. Returns nullptr on
+// any failure.
 void* GetPlayerControl() {
+    void* internal = GetClientAppInternal();
+    if (!internal) return nullptr;
     __try {
-        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appManager) return nullptr;
-
-        void* exoApp = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appManager) +
-            kAppManagerClientAppOffset);
-        if (!exoApp) return nullptr;
-
-        void* internal = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(exoApp) +
-            kClientExoAppInternalOffset);
-        if (!internal) return nullptr;
-
         return *reinterpret_cast<void**>(
             reinterpret_cast<unsigned char*>(internal) +
             kClientAppPlayerControlOffset);

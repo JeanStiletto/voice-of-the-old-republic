@@ -509,16 +509,16 @@ const char* PanelKindName(PanelKind k) {
 }
 
 void* ResolveGuiInGame() {
-    void* appMgr = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-    if (!appMgr) return nullptr;
-    void* exoApp = *reinterpret_cast<void**>(
-        reinterpret_cast<unsigned char*>(appMgr) + kAppManagerClientAppOffset);
-    if (!exoApp) return nullptr;
-    void* internal = *reinterpret_cast<void**>(
-        reinterpret_cast<unsigned char*>(exoApp) + kClientExoAppInternalOffset);
+    void* internal = GetClientAppInternal();
     if (!internal) return nullptr;
-    return *reinterpret_cast<void**>(
-        reinterpret_cast<unsigned char*>(internal) + kClientExoAppGuiInGameOff);
+    // The walk itself is guarded inside GetClientAppInternal(); this last hop
+    // was previously unguarded along with the rest of the chain.
+    __try {
+        return *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(internal) + kClientExoAppGuiInGameOff);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
 }
 
 bool ReadDialogReplyText(int replyIndex, char* outBuf, size_t bufSize) {

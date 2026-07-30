@@ -6,8 +6,7 @@
 
 #include <windows.h>
 
-#include "engine_player.h"  // kAddrAppManagerPtr, kAppManagerClientAppOffset,
-                            // kClientExoAppInternalOffset
+#include "engine_app.h"     // GetClientAppInternal
 
 namespace acc::minigame {
 
@@ -60,18 +59,9 @@ bool SafeReadVector(void* base, size_t off, Vector& out) {
 // ---- Minigame object array -------------------------------------------------
 
 void* ResolveMgoArray() {
-    __try {
-        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appManager) return nullptr;
-        void* clientApp = SafeReadPtr(appManager, kAppManagerClientAppOffset);
-        if (!clientApp) return nullptr;
-        void* clientInternal = SafeReadPtr(clientApp,
-                                           kClientExoAppInternalOffset);
-        if (!clientInternal) return nullptr;
-        return SafeReadPtr(clientInternal, kClientInternalMgoArrayOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
+    void* clientInternal = acc::engine::GetClientAppInternal();
+    if (!clientInternal) return nullptr;
+    return SafeReadPtr(clientInternal, kClientInternalMgoArrayOffset);
 }
 
 bool ReadFollowerPosition(void* follower, Vector& out) {
