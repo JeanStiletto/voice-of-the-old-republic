@@ -110,22 +110,17 @@ internal class AreaResult
 internal static class WalkmeshGeometryAnalysis
 {
 
-    // Same set as WalkmeshStatsCommand. Kept local to keep this command
-    // self-contained; if a third walkmesh consumer appears, hoist into a
-    // shared helper at that point.
-
     internal static RoomResult? AnalyseRoom(string path, float cellSize)
     {
         var bytes = File.ReadAllBytes(path);
-        if (bytes.Length < 0x88) return null;
-        if (Encoding.ASCII.GetString(bytes, 0, 8) != "BWM V1.0") return null;
+        if (!HasValidHeader(bytes)) return null;
 
-        uint type        = ReadU32(bytes, 0x08);
-        uint vertexCount = ReadU32(bytes, 0x48);
-        uint vertexOff   = ReadU32(bytes, 0x4C);
-        uint faceCount   = ReadU32(bytes, 0x50);
-        uint faceOff     = ReadU32(bytes, 0x54);
-        uint faceTypeOff = ReadU32(bytes, 0x58);
+        uint type        = ReadU32(bytes, OffType);
+        uint vertexCount = ReadU32(bytes, OffVertexCount);
+        uint vertexOff   = ReadU32(bytes, OffVertexOffset);
+        uint faceCount   = ReadU32(bytes, OffFaceCount);
+        uint faceOff     = ReadU32(bytes, OffFaceOffset);
+        uint faceTypeOff = ReadU32(bytes, OffFaceTypeOffset);
 
         if (type != 1 || vertexCount == 0 || faceCount == 0) return null;
 

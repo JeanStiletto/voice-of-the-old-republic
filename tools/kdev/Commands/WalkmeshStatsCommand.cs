@@ -256,28 +256,22 @@ public static class WalkmeshStatsCommand
     private static RoomStats ParseAndAnalyse(string path, float minNavigable)
     {
         var bytes = File.ReadAllBytes(path);
-        if (bytes.Length < 0x88) throw new InvalidDataException("file too short for BWM header");
-        if (Encoding.ASCII.GetString(bytes, 0, 8) != "BWM V1.0")
+        // Two separate checks rather than HasValidHeader() so the caller
+        // still learns WHICH way the file was wrong.
+        if (bytes.Length < MinLength)
+            throw new InvalidDataException("file too short for BWM header");
+        if (Encoding.ASCII.GetString(bytes, 0, 8) != Magic)
             throw new InvalidDataException("not a BWM v1.0 file");
 
-        // Header layout (KotOR walkmesh, type=1):
-        //   0x00  magic "BWM V1.0"
-        //   0x08  type uint32 (1=walkmesh, 0=AABB-only door, 2=area AABB)
-        //   0x0C  position float[3]
-        //   0x18  reserved 48 bytes (12 of which are an unidentified Vec3)
-        //   0x48  vertexCount uint32
-        //   0x4C  vertexOffset uint32  → vertexCount * Vec3
-        //   0x50  faceCount uint32
-        //   0x54  faceOffset uint32    → faceCount * 3 uint32 (vertex indices)
-        //   0x58  faceTypeOffset uint32 → faceCount * uint32 (surfacemat row id)
-        //   ... (normals, distances, AABB nodes, adjacency, outer edges,
-        //        perimeters — not needed: we recompute perimeter from face/vertex)
-        uint type        = ReadU32(bytes, 0x08);
-        uint vertexCount = ReadU32(bytes, 0x48);
-        uint vertexOff   = ReadU32(bytes, 0x4C);
-        uint faceCount   = ReadU32(bytes, 0x50);
-        uint faceOff     = ReadU32(bytes, 0x54);
-        uint faceTypeOff = ReadU32(bytes, 0x58);
+        // Header layout is documented once, on BwmFile. The trailing sections
+        // (normals, distances, AABB nodes, adjacency, outer edges, perimeters)
+        // are not read here — we recompute perimeter from face/vertex.
+        uint type        = ReadU32(bytes, OffType);
+        uint vertexCount = ReadU32(bytes, OffVertexCount);
+        uint vertexOff   = ReadU32(bytes, OffVertexOffset);
+        uint faceCount   = ReadU32(bytes, OffFaceCount);
+        uint faceOff     = ReadU32(bytes, OffFaceOffset);
+        uint faceTypeOff = ReadU32(bytes, OffFaceTypeOffset);
 
         var roomName = Path.GetFileNameWithoutExtension(path);
         if (type != 1)

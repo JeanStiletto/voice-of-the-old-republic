@@ -907,7 +907,12 @@ the hop constants outside `engine_app`.
 Verification: `kdev build --clean` 196 TUs, 0 warnings. Encoding checked per
 the A9 rule (em-dashes byte-identical to the rest of the tree).
 
-### NEEDS IN-GAME VERIFICATION — none of B1 is play-tested
+### B1 IS VERIFIED IN GAME (2026-07-30) — user tested and reported working.
+DLL freshness was confirmed before the test (installed accessibility.dll
+11:18:48, built from HEAD f259ea5), so the stale-DLL trap does not apply to
+this result. The list below is what was covered.
+
+### In-game coverage that was run
 This touched nearly every subsystem the player hears. Worth covering:
 1. Slice 3 is the highest risk: radial menu, action bar (bare 1-7 and
    Shift+N), and the picker / Enter-interact path.
