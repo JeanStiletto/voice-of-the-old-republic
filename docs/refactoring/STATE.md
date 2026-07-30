@@ -21,9 +21,16 @@ KOTOR 2 (TSL), which runs a very similar engine but a different executable
 ## Current status  (updated 2026-07-30 — read this block, not the older
 ## per-phase sections further down, which are history)
 
-- **Active phase:** Phase 3. Sections A and F are done. Section B is
-  **five of seven items done and ALL FIVE PLAY-TESTED**: B1, B3, B4, B6
-  and B2. **Remaining: B5, B7 — that is where the next session starts.**
+- **Active phase:** Phase 3. **Sections A, B and F are ALL DONE and
+  play-tested** — B5 and B7 closed 2026-07-30 (afternoon). What remains
+  before Phase 3 can be declared finished is the loose-ends list in
+  "WHAT PHASE 3 STILL OWES" below; it is four items, none of them large.
+- **THERE IS NO PHASE 4.** The 2026-07-27 decisions log merged phases 3
+  and 4 into one sweep with two separately-approvable sections: Section A
+  (general low-level cleanup) and **Section B (the AI-pattern pass)**.
+  Section B is that pass, and it is done. After the loose ends, the next
+  phase is **Phase 5 — wrap-up** (end report, merge to main, move
+  docs/refactoring/ to archiev/, delete the branch).
 - **Phase 2:** done and verified in game (the gate was lifted 2026-07-29).
 - **Branch:** `refactor/phase2-coupling`, cut from main @ 4c4e216. Not yet
   merged to main. Phase 1 is already on main.
@@ -32,19 +39,51 @@ KOTOR 2 (TSL), which runs a very similar engine but a different executable
   `dotnet build` = 0 errors; warning baseline is 1 pre-existing installer
   warning (PriorityGroup2da) + 3 in third_party KPatchCore.
 
-### START HERE NEXT SESSION
+### WHAT PHASE 3 STILL OWES (start here next session)
 
-1. **Nothing is owed. Go straight to B5 or B7.** Every executed item on
-   this branch is play-tested; the installer pass is deliberately deferred
-   (see the ledger below — it is a decision, not a gap).
-2. Read the "Phase 3 Section B" blocks below for what B1/B2/B3/B4/B6
-   actually did — several corrected the report's own framing, and those
-   corrections are the useful part.
-3. Walk B5 or B7 with the user, ONE ITEM AT A TIME. Do not present them as
-   a bulk list. Verify each item's claims against the code first — in four
-   of the five Section B items so far the scan's framing or counts were
-   wrong, sometimes in ways that changed what the right fix was. (B2 was
-   the exception: its sixteen line counts were all accurate.)
+Every candidate section is executed and play-tested. These four are what
+stands between here and Phase 5. None is blocked; each needs a user
+decision, so walk them ONE AT A TIME as usual.
+
+1. **A10 — leftover diagnostics. ITS BLOCKER IS GONE.** A10 was held back
+   because the `combat_special_watch` logging was the live evidence trail
+   for bug F1. **F1 is fixed** (commit 890fa07..17337dc), so that logging
+   is no longer load-bearing and A10 is actionable. Three other sites were
+   already available.
+2. **C4 — landmark doorMatched ordering contract.** Has a concrete
+   proposal in `reports/phase-3-sweep.md`: `IterateLandmarks` already
+   RECEIVES the `area` and discards it; thread it through and gate the
+   cache read on it, turning a silent "0 landmarks matched" into a logged
+   mismatch. Exactly one caller to update. Needs an in-game landmark +
+   door narration pass.
+3. **A12 — per-tick work that runs when it has nothing to do.** A
+   behaviour/performance change, not cleanup. Needs its own decision.
+4. **The three probe-retirement questions** (`probe_mouselook`,
+   `probe_pathfind`, `probe_priority_groups`). Each has documented
+   evidence its investigation is closed and its findings are consumed by
+   shipped code. Per the probe convention this is a live-code removal
+   decision for the user, never a mechanical cleanup. NB
+   `probe_priority_groups` is LIVE — re-confirmed by namespace grep, not
+   repeating Phase 1's filename-grep mistake.
+
+**Candidate 28 is NOT owed.** Scope-corrected in the sweep report: only
+`engine_offsets.h` has narrow siblings, so 28 today means opportunistic
+narrowing as other work touches a file. Splitting the other four headers
+is NEW work and a separate decision.
+
+Smaller leftovers, all deliberate and recorded: `probe_camera_state`'s 4
+unused offset constants (offset constants are do-not-touch), the
+`core_settings.h` pillar structs (their fields are unread, which is a
+different and non-mechanical change), and `minigame_swoop_audio`'s
+settle-gate paragraph that now describes a gate with no implementation.
+
+### THE METHOD THAT WORKED, AND SHOULD BE REUSED
+
+Verify every report claim against the code before proposing anything. In
+six of the seven Section B items the scan's framing or counts were wrong,
+sometimes in ways that changed what the right fix was. B2 was the only
+fully accurate entry. Twice this session the *compiler or the logs* — not
+reading — settled a question the report had rated "mechanical".
 
 ### THE VERIFICATION LEDGER (what is and is not actually tested)
 
@@ -1465,3 +1504,142 @@ Also still untouched and still fine: the monitor's other speak site (the
 text-changed re-announce) has the same raw-`prism::Speak` shape. It was
 explicitly checked and is NOT involved here — it logs
 `"focused=%p text changed"` and that line appears nowhere in the traces.
+
+## SESSION END 2026-07-30 (late) — Section B CLOSED, 7 of 7
+
+Seven commits `f302233..d1783e4`. Every item play-tested by the user in
+the same session it was written, each against a freshness-checked DLL.
+
+### The session did not start where it planned to, and that was right
+
+It opened on B5 sub-item 1 (refactor `charsheet::MaybeAnnounce` so it
+stops hand-duplicating the offset-to-format logic its own spec table
+encodes). Two things killed that plan, in order:
+
+1. **`MaybeAnnounce` had zero callers.** Its call site was removed at some
+   point, leaving a comment in `menus_monitors.cpp` that already spelled
+   out the reasoning ("legacy workaround from when the panel wasn't
+   keyboard-navigable"). Section A's dead-function sweep missed it. So the
+   sub-item was a 98-line DELETE, not a refactor.
+2. **The user then reframed the whole thing**, correctly: the
+   read-everything-on-open behaviour is a relic of early menu
+   accessibility, and what they want is panel name + focused control, with
+   the user reading the rest themselves.
+
+### The first-sight investigation, and what it actually found
+
+"Remove first-sight speech at the core" is not one switch, because
+"first sight" names three unrelated things:
+
+- `SpeakPanelTitleOnFirstSight` — title only, already skips strip
+  sub-screens. **Already correct.**
+- `WalkAndCaptureOnFirstSight` — **speaks nothing at all**; it is a
+  diagnostic child-walk plus cycle-category cache priming. Pure misnomer.
+- The **content-fingerprint monitor** in `menus_monitors.cpp` — the actual
+  bulk speaker, and the only one worth changing.
+
+Its "first sight" suppression only covers the FIRST TICK. The engine fills
+labels a tick later, so real content arrives as a *change* and is spoken
+as a batch. That flaw had already been diagnosed and fixed three times the
+same way — by dropping a screen from `IsContentMonitored` once it had real
+keyboard navigation (Inventory + Equipment 2026-05-30, Abilities
+2026-06-03, Container and Messages before them).
+
+**The evidence came from the logs, not from reading the code** — the same
+method that settled B2's tooltip finding. Grepping what that path has ever
+spoken across all 969 patch logs:
+- Character sheet: bare context-free numbers — "1", "14", "120000".
+- Journal: whole quest bodies plus the entire entry list as one run-on line.
+- Map: area names and map-note names.
+
+The user kept the map deliberately ("details on opening is indeed more
+useful there, that's bonus info") and confirmed the journal sort button is
+chain-navigable.
+
+**The trap the naive fix would have hit:** dropping the two kinds from
+`IsContentMonitored` outright would have silently broken the character
+sheet's chain rebind — a content change is what fires
+`RebindChainPreserveIndex` when Tab swaps the displayed party member and
+the Force-points row appears or disappears. So the fingerprint's two jobs
+were separated instead: `IsContentMonitored` still TRACKS, the new
+`IsContentSpoken` decides whether the diff is READ OUT.
+
+### B5 — executed, with one sub-item rejected
+
+- **charsheet opener** — deleted (dead, 98 lines).
+- **chargen attr/skills** — the four near-verbatim pairs folded behind a
+  `PanelDesc` struct rather than the report's long parameter lists. Every
+  public per-panel name kept as a one-line wrapper (callers in menus.cpp,
+  menus_chain, menus_chain_input, menus_focus, menus_monitors,
+  menus_pending). Net -92 lines. Domain variation stayed per-file.
+- **clamp-cursor** — report said four sites; there are THREE. The
+  `menus_abilities` one steps an index into a filtered array, is Up/Down
+  only, and re-announces the current tab on a clamp. New header-only
+  `menus_nav.h` (menus_internal.h declares itself a private two-TU
+  contract, engine_input.h is engine-side).
+- **listbox announces + dialog specs** — three identical bodies folded to
+  `SpeakRowAndPosition`; four hand-copied 14-field spec literals now come
+  from one `constexpr MakeDialogSpec`.
+- **anchor trio — REJECTED.** The three files are not the same shape:
+  credits keys on PANEL KIND with a hardcoded sortCy and no sortCy column,
+  the other two key on OFFSET; charsheet drops a row conditionally and the
+  proposed spec has no field for it. A format function pointer per row
+  would mean following an indirection to learn what a row does. Same trade
+  B2 rejected for `DriveSelectedPeg`.
+
+### B7 — three of eight executed, ONE REFUTED BY THE COMPILER
+
+Removed: camera_orient's discarded `camera` parameter; map_user_markers'
+dead in-world gate; WalkmeshGeometryAnalysis's unreachable
+`cells.Count == 0` guard.
+
+**`LaunchCommand.TryPin`'s `OperatingSystem.IsWindows()` guard is NOT
+removable, and the report rated it "mechanical".** Both call sites are
+already inside `if (OperatingSystem.IsWindows())` and kdev.csproj pins
+win-x64 — dead twice over by inspection. Deleting it FAILS THE BUILD:
+CA1416 does not propagate a caller's platform guard across a method
+boundary, so that line is the only thing proving
+`Process.ProcessorAffinity` is reached on Windows. Restored WITH A COMMENT
+saying why, so the next sweep does not delete it again.
+
+Rejected on reasoning: cycle_input's beacon-focus re-check (its comment
+says it exists so the failure path SPEAKS rather than going silent —
+removing it makes a failure silent, the one failure mode a blind user
+cannot notice); cycle_input's `|| waypoints.empty()` (a post-condition
+check against a documented contract, not a duplicate of a check one frame
+up); `GetCachedWalls`' null return (exactly the caution B7 itself issued
+about engine-derived pointers); prism's `g_sapiReady` recheck (the report
+itself said "not urging action").
+
+### THE FINDING THAT SHOULD SHAPE PHASE 5's END REPORT
+
+**The same label-reading helper family was found re-implemented locally
+three separate times in one session** — and a fourth was nearly written by
+this session before catching it:
+- `menus_chargen_layout` — a local two-path read, replaced with the
+  existing `acc::engine::ReadLabelText` (which also clears the buffer on
+  fault, i.e. the local copy was worse).
+- `menus_equipstats::ReadEquipLabel` and
+  `menus_charsheet::ReadCharSheetLabel` — both hand-rolling
+  `acc::engine::ReadLabelTextAt`, whose own header comment names it as THE
+  panel+offset convenience form.
+- `menus_credits` inlines it a THIRD time but NOT identically: it falls
+  back only when `ReadGuiString` returns false, without the non-empty
+  check the others use, and its comment is about the "9999999" placeholder
+  the panel carries before populate. **Left alone — switching it changes
+  when the fallback fires, which is a behaviour question, not cleanup.**
+
+This is the recurring failure mode CLAUDE.md already warns about ("before
+adding a helper, search for an existing one"). Worth a Phase-5 note that
+the engine_reads helpers are under-discovered, not under-provided.
+
+### Behaviour questions surfaced and deliberately NOT auto-resolved
+
+- **`InGameMessagesAnnounce` has no `rowCount <= 0` guard** where its two
+  siblings do. Each site kept its own guard, both ends commented. Almost
+  certainly never matters (a non-null row with rowCount 0 should not
+  occur), but it is a behaviour call.
+- **`menus_credits`' text-read fallback condition**, above.
+- Still open from the previous session: `GetForegroundPanel`'s raw-size
+  fallback indexing `panelData[panelSize - 1]` while its scan covers only
+  the first 32.
