@@ -33,7 +33,7 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
-<h2>Unreleased</h2>
+<h2>v0.6.4</h2>
 
 <h3>Russian translation:</h3>
 
@@ -43,6 +43,15 @@ and add the German in parentheses if it genuinely aids clarity.
 
 - Dantooine's cryptic path markers now speak their destination. Vanilla reuses the same map-note strings for different transitions — "Southern Path" (Südlicher Pfad) marks the way to three different areas depending on the map, "Northern Path" (Nordpfad) three more, and "Exit" (Ausgang) four — so the spoken hint never said where the path actually leads. Those notes now announce the destination area's own name instead ("Matale Estate", "Courtyard", "Grove", ...), taken live from the game's string table so it self-localises in every game language. The two identical "Exit" notes inside the Sandral estate are now told apart as front exit and back exit. Speech-side only: no game file is modified, and mods that rewrite these notes keep their own text.
 - The mod now ships its own curated map hints for story spots the game never marks: the unmarked backdoor of the Sandral estate (the feud-quest sneak entrance), the two dead rebels with the Promised-Land datapads in the Taris sewers, and the bantha herd's grazing ground near the krayt dragon cave. They appear in the map-hint cycle and under the map cursor like vanilla notes — hidden until the player has explored that part of the map — and support the beacon like a placed marker, but are never drawn on the visual map.
+
+<h3>Character screen:</h3>
+
+- The Feats and Force Powers tabs now speak the highest rank you have trained. Each row on those tabs is a chain — Power Attack I, II, III; Force Push, Whirlwind, Wave — and only its first entry was ever announced, so a fully trained power was named by its weakest form. The lower ranks are deliberately not browsable: once a higher rank is trained, the earlier ones can no longer be used.
+- Force powers now also speak their cost — the base Force point price, the adjustment your alignment earns on light- or dark-side powers, and the resulting price per use. The game shows all three on that tab, but the mod had been suppressing them together with the Feats tab, where the same three fields are hidden and hold leftover text from whichever tab was open before.
+
+<h3>Keyboard navigation:</h3>
+
+- Home and End jump to the first and last entry on three more screens: the mod's settings menu, its audio glossary, and the feat and force-power grids in character creation and level-up. On the grids the jump crosses the whole screen — Home lands on the first ability, End on the Cancel button — rather than stopping at the ends of the current row, which are at most three cells wide and already reachable with Left and Right.
 
 <h2>v0.6.3</h2>
 
