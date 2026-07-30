@@ -765,7 +765,11 @@ void* InGameMessagesFindLb(void* p) {
            kInGameMessagesMessagesListBoxOffset;
 }
 
-void InGameMessagesAnnounce(void* /*lb*/, const ListBoxNavResult& r) {
+// The plain "<row text>, N von M" announce. Three specs want exactly this
+// and had it written out three times, differing only in buffer sizes.
+// Sized to the largest of the three, so nothing that used to fit still
+// truncates.
+void SpeakRowAndPosition(const ListBoxNavResult& r) {
     if (!r.row) return;
     char rowText[512];
     if (!acc::menus::extract::FromControl(r.row, rowText, sizeof(rowText))) {
@@ -776,6 +780,14 @@ void InGameMessagesAnnounce(void* /*lb*/, const ListBoxNavResult& r) {
              acc::strings::Get(acc::strings::Id::FmtContainerItemAt),
              rowText, r.newSel + 1, r.rowCount);
     prism::Speak(msg, /*interrupt=*/false);
+}
+
+// NB: no `rowCount <= 0` guard here, unlike the other two users of
+// SpeakRowAndPosition. That divergence predates this consolidation and is
+// left exactly as it was rather than quietly unified — see the note on
+// ExamineAnnounce.
+void InGameMessagesAnnounce(void* /*lb*/, const ListBoxNavResult& r) {
+    SpeakRowAndPosition(r);
 }
 
 const char* InGameMessagesTitleOverride(void* /*panel*/) {
@@ -835,70 +847,38 @@ void* DialogFindRepliesLb(void* p) {
 // on a reply row, not selectability), which was the "shown disabled but
 // actually available" bug. Both are gone now that the poll is the only speaker.
 
-constexpr ListBoxPanelSpec kDialogCinematicSpec = {
-    /*logTag*/                  "DialogCinematic",
-    /*matches*/                 DialogCinematicMatches,
-    /*armed*/                   nullptr,
-    /*resetStale*/              nullptr,
-    /*findListBox*/             DialogFindRepliesLb,
-    /*minSel*/                  0,
-    /*announce*/                nullptr,
-    /*enrichRow*/               nullptr,
-    /*logExtra*/                nullptr,
-    /*onEnter*/                 nullptr,
-    /*onEsc*/                   nullptr,
-    /*titleOverride*/           nullptr,
-    /*emptyStateId*/            acc::strings::Id::Count_,
-    /*alwaysReturnFromHandler*/ false,
-};
-constexpr ListBoxPanelSpec kDialogCinematicCopySpec = {
-    /*logTag*/                  "DialogCinematicCopy",
-    /*matches*/                 DialogCinematicCopyMatches,
-    /*armed*/                   nullptr,
-    /*resetStale*/              nullptr,
-    /*findListBox*/             DialogFindRepliesLb,
-    /*minSel*/                  0,
-    /*announce*/                nullptr,
-    /*enrichRow*/               nullptr,
-    /*logExtra*/                nullptr,
-    /*onEnter*/                 nullptr,
-    /*onEsc*/                   nullptr,
-    /*titleOverride*/           nullptr,
-    /*emptyStateId*/            acc::strings::Id::Count_,
-    /*alwaysReturnFromHandler*/ false,
-};
-constexpr ListBoxPanelSpec kDialogComputerSpec = {
-    /*logTag*/                  "DialogComputer",
-    /*matches*/                 DialogComputerMatches,
-    /*armed*/                   nullptr,
-    /*resetStale*/              nullptr,
-    /*findListBox*/             DialogFindRepliesLb,
-    /*minSel*/                  0,
-    /*announce*/                nullptr,
-    /*enrichRow*/               nullptr,
-    /*logExtra*/                nullptr,
-    /*onEnter*/                 nullptr,
-    /*onEsc*/                   nullptr,
-    /*titleOverride*/           nullptr,
-    /*emptyStateId*/            acc::strings::Id::Count_,
-    /*alwaysReturnFromHandler*/ false,
-};
-constexpr ListBoxPanelSpec kDialogComputerCameraSpec = {
-    /*logTag*/                  "DialogComputerCamera",
-    /*matches*/                 DialogComputerCameraMatches,
-    /*armed*/                   nullptr,
-    /*resetStale*/              nullptr,
-    /*findListBox*/             DialogFindRepliesLb,
-    /*minSel*/                  0,
-    /*announce*/                nullptr,
-    /*enrichRow*/               nullptr,
-    /*logExtra*/                nullptr,
-    /*onEnter*/                 nullptr,
-    /*onEsc*/                   nullptr,
-    /*titleOverride*/           nullptr,
-    /*emptyStateId*/            acc::strings::Id::Count_,
-    /*alwaysReturnFromHandler*/ false,
-};
+// All four dialog variants take the identical spec — same reply-listbox
+// locator, no announce (see above), no Enter/Esc/title handling. Only the
+// log tag and the panel-kind matcher differ, so build them from one shape
+// rather than four hand-copied field lists that could drift apart.
+constexpr ListBoxPanelSpec MakeDialogSpec(const char* logTag,
+                                          bool (*matches)(void* panel)) {
+    return {
+        /*logTag*/                  logTag,
+        /*matches*/                 matches,
+        /*armed*/                   nullptr,
+        /*resetStale*/              nullptr,
+        /*findListBox*/             DialogFindRepliesLb,
+        /*minSel*/                  0,
+        /*announce*/                nullptr,
+        /*enrichRow*/               nullptr,
+        /*logExtra*/                nullptr,
+        /*onEnter*/                 nullptr,
+        /*onEsc*/                   nullptr,
+        /*titleOverride*/           nullptr,
+        /*emptyStateId*/            acc::strings::Id::Count_,
+        /*alwaysReturnFromHandler*/ false,
+    };
+}
+
+constexpr ListBoxPanelSpec kDialogCinematicSpec =
+    MakeDialogSpec("DialogCinematic", DialogCinematicMatches);
+constexpr ListBoxPanelSpec kDialogCinematicCopySpec =
+    MakeDialogSpec("DialogCinematicCopy", DialogCinematicCopyMatches);
+constexpr ListBoxPanelSpec kDialogComputerSpec =
+    MakeDialogSpec("DialogComputer", DialogComputerMatches);
+constexpr ListBoxPanelSpec kDialogComputerCameraSpec =
+    MakeDialogSpec("DialogComputerCamera", DialogComputerCameraMatches);
 
 // ============================================================================
 // WorkbenchItems — per-category item picker (upgradeitems.gui).
@@ -925,16 +905,8 @@ void* WorkbenchItemsFindLb(void* p) {
 // Speak the focused weapon row + position. No per-tick monitor watches
 // this listbox so we speak on every step (including clamp).
 void WorkbenchItemsAnnounce(void* /*lb*/, const ListBoxNavResult& r) {
-    if (!r.row || r.rowCount <= 0) return;
-    char rowText[256];
-    if (!acc::menus::extract::FromControl(r.row, rowText, sizeof(rowText))) {
-        return;
-    }
-    char msg[320];
-    snprintf(msg, sizeof(msg),
-             acc::strings::Get(acc::strings::Id::FmtContainerItemAt),
-             rowText, r.newSel + 1, r.rowCount);
-    prism::Speak(msg, /*interrupt=*/false);
+    if (r.rowCount <= 0) return;
+    SpeakRowAndPosition(r);
 }
 
 bool WorkbenchItemsOnEnter(void* panel) {
@@ -1197,17 +1169,14 @@ void* ExamineFindLb(void* p) {
            kExaminePanelListBoxOffset;
 }
 
+// The `rowCount <= 0` guard is this spec's own, and InGameMessagesAnnounce
+// deliberately does not have it. Whether that is a real difference is
+// doubtful — a non-null r.row with a rowCount of 0 should not occur — but
+// it is a behaviour question, not a cleanup one, so the consolidation kept
+// each site's guard exactly as it found it.
 void ExamineAnnounce(void* /*lb*/, const ListBoxNavResult& r) {
-    if (!r.row || r.rowCount <= 0) return;
-    char rowText[512];
-    if (!acc::menus::extract::FromControl(r.row, rowText, sizeof(rowText))) {
-        return;
-    }
-    char msg[640];
-    snprintf(msg, sizeof(msg),
-             acc::strings::Get(acc::strings::Id::FmtContainerItemAt),
-             rowText, r.newSel + 1, r.rowCount);
-    prism::Speak(msg, /*interrupt=*/false);
+    if (r.rowCount <= 0) return;
+    SpeakRowAndPosition(r);
 }
 
 constexpr ListBoxPanelSpec kExamineSpec = {
