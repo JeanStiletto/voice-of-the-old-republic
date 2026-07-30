@@ -958,12 +958,21 @@ guarded version's comment spells out the hazard verbatim.
 callers iterate their own memory — strictly safer than the old guarded sites,
 which looped over engine memory inside the `__try`.
 
-Two things deliberately NOT normalised, both recorded rather than fixed:
-1. **The caps disagree** — most sites clamp panels[] to 16, four to 32, so a
-   panel at index 17-31 is visible to some queries and invisible to others.
-   Every site kept its own number (`maxEntries` is per-call). This is a live
-   behaviour question for the user.
-2. **`GetForegroundPanel` was left alone.** Its last-resort return indexes
+**The cap discrepancy — surfaced, then RESOLVED on the user's call.** The old
+sites disagreed: most clamped panels[] to 16, four to 32, so a panel at index
+17-31 was visible to some of our queries and invisible to others. Checked
+against every `panels.size` our own diagnostics ever logged: normal play never
+binds (1/3/5 dominate, 99.9% of samples ≤9), BUT
+`patch-20260530-112606.log` recorded panels.size climbing 17→27 with
+modal.size 14→24 inside one second. So the divergence was real, not
+theoretical. **Unified on 32 everywhere** (13 sites raised from 16) — it is a
+128-byte stack buffer and can only let a query see more of the truth.
+The user explicitly declined to chase the 2026-05-30 growth itself ("won't
+care about a month-old one-time bug until it appears again"); it has not
+recurred in any later log. If it does, that log is the starting point.
+
+One thing deliberately NOT normalised:
+1. **`GetForegroundPanel` was left alone.** Its last-resort return indexes
    `panelData[panelSize - 1]` using the RAW size while its scan covers only
    the first 32 — above 32 the fallback reaches outside its own scan window.
    Migrating would have quietly changed that. It is already guarded (an F2

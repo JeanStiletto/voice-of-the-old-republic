@@ -93,7 +93,7 @@ bool IsPanelInManager(void* panel) {
 
 void* FindOwningPanel(void* control) {
     if (!control) return nullptr;
-    constexpr int kCap = 16;
+    constexpr int kCap = 32;
     void* panels[kCap];
     int panelCount = ReadPanelArray(GetGuiManager(), panels, kCap);
     for (int i = 0; i < panelCount; ++i) {

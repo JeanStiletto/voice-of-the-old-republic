@@ -20,9 +20,12 @@ comment documents the exact teardown hazard. Use `ReadPanelArray` /
   note: COPIES into the caller's buffer inside the guard, so callers iterate
   their own memory and a torn-down array cannot fault them mid-loop. Entries
   can still be stale engine pointers — guard what you do with them.
-  note: `maxEntries` is per-call because the old sites disagreed — most used
-  16, four used 32. Each kept its own number; the discrepancy is an open
-  behaviour question, not something normalised silently.
+  note: `maxEntries` is the caller's sanity bound against a corrupt size
+  field, not an engine limit. **Every site passes 32.** The pre-B3b copies
+  disagreed (most 16, four 32), so two of our own queries could contradict
+  each other about the same panel whenever more than 16 were live — rare, but
+  `patch-20260530-112606.log` recorded panels.size climbing to 27 with
+  modal.size 24 inside one second. Unified on 32 in the same commit.
 - L22 — `void* FindOwningPanel(void* control)`
   note: fallback when caller doesn't pass owner explicitly; scans panels[] children up to 256 per panel (raised from 32 — CSWGuiInGameCharacter alone has 60+ children).
 - L29 — `bool IsPanelInManager(void* panel)`

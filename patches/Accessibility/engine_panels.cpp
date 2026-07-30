@@ -792,7 +792,7 @@ bool IsPanelKindInGameMenu(void* panel) {
 }
 
 void* FindPanelByKind(PanelKind kind) {
-    constexpr int kCap = 16;
+    constexpr int kCap = 32;
     void* panels[kCap];
     int n = ReadPanelArray(GetGuiManager(), panels, kCap);
     for (int i = 0; i < n; ++i) {

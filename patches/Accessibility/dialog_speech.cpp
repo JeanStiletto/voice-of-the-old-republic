@@ -476,7 +476,7 @@ DialogPanelMatch FindActiveDialogPanel() {
     // that go through Tick() are additionally gated by
     // transitions::IsModuleLoadPending, but this function is not
     // Tick()-only, so it guards itself.
-    constexpr int kCap = 16;
+    constexpr int kCap = 32;
     void* panelData[kCap];
     int n = acc::engine::ReadPanelArray(
         acc::engine::GetGuiManager(), panelData, kCap);

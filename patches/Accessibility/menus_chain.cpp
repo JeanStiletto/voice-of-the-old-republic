@@ -99,7 +99,7 @@ bool IsModalTextPanel(PanelKind k) {
 // (crash analysed 2026-05-29, dump swkotor.exe(1).31228.dmp).
 bool IsPanelLive(void* panel) {
     if (!panel) return false;
-    constexpr int kCap = 16;
+    constexpr int kCap = 32;
     void* panels[kCap];
     int n = acc::engine::ReadPanelArray(
         acc::engine::GetGuiManager(), panels, kCap);

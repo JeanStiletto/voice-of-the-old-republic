@@ -610,7 +610,7 @@ char* GetContentSnapshot(void* panel) {
 }
 
 void MonitorPanelContents() {
-    constexpr int kCap = 16;
+    constexpr int kCap = 32;
     void* panelData[kCap];
     int panelCount = acc::engine::ReadPanelArray(
         acc::engine::GetGuiManager(), panelData, kCap);
@@ -730,7 +730,7 @@ bool IsDialogPanelKind(PanelKind k) {
 }
 
 void MonitorDialogReplies() {
-    constexpr int kCap = 16;
+    constexpr int kCap = 32;
     void* panelData[kCap];
     int panelCount = acc::engine::ReadPanelArray(
         acc::engine::GetGuiManager(), panelData, kCap);
@@ -919,7 +919,7 @@ void TickGeneralMonitors() {
 }
 
 void* FindActiveSubScreenPanel() {
-    constexpr int kCap = 16;
+    constexpr int kCap = 32;
     void* panelData[kCap];
     int panelCount = acc::engine::ReadPanelArray(
         acc::engine::GetGuiManager(), panelData, kCap);

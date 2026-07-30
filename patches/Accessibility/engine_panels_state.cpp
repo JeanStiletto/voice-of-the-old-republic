@@ -31,7 +31,7 @@ bool HasActiveDialogPanel() {
     // SEH-guarded like every other panels[] walk in this TU: the null checks
     // below cannot catch a STALE manager/panel pointer, which is exactly what
     // this array holds during a module teardown or cutscene handoff.
-    constexpr int kCap = 16;
+    constexpr int kCap = 32;
     void* panels[kCap];
     int n = ReadPanelArray(GetGuiManager(), panels, kCap);
     __try {
@@ -238,7 +238,7 @@ bool SetGuiInputClass(int klass) {
 
 bool HasActiveMapPanel(void** outPanel) {
     if (outPanel) *outPanel = nullptr;
-    constexpr int kCap = 16;
+    constexpr int kCap = 32;
     void* panels[kCap];
     int n = ReadPanelArray(GetGuiManager(), panels, kCap);
     for (int i = 0; i < n; ++i) {
@@ -253,7 +253,7 @@ bool HasActiveMapPanel(void** outPanel) {
 }
 
 bool HasActiveLevelUpPanel() {
-    constexpr int kCap = 16;
+    constexpr int kCap = 32;
     void* panels[kCap];
     int n = ReadPanelArray(GetGuiManager(), panels, kCap);
     for (int i = 0; i < n; ++i) {
@@ -266,7 +266,7 @@ bool HasActiveLevelUpPanel() {
 
 bool IsInGameOptionsSubScreen(void* panel) {
     if (!panel) return false;
-    constexpr int kCap = 16;
+    constexpr int kCap = 32;
     void* panels[kCap];
     int n = ReadPanelArray(GetGuiManager(), panels, kCap);
     for (int i = 0; i < n; ++i) {
@@ -281,7 +281,7 @@ bool IsInGameOptionsSubScreen(void* panel) {
 
 bool HasActiveSubScreen() {
     // SEH-guarded — see the note on HasActiveDialogPanel.
-    constexpr int kCap = 16;
+    constexpr int kCap = 32;
     void* panels[kCap];
     int n = ReadPanelArray(GetGuiManager(), panels, kCap);
     __try {
