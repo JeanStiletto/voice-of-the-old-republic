@@ -1293,7 +1293,7 @@ It told me Passes 2 and 3 of BuildForArea do not use `area`; both do. An
 earlier `grep -E` had reported it correctly and I discounted it. Use
 `grep -E` (or awk's `\y`) for word-boundary scans.
 
-### Three findings — reported, NOT fixed
+### Three findings — ALL THREE NOW FIXED (2026-07-30, commits cdd9610 + 4743805)
 
 1. **menus_extract step 1 (tooltip) is ungated and clobbers step 0.**
    Every other rung of the ladder is `if (!source)`. Step 1 is not: a
@@ -1354,3 +1354,41 @@ coverage list is wide:
 
 Verification so far: `kdev build --clean` 196 TUs, warning baseline
 unchanged. That is all — a clean build is not a working mod.
+
+### B2 follow-up: all three findings fixed (cdd9610, 4743805)
+
+User asked for all three. Corrections to the finding list as written above:
+
+- **Finding 2 was UNDERCOUNTED — four sites, not two, and the worst one is
+  in another file.** `IsClassSelectionIcon` (menus_internal.cpp) read the
+  panel vtable raw, and it is step 9c's GATE, so it ran for every control
+  that reached that far on every panel, not just chargen. A per-file scan
+  cannot pair it with the menus_extract sites; only asking "who derefs the
+  owner" across the call graph finds it. The other three were
+  `TryClassSelectionIcon` (active_control), `TryInGameMenuIcon`
+  (controls[] array, iterated in engine memory) and
+  `TryPortraitCharGenArrow` (vtable).
+
+- **Finding 1 turned out to be provably not-live, with numbers.** All 9202
+  `Menus.FocusChange` samples across every log in the install read
+  `tip[0]=""`, and no chain entry has ever been tagged `src=tooltip`. K1
+  does not appear to populate CSWGuiControl+0x28 at all. So gating step 1
+  changes nothing observable on any path we have evidence for — it turns
+  an accident of the data into a structural guarantee. Worth remembering
+  the method: the answer was in the logs, not in the code.
+
+**`HasVtable` is now published** in `engine_panels.h` (moved out of
+engine_panels.cpp's anonymous namespace). B6 folded five hand-spelled
+copies of that guarded vtable deref *inside* engine_panels.cpp; B2 found
+two more outside it. If a third file needs a guarded panel-identity check,
+use this rather than writing another `__try`.
+`engine_panels.h` gained `#include <cstdint>` — it previously declared no
+includes at all and leaned on its includers, which broke the moment it
+named `uintptr_t`.
+
+**The useful distinction this fix wrote down:** `IsPanelInManager` proves a
+panel pointer is LISTED, not that the object is ALIVE — panels[] holds
+freed panels during teardown. `IdentifyPanel` is safe against a stale
+panel *by construction* because it never dereferences one (it compares the
+pointer against CGuiInGame slots); that is why the steps gated on it never
+needed a guard and the four above did.
