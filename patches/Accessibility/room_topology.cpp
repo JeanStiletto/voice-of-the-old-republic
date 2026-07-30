@@ -2275,7 +2275,7 @@ void LogClusterMemberAdjacency(const acc::engine::navgraph::NavGraphSnapshot& g,
 // rate analysis. Unmatched lines include the nearest-door distance so
 // post-mortem can tell whether the threshold needs widening for a
 // particular area or whether the landmark genuinely isn't door-shaped.
-void AttachLandmarksToDoors(void* /*area*/) {
+void AttachLandmarksToDoors(void* area) {
     constexpr float kLandmarkDoorMatchMaxM = 3.0f;
     constexpr float kMaxSq = kLandmarkDoorMatchMaxM * kLandmarkDoorMatchMaxM;
 
@@ -2292,7 +2292,7 @@ void AttachLandmarksToDoors(void* /*area*/) {
     Vector lmPos = {0.0f, 0.0f, 0.0f};
     int landmarkIdx = -1;
     while (acc::transitions::IterateLandmarks(
-               cursor, name, sizeof(name), lmPos, landmarkIdx)) {
+               area, cursor, name, sizeof(name), lmPos, landmarkIdx)) {
         // Linear scan over doors — door_count is tiny (≤128, in practice
         // <30 for vanilla areas), so the O(landmarks * doors) sweep is
         // a few hundred multiplies total per area build.

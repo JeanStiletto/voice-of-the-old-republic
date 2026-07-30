@@ -137,6 +137,18 @@ struct Landmark {
 Landmark g_landmarks[kMaxLandmarks];
 int      g_landmark_count = 0;
 
+// Which area the cache above currently describes. Set by
+// RebuildLandmarkCache (including when it is handed a null area, so the
+// "never built" and "built for nothing" states are distinguishable).
+//
+// This exists so the landmark→door matching pass can PROVE the cache is
+// the one it wants instead of assuming it. AttachLandmarksToDoors is only
+// correct if RebuildLandmarkCache already ran for the same area; both call
+// sites get that right by construction, and nothing enforced it. A wrong
+// ordering used to present as a silent "0 landmarks matched" — a result
+// indistinguishable from an area that genuinely has no landmark waypoints.
+void* g_landmark_area = nullptr;
+
 // Heuristic: vanilla KOTOR content stores room names as the .lyt-room
 // identifier (`m01aa_10`, `stunt_03_main`, `unk_m13ab`) — pronounceable
 // but meaningless, and they read as letter-soup noise through a screen
@@ -197,6 +209,7 @@ void RebuildLandmarkCache(void* area) {
         g_landmarks[i].handle      = 0;
     }
     g_landmark_count = 0;
+    g_landmark_area  = area;
 
     if (!area) return;
 
@@ -965,10 +978,23 @@ bool FindLandmarkNear(const Vector& pos, float rangeM,
     return true;
 }
 
-bool IterateLandmarks(int& cursor,
+bool IterateLandmarks(void* area, int& cursor,
                       char* nameOut, size_t nameBufSize,
                       Vector& posOut, int& outLandmarkIdx) {
     if (!nameOut || nameBufSize == 0) return false;
+    // Ordering contract, now checked rather than assumed. On a mismatch we
+    // yield nothing — the same outcome as before — but it is logged instead
+    // of looking like an area with no landmarks. Returning false on the
+    // first call also means the caller's walk loop exits immediately, so
+    // this logs once per attempt, not once per landmark.
+    if (area != g_landmark_area) {
+        acclog::Write("Transitions",
+                      "IterateLandmarks: cache belongs to area=%p but caller "
+                      "asked for area=%p — RebuildLandmarkCache has not run "
+                      "for this area; yielding no landmarks",
+                      g_landmark_area, area);
+        return false;
+    }
     if (cursor < 0) cursor = 0;
     while (cursor < g_landmark_count) {
         int i = cursor++;
