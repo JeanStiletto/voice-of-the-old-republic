@@ -13,17 +13,13 @@
 #include <cstddef>
 #include <cstdint>
 
-// The first links of the CGuiInGame chain — kAddrAppManagerPtr,
-// kAppManagerClientAppOffset and kClientExoAppInternalOffset — come from
-// here. They are the same walk the player module already does.
-//
-// This header used to carry its own copies of all three, under names one
-// letter different from the canonical ones ("...ClientOff" vs
-// "...ClientAppOffset"), which is how the same address ended up declared
-// in three places. The copies were created by the Phase-1 panels split,
-// which moved them verbatim rather than consolidating — correct for a
-// behaviour-preserving move, wrong to leave behind.
-#include "engine_player.h"
+// The first links of the CGuiInGame chain come from engine_app.h, which owns
+// the whole AppManager walk (Phase-3 B1). This header used to carry its own
+// copies under names one letter different from the canonical ones
+// ("...ClientOff" vs "...ClientAppOffset"), which is how the same address
+// ended up declared in three places — a Phase-1 split that moved constants
+// verbatim rather than consolidating them.
+#include "engine_app.h"
 
 namespace acc::engine {
 

@@ -86,20 +86,10 @@ void* GetPlayerArea() {
 }
 
 bool GetCameraPosition(Vector& out) {
-    constexpr size_t kClientInternalModuleOffset = 0x18;
-    constexpr size_t kCSWCModuleCameraOffset     = 0x40;
     constexpr size_t kCameraGobPositionOffset    = 0x7c;  // Camera+0x04 + Gob+0x78
-    void* clientInternal = GetClientAppInternal();
-    if (!clientInternal) return false;
+    void* camera = GetCamera();
+    if (!camera) return false;
     __try {
-        void* module = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(clientInternal) +
-            kClientInternalModuleOffset);
-        if (!module) return false;
-        void* camera = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(module) +
-            kCSWCModuleCameraOffset);
-        if (!camera) return false;
         out = *reinterpret_cast<Vector*>(
             reinterpret_cast<unsigned char*>(camera) +
             kCameraGobPositionOffset);
@@ -110,20 +100,10 @@ bool GetCameraPosition(Vector& out) {
 }
 
 bool GetCameraYawRadians(float& outRad) {
-    constexpr size_t kClientInternalModuleOffset = 0x18;
-    constexpr size_t kCSWCModuleCameraOffset     = 0x40;
     constexpr size_t kCameraOrientationOffset    = 0x88;  // Camera+0x04 + Gob+0x84
-    void* clientInternal = GetClientAppInternal();
-    if (!clientInternal) return false;
+    void* camera = GetCamera();
+    if (!camera) return false;
     __try {
-        void* module = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(clientInternal) +
-            kClientInternalModuleOffset);
-        if (!module) return false;
-        void* camera = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(module) +
-            kCSWCModuleCameraOffset);
-        if (!camera) return false;
         // Quaternion layout w,x,y,z (w first) — verified against engine
         // Yaw() @0x4a9f40 and the struct header (struct Quaternion).
         const float* q = reinterpret_cast<float*>(

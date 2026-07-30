@@ -52,6 +52,11 @@ constexpr size_t kAppManagerServerAppOffset = 0x8;
 constexpr size_t kClientExoAppInternalOffset = 0x4;
 constexpr size_t kServerExoAppInternalOffset = 0x4;
 
+// The client side continues into the world view:
+//   CClientExoAppInternal → +0x18 CSWCModule → +0x40 Camera.
+constexpr size_t kClientInternalModuleOffset = 0x18;
+constexpr size_t kCSWCModuleCameraOffset     = 0x40;
+
 namespace acc::engine {
 
 // *kAddrAppManagerPtr. Null during very early init and after teardown.
@@ -64,6 +69,14 @@ void* GetClientApp();
 // CClientExoAppInternal (facade +0x4) — the real client state: player_control
 // @+0x2a0, CGuiInGame, the options block, input_class @+0x9c.
 void* GetClientAppInternal();
+
+// CSWCModule (client internal +0x18) — the client's view of the loaded
+// module. Null between modules and during load.
+void* GetClientModule();
+
+// The active camera (CSWCModule +0x40). Position, orientation quaternion and
+// the behavior list hang off it.
+void* GetCamera();
 
 // CServerExoApp facade (AppManager +0x8). The server side owns world truth,
 // AI and the party table.

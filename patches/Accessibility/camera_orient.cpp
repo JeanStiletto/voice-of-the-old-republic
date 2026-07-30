@@ -6,6 +6,7 @@
 #pragma comment(lib, "user32.lib")
 
 #include "camera_announce.h"  // TryGetCameraEngineYawDegrees
+#include "engine_app.h"      // GetCamera
 #include "engine_compass.h"
 #include "engine_keymap.h"    // TurnScancode — bound turn key
 #include "engine_offsets.h"
@@ -17,10 +18,6 @@
 namespace acc::camera_orient {
 
 namespace {
-
-// Camera chain: CClientExoAppInternal +0x18 = CSWCModule; +0x40 = camera.
-constexpr size_t kClientInternalModuleOffset = 0x18;
-constexpr size_t kCSWCModuleCameraOffset     = 0x40;
 
 // Drive mechanism: we synthesise the player's *bound* turn key via SendInput
 // with KEYEVENTF_SCANCODE, so the engine's own UpdateCamera runs its full
@@ -76,29 +73,6 @@ constexpr float kTwoPi   = 6.28318530717958647692f;
 constexpr float kRadToDeg = 57.29577951308232f;
 constexpr float kDegToRad = 0.017453292519943295f;
 
-// ----- Chain walk helpers ------------------------------------------------
-
-void* SafeDeref(void* base, size_t offset) {
-    if (!base) return nullptr;
-    __try {
-        return *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(base) + offset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
-
-void* GetModule() {
-    void* appManager = SafeDeref(
-        reinterpret_cast<void*>(kAddrAppManagerPtr), 0);
-    if (!appManager) return nullptr;
-    void* clientApp = SafeDeref(appManager, kAppManagerClientAppOffset);
-    if (!clientApp) return nullptr;
-    void* clientInternal = SafeDeref(clientApp, kClientExoAppInternalOffset);
-    if (!clientInternal) return nullptr;
-    return SafeDeref(clientInternal, kClientInternalModuleOffset);
-}
-
 // Prefer camera_announce's position-derived yaw — atan2(player - camera)
 // is single-valued, the quaternion path returns antipodal readings 360°
 // apart and breaks the arrival check. Falls back to the quaternion if
@@ -118,12 +92,6 @@ bool ReadCurrentEngineYawRad(void* camera, float& out) {
     // as the position-derived path. See engine_player.h.
     (void)camera;  // chain re-walked inside the helper
     return acc::engine::GetCameraYawRadians(out);
-}
-
-void* GetCamera() {
-    void* module = GetModule();
-    if (!module) return nullptr;
-    return SafeDeref(module, kCSWCModuleCameraOffset);
 }
 
 void SendKey(WORD scan, bool down) {
@@ -193,7 +161,7 @@ bool IsActive() {
 }
 
 void Tick() {
-    void* camera = GetCamera();
+    void* camera = acc::engine::GetCamera();
 
     // In-flight rotation: tick the state machine.
     if (g_rot.active) {

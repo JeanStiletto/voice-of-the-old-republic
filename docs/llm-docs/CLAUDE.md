@@ -102,6 +102,19 @@ global pointers under the same names as K1. Our patch uses none of it yet.
 Decision 2026-07-29: adopt it. New engine-address code should be written
 so the constant can later become a named lookup.
 
+**The object-graph seam is now ours** (Phase-3 B1, 2026-07-30). The walk
+from the AppManager singleton down to the client app, server app, client
+module and camera used to be hand-rolled at ~40 sites across ~25 files,
+with six different names for the `+0x8` hop alone and per-site SEH guards
+that some callers had and others did not. It now lives in
+`patches/Accessibility/engine_app.{h,cpp}`: five constants, seven guarded
+primitives, one dereference of `kAddrAppManagerPtr` in the whole codebase.
+The GUI continuation (`ResolveGuiInGame`, `ResolveMainInterface`) sits in
+`engine_panels`. For a K2 port these are the files whose VALUES change;
+every consumer above them is engine-version agnostic. Keep it that way —
+if you find yourself writing `*reinterpret_cast<void**>(kAddrAppManagerPtr)`
+again, use the primitive instead.
+
 ## `re/` — reverse-engineering assets
 
 - **`swkotor.exe.h`** — Ghidra-exported C header, ~25k lines. Primary source for struct layouts; ~205 structs have real bodies, ~797 are `PlaceHolder`. Cross-check with SARIF when a struct returns garbage.

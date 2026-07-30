@@ -864,4 +864,60 @@ dotnet build 0 errors.
    button state announced), run an uninstall (progress spoken), press Escape
    in all four dialogs.
 
-### Section B (7 structural items) is still untouched and needs approval.
+## Phase 3 Section B — B1 EXECUTED 2026-07-30 (4 commits, b2627cd..slice4)
+
+User approved B1 with **option 1: per-chain slices, four commits**, after a
+walk that put four options (per-chain slices / server-only-then-re-decide /
+one big commit / defer to the K2 port).
+
+**The scan undercounted every chain.** Reported "~20 sites across 8+ files";
+actual was ~40 walk sites across ~25 files, six different names for the
+AppManager `+0x8` hop, three private copies of `kAddrAppManagerPtr`, five
+copies of the module offset and four of the camera offset.
+
+**New `engine_app.{h,cpp}`** owns the whole walk: `kAddrAppManagerPtr`, the
+client/server facade hops, both facade→internal hops, the module and camera
+hops, and seven SEH-guarded primitives (`GetAppManager`, `GetClientApp`,
+`GetClientAppInternal`, `GetClientModule`, `GetCamera`, `GetServerApp`,
+`GetServerAppInternal`). The GUI continuation went into `engine_panels`
+instead, next to the `ResolveGuiInGame` that was already published there:
+`ResolveMainInterface()` is new.
+
+- **Slice 1 (server)** — engine_area, engine_area_map, engine_reads_items,
+  engine_player_party, engine_subscreen, tutorial_popup,
+  minigame_swoop_race. Two byte-identical private `GetServerApp` copies
+  deleted.
+- **Slice 2 (client)** — 15 files. **Found a real defect**: `ResolveGuiInGame`
+  had NO SEH guard at all — three raw dereferences called from panel code
+  that runs during teardown, the exact F2 shape. It inherits the seam's guard
+  now.
+- **Slice 3 (GUI)** — the four-function quartet duplicated verbatim across
+  engine_radial / engine_actionbar / engine_picker: twelve functions and
+  seven offset copies deleted, 199 lines gone for 56 added.
+  `acc::engine_actionbar::ResolveMainInterface()` kept its name (nine callers
+  including input_pipeline.cpp) and became a one-line forward.
+- **Slice 4 (camera)** — engine_player's two camera readers, camera_orient,
+  probe_camera_distance, probe_camera_state. Two now-dead `SafeDeref`
+  helpers fell out.
+
+**Invariant now true and worth re-checking with grep:** exactly ONE
+dereference of `kAddrAppManagerPtr` exists in the codebase, and zero uses of
+the hop constants outside `engine_app`.
+
+Verification: `kdev build --clean` 196 TUs, 0 warnings. Encoding checked per
+the A9 rule (em-dashes byte-identical to the rest of the tree).
+
+### NEEDS IN-GAME VERIFICATION — none of B1 is play-tested
+This touched nearly every subsystem the player hears. Worth covering:
+1. Slice 3 is the highest risk: radial menu, action bar (bare 1-7 and
+   Shift+N), and the picker / Enter-interact path.
+2. Leader announce + Tab, party switching, input restore after a dialog.
+3. Camera: N-key orient-to-cardinal, compass announces.
+4. Combat announces and the queue; journal Enter; examine view.
+5. A swoop race (slice 1 touched the race timer read) and any minigame.
+6. Pause paths: open an in-game menu and Esc back out; a tutorial popup.
+
+### Section B remaining: B2-B7 (6 items) still untouched and need approval.
+B3 was flagged in the report as the highest value-to-risk ratio; B4 should be
+done with the F3/F5 fixes that are already in (the helper extraction that
+would have prevented them).

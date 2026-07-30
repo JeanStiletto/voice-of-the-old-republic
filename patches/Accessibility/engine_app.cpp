@@ -44,6 +44,30 @@ void* GetClientAppInternal() {
     }
 }
 
+void* GetClientModule() {
+    void* clientInternal = GetClientAppInternal();
+    if (!clientInternal) return nullptr;
+    __try {
+        return *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(clientInternal) +
+            kClientInternalModuleOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
+void* GetCamera() {
+    void* module = GetClientModule();
+    if (!module) return nullptr;
+    __try {
+        return *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(module) +
+            kCSWCModuleCameraOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
 void* GetServerApp() {
     void* appManager = GetAppManager();
     if (!appManager) return nullptr;
