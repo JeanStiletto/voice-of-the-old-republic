@@ -20,6 +20,7 @@
 #include "log.h"
 #include "menus_chain.h"
 #include "menus_keybinds.h"  // nested keybind configurator submenu
+#include "menus_nav.h"       // ClampedCursorStep — shared Up/Down/Home/End ladder
 #include "mod_settings_store.h"  // persist toggles across launches
 #include "prism.h"
 #include "strings.h"
@@ -573,19 +574,22 @@ bool HandleInputRoot(int keyCode) {
         }
         return false;
     }
-    // Up / Down: step focus with end-clamp (no wrap — sighted "list
-    // box" semantics match Optionen panels above and below).
-    if (keyCode == kInputNavUp) {
-        if (k_optionCount <= 0) return true;
-        if (s_focused > 0) --s_focused;
-        SpeakFocusedOption();
-        return true;
-    }
-    if (keyCode == kInputNavDown) {
-        if (k_optionCount <= 0) return true;
-        if (s_focused < k_optionCount - 1) ++s_focused;
-        SpeakFocusedOption();
-        return true;
+    // Up / Down / Home / End: step or jump focus with end-clamp (no wrap —
+    // sighted "list box" semantics match Optionen panels above and below).
+    // Home / End used to be swallowed by the block-everything switch in
+    // HandleInput without moving anything, which read as a dead key.
+    {
+        const bool up   = (keyCode == kInputNavUp);
+        const bool down = (keyCode == kInputNavDown);
+        const bool home = (keyCode == kInputHome);
+        const bool end  = (keyCode == kInputEnd);
+        if (up || down || home || end) {
+            if (k_optionCount <= 0) return true;
+            s_focused = acc::menus::nav::ClampedCursorStep(
+                s_focused, k_optionCount, up, down, home, end);
+            SpeakFocusedOption();
+            return true;
+        }
     }
     // Enter: Toggle rows flip + re-announce; Submenu rows pivot to the
     // nested view.
@@ -646,19 +650,21 @@ bool HandleInputRoot(int keyCode) {
 }
 
 bool HandleInputGlossary(int keyCode) {
-    if (keyCode == kInputNavUp) {
-        if (k_glossaryCount <= 0) return true;
-        if (s_glossaryFocused > 0) --s_glossaryFocused;
-        CancelPendingGlossaryCue();
-        SpeakFocusedGlossaryEntry();
-        return true;
-    }
-    if (keyCode == kInputNavDown) {
-        if (k_glossaryCount <= 0) return true;
-        if (s_glossaryFocused < k_glossaryCount - 1) ++s_glossaryFocused;
-        CancelPendingGlossaryCue();
-        SpeakFocusedGlossaryEntry();
-        return true;
+    // Same clamped ladder as the root list — Home / End jump to the first /
+    // last cue entry.
+    {
+        const bool up   = (keyCode == kInputNavUp);
+        const bool down = (keyCode == kInputNavDown);
+        const bool home = (keyCode == kInputHome);
+        const bool end  = (keyCode == kInputEnd);
+        if (up || down || home || end) {
+            if (k_glossaryCount <= 0) return true;
+            s_glossaryFocused = acc::menus::nav::ClampedCursorStep(
+                s_glossaryFocused, k_glossaryCount, up, down, home, end);
+            CancelPendingGlossaryCue();
+            SpeakFocusedGlossaryEntry();
+            return true;
+        }
     }
     // Enter: arm the 1 s delayed playback. Re-pressing Enter replaces
     // the pending deadline so a held / re-mashed key just shifts the

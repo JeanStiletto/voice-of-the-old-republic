@@ -406,6 +406,40 @@ void NavHorizontal(void* panel, bool right) {
                   s_curRow, oldC, s_curRow, s_curCol);
 }
 
+// Home / End across the whole 2D surface, not just the current row. The
+// grid is a chart of feat chains followed by the three virtual button
+// rows, so "first item" is the leftmost filled cell of the first chart row
+// and "last item" is the final button (Abbrechen) — the same two anchors a
+// sighted user reaches by dragging the scrollbar to either end. Jumping
+// within the current row instead would be near-useless here: rows are at
+// most three cells wide and Left/Right already clamps to both.
+void NavJumpEnd(void* panel, bool toEnd) {
+    int oldR  = s_curRow;
+    int oldC  = s_curCol;
+    int total = TotalRowCount();
+    if (total <= 0) return;
+
+    if (toEnd) {
+        s_curRow = total - 1;   // last button row (BTN_BACK / Abbrechen)
+        s_curCol = 0;
+    } else {
+        s_curRow = 0;           // first chart row, or first button if empty
+        if (IsButtonRow(0)) {
+            s_curCol = 0;
+        } else {
+            int c = FirstFilledCol(0);
+            s_curCol = c < 0 ? 0 : c;
+        }
+    }
+    AnnounceFocused(panel);
+    acclog::Write("ChargenFeats",
+                  "%s sel=(r=%d,c=%d) -> (r=%d,c=%d) [chartRows=%d, "
+                  "totalRows=%d]",
+                  toEnd ? "End" : "Home",
+                  oldR, oldC, s_curRow, s_curCol,
+                  s_chartRowCount, total);
+}
+
 }  // namespace
 
 bool IsChargenFeatsPanel(void* panel) {
@@ -437,6 +471,12 @@ bool HandleInput(int n, void* thisPtr, void* panel,
 
     if (param_1 == kInputNavLeft || param_1 == kInputNavRight) {
         NavHorizontal(panel, /*right=*/param_1 == kInputNavRight);
+        outRv = 1;
+        return true;
+    }
+
+    if (param_1 == kInputHome || param_1 == kInputEnd) {
+        NavJumpEnd(panel, /*toEnd=*/param_1 == kInputEnd);
         outRv = 1;
         return true;
     }
