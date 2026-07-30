@@ -864,7 +864,7 @@ dotnet build 0 errors.
    button state announced), run an uninstall (progress spoken), press Escape
    in all four dialogs.
 
-## Phase 3 Section B — B1 EXECUTED 2026-07-30 (4 commits, b2627cd..slice4)
+## Phase 3 Section B — B1 EXECUTED 2026-07-30 (4 commits, b2627cd..c7b5eab)
 
 User approved B1 with **option 1: per-chain slices, four commits**, after a
 walk that put four options (per-chain slices / server-only-then-re-decide /
