@@ -779,6 +779,14 @@ bool MaybeDrivePassiveSelection() {
     constexpr size_t kFadeAlphaOffset      = 0x4c;   // CSWGuiFade.panel.alpha
     constexpr size_t kInputClassOffset     = 0x9c;   // internal.input_class
     constexpr size_t kAreaNotReadyOffset   = 0x288;  // internal.area_not_ready
+    // These two R() lookups re-run every tick and A12 flagged them as
+    // recomputed work. Measured and deliberately LEFT AS IS: R() is a binary
+    // search over a 223-entry sorted table, so this is ~16 comparisons a
+    // frame — below the noise floor. Caching them costs more than it saves:
+    // a function-local `static` needs a thread-safe init guard, which counts
+    // as object unwinding and trips C2712 in this SEH function (tried, it
+    // does), and hoisting to namespace scope would make the value depend on
+    // static-init ordering against CurrentBuild().
     const uintptr_t kAddrIsGlobalFading = acc::addr::R(0x0062ac60);  // __thiscall(gui)->int
     const uintptr_t kAddrDoPassiveSelection = acc::addr::R(0x005fa5a0);  // __thiscall(internal,float)
     using PFN_Fade      = int(__thiscall*)(void*);

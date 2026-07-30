@@ -120,7 +120,13 @@ bool IsRoutineAutoAttack(void* action) {
 // noisy — gives us per-tick visibility into the queue while we're
 // chasing the "bare 1-7 dispatch produces no special" bug. Remove or
 // gate behind a verbosity flag once the dispatch is understood.
-int CountSpecialsForCreature(void* creature, const char* tag) {
+// `dump` (optional) collects the per-action diagnostic lines. A POINTER
+// rather than a local BlockLog because this function uses __try and MSVC's
+// C2712 forbids an object needing unwinding there; the caller owns the block
+// so a whole party sweep folds as one unit. See map_ui_cursor.cpp for the
+// same pattern.
+int CountSpecialsForCreature(void* creature, const char* tag,
+                             acclog::BlockLog* dump) {
     if (!creature) return 0;
     void* round = ReadCombatRound(creature);
     if (!round) return 0;
@@ -162,12 +168,13 @@ int CountSpecialsForCreature(void* creature, const char* tag) {
                     uint32_t feat = *reinterpret_cast<uint32_t*>(
                         base + kActionAttackFeatOffset);
                     bool routine = IsRoutineAutoAttack(data);
-                    acclog::Write("Combat.QueueRaw",
-                        "[%s] item[%d] type=0x%02x target=0x%08x "
-                        "feat=0x%08x routine=%d",
-                        tag ? tag : "?", rawItems,
-                        (unsigned)t, target, feat,
-                        routine ? 1 : 0);
+                    if (dump) {
+                        dump->Line("[%s] item[%d] type=0x%02x target=0x%08x "
+                                   "feat=0x%08x routine=%d",
+                                   tag ? tag : "?", rawItems,
+                                   (unsigned)t, target, feat,
+                                   routine ? 1 : 0);
+                    }
                     if (!routine) ++specials;
                     ++rawItems;
                 }
@@ -186,6 +193,17 @@ int CountSpecialsForCreature(void* creature, const char* tag) {
 // auto-attack (or has nothing queued at all); >0 means at least one
 // member has a player-decided action pending.
 int CountPartySpecials() {
+    // One block per sweep. This runs every frame while the first-round gate
+    // is open (6s per combat entry) and the queue rarely changes between
+    // frames, so the identical sweep folds to a single "(repeated Nx —
+    // unchanged)" line. Measured before this change: 1396 Combat.QueueRaw
+    // lines in one session log, 4 distinct — but only 45 consecutive
+    // repeats, because the lines CYCLE (p0,p1,p2,p0,…) and line-level dedup
+    // cannot see that. The cost was never the walk itself; it was a
+    // formatted write plus an fflush under a lock on the game thread, the
+    // same cost the combat-round CLEAR fix was about.
+    acclog::BlockLog dump("Combat.QueueRaw");
+
     uint32_t handles[kPartyTableMaxMembers] = {};
     int n = acc::engine::GetPartyMembers(handles, kPartyTableMaxMembers);
     int total = 0;
@@ -196,7 +214,7 @@ int CountPartySpecials() {
             if (c) {
                 char tag[16];
                 std::snprintf(tag, sizeof(tag), "p%d", i);
-                total += CountSpecialsForCreature(c, tag);
+                total += CountSpecialsForCreature(c, tag, &dump);
             }
         }
         return total;
@@ -204,7 +222,7 @@ int CountPartySpecials() {
     // Fallback: party table unreadable, count the controlled creature
     // alone. Same shape as combat_queue.cpp's BuildRows fallback.
     void* leader = acc::engine::GetPlayerServerCreature();
-    if (leader) total += CountSpecialsForCreature(leader, "leader");
+    if (leader) total += CountSpecialsForCreature(leader, "leader", &dump);
     return total;
 }
 
