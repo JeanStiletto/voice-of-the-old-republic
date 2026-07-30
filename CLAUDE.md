@@ -44,6 +44,11 @@ Example - instead of tables, format like this:
 - Prefer editing existing files over creating new ones
 - Only make changes that are directly requested or clearly necessary - no drive-by refactors
 - Before adding a helper, search for an existing one — duplicate utilities are a recurring failure mode across these accessibility projects
+- Name a helper for what it DOES, never for the screen it is used on. `ReadCharSheetLabel` / `ReadEquipLabel` hid three copies of `engine_reads`' `ReadLabelTextAt`, because no grep could find them from either direction
+- The same applies to infrastructure: check whether a mechanism exists before proposing to build one. `acclog` already has `Trace` (line dedup), `BlockLog` (block dedup), `Once` and `Edge`
+
+## Non-obvious constraints
+- **MSVC C2712: a function using `__try` cannot contain anything needing unwinding** — no objects with destructors, and no function-local `static` (its thread-safe init guard counts). Engine-reading code here is SEH-heavy by convention, so RAII and lazily-cached constants are unavailable across much of the patch. Workaround when you need an object anyway: declare it in an SEH-free CALLER and pass a pointer in — a pointer is trivially destructible, so the constraint never fires and the SEH code needs no restructuring (see `map_ui_cursor.cpp` / `combat_special_watch.cpp` passing `acclog::BlockLog*`)
 
 ## Bash Tool on Windows
 - Bash tool runs through bash shell (Git Bash), NOT CMD or PowerShell
