@@ -32,6 +32,10 @@ namespace acc::engine {
 // docs/llm-docs/re/swkotor.exe.h.
 inline constexpr size_t    kClientExoAppGuiInGameOff = 0x40;
 
+// CGuiInGame -> CSWGuiMainInterface. Canonical home for what engine_radial,
+// engine_actionbar, engine_picker and combat_diag each declared privately.
+inline constexpr size_t    kGuiInGameMainInterfaceOff = 0x90;
+
 // Walk that chain and return the CGuiInGame*. Defined in
 // engine_panels.cpp next to the identity registry; the state readers in
 // engine_panels_state.cpp are its only callers outside that file.

@@ -521,6 +521,18 @@ void* ResolveGuiInGame() {
     }
 }
 
+void* ResolveMainInterface() {
+    void* guiInGame = ResolveGuiInGame();
+    if (!guiInGame) return nullptr;
+    __try {
+        return *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(guiInGame) +
+            kGuiInGameMainInterfaceOff);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
 bool ReadDialogReplyText(int replyIndex, char* outBuf, size_t bufSize) {
     if (!outBuf || bufSize < 2) return false;
     outBuf[0] = '\0';

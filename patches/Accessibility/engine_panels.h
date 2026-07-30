@@ -162,7 +162,15 @@ enum class PanelKind {
 const char* PanelKindName(PanelKind k);
 
 // AppManager → ClientExoApp → Internal → CGuiInGame. Null on any null link.
+// SEH-guarded (the AppManager hops come from engine_app.h).
 void* ResolveGuiInGame();
+
+// CGuiInGame → CSWGuiMainInterface (+0x90). The surface the action bar, the
+// radial menu and the picker all hang their target off. Null on any null
+// link; SEH-guarded. Before Phase-3 B1 this hop was written out four times
+// (engine_radial, engine_actionbar, engine_picker, combat_diag), each with
+// its own copy of the offset constant.
+void* ResolveMainInterface();
 
 // Read the resolved text of the current dialog entry's reply at `replyIndex`
 // from CGuiInGame's render-independent reply-text array (see

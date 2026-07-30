@@ -6,9 +6,10 @@
 #include <cstdio>
 
 #include "combat_queue.h"    // OnEngineActionAdded — authoritative queue announce
+#include "engine_app.h"      // GetClientApp
 #include "engine_offsets.h"
-#include "engine_player.h"   // GetPlayerServerCreature, GetClientLeader,
-                             // kAddrAppManagerPtr, kAppManagerClientAppOffset
+#include "engine_panels.h"   // ResolveMainInterface
+#include "engine_player.h"   // GetPlayerServerCreature, GetClientLeader
 #include "log.h"
 #include "narrated_target.h"
 #include "engine_rebase.h"
@@ -27,8 +28,8 @@ const uintptr_t kAddrCClientExoAppGetAutoPaused = acc::addr::R(0x005edef0);
 const uintptr_t kAddrCClientExoAppGetPauseState = acc::addr::R(0x005ed640);
 
 // main_interface.field1_0x64 — the engine target handle SetTarget stamps.
-// Resolved through the standard chain so we can compare per-press.
-constexpr size_t kGuiInGameMainInterfaceOffset = 0x90;
+// Resolved through engine_panels' ResolveMainInterface so we can compare
+// per-press.
 constexpr size_t kMainInterfaceTargetHandleOff = 0x64;
 
 typedef unsigned long (__thiscall* PFN_GetAutoPaused)(void* this_);
@@ -142,18 +143,9 @@ int CallGetPauseState(void* exoApp) {
 
 uint32_t ReadMainInterfaceTarget(void* exoApp) {
     if (!exoApp) return 0;
+    void* mi = acc::engine::ResolveMainInterface();
+    if (!mi) return 0;
     __try {
-        void* internal = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(exoApp) +
-            kClientExoAppInternalOffset);
-        if (!internal) return 0;
-        void* guiInGame = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(internal) + 0x040);
-        if (!guiInGame) return 0;
-        void* mi = *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(guiInGame) +
-            kGuiInGameMainInterfaceOffset);
-        if (!mi) return 0;
         return *reinterpret_cast<uint32_t*>(
             reinterpret_cast<unsigned char*>(mi) +
             kMainInterfaceTargetHandleOff);

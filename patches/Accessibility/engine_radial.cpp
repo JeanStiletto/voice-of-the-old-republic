@@ -8,20 +8,14 @@
                               // kButtonTextOffset, kLabelGuiStringPtrOffset,
                               // kLabelTextOffset, kAurGuiStringCStrOffset,
                               // kVtableCAurGUIStringInternal, CExoString
-#include "engine_player.h"    // kAddrAppManagerPtr,
-                              // kAppManagerClientAppOffset,
-                              // kClientExoAppInternalOffset,
-                              // kClientObjectServerObjectOffset,
+#include "engine_app.h"       // GetClientApp
+#include "engine_panels.h"    // ResolveGuiInGame, ResolveMainInterface
+#include "engine_player.h"    // kClientObjectServerObjectOffset,
                               // GetClientLeader (for Security skill check)
 #include "log.h"
 #include "engine_rebase.h"
 
 namespace {
-
-// Resolve chain — same offsets engine_picker uses. Re-stated locally to
-// avoid pulling that module's namespace in for a four-line walk.
-constexpr size_t kInternalGuiInGameOffset      = 0x040;
-constexpr size_t kGuiInGameMainInterfaceOffset = 0x90;
 
 // CSWGuiTargetActionMenu lives inside CSWGuiMainInterface at +0xBC. Verified
 // against the C header (swkotor.exe.h:11611 MEMBER OFFSET="0xbc" SIZE="0x1af0").
@@ -149,51 +143,6 @@ typedef void* (__thiscall* PFN_GetGameObject)(void* exoApp, uint32_t handle);
 typedef void* (__thiscall* PFN_AsClass)(void* gameObject);
 typedef bool (__thiscall* PFN_GetCanUseSkill)(void* stats, uint16_t skillIdx);
 
-void* GetClientExoApp() {
-    __try {
-        void* appManager = *reinterpret_cast<void**>(kAddrAppManagerPtr);
-        if (!appManager) return nullptr;
-        return *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(appManager) +
-            kAppManagerClientAppOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
-
-void* GetClientExoAppInternal(void* exoApp) {
-    if (!exoApp) return nullptr;
-    __try {
-        return *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(exoApp) +
-            kClientExoAppInternalOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
-
-void* GetGuiInGame(void* internal) {
-    if (!internal) return nullptr;
-    __try {
-        return *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(internal) +
-            kInternalGuiInGameOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
-
-void* GetMainInterface(void* guiInGame) {
-    if (!guiInGame) return nullptr;
-    __try {
-        return *reinterpret_cast<void**>(
-            reinterpret_cast<unsigned char*>(guiInGame) +
-            kGuiInGameMainInterfaceOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-}
-
 bool ReadInt32(void* base, size_t offset, int32_t* out) {
     if (!base || !out) return false;
     __try {
@@ -277,10 +226,7 @@ void* RowActionButtonAddr(void* tam, int row) {
 namespace acc::engine_radial {
 
 void* ResolveTargetActionMenu() {
-    void* exoApp   = GetClientExoApp();
-    void* internal = GetClientExoAppInternal(exoApp);
-    void* guiIn    = GetGuiInGame(internal);
-    void* mainIf   = GetMainInterface(guiIn);
+    void* mainIf = acc::engine::ResolveMainInterface();
     if (!mainIf) return nullptr;
     return reinterpret_cast<unsigned char*>(mainIf) +
            kMainInterfaceTargetActionMenuOffset;
@@ -760,7 +706,7 @@ void LogTargetDiag(uint32_t targetClient, const char* tag) {
         return;
     }
 
-    void* exoApp = GetClientExoApp();
+    void* exoApp = acc::engine::GetClientApp();
     if (!exoApp) {
         acclog::Write("Radial.Diag", "[%s] target=0x%08x — no client exo app",
                       t, targetClient);
@@ -919,7 +865,7 @@ bool IsCreatureClientTarget(uint32_t handle) {
         return false;
     }
     uint32_t client = handle | 0x80000000u;  // engine convention: client high bit
-    void* exoApp = GetClientExoApp();
+    void* exoApp = acc::engine::GetClientApp();
     if (!exoApp) return false;
     void* gameObject = nullptr;
     __try {
