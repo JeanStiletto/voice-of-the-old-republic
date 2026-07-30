@@ -74,28 +74,6 @@ const EquipStatRowSpec* FindSpecForControl(void* panel, void* labelControl) {
     return nullptr;
 }
 
-// Read a CSWGuiLabel's rendered text. gui_string first (the engine's
-// actual render source), falls back to inline CExoString / TLK strref
-// via the indirect helper.
-bool ReadEquipLabel(void* panel, size_t offset, char* outBuf, size_t bufSize) {
-    if (bufSize == 0) return false;
-    outBuf[0] = '\0';
-    auto* label = reinterpret_cast<unsigned char*>(panel) + offset;
-    __try {
-        if (acc::engine::ReadGuiString(label, kLabelGuiStringPtrOffset,
-                                       outBuf, bufSize) &&
-            outBuf[0] != '\0') {
-            return true;
-        }
-        acc::engine::ExtractTextOrStrRefIndirect(
-            label, kLabelTextOffset, kLabelStrRefOffset,
-            kLabelTextObjectOffset, outBuf, bufSize);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        outBuf[0] = '\0';
-    }
-    return outBuf[0] != '\0';
-}
-
 }  // namespace
 
 bool IsEquipStatRowAnchor(void* panel, void* labelControl) {
@@ -127,7 +105,8 @@ bool ExtractEquipStatRow(void* panel, void* labelControl,
 
     // Read the primary (right-hand) value.
     char rightVal[32] = "";
-    if (!ReadEquipLabel(panel, spec->valueOffset, rightVal, sizeof(rightVal))) {
+    if (!acc::engine::ReadLabelTextAt(panel, spec->valueOffset,
+                                      rightVal, sizeof(rightVal))) {
         return false;
     }
 
@@ -137,8 +116,8 @@ bool ExtractEquipStatRow(void* panel, void* labelControl,
     // "", so this naturally falls through to the single format.
     if (spec->leftValueOffset != 0 && spec->formatDual != Id::Count_) {
         char leftVal[32] = "";
-        if (ReadEquipLabel(panel, spec->leftValueOffset,
-                           leftVal, sizeof(leftVal))) {
+        if (acc::engine::ReadLabelTextAt(panel, spec->leftValueOffset,
+                                         leftVal, sizeof(leftVal))) {
             snprintf(outBuf, bufSize, Get(spec->formatDual),
                      leftVal, rightVal);
             return true;

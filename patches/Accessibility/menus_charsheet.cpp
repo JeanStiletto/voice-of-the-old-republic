@@ -86,29 +86,6 @@ constexpr size_t kCharSheetSldAlign    = 0x55c4;
 // at panel + kCharSheetLblFp; bit_flags at +kControlBitFlagsOffset (0x44).
 constexpr uint32_t kControlShownBit = 0x2;
 
-// Read a CSWGuiLabel's rendered text at panel+offset into outBuf. Tries
-// gui_string (the engine's actual render source) first, falling back to
-// the inline CExoString and TLK strref paths via the indirect helper.
-// Empty-string result on failure — caller treats "" as "skip this field".
-void ReadCharSheetLabel(void* panel, size_t offset,
-                        char* outBuf, size_t bufSize) {
-    if (bufSize == 0) return;
-    outBuf[0] = '\0';
-    auto* label = reinterpret_cast<unsigned char*>(panel) + offset;
-    __try {
-        if (acc::engine::ReadGuiString(label, kLabelGuiStringPtrOffset,
-                                       outBuf, bufSize) &&
-            outBuf[0] != '\0') {
-            return;
-        }
-        acc::engine::ExtractTextOrStrRefIndirect(
-            label, kLabelTextOffset, kLabelStrRefOffset,
-            kLabelTextObjectOffset, outBuf, bufSize);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        outBuf[0] = '\0';
-    }
-}
-
 // True iff the character currently shown on this sheet is a Force user.
 // Reads the engine's own decision: lbl_force_stat's "shown" bit (0x02 of
 // control.bit_flags at +0x44), which SetStats clears for non-Jedi and sets
@@ -260,13 +237,15 @@ bool ExtractStatRow(void* panel, void* labelControl,
 
     // Label rows: read value (and optionally mod / threshold) text.
     char value[64];
-    ReadCharSheetLabel(panel, spec->valueOffset, value, sizeof(value));
-    if (value[0] == '\0') return false;
+    if (!acc::engine::ReadLabelTextAt(panel, spec->valueOffset,
+                                      value, sizeof(value))) {
+        return false;
+    }
 
     char mod[16];
     mod[0] = '\0';
     if (spec->modOffset != 0) {
-        ReadCharSheetLabel(panel, spec->modOffset, mod, sizeof(mod));
+        acc::engine::ReadLabelTextAt(panel, spec->modOffset, mod, sizeof(mod));
     }
 
     switch (spec->kind) {
