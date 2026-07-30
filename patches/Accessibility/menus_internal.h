@@ -198,6 +198,14 @@ constexpr int kWorkbenchUpgradeBtnBackId = 28;  // BTN_BACK
 constexpr int kEquipBtnBackId    = 36;  // BTN_BACK         (TLK 1582 = Schliess.)
 constexpr int kEquipBtnEquipId   = 37;  // BTN_EQUIP        (TLK 1580 = OK)
 
+// partyselection.gui BTN_NPC ("Hinzuf." / "Add") — the mouse flow's
+// commit button: click a portrait to highlight it, then click this to
+// toggle that companion in or out of the party. Keyboard nav never needs
+// it because Enter on the portrait itself already runs the engine's
+// OnToggled (see menus_chain_input.cpp's isPartyAddBlocked branch, which
+// rides that same path), so it is filtered from the chain.
+constexpr int kPartySelectionAddBtnId = 38;  // BTN_NPC
+
 // CSWGuiInGameItemEntry (LB_ITEMS row) — field6_0x394 bit-field after the
 // embedded CSWGuiButton + item id + borders + text. OnEnterSlot tags the
 // currently-equipped row via SetItem(id, /*param_2=*/1, 0); SetItem packs

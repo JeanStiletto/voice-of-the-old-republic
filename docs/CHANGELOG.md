@@ -33,6 +33,12 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>Unreleased</h2>
+
+<h3>Keyboard navigation:</h3>
+
+- Three buttons that duplicate something the keyboard already does are gone from arrow navigation. On the map screen, "Previous map note" and "Next map note" — the map cursor sweeps those same notes with W, A, S and D — so Up and Down now step straight to the party-select and return buttons. On the party-selection screen, "Add", because Enter on a companion's portrait already adds or removes them.
+
 <h2>v0.6.4</h2>
 
 <h3>Russian translation:</h3>

@@ -1402,8 +1402,6 @@ const char* TryInGameMapArrow(void* control, void* owner,
     const char* source = nullptr;
     if (owner &&
         IdentifyPanel(owner) == PanelKind::InGameMap) {
-        constexpr uintptr_t kInGameMapUpButtonOffset = 0xab0;
-        constexpr uintptr_t kInGameMapDownButtonOffset = 0xc74;
         uintptr_t panelBase = reinterpret_cast<uintptr_t>(owner);
         uintptr_t ctrl      = reinterpret_cast<uintptr_t>(control);
         acc::strings::Id sid = acc::strings::Id::Count_;

@@ -556,6 +556,30 @@ bool IsDecorativeControl(void* panel, void* c,
             return true;
         }
     }
+    // InGameMap up_button / down_button ("Vorheriger Hinweis" /
+    // "Nächster Hinweis"). They step the engine's GetPrevMapNote /
+    // GetNextMapNote cycle, which our map cursor supersedes: W/A/S/D
+    // sweeps the map and map_ui_cursor speaks every note it crosses, so
+    // the engine's own note stepper is a second, weaker way to do the
+    // same thing. Dropping both lets arrow nav step straight to
+    // Gruppenauswahl / the return button. The per-kind extractor that
+    // names them (menus_extract TryInGameMapArrow) stays — it still
+    // labels them for the diagnostic walk and for any focus event the
+    // engine raises on its own.
+    if (pk == PanelKind::InGameMap) {
+        auto* p = reinterpret_cast<unsigned char*>(panel);
+        if (c == p + kInGameMapUpButtonOffset ||
+            c == p + kInGameMapDownButtonOffset) {
+            return true;
+        }
+    }
+    // PartySelection "Hinzuf." (BTN_NPC). Enter on a portrait already
+    // drives the engine's OnToggled directly, so this button is the
+    // mouse flow's redundant second step — landing on it after every
+    // portrait just doubles the path to OK.
+    if (pk == PanelKind::PartySelection && cid == kPartySelectionAddBtnId) {
+        return true;
+    }
     // PartySelection portraits with no currently-selectable
     // companion. The panel renders all 9 roster slots in a fixed
     // 3x3 grid; sighted players see empty / greyed slots, but a

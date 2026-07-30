@@ -848,6 +848,21 @@ constexpr size_t    kEquipPanelCharacterRightButtonOffset = 0x3F6C;
 constexpr size_t    kLevelUpButtonBackOffset              = 0x1944;
 constexpr size_t    kLevelUpButtonCancelOffset            = 0x1B08;
 
+// CSWGuiInGameMap up_button / down_button — the two image-only buttons
+// flanking the map render ("Vorheriger Hinweis" / "Nächster Hinweis" once
+// menus_extract's per-kind fallback names them). Both dispatch
+// CSWGuiPanel::HandleInputEvent(0x31/0x32, 1), which the InGameMap override
+// routes to CSWGuiMapHider::GetPrevMapNote / GetNextMapNote — the engine's
+// cycle through explored map-note waypoints. Verified 2026-05-12 from the
+// GoG xml MEMBER offsets + the decomp of OnUpArrowPressed / OnDownArrowPressed.
+// Identify by struct offset: both carry empty text and no strref, so a
+// button-spec read misses and the .gui ids are the only other handle.
+// Consumed by menus_extract.cpp (TryInGameMapArrow) and menus_chain.cpp
+// (IsDecorativeControl, which drops them from chain navigation — the map
+// cursor covers note reading).
+constexpr size_t    kInGameMapUpButtonOffset              = 0xAB0;
+constexpr size_t    kInGameMapDownButtonOffset            = 0xC74;
+
 // ----------------------------------------------------------------------------
 // CSWGuiInGameAbilities — the in-game "Fähigkeiten" screen (CGuiInGame slot
 // 0x18, abilities.gui). A view-only character screen shaped like the settings
