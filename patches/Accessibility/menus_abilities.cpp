@@ -74,24 +74,127 @@ void CallPanelInput(void* panel, int code) {
     }
 }
 
+// The panel's embedded CSWGuiSkillFlowChart for a chart tab. tab: 2 = Feats,
+// 1 = Powers. Never null for a valid panel — the charts are inline members.
+void* ChartForTab(void* panel, int tab) {
+    size_t off = (tab == 2) ? kAbilitiesFeatsChartOffset
+                            : kAbilitiesPowersChartOffset;
+    return reinterpret_cast<unsigned char*>(panel) + off;
+}
+
 // True iff the Feats/Powers chart can step one row in the given direction
 // WITHOUT wrapping. The engine's own chart nav wraps top<->bottom; we clamp it
 // so it matches the skills listbox. tab: 2 = Feats, 1 = Powers.
 bool ChartCanStep(void* panel, int tab, bool down) {
-    size_t off = (tab == 2) ? kAbilitiesFeatsChartOffset
-                            : kAbilitiesPowersChartOffset;
     bool can = false;
     __try {
-        auto* chart = reinterpret_cast<unsigned char*>(panel) + off;
-        unsigned char row   = *(chart + kSkillFlowChartRowOffset);
-        unsigned char count = *(chart + kSkillFlowChartRowCountOffset);
-        if (count == 0) can = false;
+        auto* chart = reinterpret_cast<unsigned char*>(ChartForTab(panel, tab));
+        unsigned char row = *(chart + kSkillFlowChartSelectedRowOffset);
+        int count = *reinterpret_cast<int*>(chart + kSkillFlowChartRowsSizeOffset);
+        if (count <= 0) can = false;
         else if (down)  can = row + 1 < count;
         else            can = row > 0;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         can = false;
     }
     return can;
+}
+
+// Feat/power id held in chart cell (row, col), or kFlowSkillStructEmptyFeatId
+// for an empty cell / any read failure. Same CSWGuiFlowSkillStruct layout the
+// chargen feats grid walks (see menus_chargen_feats.cpp).
+unsigned int ChartCellId(void* chart, int row, int col) {
+    unsigned int id = kFlowSkillStructEmptyFeatId;
+    if (row < 0 || col < 0 || col >= kSkillFlowColumnsPerRow) return id;
+    __try {
+        auto* c = reinterpret_cast<unsigned char*>(chart);
+        auto** rows = *reinterpret_cast<unsigned char***>(
+            c + kSkillFlowChartRowsDataOffset);
+        int count = *reinterpret_cast<int*>(c + kSkillFlowChartRowsSizeOffset);
+        if (rows && row < count) {
+            unsigned char* r = rows[row];
+            if (r) {
+                id = *reinterpret_cast<unsigned int*>(
+                    r + kSkillFlowFirstColumnOffset +
+                    (size_t)col * kSkillFlowColumnStride +
+                    kFlowSkillStructFeatIdOffset);
+            }
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        id = kFlowSkillStructEmptyFeatId;
+    }
+    return id;
+}
+
+// Point the chart at the highest-ranked cell of its current row, then repaint
+// the name label + description for it.
+//
+// WHY the highest column and not the engine's own cursor: a chart row is one
+// feat/power chain, its three columns are the chain's ranks (Power Attack I/II/
+// III, Force Push / Whirlwind / Wave). The engine leaves the column cursor at 0
+// unless the mouse moves it, so keyboard nav always spoke rank I no matter what
+// the character had trained.
+//
+// WHY "highest filled column" == "highest rank owned": this screen is view-only
+// and its charts are built by the HasFeat/HasSpell-gated CreateFeatChart /
+// CreatePowerChart(.., 0) overloads — a cell is emitted ONLY when the character
+// actually has that rank, and an unowned rank is left at
+// kFlowSkillStructEmptyFeatId. (The per-cell status field is NOT usable here:
+// SetCharacter calls SetSkillStatusAll(chart, 6), stamping every cell with the
+// same status — unlike the chargen/level-up grids, where status carries
+// avail/granted/existing/locked/chosen.)
+void SelectMaxRankInRow(void* panel, int tab) {
+    void* chart = ChartForTab(panel, tab);
+
+    int row = -1;
+    __try {
+        row = *(reinterpret_cast<unsigned char*>(chart) +
+                kSkillFlowChartSelectedRowOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        row = -1;
+    }
+    if (row < 0) return;
+
+    unsigned int id  = kFlowSkillStructEmptyFeatId;
+    int          col = -1;
+    for (int c = kSkillFlowColumnsPerRow - 1; c >= 0; --c) {
+        unsigned int v = ChartCellId(chart, row, c);
+        if (v != kFlowSkillStructEmptyFeatId) { id = v; col = c; break; }
+    }
+    // No filled cell: empty chart, or a row we failed to read. Bail BEFORE
+    // touching OnEnterPower — it null-derefs on an empty powers chart.
+    if (col < 0) return;
+
+    // SetSelectedSkill moves the chart cursor to the cell holding `id` and
+    // repaints the render-side highlight; it is silent (unlike the engine's own
+    // column-step codes, which click). Then OnEnterFeat/OnEnterPower rewrites
+    // the name label + description box for that id.
+    typedef void(__thiscall* PFN_SetSelected)(void*, unsigned long);
+    __try {
+        reinterpret_cast<PFN_SetSelected>(
+            kAddrCSWGuiSkillFlowChartSetSelectedSkill)(chart, id);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("Menus.Abilities",
+                      "SetSelectedSkill SEH (tab=%d id=%u)", tab, id);
+    }
+    __try {
+        if (tab == 2) {
+            typedef void(__thiscall* PFN_Feat)(void*, unsigned short);
+            reinterpret_cast<PFN_Feat>(kAddrAbilitiesOnEnterFeat)(
+                panel, (unsigned short)id);
+        } else {
+            typedef void(__thiscall* PFN_Power)(void*, int);
+            reinterpret_cast<PFN_Power>(kAddrAbilitiesOnEnterPower)(
+                panel, (int)id);
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("Menus.Abilities",
+                      "OnEnter%s SEH (tab=%d id=%u)",
+                      tab == 2 ? "Feat" : "Power", tab, id);
+    }
+    acclog::Write("Menus.Abilities",
+                  "max-rank select tab=%d row=%d col=%d id=%u",
+                  tab, row, col, id);
 }
 
 // True iff the Powers tab exists for this character (Jedi with powers). The
@@ -181,11 +284,20 @@ void AppendPair(void* panel, size_t labelOff, size_t valueOff,
     }
 }
 
-// Speak the shown entry: LBL_NAME, plus the rank/bonus/total pairs ONLY on the
-// Skills tab. Feats/powers are binary (you have them or not) and their
-// OnEnterFeat/OnEnterPower repaint leaves the rank/bonus/total labels at a stale
-// "0", so appending them there is spurious noise — skip. Optional `prefix` (the
-// tab name) is spoken first. No "N of M" position — just noise next to stats.
+// Speak the shown entry: LBL_NAME, plus the rank/bonus/total pairs on every tab
+// EXCEPT Feats. The three label pairs are shared real estate that UpdateView
+// re-purposes per tab:
+//   * Skills (0): Fähigkeitenrang / Bonus / Gesamtrang.
+//   * Powers (1): Basispreis / <alignment> Anp. / Kosten pro Verwendung — the
+//     force-point cost, the light-or-dark-side adjustment, and the adjusted
+//     total, all written by OnEnterPower. Real data, so we speak it.
+//   * Feats (2): UpdateView HIDES all six controls (clears their visible bit)
+//     and nothing repaints them, so their text is left over from whichever tab
+//     ran last. Reading them there would announce another tab's numbers — skip.
+// Optional `prefix` (the tab name) is spoken first. No "N of M" position — just
+// noise next to stats.
+bool TabHasStats(int tab) { return tab != 2; }  // 2 = Feats
+
 void AnnounceDetail(void* panel, const char* prefix, bool withStats) {
     char msg[512] = {0};
     if (prefix && prefix[0]) {
@@ -250,7 +362,7 @@ void BrowseList(void* panel, int tab, ListBoxNavOp op) {
         ListBoxNavResult r;
         if (DriveListBoxSelection(lb, op, /*minSel=*/0, r)) {
             CallOnEnterSkill(panel, r.row);
-            AnnounceDetail(panel, nullptr, /*withStats=*/true);
+            AnnounceDetail(panel, nullptr, TabHasStats(tab));
             acclog::Write("Abilities", "skill nav sel=%d->%d (rows=%d)",
                           r.oldSel, r.newSel, r.rowCount);
         }
@@ -258,14 +370,17 @@ void BrowseList(void* panel, int tab, ListBoxNavOp op) {
     }
     // Feats/Powers chart. Up/Down step rows via the engine (chart move +
     // OnEnterFeat/OnEnterPower repaint -> fresh name + description). Pre-clamp so
-    // it doesn't wrap. Home/End have no chart equivalent. No stats: feats/powers
-    // are binary and their repaint leaves rank/bonus/total stale at 0.
+    // it doesn't wrap. Home/End have no chart equivalent.
     if (op == ListBoxNavOp::StepUp && ChartCanStep(panel, tab, false)) {
         CallPanelInput(panel, kAbilitiesPanelCodeChartUp);
     } else if (op == ListBoxNavOp::StepDown && ChartCanStep(panel, tab, true)) {
         CallPanelInput(panel, kAbilitiesPanelCodeChartDown);
     }
-    AnnounceDetail(panel, nullptr, /*withStats=*/false);
+    // The engine's row step keeps the column cursor (dragging it left only when
+    // the new row is too short), so re-aim at this chain's highest owned rank
+    // before reading the labels back.
+    SelectMaxRankInRow(panel, tab);
+    AnnounceDetail(panel, nullptr, TabHasStats(tab));
 }
 
 bool HandleInput(int /*n*/, void* /*thisPtr*/, void* activePanel,
@@ -314,7 +429,10 @@ bool HandleInput(int /*n*/, void* /*thisPtr*/, void* activePanel,
         }
         if (isEnter) {
             s_drilled = true;
-            AnnounceDetail(activePanel, nullptr, /*withStats=*/tab == 0);
+            // UpdateView leaves a chart tab on (row 0, column 0) = rank I of the
+            // first chain; aim at the highest owned rank before the first read.
+            if (tab != 0) SelectMaxRankInRow(activePanel, tab);
+            AnnounceDetail(activePanel, nullptr, TabHasStats(tab));
             acclog::Write("Abilities", "drill into tab=%d (panel=%p)",
                           tab, activePanel);
             outRv = 1;
@@ -331,7 +449,8 @@ bool HandleInput(int /*n*/, void* /*thisPtr*/, void* activePanel,
         return true;
     }
     if (isEnter) {
-        AnnounceDetail(activePanel, nullptr, /*withStats=*/tab == 0);
+        if (tab != 0) SelectMaxRankInRow(activePanel, tab);
+        AnnounceDetail(activePanel, nullptr, TabHasStats(tab));
         outRv = 1;
         return true;
     }

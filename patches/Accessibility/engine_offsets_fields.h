@@ -873,14 +873,15 @@ constexpr size_t    kAbilitiesSkillsButtonOffset     = 0x2F18;  // (12056) BTN_S
 constexpr size_t    kAbilitiesListBoxOffset          = 0x30DC;  // (12508) LB_ABILITY (main list)
 constexpr size_t    kAbilitiesDescListBoxOffset      = 0x33BC;  // (13244) LB_DESC (description)
 
-// The two CSWGuiSkillFlowChart members on the panel (field30/field31), and the
-// chart's own cursor fields. We read row vs row-count to clamp the engine's
-// chart nav, which otherwise WRAPS top<->bottom (unlike the skills listbox,
-// which clamps). field_0xd = current row, field1_0x4 = row count.
+// The two CSWGuiSkillFlowChart members on the panel (field30/field31). Their
+// internals are the SAME CSWGuiSkillFlowChart layout the chargen/level-up
+// grids use — read the cursor and row array through
+// kSkillFlowChartSelectedRow/SelectedCol/RowsData/RowsSize above rather than
+// re-declaring panel-local aliases for them. We read row vs row-count to clamp
+// the engine's chart nav, which otherwise WRAPS top<->bottom (unlike the skills
+// listbox, which clamps).
 constexpr size_t    kAbilitiesPowersChartOffset       = 0x3f78;  // field30 (Powers)
 constexpr size_t    kAbilitiesFeatsChartOffset        = 0x3f88;  // field31 (Feats)
-constexpr size_t    kSkillFlowChartRowOffset          = 0x0d;    // field_0xd
-constexpr size_t    kSkillFlowChartRowCountOffset     = 0x04;    // field1_0x4
 
 // CGuiInGame.field139_0xbc0 — the active abilities tab: 0 = Skills,
 // 1 = Powers, 2 = Feats. Read to route per-tab input + announce the tab.

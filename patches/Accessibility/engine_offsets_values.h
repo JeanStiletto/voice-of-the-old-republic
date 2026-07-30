@@ -68,7 +68,11 @@ constexpr int       kAbilitiesPanelCodeCycleTab       = 0x29;
 // Chart-nav codes consumed by HandleInputEvent on the Feats/Powers tabs and
 // routed to CSWGuiSkillFlowChart::HandleInput (@0x006cdd80): 0x31/0x32 step the
 // feat-chain rows (up/down, skipping empty cells) and trigger OnEnterFeat/
-// OnEnterPower to repaint the detail + description. 0x2f/0x30 step columns
-// (tiers within a chain) — not wired yet (Left/Right are tab-switch).
+// OnEnterPower to repaint the detail + description.
+// 0x2f/0x30 step columns (ranks within a chain). We do NOT use them: every
+// column code path in HandleInputEvent calls PlayGuiSound first, so walking to
+// the highest owned rank would fire up to two spurious clicks per row move.
+// menus_abilities drives the column via SetSelectedSkill + OnEnterFeat/
+// OnEnterPower instead, which is silent and lands in one step.
 constexpr int       kAbilitiesPanelCodeChartUp        = 0x31;
 constexpr int       kAbilitiesPanelCodeChartDown      = 0x32;

@@ -35,8 +35,21 @@ void RefreshDetail(void* panel);
 //     list; Esc falls through to close the screen.
 //   * List level (after Enter): Up/Down browse entries, clamped (no wrap) —
 //     Skills are driven by us via OnEnterSkill (name + rank/bonus/total),
-//     Feats/Powers forward to the engine's chart nav (name + fresh description,
-//     no stats); Esc returns to the tab level.
+//     Feats/Powers forward to the engine's chart nav (name + fresh
+//     description); Esc returns to the tab level.
+//
+// The three shared label pairs are announced on every tab except Feats, where
+// UpdateView hides them and leaves the previous tab's text in place. On Powers
+// they hold the force cost (Basispreis / alignment Anp. / Kosten pro
+// Verwendung), written by OnEnterPower.
+//
+// Feats/Powers rank handling: a chart row is one chain and its columns are that
+// chain's ranks. The engine parks the column cursor at 0 unless the mouse moves
+// it, so after every row step we re-aim at the row's highest FILLED column —
+// which on this view-only screen is exactly the highest rank the character owns,
+// because the charts are built by the HasFeat/HasSpell-gated CreateFeatChart /
+// CreatePowerChart overloads. Lower ranks are deliberately not browsable: they
+// are unusable once a higher rank is trained.
 // Returns true and sets outRv when it consumed the event; mirrors the
 // TryHandleInput contract.
 bool HandleInput(int n, void* thisPtr, void* activePanel,
