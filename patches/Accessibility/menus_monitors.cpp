@@ -501,6 +501,8 @@ bool IsContentMonitored(PanelKind k) {
     // Fingerprint filters to the visible row(s) below — see that note.
     case PanelKind::StatusSummary:
     case PanelKind::InGameMap:
+    // InGameJournal and InGameCharacter are tracked but SILENT — see
+    // IsContentSpoken below for why they stay in this list.
     case PanelKind::InGameJournal:
     case PanelKind::InGameCharacter:
         return true;
@@ -511,6 +513,42 @@ bool IsContentMonitored(PanelKind k) {
     // switch. The screen-open title still comes from the sub-screen path.
     default:
         return false;
+    }
+}
+
+// Of the content-monitored kinds, which may SPEAK their diff.
+//
+// The fingerprint serves two jobs: reading out new content, and detecting
+// that a panel's content changed so a bound chain can rebind. A screen with
+// its own keyboard navigation wants the second without the first — every
+// row is already reachable and labelled, so speaking the diff on top only
+// duplicates, or worse, dumps raw label text with no context.
+//
+// The monitored list has been shrinking that way for a while (Inventory +
+// Equipment dropped 2026-05-30, Abilities 2026-06-03, Container and
+// Messages before them). These two are the same case, but they cannot
+// simply leave the list:
+//
+//   * InGameCharacter — a content change is what rebinds the chain when Tab
+//     swaps the displayed party member and the Force-points row appears or
+//     disappears (see the RebindChainPreserveIndex call in
+//     MonitorPanelContents). Its twelve stat rows are arrow-reachable as
+//     composed phrases ("Stärke 14, +2"), whereas the fingerprint read the
+//     value labels generically and spoke bare context-free numbers — "14",
+//     "120000" — verified across the shipped logs.
+//   * InGameJournal — menus_journal.cpp speaks each entry and its
+//     description on navigation; the fingerprint re-spoke whole quest
+//     bodies plus the entire entry list as one run-on line.
+//
+// InGameMap deliberately still speaks: the area name and map-note dump on
+// open is genuinely useful orientation there rather than a duplicate.
+bool IsContentSpoken(PanelKind k) {
+    switch (k) {
+    case PanelKind::InGameCharacter:
+    case PanelKind::InGameJournal:
+        return false;
+    default:
+        return true;
     }
 }
 
@@ -689,7 +727,12 @@ void MonitorPanelContents() {
                           p, PanelKindName(k));
             acclog::Write("ContentChange", "  prev=\"%.300s\"", last);
             acclog::Write("ContentChange", "  curr=\"%.300s\"", fingerprint);
-            SpeakNewSegments(last, fingerprint);
+            if (IsContentSpoken(k)) {
+                SpeakNewSegments(last, fingerprint);
+            } else {
+                acclog::Write("ContentChange",
+                              "  silent kind — tracked for chain rebind only");
+            }
 
             // If the chain is bound to this panel, an engine-driven content
             // change can alter which virtual rows belong in the chain — the
