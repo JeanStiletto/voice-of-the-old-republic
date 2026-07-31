@@ -4,6 +4,48 @@
 `kotor2-port-feasibility.md`, whose *measurements* remain valid — the sigscan
 result especially — but whose cost estimate predates the RTTI finding below.
 
+## WHERE TO RESUME (read this first)
+
+State as of 2026-07-31, end of the first port session. Working tree clean, 14
+commits on `main`, KOTOR 1 tested and behaving normally throughout.
+
+**What works:** KOTOR 2 speaks its main menu and options submenu. One hook is
+installed (`CSWGuiPanel::SetActiveControl` → `menus_focus_k2.cpp`). Every other
+hook handler is gated off by `acc::game::HandlerEnabled()`.
+
+**The next task, already scoped:** port the menu subsystem *whole*, per THE
+METHOD below. Regenerate the worklist with
+
+    python tools/re-scripts/port_worklist.py patches/Accessibility \
+        menus.cpp menus_focus.cpp menus_chain.cpp menus_extract.cpp \
+        menus_dispatch.cpp menus_internal.h engine_manager.h \
+        engine_reads.cpp engine_panels.cpp
+
+At the time of writing: 114 constants used, 35 resolved, **79 to verify**.
+Suggested order — the ten `kVtableCSWGui*` panel-identity constants in
+`engine_panels.cpp` first (the RTTI map should resolve them by class name for
+free), then the panel field offsets by decompiling KOTOR 2's own `Load` methods,
+which is the technique that produced the text chain. `MoveMouseToPosition` is on
+the list and should replace the `SetCursorPos` stand-in in `menus_focus_k2.cpp`.
+
+**Do not** repeat the minimal-slice approach — see THE METHOD.
+
+**Tools built for this port** (all in `tools/re-scripts/`, all offline):
+- `rtti_scan.py` — class → vtable map from KOTOR 2's RTTI
+- `vtable_map.py` — KOTOR 1 → KOTOR 2 addresses by vtable slot
+- `find_thiscall_targets.py` — methods called on a known singleton
+- `port_worklist.py` — what a subsystem needs, and what is unresolved
+
+Ghidra: project `kotor2`, program `swkotor2.exe`, at `C:\Tools\ghidra-projects`.
+Decompile with
+`KDEV_GHIDRA_PROJ=kotor2 KDEV_GHIDRA_PROGRAM=swkotor2.exe tools/ghidra-scripts/decomp.sh 0xADDR`.
+Function catalogue (11,652 entries) at `docs/llm-docs/re/k2/k2-functions.csv`.
+A space-free copy of the exe lives at `C:\Tools\k2re\swkotor2.exe` — the Ghidra
+batch launcher cannot handle the spaces in the Steam path.
+
+**Testing:** `kdev apply --game k2`, then read
+`<K2 install>\logs\patch-*.log`. The K2 focus path logs under `K2.Focus`.
+
 ## Target
 
 Steam / GOG KOTOR 2, Aspyr's 2015 rebuild. PE link timestamp
