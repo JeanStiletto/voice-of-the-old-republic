@@ -385,13 +385,44 @@ the read faults, SEH returns null) — but two did not, and both are now handled
   (unlike its sibling `CloseInGameMenuToWorld`), so it would have faulted into
   its own SEH on every call instead of declining cheaply.
 
-Next in Batch 2: the four hook addresses (`SwitchToSWInGameGui`,
-`HideSWInGameGui`, `SetSWGuiStatus`, `AppendToMsgBuffer`). None of their
-classes carry RTTI, so the route is caller-tracing and structure-matching, the
-method that settled `MoveMouseToPosition` — not the vtable-slot map. The six
-still-Todo slots (InGameMenu, InGameCharacter, GalaxyMap, MainInterface,
-PartySelection, ControllerLossBox, DialogCinematicCopy, DialogComputerCamera,
-the DialogMessages pair) can follow, or wait for their subsystem's batch.
+#### The four hook addresses — reconnaissance done, not yet identified
+
+All four (`SwitchToSWInGameGui`, `HideSWInGameGui`, `SetSWGuiStatus`,
+`AppendToMsgBuffer`) are CGuiInGame methods, and CGuiInGame has no RTTI in
+KOTOR 2 — so the vtable-slot map cannot reach them and the route is
+caller-tracing, as it was for `MoveMouseToPosition`.
+
+**The narrowing that worked:** a method of CGuiInGame is, by construction, the
+target of any forwarder shaped `MOV ECX,[this+0x40]; CALL X` — because +0x40
+is where CClientExoAppInternal keeps its CGuiInGame (established above). A scan
+of .text for that shape returns 8 forwarders, 7 of whose targets sit in one
+cluster, which is therefore the CGuiInGame method neighbourhood:
+
+    0x007BE4C0  the panel creator (already identified)
+    0x007C7030  0x007CA060  0x007CA6E0  0x007CBB40  0x007CE710  0x007CF960
+
+Two are partly characterised from their forwarders: 0x007CA060 takes one int
+and returns a tested value (query-shaped, so a status GETTER rather than
+SetSWGuiStatus), and 0x007CF960 takes a byte.
+
+**What did NOT work, so it is not retried:** scanning that region for
+`AppendToMsgBuffer`'s KOTOR 1 shape — a 64-slot, 16-byte-stride ring at
+this[+0xF8] with the write index at this[+0x100] — finds nothing, with either a
+`cmp ,0x40` or an `and ,0x3f` bound plus a `shl ,4` stride. KOTOR 2 either
+sizes the ring differently or expresses the indexing another way, so the ring
+is not a usable fingerprint. Match on the CALLERS instead.
+
+Highest-value next step: `SwitchToSWInGameGui` is called from
+`CClientExoAppInternal::HandleInputEvent`'s `case 0xdf` — the Esc-opens-the-
+pause-menu path this mod already documents on KOTOR 1 (input_pipeline.cpp).
+Finding that switch identifies the function AND its GUI-id argument in one
+read, and the same function's neighbourhood should yield the rest.
+
+The nine still-`Todo` slots (InGameMenu, InGameCharacter, GalaxyMap,
+MainInterface, PartySelection, ControllerLossBox, DialogCinematicCopy,
+DialogComputerCamera, the DialogMessages pair) can follow, or wait for their
+subsystem's batch. MainInterface is the one worth doing early — the action bar,
+radial and picker all resolve through it.
 
 **Batch 3 — World, area, transitions.** `OnSetMoveToModuleString`, `OnDoorOpen`,
 `OnShowObject`; gates in `transitions.cpp`, `door_announce.cpp`,
