@@ -54,10 +54,20 @@
 //                        → text at 0xd0, text_params at +0x18 → CExoString at 0xe8
 //                        → str_ref at +0x08 within text_params → 0xf0
 //   CSWGuiLabelHilight:  embeds CSWGuiLabel at offset 0; offsets unchanged.
-const size_t kButtonTextOffset    = acc::off::Todo(0x16c);
-const size_t kButtonStrRefOffset  = acc::off::Todo(0x174);
-const size_t kLabelTextOffset     = acc::off::Todo(0xe8);
-const size_t kLabelStrRefOffset   = acc::off::Todo(0xf0);
+// KOTOR 2 values are OBSERVED bases plus a VERIFIED-unchanged interior, not
+// extrapolation. The text sub-object's position was read out of each class's
+// own Load/Draw in KOTOR 2 (label 0xd0 -> 0xd8, button 0x154 -> 0x160), and
+// CSWGuiText's internals were then confirmed identical (see kTextObject* below),
+// so text = base+0x18 and str_ref = base+0x20 still hold.
+//
+// The button is the clearest illustration of why a flat "+4 per class" would
+// have been wrong: its Load touches +0x70, +0xe8, +0x160 where KOTOR 1 has
+// 0x6c, 0xe0, 0x154 — deltas of +4, +8 and +12, because navigable, border_1 and
+// border_2 each grew 4 bytes and the displacement accumulates.
+const size_t kButtonTextOffset    = acc::off::Pick(0x16c, 0x178);
+const size_t kButtonStrRefOffset  = acc::off::Pick(0x174, 0x180);
+const size_t kLabelTextOffset     = acc::off::Pick(0xe8, 0xf0);
+const size_t kLabelStrRefOffset   = acc::off::Pick(0xf0, 0xf8);
 
 // Element-state field offsets (verified via Ghidra decomp of Draw /
 // SetSelected / HandleInputEvent for each class):
@@ -107,12 +117,22 @@ const size_t kSliderCurValueOffset    = acc::off::Todo(0x74);
 // 8 icon labels at vtable=0x0073E8E8 are the canonical case — verified via
 // 584 speculative-read miss events in patch-20260502-190936.log on the
 // previous build), gui_string still holds the rendered c_string.
-const size_t kLabelGuiStringPtrOffset  = acc::off::Todo(0xE4);
-const size_t kLabelTextObjectOffset    = acc::off::Todo(0x138);
-const size_t kButtonGuiStringPtrOffset = acc::off::Todo(0x168);
-const size_t kButtonTextObjectOffset   = acc::off::Todo(0x1BC);
-const size_t kTextObjectTextOffset     = acc::off::Todo(0x18);   // CSWGuiText.text_params.text
-const size_t kTextObjectStrRefOffset   = acc::off::Todo(0x20);   // CSWGuiText.text_params.str_ref
+const size_t kLabelGuiStringPtrOffset  = acc::off::Pick(0xE4, 0xEC);
+const size_t kLabelTextObjectOffset    = acc::off::Pick(0x138, 0x140);
+const size_t kButtonGuiStringPtrOffset = acc::off::Pick(0x168, 0x174);
+const size_t kButtonTextObjectOffset   = acc::off::Pick(0x1BC, 0x1C8);
+// CSWGuiText's OWN layout is identical in both games — verified, and it is what
+// makes the composed offsets above trustworthy. KOTOR 2's CSWGuiText::Load
+// reads gui_string at +0x14, text_params.color at +0x34 and
+// text_params.bit_flags at +0x50; KOTOR 1's header gives exactly those three.
+// So only the text object's POSITION inside its owner moved, not its insides.
+const size_t kTextObjectTextOffset     = acc::off::Same(0x18);   // CSWGuiText.text_params.text
+const size_t kTextObjectStrRefOffset   = acc::off::Same(0x20);   // CSWGuiText.text_params.str_ref
+// STILL Todo, and it is the one gap in the text chain: CAurGUIStringInternal is
+// a different class, and it is one of the vtables whose slot count did NOT
+// match (67 vs 32), so its layout is the least safe thing here to assume.
+// ReadGuiString needs it for the *rendered* text; until it is verified, KOTOR 2
+// text extraction has to fall back to the inline CExoString above.
 const size_t kAurGuiStringCStrOffset   = acc::off::Todo(0x14);   // CAurGUIStringInternal.field5
 
 // CSWGuiKeyMapButton — the keyboard-mapping screen's row control (vtable
