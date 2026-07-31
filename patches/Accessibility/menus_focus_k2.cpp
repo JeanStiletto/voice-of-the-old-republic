@@ -44,6 +44,7 @@
 #include <cstring>
 
 #include "engine_game.h"
+#include "engine_manager.h"
 #include "engine_offsets.h"
 #include "engine_rebase.h"
 #include "engine_reads.h"
@@ -95,14 +96,131 @@ bool CallerIsFocusChange(void* caller) {
 // often than focus actually changes.
 char s_lastSpoken[256] = {0};
 
+// Park the engine's cursor on a control, so mouse hover stops fighting the
+// keyboard.
+//
+// The problem this solves: the cursor sits wherever it was left, the manager
+// hit-tests at that position and hands the control under it focus via
+// HandleFocusChange, and that overrides whatever the arrow keys just selected.
+// Focus therefore snaps back to one fixed button after every keypress, and only
+// its immediate neighbours are ever reachable.
+//
+// This is NOT a KOTOR 2 defect — KOTOR 1 has the identical conflict, which is
+// exactly why its navigation chain calls MoveMouseToPosition to keep the
+// engine's own cursor on the focused control.
+//
+// Done with two writes rather than by calling the engine, because
+// MoveMouseToPosition has no KOTOR 2 address yet and guessing one would be
+// reckless: it is the activation path, where a wrong address crashes rather
+// than misbehaves. The writes are safe and well-founded — KOTOR 1's
+// MoveMouseToPosition begins with exactly `this->mouse_x = x; this->mouse_y = y`
+// and KOTOR 2's hover hit-test reads exactly those two fields (manager+0,
+// manager+4), so this sets the same state the engine sets itself.
+//
+// Both offsets used here are verified: the control extent is Same(0x4),
+// observed in KOTOR 2's own panel hit-test.
+// CSWGuiManager's hover routine: re-runs the hit test at the manager's stored
+// cursor (manager+0 / manager+4) and updates the hovered control (manager+8).
+// KOTOR 2 only — this whole file is K2-only — and it has no KOTOR 1
+// counterpart with the same shape: KOTOR 1's HandleMouseMove takes explicit x/y
+// arguments, whereas this one reads the stored coordinates, so it is a
+// different function rather than the same one relocated.
+//
+// Needed because writing the coordinates alone changed nothing: the first
+// attempt set manager+0/+4 and the log still showed hoveredId pinned at the old
+// control on all 51 subsequent events. manager+8 only moves when the hit test
+// actually runs, which is precisely the step MoveMouseToPosition performs after
+// setting the coordinates.
+constexpr uintptr_t kAddrK2ManagerRehover = 0x00413C50;
+typedef void(__thiscall* PFN_Rehover)(void*);
+
+// NOTE for anyone extending this: control extents in KOTOR 2 are already in
+// SCREEN pixels, not the GUI's virtual 640x480 space. The panel hit-test's
+// `x -= (screenWidth - 640) / 2` conversion applies to coordinates arriving
+// from elsewhere, NOT to extents — measured live, the three main-menu buttons
+// report extents x=1321 with y=792/879/966, which is a real 1920-wide layout.
+// An earlier attempt applied that conversion to extent centres and pushed the
+// warp target off-screen.
+
+// Re-entrancy latch. We are called from INSIDE SetActiveControl, and the
+// re-hover below can drive focus changes that come straight back through this
+// same hook. KOTOR 1 avoids this class of problem by deferring such work to the
+// next Update tick; KOTOR 2 has no Update hook yet, so a latch is the
+// proportionate equivalent — it keeps the recursion one level deep and stops
+// the nested event being logged or spoken as if the user had navigated.
+bool s_inWarp = false;
+
+void WarpCursorToControl(void* control) {
+    if (!control || !acc::addr::Ok(kAddrGuiManagerPtr)) return;
+    if (s_inWarp) return;
+    s_inWarp = true;
+    __try {
+        void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+        if (mgr) {
+            const int* extent = reinterpret_cast<const int*>(
+                static_cast<char*>(control) + kControlExtentOffset);
+            int cx = extent[0] + extent[2] / 2;   // left + width/2
+            int cy = extent[1] + extent[3] / 2;   // top  + height/2
+
+            // Move the REAL cursor. Writing manager+0/+4 alone is useless: the
+            // engine re-reads the true mouse position every frame and puts it
+            // straight back — measured, the field held 1440,899 across every
+            // event no matter what we stored there. That is the whole reason
+            // three earlier attempts failed identically.
+            //
+            // KOTOR 1's MoveMouseToPosition does the same thing via
+            // CExoInput::SetMousePos; we use the OS call because that function
+            // has no KOTOR 2 address yet, and moving the OS cursor is what makes
+            // the engine's own polling report the new position.
+            //
+            // Extents are window-client coordinates, so map to screen first —
+            // a no-op in exclusive fullscreen, correct in windowed.
+            POINT pt = { cx, cy };
+            HWND hwnd = GetActiveWindow();
+            if (hwnd) ClientToScreen(hwnd, &pt);
+            SetCursorPos(pt.x, pt.y);
+
+            // Keep the manager's copy consistent, then re-hit-test so hovered
+            // (manager+8) follows immediately rather than a frame later.
+            int* cursor = reinterpret_cast<int*>(mgr);
+            cursor[0] = cx;
+            cursor[1] = cy;
+            reinterpret_cast<PFN_Rehover>(kAddrK2ManagerRehover)(mgr);
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        // Nothing to recover; a failed warp just means hover keeps fighting.
+    }
+    s_inWarp = false;
+}
+
 }  // namespace
 
 void AnnounceFocus(void* panel, void* control, void* caller) {
     if (!control) return;
+    // Focus changes the re-hover triggers are our own doing, not the user's.
+    if (s_inWarp) return;
     EnsurePrismInitialized();
 
     uint32_t vtable = acc::engine::ReadU32(control, 0);
     uint32_t id = acc::engine::ReadU32(control, kControlIdOffset);
+
+    // The panel's CURRENT active control, read before the engine changes it —
+    // we hook at 0x0040EC09, ahead of SetActiveControl's own
+    // `if (active != param_1)` test, so we also see calls that change nothing.
+    //
+    // This distinguishes the two readings of the doubled events that the
+    // arguments alone cannot: if prev == the incoming control the second call
+    // is a no-op and focus is not really moving, whereas if it differs then
+    // focus genuinely snaps to that control after every navigation and the
+    // menu only ever leaves from there — which would explain why just its two
+    // neighbours are reachable.
+    void* prevActive = nullptr;
+    uint32_t prevId = 0xFFFFFFFFu;
+    if (panel) {
+        prevActive = reinterpret_cast<void*>(
+            acc::engine::ReadU32(panel, kPanelActiveControlOffset));
+        if (prevActive) prevId = acc::engine::ReadU32(prevActive, kControlIdOffset);
+    }
 
     // Try both shapes and take whichever yields text. Distinguishing by vtable
     // would be tidier, but it needs a KOTOR 2 vtable constant per control class
@@ -131,16 +249,59 @@ void AnnounceFocus(void* panel, void* control, void* caller) {
     // default, the engine's own nav running alongside ours) are
     // indistinguishable from the arguments alone. The caller names it outright,
     // and maps back to a function via docs/llm-docs/re/k2/k2-functions.csv.
+    // The CSWGuiManager's hovered control (manager+8), i.e. what the mouse is
+    // over. KOTOR 2's hover path (FUN_00413c50) hit-tests at the stored cursor
+    // and writes the result here.
+    //
+    // Present to settle why focus snaps back to one fixed control after every
+    // keypress. Hover was dismissed earlier because it writes THIS field rather
+    // than the panel's active_control — but that only rules out a direct write,
+    // not HandleFocusChange propagating it into the panel afterwards. If this
+    // reads as the same control the bounce lands on, the cursor is simply
+    // parked over that button and the engine keeps reclaiming focus for it,
+    // which is the same fight KOTOR 1 has and solves by warping the cursor.
+    uint32_t hoveredId = 0xFFFFFFFFu;
+    void* hovered = nullptr;
+    int curX = -1, curY = -1;
+    if (acc::addr::Ok(kAddrGuiManagerPtr)) {
+        void* mgr = reinterpret_cast<void*>(
+            *reinterpret_cast<uintptr_t*>(kAddrGuiManagerPtr));
+        if (mgr) {
+            hovered = reinterpret_cast<void*>(acc::engine::ReadU32(mgr, 8));
+            if (hovered) hoveredId = acc::engine::ReadU32(hovered, kControlIdOffset);
+            curX = static_cast<int>(acc::engine::ReadU32(mgr, 0));
+            curY = static_cast<int>(acc::engine::ReadU32(mgr, 4));
+        }
+    }
+
+    // Where the control actually is, in its own (virtual 640x480) space, so the
+    // log shows both halves of the coordinate conversion side by side.
+    int ex = static_cast<int>(acc::engine::ReadU32(control, kControlExtentOffset));
+    int ey = static_cast<int>(acc::engine::ReadU32(control, kControlExtentOffset + 4));
+
+    bool noop = (prevActive == control);
     acclog::Write("K2.Focus",
-                  "panel=%p control=%p vtable=%08X id=%d src=%s caller=%p%s text=\"%s\"",
-                  panel, control, vtable, static_cast<int>(id), which, caller,
-                  CallerIsFocusChange(caller) ? " [focus-change, suppressed]" : "",
+                  "prev=%d -> id=%d %s hoveredId=%d cursor=%d,%d extent=%d,%d src=%s caller=%p%s text=\"%s\"",
+                  static_cast<int>(prevId), static_cast<int>(id),
+                  noop ? "[NO-OP]" : "[change]", static_cast<int>(hoveredId),
+                  curX, curY, ex, ey,
+                  which, caller,
+                  CallerIsFocusChange(caller) ? " [focus-change]" : "",
                   text ? text : "");
 
-    // Logged above but never spoken: see CallerIsFocusChange. Keeping the log
-    // line means a future change in the engine's focus dance stays visible
-    // rather than silently altering what the user hears.
-    if (CallerIsFocusChange(caller)) return;
+    if (noop) return;
+
+    // Keep the engine's cursor on whatever the keyboard just selected, so the
+    // next hover hit-test agrees with it instead of dragging focus back.
+    //
+    // Only on a real navigation: warping on HandleFocusChange's own call would
+    // chase the cursor to wherever hover already pointed, which is the state we
+    // are trying to correct. Once the cursor follows the keyboard, that call
+    // targets the control already active and SetActiveControl's own
+    // `if (active != param_1)` test makes it a no-op — so the doubled event
+    // should disappear on its own, without a caller filter suppressing it.
+    // Whether it does is exactly what this build tests.
+    if (!CallerIsFocusChange(caller)) WarpCursorToControl(control);
 
     if (!text || !text[0]) return;
     if (strncmp(s_lastSpoken, text, sizeof(s_lastSpoken)) == 0) return;
