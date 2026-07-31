@@ -1,6 +1,6 @@
 # Known Issues
 
-Status tracker for accessibility-mod work, in four buckets:
+Status tracker for accessibility-mod work, in five buckets:
 
 - **Bugs** — regressions or broken behaviour to fix.
 - **Unreproduced** — reported issues we can't reliably reproduce yet; need a repro before fixing.
@@ -12,126 +12,33 @@ When an entry is closed, move it out of this file (the corresponding fix or comm
 
 ## Bugs
 
-### Resolution / fullscreen / menu-offset resilience (umbrella)
-
-The mod's promise is "no mouse, no screen," yet several code paths silently assume a particular screen geometry and break when the user changes resolution, runs windowed, or installs a community widescreen / HR-menus patch that moves GUI layouts. Known coupling points so far: the radial cursor-ray dependency and the save-thumbnail `ImageScale` divide-by-zero (both fixed in v0.2.1 — see CHANGELOG; they're the first two examples of this class), in-world cursor parking, and any hardcoded hit-test offset compensations (e.g. the Options-panel tab-pitch shift). We deliberately avoided bundling the complex community resolution/menu patches for simplicity, but their changes — plus whatever resolution/windowed state a user lands in — must not be able to break core mod function. Needs: (a) an audit of every place we use screen-pixel coordinates, the OS cursor, or hardcoded offsets; (b) read geometry live from the engine instead of assuming; (c) installer-set sane graphics defaults; (d) a decision on auto-installing the widescreen + HR-menus patches and making our code robust to exactly the layout changes they introduce. See `installer.md` (Widescreen / HR-menus bundling) and the `project_radial_cursor_coupling` memory.
-
-### Polish (and other) UI language defaults to German speech — fixed (now English)
-
-Secondary finding from the same session log: `Lang: unknown LanguageID=5; defaulting to German`. LanguageID 5 is Polish; we had no mapping for it. Fixed: `DetectLanguageFromTlk` in `core_dllmain.cpp` now defaults to English (`L::En`) on every fallback path — unrecognised LanguageID, unreadable/bad `dialog.tlk`, and the path-resolution failures — since English is the most universal fallback for the non-DE user base. A correctly-installed DE copy still detects LanguageID=2 → German. Still tracks with the "Integrate a Polish translation" Planned item for proper PL labels.
-
-### Tutorial popups not reading correctly?
-
-The in-game tutorial popups (`Tutorial Popups=1`) may not be read aloud correctly — text missing, partial, or not spoken at all. These are a distinct message-box type from normal dialogue; confirm what's spoken vs shown and capture a log on a known tutorial trigger.
-
-### Shift+Down reads descriptions twice (Journal, items)
-
-Pressing Shift+Down to read a full description often reads it twice — seen in the Journal and on items. Duplicate fire between our Shift+arrow description reader and an engine re-narration, or a missing Consume so the key both drives our read and falls through. (The superficially similar hacking-dialogue double-read, fixed in v0.5.3, turned out to be two separate reply readers — an input-path announce plus a poll monitor — both speaking; worth checking whether this Shift+Down case is the same shape: a second reader rather than a missing Consume.)
+_None currently._
 
 ## Unreproduced
 
-### Zaalbar's subtitles not reading
-
-Reported that Zaalbar has no subtitles read at all — his Shyriiwook is untranslated alien speech the player can't otherwise follow and should still be read, so the voiced-speaker filter (`dialog_speech.cpp`) looks to be over-suppressing him. No reliable repro yet. Capture a log on a Zaalbar conversation line and confirm whether the suppression path is firing on his lines. Pairs with the bark under-suppression bug above (same speaker-classification code).
-
-### Off-by-one description reads while leveling up or character creation
-
-Reported that during level-up and/or character creation the description read aloud belongs to the entry *above* the focused one — e.g. landing on Dexterity reads the Strength description. The focus/selection itself is on the right row; it's the description lookup that's shifted by one, so the player hears the wrong attribute's (or skill's/feat's) text. No reliable repro yet. Needs the exact screen (chargen step vs level-up panel — attribute, skill, or feat list), the row navigated to vs the description heard, and a timestamped log. Likely candidate: the description reader indexing into the row list with an off-by-one (stale-vs-current selection index, or a header/blank row offsetting the mapping).
+_None currently._
 
 ## Planned
-
-### Tutorial keyboard hints: French / Italian / Spanish translation — DONE (2026-07-19), AI drafts pending native review
-
-The full tutorial keyboard-hint set (game pop-ups + Trask's Endar Spire walkthrough + the level-up and stealth hints) is now authored in all five languages: the `TutHint*` / `TutTrask*` / `TutLevelUp` / `TutStealthMode` cases were filled into `strings_fr.cpp` / `strings_it.cpp` / `strings_es.cpp`, mirroring DE/EN. FR/IT/ES installs now speak the keyboard hint instead of falling back to the vanilla mouse-worded pop-up. **Caveat:** like the installer strings (see below), the three new-language sets are Claude-authored drafts, not reviewed by native speakers — same standing review item.
-
-### Class-selection chargen screen
-
-The "select your class" screen during character creation still needs accessible narration of the three class choices, their summaries, and confirm/back wiring. In particular, the game already provides a per-class description on this screen (the lore/role blurb a sighted player reads when highlighting a class) — that description text must be read out on class selection, not just the class name.
-
-### Class selection should step left/right, not up/down
-
-On the class-selection chargen screen the three classes are a horizontal row, so navigation should be Left/Right between classes rather than Up/Down. Align the arrow binding with the spatial layout when wiring the narration above.
 
 ### Beacon-active navigation announcements (remaining-route reading)
 
 While a beacon (or autowalk) is active, the route announcements should describe the *remaining* way to the active waypoint — leading with the range and direction of the current target — rather than the full original route. The hard part is disambiguating intents: if the player selects another object just to hear where it is, the announcement must not balloon into the long, confusing full-route description for the beacon target. Design questions to resolve: how to keep "where is this thing I just selected" reads short while a beacon is running, and whether the separate Shift+Enter autowalk / Shift+`-` gestures are still needed at all, or whether they can be folded into / replaced by the plain selection + beacon flow. See `project_narrated_target_unified.md` and `project_map_cycle_architecture.md`.
 
-### Shipped map hints + Dantooine note renames — IMPLEMENTED, awaiting in-game test
-
-The former "Additional manual map hints" / "Waypoints" backlog, resolved 2026-07-27 from module data (no in-game collection needed):
-
-- **Curated shipped hints** (`map_shipped_hints.cpp`): static per-module table folded into the Map hint cycle, fog-gated through the engine's own `IsWorldPointExplored` (reveals like a vanilla note), never drawn as a visual pin. Entries: Sandral-estate backdoor (danm14ad, the unmarked second door — the marked one is the front), the two "Toter Rebell" Promised-Land corpse containers (tar_m05aa, lower sewers — this is what "rebel corpses" referred to), bantha grazing-band centroid (tat_m18ac, near the krayt-dragon cave; the herd patrols a ~90×160 m band, one bantha in sight progresses Komad's quest).
-- **Dantooine note renames** (`map_note_renames.cpp`, applied inside `GetWaypointMapNote`/`GetMapPinNoteText`): vanilla reuses one tlk string per corridor style ("Südlicher Pfad" ×3 modules, "Nordpfad" ×3, "Ausgang" ×4) — spoken hints now say the destination area name (resolved from the destination .are name strref via `LookupTlk`, planet prefix stripped; self-localising). danm16's two same-strref "Ausgang" notes are disambiguated by position anchor into front/back exit. Keyed (module, strref) so modded notes keep their own text.
-- The old "Dantooine paths correlate with transitions" observation is **explained, not a bug**: the vanilla notes ARE transition markers, authored 2–11 m from the transition triggers with corridor names instead of destinations. The rename addresses the actual confusion.
-- The map-cursor WASD hover finds shipped hints too (`FindNearestShippedHint`, third scan next to waypoints and user pins, fog-gated, closest-in-pixel-space wins). Like the cycle, the hover never surfaces an unexplored hint.
-
-### Integrate a Polish translation — done 2026-07-31
-
-Shipped: `Lang::Pl` (LanguageID 5, CP1250 speech codepage), `strings_pl.cpp`, `combat_strings.cpp::kPl`, Polish effect-name tables, installer `GameLocale.Polish` + `Locales/pl.json`, and the LEM edition's `swkotor.exe` added to `supported_versions` — it is the same 2004-03-05 relink as the Allard Russian exe, so the existing rebase tables covered it with no new address work. Measurements and the Polish-specific engine quirks are in `docs/translation-additions.md`.
-
-**One thing still open:** `kPl`'s combat anchors are transcribed from the tlk but **not yet confirmed against a live Polish combat log**, and Polish is the first locale whose attack-line *structure* differs (target before verb), which needed a second parse path rather than different strings. Verify with one fight on a Polish install: grep the patch log for `MsgBuf: raw:` against `emit-*`. A wrong anchor degrades to raw speech, never a crash.
-
 ### Nameable personal map pins
 
 Let players give their own map pins a name when they drop one, and read that name back when cycling to the pin. Personal pins currently announce only a generic label plus position, so a player who marks several spots can't tell them apart. Needs a text-entry path that works from the keyboard with a screen reader (the editbox handling shipped for chargen + save naming — `menus_editbox.cpp` — is the closest existing mechanism, though map pins aren't an engine editbox so the entry surface differs), storage of the label alongside the pin in the save, and the cycle/focus announcements updated to speak it. See `project_narrated_target_unified.md` / `map_user_markers.cpp`.
 
-### Improved tutorial for mod users
+### Bundle the resolution / widescreen patch — once we are out of beta
 
-A better onboarding/tutorial for players using the mod — introducing the mod's keys and concepts (navigation, cycling, targeting, screens) in a guided way rather than expecting users to discover them. Scope and delivery (in-game guided flow vs. F1/Ctrl+F1 reference vs. external readme) to be decided.
+Offer the community resolution / widescreen + HR-menus patches as an installer option, and make our own code robust to the layout changes they introduce. Deliberately deferred until the mod leaves beta: it widens the support surface (several of our paths still assume a particular screen geometry — screen-pixel coordinates, the OS cursor, hardcoded hit-test offset compensations), and a beta is the wrong time to add a second variable to every bug report. Prerequisite when we do take it on: audit every place we depend on screen geometry and read it live from the engine instead of assuming. See `docs/installer.md` (Widescreen / HR-menus bundling) and the `project_radial_cursor_coupling` memory.
 
-- **Endar Spire scenery-battle hint.** Beta finding (userlogs/endarspiresoldiersunreachable1): in the Command Module (`END_M01AA`) the scripted background firefight actors — tags `end_cut2_sith1`–`5` and `end_cut2_soldier1`–`4`, plus the Jedi/Sith Apprentice duel pair — are neutral cutscene props, but Q/E focuses them and the enemy-style brief (One Damage Blaster, permanent effects) makes them sound fightable. The engine's default verb for them is Dialog, so Enter just walks the PC into the crowd (often ending in "way blocked"); one tester spent most of a session trying to fight them across three restarts. When the tutorial work lands, speak a one-shot custom hint if the player Q/E-focuses exactly these creatures ("scripted battle, no need to fight — walk past"), keyed on the `end_cut2_*` tags. A general friendly/neutral marker on every creature was considered and rejected as too chatty for a tutorial-only confusion; sighted players get the same information from the reticle colour, and outside the tutorial hostile-looking neutrals are rare.
+### Controller support — once the community mod is out of beta
 
-### Trask / Endar-Spire dialogue tutorial hints via a post-VO popup — IMPLEMENTED, double-read wart
-
-The voice-acted Endar-Spire tutorial lines (Trask + the `end_pop*` windows) stay suppressed during Trask's Basic VO; at each dialogue **reply prompt** (the game's own break) we now fire a real engine tutorial popup carrying the keyboard hint. Mechanism (`tutorial_popup.cpp`): `dialog_speech` records the pending hint (+ strref) when a rewritten tutorial line plays (`HintForDialogLine`); `MonitorDialogReplies` fires the popup at the reply break; `FirePopup` clears the tutorial once-shown bit for a repurposed reason (0x2a), calls `CGuiInGame::ShowTutorialWindow` @0x0062f4a0 directly (bypasses the funnel's `field45` "no tutorials in dialogue" gate), `SetTutorialReason` @0x006aa900 configures it as a real tutorial, `CSWGuiMessageBox::SetMessage(strref)` @0x006249d0 sets the visible (mouse) text, and it pauses via `SetPauseState`. A `SyntheticActive` flag routes the spoken text to the keyboard hint; `PollDismiss` unpauses on close. Confirmed working: fires at the right breaks, mounts over the dialogue, pauses, single tutorial button, dismisses cleanly, Trask's own subtitle stays suppressed.
-
-The earlier double-read (keyboard hint + redundant mouse sentence) is **fixed**: it was **five** independent announce paths reading the same box, not the four first assumed — content-fingerprint, single-row listbox monitor, engine focus-announce, arrow-nav chain (`AnnounceControl`), and a fifth, `MonitorFocusedControl`, which re-speaks the focused control's text on change. The synthetic popup routes speech by **identity** now (its message is the popup's only single-row listbox → speak the hint; buttons read their labels), applied consistently in `AnnounceControl` and `MonitorFocusedControl`, plus `SyntheticActive` suppression on the listbox monitor and focus-announce. (Debugging note: a stale-DLL trap cost several cycles — `kdev apply` silently skips the copy when the game holds the DLL open, so always close the game and verify `patches/accessibility.dll`'s mtime after apply.) Timing is now correct: the popup fires when a reply first becomes readable/navigable (`src=dialog-state` in `MonitorDialogReplies`, i.e. the VO has ended), not when the reply list merely appears — so it no longer talks over Trask and Enter still skips his line. (The `sel −1 → 0` transition can't be used: the reply listbox is one persistent object whose selection never resets to −1 between prompts.) Trask often delivers several rewritten lines back-to-back before a break, so hints are **accumulated** (newline-joined, generous 4 KB buffers, no 256-char clip on any speak path) and shown together in one popup. FR/IT/ES dialogue hints and the reply-bracket lines (`48340`–`48343`) remain deferred.
-
-### Improvements to the Pillar 1 wall tones
-
-Refine the in-world wall sounds (the Pillar 1 navigation cues that signal nearby walls) — accuracy, timing, and how clearly they convey wall proximity/direction. Capture concrete cases where the current tones mislead or fall short, then tune the cue logic.
+A gamepad is a genuine accessibility surface in its own right (fewer keys to memorise, no reliance on modifier chords), so once the community controller-support mod for KOTOR 1 leaves beta, evaluate bundling or interoperating with it. Open questions: whether its input path conflicts with our own DirectInput handling and hotkey polling, how our chain navigation and unified action menu map onto sticks and face buttons, and whether announcements need a separate cue vocabulary when the player has no keyboard in hand. The specific mod is not pinned down in this entry yet — fill in the name and source link before starting.
 
 ## Monitor
 
-### Corridor-terminus dead-end recognition (widened shape gate) — watch for false positives
-
-The room-shape dead-end gate (`IsAlcoveAlongAxis` in `wall_topology.cpp`) was widened (v0.6.0) so a corridor's blocked end classifies as a real dead end, not just a tight alcove. Root cause: at the west end of an east-west Endar Spire corridor the player heard the corridor's "Ost-West" axis instead of "Sackgasse, Ost". The degree-1 terminus node (`node[5]`, rays E=17.2 back-W=1.4 sides N=2.8/S=2.5) failed the old all-three-rays-within-2m alcove test because a corridor is wider than an alcove, so `ClassifyCluster` marked it filtered and `LookupAt`'s primary scan skipped it, snapping to the neighbouring corridor cluster ~5m east. The gate now accepts an open forward ray with a close wall behind (`kDeadEndBackM = 2.0`) and the two perpendiculars merely bounded to corridor width (`kDeadEndSideM = 4.0`); the old alcove case is the subset where the sides are also within 2m. Confirmed fixed in-game (spoke "Sackgasse"). **What to watch:** the same gate feeds junction-exit rendering (`WalkmeshAgreesDeadEnd` at the two junction call sites), so the relaxation also lets more degree-1 neighbours count as real dead-end spurs rather than being suppressed as wall-curve artefacts. A genuine open-area wall-curve node that happens to be boxed on three sides within 4m could now be voiced as a "Sackgasse" it shouldn't be. If false dead-ends appear in open areas, tighten `kDeadEndSideM` (the clearance-dump rays in the patch log show the geometry per node). No such regression observed yet.
-
-### One-off crash entering the Sith Academy (creature-teardown access violation) — not reproduced
-
-One hard crash (`0xC0000005` access violation, real dump `swkotor.exe.9744.dmp`, 2026-07-13) while walking from Dreshdae (`korr_m33aa`) into the Sith Academy entrance (`korr_m33ab`). The fault is on the **engine's own module-unload teardown**, not the load and not any path we hook: `CClientExoAppInternal::UnloadModule → ~CGameObjectArray → ~CSWCCreature → ~CSWCLevelUpStats → CSWCCreatureStats::ClearFeats`. `ClearFeats` walks the creature's feats vector; at the fault `this=0x1773dfa0`, `feats.size=0x1482f` (84,015 — impossible for a real creature), and the read lands at `this + size×2 ≈ 0x17767000`. So the `CSWCCreatureStats` block is **corrupt / freed-and-reused** (84,015 reads like leftover heap bytes, not a bad `.utc` value) and the destructor loops off the end — a heap-corruption / use-after-free whose *source* is upstream of the victim destructor. The crash log shows no movie foreground and no anomalies during the Dreshdae session, so this is **distinct** from the Leviathan cutscene fix (commits `0f64a0a` / `122fb5c`): that one was our speech-window activity aborting the Bink movie queue → silent process exit with no dump, whereas this is a genuine access violation with a dump on a teardown path we only ever *read* from. We hook nothing on this path and never write creature/feat data, so it leans engine/save-side — but a stray OOB write elsewhere in the mod landing in that block can't be ruled out from the log alone. **Could not reproduce** (maintainer retried the same transition). If it recurs, the decisive test is a mod-off run (rename `dinput8.dll` → `dinput8.dll.off`, load the same save, cross again): still crashes → engine/save; stops → hunt a stray write in our code. Secondary lead: pull the `korr_m33aa` creature templates to check for a malformed NPC.
-
-### ZDSR never engaged (prism 32-bit symbol decoration) — root cause fixed, pending tester verification
-
-Root cause found and fixed 2026-07-26. Prism's 32-bit import definitions (`defs/zdsr32.def`, `boy_pc_reader32.def`, `pc_talker32.def`) asked the vendor client DLLs for **decorated** `__stdcall` names (`InitTTS@12`, `BoyCtrlSpeak@12`, …), but the real DLLs export **undecorated** ones. Verified three ways: `dumpbin /exports` on a genuine `ZDSRAPI.dll` and `BoyCtrl.dll` (undecorated), `dumpbin /imports` on our shipped `prism.dll` (decorated), and prism's own delay-load stub table in `source/delayimp.cpp`, which is keyed on the *undecorated* names — so the stub fallback couldn't match either, and the delay-load helper raised `0xC06D007F` (`ERROR_PROC_NOT_FOUND`). That is exactly the pl-PL tester's dump (v0.2.1). x64 has no stdcall decoration, so the x64 defs are correct and upstream never saw this; it breaks ZDSR / BoyPC Reader / PC-Talker in **any** 32-bit prism host, ours included.
-
-The earlier SEH guard didn't fix this, it only downgraded the crash to a silent skip: affected users fell through `acquire_best` to OneCore/SAPI and got a Windows voice instead of their screen reader.
-
-Fix: those three backends now resolve their client library at runtime (`LoadLibrary` + `GetProcAddress`) instead of via an import library plus `/delayload`, keeping prism's existing search order — standard search, then next to `prism.dll`, then the reader's install path from the registry. `third_party/prism-dist/x86/prism.dll` rebuilt from the patched vendored source. Local before/after probe: the old build faults `0xC06D007F` on all three backends, the new one returns clean errors, and BoyPC's error code comes from a real call into a genuine `BoyCtrl.dll`, so runtime binding demonstrably works. NVDA selection is unchanged.
-
-**Still unverified in-game** — needs a ZDSR user to confirm speech actually routes to ZDSR; can't repro locally without ZDSR installed. Upstream PR tracked in `docs/upstream-prs.md`. No other non-NVDA reader problem is treated as confirmed yet — collect more reports (patch log line `Speech: ready — normal backend = …` names the backend actually chosen) before adding entries.
-
-### Too many overlapping UI-announce paths — unify
-
-A single on-screen element can be spoken by several independent subsystems, and they don't share one suppression/dedup authority. The tutorial-popup keyboard-hint work (v0.5.9) exposed this: the same TutorialBox message was reachable through the content-fingerprint monitor (`menus_monitors::MonitorPanelContents`), the single-row listbox monitor (`menus.cpp::OnListBoxSetActiveControl`), the panel-focus announce (`menus.cpp::AnnounceNewFocusedControl` → pending-announce drain, channel 0), and the chain-nav announce (`menus_monitors::AnnounceControl`). Substituting the hint required gating/overriding **each** path separately (fingerprint override, text-match suppression on the listbox row, the TutorialBox focus gate, hint substitution in AnnounceControl). It works, but it's fragile: a fifth path or a timing change can leak the old text, and each path has its own dedup channel (or none — `prism::Speak` doesn't dedup; only the channel-0/channel-1 `SpeakIfChanged` sites do). Worth a design pass to funnel all "announce this control's text" through one chokepoint with a single last-spoken dedup and a single substitution/suppression hook, so per-element overrides live in one place instead of N. Related to [[Investigate extracting shared panel-feature helpers]].
-
-### Endar Spire scripted scenes are skippable by accident — thin one-shot tripwires, and one unexplained non-fire
-
-Beta-testing v0.6.2 surfaced three *different* ways a player can reach the Starboard Deck having missed chunks of the tutorial. Only the last is possibly a defect; the first two are vanilla design that happens to punish non-visual play. Recorded here with the measured geometry so the next investigation doesn't start from scratch (module `end_m01aa.mod`; `+Y` is North, `+X` is East).
-
-**1. Scene triggers are thin tripwires with wide bypass lanes.** The bridge scene is driven by two trigger volumes, not by reaching the bridge:
-- `BridgeExplosion1` → `k_pend_bridge04` (spawns `end_bridgerep1` / `end_bridgesith1` at `wp_end_bridgeexp1`). World X 24.63–35.33, Y 142.54–144.04 — about **1.5 m deep**.
-- `BridgeExplosion2` → `k_pend_bridge05` (spawns `end_bridgerep2` / `end_bridgesith2` at `wp_end_bridgeexp2`). World X 28.52–38.95, Y 145.24–145.91 — about **0.7 m deep**.
-
-Both are `TrapOneShot`. The lane that crosses *both* walking north is only X ≈ 28.5–35.3; east of X 35.3 misses the first, east of X 39 misses both. A sighted player sees the bridge and walks over it; a blind player following audio cues can walk up the east side and silently skip the whole scene, with no indication one existed. By contrast the large `end_sealbridge` volume (X 24.72–44.00, Y 136.05–162.72, OnEnter `k_pend_bridge06` / OnExit `k_pend_bridge07`, setting `END_PC_ON_BRIDGE` / `END_TRASK_ON_BRIDGE`) is nearly impossible to miss — so presence flags alone are not evidence the scene ran. The reinforcement wave after the doomed-soldier battle is the same shape: `end_reinfrc` (OnEnter `k_pend_reinfrc06`) spans X 34.30–39.10, Y 74.87–86.79 and spawns `end_reinforce3` / `end_reinforce4`.
-
-**2. Some tutorials are conditional and a competent player legitimately never sees them.** The medkit prompt (our `TutTraskMedkit`) is gated on the PC being wounded. In `patch-20260725-001517.log` every attack on the player logged `Schaden: 0` — the hint is authored and wired in all five languages, it simply had no reason to fire. Not a bug; worth remembering before chasing "missing" tutorial hints.
-
-**3. Unexplained: the bridge battle does not start even when the trigger is entered.** In `patch-20260725-001517.log` the player stood at (24.98, 143.18) — inside `BridgeExplosion1` — and the explosions fired, but `END_BRIDGE_COMBAT` and `END_SITH_DEAD` both stayed 0 for the whole session and **no combat occurred at all after 00:22:43**. So the explosion half of the scene ran and the combat half did not, and Trask's "no sign of Bastila, head for the escape pods" line (selected via `END_TRASK_DLG`, which `k_pend_sith_d` advances alongside `END_SITH_DEAD` / `END_BRIDGE_COMBAT`) never became reachable. Full plot progression was otherwise normal that run (room3=2, room5=3, room8=2, room7=2).
-
-**Why this is not yet answered.** All module analysis so far is *string-constant extraction* from compiled `.ncs` — enough to see which globals and tags a script touches, not its control flow. There is no `xoreos-tools` on this machine (filesystem-wide search, 2026-07-25, found none). Settling this needs a real NCS disassembler to read `k_pend_bridge04` / `05` / `06` and `k_pend_sith_d`. That is a day of work, but it would pay off for every future "why didn't this fire" question, so it is worth costing properly before starting. The throwaway ERF / GFF / NCS-string readers used for this investigation were scratchpad-only and are gone; `docs/llm-docs/` has no module-reading recipe yet.
-
-**Diagnostic already in place.** `endar_softlock.cpp` edge-logs `END_ROOM3/5/7/8_DEAD`, `END_SITH_DEAD`, `END_BRIDGE_COMBAT` and combat state while in `END_M01AA` (tag `Endar.Diag`), so any future stuck report carries the timeline. It does **not** yet log `END_PC_ON_BRIDGE` / `END_TRASK_ON_BRIDGE`; adding those two would be the cheapest next step if this recurs.
+_None currently._
 
 ## Polish
 
@@ -143,12 +50,6 @@ If an autowalk or beacon is already running and the player triggers a new autowa
 
 The sliders under Mod-Einstellungen (e.g. hint-sound volume) only persist their new value to `acc_settings.ini` once the user presses Enter on the row. Adjusting a slider with Left / Right changes it for the session and previews the new level, but the change isn't written until an explicit Enter — so a player who tweaks a slider and leaves the menu without pressing Enter loses the change on next launch. Slider adjustments should persist on each Left / Right step (the same way the value already updates live), without needing a confirming keypress.
 
-### Installer fr/it/es translations are AI drafts
+### Fold in human translation contributions as they arrive
 
-`installer/KotorAccessibilityInstaller/Locales/{fr,it,es}.json` were drafted by Claude from the English source rather than by native speakers. Strings render correctly and key parity with `en.json` is verified (136/136 keys), but specific phrasings — error messages, formal-vs-informal address ("vous" / "lei" / "usted"), and idiomatic phrasings around modding terminology — may read awkwardly to a native ear. Native-speaker contributors are welcome to refine; PRs against the three JSON files are scoped contributions. German (`de.json`) is human-authored by the maintainer and is the quality bar.
-
-### Investigate extracting shared panel-feature helpers
-
-Several screen modules repeat the same scaffolding — structural panel identification (foreground modal + vtable/field checks), SEH-guarded field readers, a snapshot/diff "announce on change" loop, and hotkey-`Consume`-then-poll gating. `pazaak.cpp` is the newest example; the menu/combat modules have older variants. Worth a pass to see how much can move into shared helpers without over-generalising (past refactors already pulled out the listbox/select-then-confirm and `menus_*` seams). Ready-to-paste prompt for a future session:
-
-> Audit the panel/screen feature modules in `patches/Accessibility/` (e.g. `pazaak.cpp`, `menus_store.cpp`, `menus_*`, `combat*`, `examine_view.cpp`, `view_mode.cpp`) for repeated boilerplate: (a) structural panel identification, (b) SEH-guarded `ReadInt`/`ReadPtr`/field readers, (c) snapshot-and-diff "announce deltas" loops, (d) `hotkeys::Consume` + `Pressed` gating tied to a foreground panel. Propose a small set of shared helpers (header + cpp) that capture the common shapes WITHOUT forcing unrelated modules into one mould — respect the existing `menus_*` seams and the prior refactor boundaries. For each proposed helper: which call sites adopt it, what stays bespoke, and the risk. Don't refactor yet — produce the plan and one worked example (convert `pazaak.cpp`), then stop for review.
+Most of the mod's non-German, non-English text is machine-drafted — the in-game strings for French, Italian, Spanish, Russian and Polish, and the installer's `Locales/{fr,it,es}.json`. They are correct in structure (key parity verified) but the phrasing, formal-vs-informal address, and modding terminology may read awkwardly to a native ear. German is human-authored by the maintainer and is the quality bar. As native speakers contribute corrections, merge them; PRs against the individual string files are a well-scoped contribution to point people at.
