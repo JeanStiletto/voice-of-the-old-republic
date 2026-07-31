@@ -13,6 +13,7 @@
 #include "prism.h"           // Speak — pause/resume cue
 #include "strings.h"         // Id::GamePaused / Id::GameResumed
 #include "engine_rebase.h"
+#include "engine_game.h"
 
 namespace acc::engine {
 
@@ -342,6 +343,7 @@ void TickInputClassReassert() {
 }  // namespace acc::engine
 
 extern "C" void __cdecl OnSwitchToSWInGameGui(void* thisPtr, int guiId) {
+    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
     // First-fire diagnostic — single line per session so absence proves
     // the hook never installed (vs. installing but firing silently in
     // the cold path with no active sub-screen to clean up).
@@ -396,6 +398,7 @@ extern "C" void __cdecl OnSwitchToSWInGameGui(void* thisPtr, int guiId) {
 extern "C" void __cdecl OnSetSWGuiStatus(void* thisPtr,
                                           void* p1_addr,
                                           void* p2_addr) {
+    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
     if (!p1_addr || !p2_addr) return;
 
     int new_status = -1;
@@ -454,6 +457,7 @@ extern "C" void __cdecl OnSetSWGuiStatus(void* thisPtr,
 // CALL instruction, so we can identify the engine function that's
 // closing pause and decide how to suppress it.
 extern "C" void __cdecl OnHideSWInGameGui(void* thisPtr, void* p1_addr) {
+    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
     if (!p1_addr) return;
 
     int param_1 = -1;
@@ -488,6 +492,7 @@ extern "C" void __cdecl OnHideSWInGameGui(void* thisPtr, void* p1_addr) {
 extern "C" void __cdecl OnSetPauseState(void* thisPtr,
                                          void* p1_addr,
                                          void* p2_addr) {
+    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
     if (!p1_addr || !p2_addr) return;
 
     int mask = 0;

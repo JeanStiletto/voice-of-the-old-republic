@@ -9,6 +9,7 @@
 #include "engine_player.h"    // GetPlayerPosition — world-live replay gate
 #include "log.h"
 #include "prism.h"
+#include "engine_game.h"
 
 namespace acc::msg {
 
@@ -89,6 +90,7 @@ namespace { void EnsureRulesRegistered(); }
 
 extern "C" void __cdecl OnAppendToMsgBuffer(void* /*guiInGame*/,
                                             void* esp_param1_addr) {
+    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
     EnsureRulesRegistered();
 
     CExoString* exoStr = nullptr;

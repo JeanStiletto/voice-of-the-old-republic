@@ -53,6 +53,7 @@
 #include "bringup_announce.h"   // Loading-phase nag when user presses arrows too early
 #include "transitions.h"        // Phase 2 lay-off 7 — Pillar 2 area+room announce
 #include "engine_rebase.h"
+#include "engine_game.h"
 
 // Engine readers + offset constants moved to engine_reads.{h,cpp} +
 // engine_offsets.h in Phase 0 lay-off 2. Pull the readers' names into the
@@ -385,6 +386,7 @@ using acc::engine::IsModalPopupPanel;
 
 
 extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
+    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
     EnsurePrismInitialized();
     static int n = 0;
     ++n;
@@ -508,6 +510,7 @@ extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
 // (race / class / portrait pickers in chargen, save-game list, etc.).
 extern "C" void __cdecl OnListBoxSetActiveControl(void* listBox, void* newRow,
                                                   int param2) {
+    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
     EnsurePrismInitialized();
 
     static int n = 0;

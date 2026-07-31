@@ -19,6 +19,7 @@
 #include "strings.h"
 #include "prism.h"
 #include "engine_rebase.h"
+#include "engine_game.h"
 
 namespace acc::passive_narrate {
 
@@ -449,5 +450,6 @@ void Tick() {
 // Thin trampoline for the ShowObject detour (hooks.toml @ 0x005f9c8e).
 extern "C" __declspec(dllexport)
 void __cdecl OnShowObject(void* /*clientObject*/, int handle) {
+    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
     acc::passive_narrate::OnEngineShowObject(static_cast<uint32_t>(handle));
 }

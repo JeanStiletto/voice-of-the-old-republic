@@ -23,6 +23,7 @@
 #include "strings.h"
 #include "prism.h"
 #include "room_topology.h"      // single source of truth for perceptual-
+#include "engine_game.h"
                                 // region labels (nav-graph decomposition)
 
 // Forward decl from core_dllmain.cpp. The OnSetMoveToModuleString detour
@@ -1470,6 +1471,7 @@ void AnnouncePreLoadDestination(void* exoStringPtr) {
 // order matches the hooks.toml declaration.
 extern "C" void __cdecl OnSetMoveToModuleString(void* /*serverApp*/,
                                                 void* arg_addr) {
+    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
     EnsurePrismInitialized();
 
     void* exoStringPtr = nullptr;

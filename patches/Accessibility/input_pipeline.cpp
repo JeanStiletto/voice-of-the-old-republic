@@ -44,6 +44,7 @@
                              // slot to drive deterministic targeting
 #include "passive_narrate.h" // ReannounceCurrentShowObjectTarget — Q/E
 #include "engine_rebase.h"
+#include "engine_game.h"
                              // re-announce path for the single-enemy
                              // combat case where the engine's cycle
                              // is a no-op but the user still expects
@@ -144,6 +145,7 @@ void PrepareBareDispatchForNarratedTarget() {
 // investigation needs explicit frame markers, restore the acclog::Write
 // call here — one line of code.
 extern "C" void __cdecl OnProcessInput(void* /*this_ptr*/) {
+    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
     acc::input::NextSeq();
 }
 
@@ -166,6 +168,7 @@ extern "C" void __cdecl OnProcessInput(void* /*this_ptr*/) {
 extern "C" int __cdecl OnClientHandleInputEvent(void* this_ptr,
                                                 void* p1_addr,
                                                 void* p2_addr) {
+    if (!acc::game::HandlerEnabled()) return 0;  // KOTOR 2: not ported yet — 0 = not consumed
     if (!p1_addr || !p2_addr) return 0;
 
     int param_1 = 0;

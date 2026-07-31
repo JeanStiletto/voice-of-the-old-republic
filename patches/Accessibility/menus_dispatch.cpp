@@ -48,6 +48,7 @@
 #include "interact_dispatch.h"
 #include "minigame_pazaak.h"
 #include "peek_description.h"
+#include "engine_game.h"
 
 using namespace acc::engine;
 
@@ -69,6 +70,7 @@ void EnsurePrismInitialized();
 // real announcement signal; HandleFocusChange fires twice per navigation
 // (old loses focus + new gains focus) so speaking from here would echo.
 extern "C" void __cdecl OnHandleFocusChange(void* thisPtr, int param_1) {
+    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
     EnsurePrismInitialized();
     static int n = 0;
     ++n;
@@ -92,6 +94,7 @@ extern "C" void __cdecl OnHandleFocusChange(void* thisPtr, int param_1) {
 // At hook entry: ECX = this, EBX = param_1 (InputIndices key/button code),
 // EAX = param_2 (state).
 extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_2) {
+    if (!acc::game::HandlerEnabled()) return param_2;  // KOTOR 2: not ported yet — pass state through unchanged
     EnsurePrismInitialized();
     static int n = 0;
     ++n;

@@ -74,4 +74,25 @@ inline bool IsKotor2() { return CurrentTitle() == Title::Kotor2; }
 const char* TitleName();
 const char* BuildName();
 
+// Default-deny gate for hook handlers during the KOTOR 2 port.
+//
+// Why a gate is needed before a single KOTOR 2 hook may be installed: a handler
+// is not self-contained. OnSetActiveControl, for instance, calls
+// IsLoadingSaveGame, which dispatches through CServerExoApp::GetLoadFromSaveGame
+// — an address that resolves to 0 on KOTOR 2. Installing that hook without a
+// gate calls a null pointer on the first focus change. Roughly 230 addresses
+// and 470 offsets are still unresolved, so most handlers have a chain like this
+// somewhere in them.
+//
+// Usage, as the first line of every hook handler:
+//
+//     if (!acc::game::HandlerEnabled()) return;
+//
+// It is a no-op on KOTOR 1 and blocks on KOTOR 2. A handler is cleared for
+// KOTOR 2 by replacing that call with an explicit branch, once its whole
+// read/call chain has been ported — not before.
+//
+// `grep -c "HandlerEnabled()"` counts handlers still KOTOR-1-only.
+inline bool HandlerEnabled() { return !IsKotor2(); }
+
 }  // namespace acc::game

@@ -26,6 +26,7 @@
 #include "engine_player.h"
 #include "log.h"
 #include "engine_rebase.h"
+#include "engine_game.h"
 
 // ============================================================================
 // Detour entry points — wired via hooks.toml + exports.def.
@@ -34,6 +35,7 @@
 extern "C" void __cdecl OnCombatRoundAddAction(void* this_combatRound,
                                                void* esp_action_addr,
                                                void* esp_param2_addr) {
+    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
     // Deref the stack slots per project_kpatchmanager_lea_bug.md — `source =
     // "esp+N"` emits LEA so the handler receives the *address* of the slot.
     void* action = nullptr;

@@ -571,7 +571,9 @@ const size_t kControlTooltipStringOffset = acc::off::Todo(0x28); // CExoString l
 // CSWGuiControl.id is the .gui-time numeric ID assigned by the layout file.
 // Stable across localizations and panel.controls reordering, so this is the
 // canonical way to address a known child of a known panel kind.
-const size_t kControlIdOffset = acc::off::Todo(0x50);  // int id
+// +4 in KOTOR 2, observed: its CSWGuiControl::Load reads the .gui property
+// named "ID" (default -1) and stores it at this+0x54, where KOTOR 1 uses +0x50.
+const size_t kControlIdOffset = acc::off::Pick(0x50, 0x54);  // int id
 
 // CSWGuiSaveLoadEntry layout (from swkotor.exe.h:16673). Each row in the
 // CSWGuiSaveLoad.games_listbox is a CSWGuiSaveLoadEntry that embeds a

@@ -13,6 +13,7 @@
 #include "prism.h"
 #include "spatial_change_detector.h"
 #include "strings.h"
+#include "engine_game.h"
 
 namespace acc::audio::footstep_suppress {
 
@@ -463,6 +464,7 @@ void Tick() {
 // The hooks.toml comment above the entry documents why every "obvious"
 // cut location clobbered EFLAGS or EAX.
 extern "C" int __cdecl OnPlayFootstep(void* creature) {
+    if (!acc::game::HandlerEnabled()) return 1;  // KOTOR 2: not ported yet — 1 = let the footstep play
     if (!creature) return 1;
 
     // Mimic the engine's field6_0x20==0 early-out — we replaced its JZ.

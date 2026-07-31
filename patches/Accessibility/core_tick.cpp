@@ -55,6 +55,7 @@
 #include "transitions.h"
 #include "update_checker.h"
 #include "view_mode.h"
+#include "engine_game.h"
 
 namespace acc::tick {
 
@@ -440,5 +441,6 @@ void Dispatch() {
 // CSWGuiManager::Update detour @0x40ce76. Per-frame, post-input. Safe
 // callback site for deferred cursor moves — input pipeline isn't mid-flight.
 extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
+    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
     acc::tick::Dispatch();
 }

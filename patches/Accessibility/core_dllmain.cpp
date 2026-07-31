@@ -283,6 +283,7 @@ void InstallMouseGuard() {
 // point at which we detect the user's installed language. File I/O is
 // safe here (we're well past loader lock by the time CSWRules runs).
 extern "C" void __cdecl OnRulesInit(void* /*rulesThis*/) {
+    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
     static bool fired = false;
     if (fired) return;
     fired = true;

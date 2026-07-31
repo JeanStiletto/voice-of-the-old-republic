@@ -23,6 +23,7 @@
 #include <cstdint>
 
 #include "log.h"
+#include "engine_game.h"
 
 namespace acc::audio::pitch {
 
@@ -51,6 +52,7 @@ bool IsScopedZeroActive() {
 }  // namespace acc::audio::pitch
 
 extern "C" int __cdecl OnCalculatePitchVarianceFrequency(void* source) {
+    if (!acc::game::HandlerEnabled()) return 0;  // KOTOR 2: not ported yet — 0 = keep engine jitter
     // Out-of-scope sounds keep their jitter — fall through.
     if (!acc::audio::pitch::IsScopedZeroActive()) return 0;
 

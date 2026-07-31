@@ -7,6 +7,7 @@
 #include "engine_player.h"  // GetPlayerServerCreature
 #include "log.h"
 #include "engine_offsets_select.h"
+#include "engine_game.h"
 
 namespace acc::door_announce {
 
@@ -77,5 +78,6 @@ void Tick() {
 // comparable to the leader's. We only record; the facing readout + player
 // filter + dedup run on the next tick.
 extern "C" void __cdecl OnDoorOpen(void* /*serverDoor*/, uint32_t openerServerId) {
+    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
     acc::door_announce::NoteDoorOpened(openerServerId);
 }

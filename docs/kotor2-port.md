@@ -98,6 +98,39 @@ Nothing new is needed to ship one mod into two games:
   `.kpatch` files (4GB-aware, borderless) against known Steam and GOG hashes.
 - `swkotor2.exe` imports `dinput8.dll`, so the proxy loader works unchanged.
 
+## Why KOTOR 2 hooks are still not installed
+
+Two independent blockers, both discovered by trying. Neither is a reason to
+slow down — but each has to be cleared per hook, so "enable them all" is not a
+single step.
+
+**1. Handlers are not self-contained.** `OnSetActiveControl` calls
+`IsLoadingSaveGame`, which dispatches through
+`CServerExoApp::GetLoadFromSaveGame` — an address that resolves to **0** on
+KOTOR 2. Installing that hook calls a null pointer on the first focus change.
+With ~230 addresses and ~470 offsets still unresolved, most handlers have a
+chain like that somewhere in them. This is what `acc::game::HandlerEnabled()`
+now guards: every hook handler default-denies on KOTOR 2, and a handler is
+cleared by replacing that call with an explicit branch once its whole
+read/call chain is ported. `grep -c "HandlerEnabled()"` counts what is left.
+
+**2. KOTOR 2's GUI code is compiled UNOPTIMISED, so hook designs do not
+transfer.** Its `SetActiveControl` opens with a textbook frame — `PUSH EBP /
+MOV EBP,ESP / SUB ESP,0x8 / MOV [EBP-8],ECX` — and every subsequent access
+reloads `this` from `[EBP-8]`. KOTOR 1's equivalent is optimised and keeps
+`this` in a register, which is why our hook takes it from EDI/ESI mid-function.
+
+So a KOTOR 2 hook cannot reuse the KOTOR 1 cut point, cut length or register
+sources. Each needs its own listing read (`PrintListing.java`) to pick a safe
+cut of relocatable instructions and decide where its arguments actually live —
+for `SetActiveControl` that is `panel = [EBP-8]`, `newControl = [EBP+8]` after
+the prologue at `0x0040EC09`.
+
+Note this also makes KOTOR 2 *easier* to read and *harder* to hook: unoptimised
+code gives cleaner decompiles (which is why the offsets came out so fast) but
+frame-relative arguments instead of register ones, and `esp+X` parameter
+sources are the one KPatchManager feature with a known bug.
+
 ## Steps
 
 1. **Game-identity seam.** *(done 2026-07-31)* `engine_game.{h,cpp}` owns

@@ -12,6 +12,7 @@
 #include "view_mode.h"
 #include "engine_rebase.h"
 #include "engine_offsets_select.h"
+#include "engine_game.h"
 
 namespace acc::audio {
 
@@ -363,6 +364,7 @@ constexpr bool kSubstituteCursorForListener = true;
 
 extern "C" int __cdecl OnSetListenerPosition(void* exoSound,
                                              Vector** posSlot) {
+    if (!acc::game::HandlerEnabled()) return 1;  // KOTOR 2: not ported yet — 1 = engine proceeds normally
     Vector* enginePos = nullptr;
     if (posSlot) {
         __try {

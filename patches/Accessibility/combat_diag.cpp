@@ -14,6 +14,7 @@
 #include "narrated_target.h"
 #include "engine_rebase.h"
 #include "engine_offsets_select.h"
+#include "engine_game.h"
 
 namespace acc::combat_diag {
 
@@ -283,6 +284,7 @@ const char* RoleTag(void* combatRound) {
 
 
 extern "C" void __cdecl OnCombatRoundRemoveAllActions(void* this_combatRound) {
+    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
     // Skip no-op clears. The engine's very next instruction after our cut is
     // TEST EAX,EAX / JZ — a clear against a round with no queued actions
     // removes nothing and returns immediately. This hook exists to answer
@@ -316,6 +318,7 @@ extern "C" void __cdecl OnCombatRoundRemoveAllActions(void* this_combatRound) {
 
 extern "C" void __cdecl OnCombatRoundSetCurrentAction(void* this_combatRound,
                                                      void* esp_byte_addr) {
+    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
     uint8_t byte_param = 0xff;
     __try {
         if (esp_byte_addr) {
@@ -329,6 +332,7 @@ extern "C" void __cdecl OnCombatRoundSetCurrentAction(void* this_combatRound,
 }
 
 extern "C" void __cdecl OnCombatRoundRemoveLastAction(void* this_combatRound) {
+    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
     acclog::Write("Combat.Diag",
         "REMLAST [%s] round=%p",
         acc::combat_diag::RoleTag(this_combatRound),

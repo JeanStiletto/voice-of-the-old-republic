@@ -54,6 +54,7 @@
                               //              player is holding fire keys)
 #include "strings.h"          // Get(TurretGameStarted/Controls/Ended)
 #include "engine_offsets_select.h"
+#include "engine_game.h"
 
 namespace acc::turret_game {
 
@@ -1895,6 +1896,7 @@ void HandleExit() {
 // ECX = the hit-event object (see the constants block above for its layout).
 // ============================================================================
 extern "C" void __cdecl OnTurretBulletHit(void* hitEvent) {
+    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
     if (!hitEvent || !g_state.active) return;
 
     Vector impact;
@@ -1938,6 +1940,7 @@ extern "C" void __cdecl OnTurretBulletHit(void* hitEvent) {
 // player fire event; counts PLAYER shots only (enemy fire shares AddBullet, not
 // this). Drives the session hits/shots accuracy line. ECX = CSWMiniPlayer (unused).
 extern "C" void __cdecl OnPlayerFire(void* /*player*/) {
+    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
     if (!g_state.active) return;
     ++g_state.shots_fired;
 }
