@@ -48,6 +48,16 @@
 #include "menus_focus_k2.h"
 #include "prism.h"
 
+// Defined in core_dllmain.cpp, and forward-declared per TU the same way
+// menus.cpp / menus_dispatch.cpp / transitions.cpp do it.
+//
+// Prism is loaded LAZILY — DllMain cannot do it (loader lock), so the first
+// hook to fire is what initialises the screen reader bridge. Every KOTOR 1
+// handler calls this before speaking. The first KOTOR 2 run proved why it
+// matters: the focus hook read every caption correctly and spoke none of them,
+// because this call was missing and prism::Speak had nothing to speak through.
+void EnsurePrismInitialized();
+
 namespace acc::menus::k2 {
 
 namespace {
@@ -61,6 +71,7 @@ char s_lastSpoken[256] = {0};
 
 void AnnounceFocus(void* panel, void* control) {
     if (!control) return;
+    EnsurePrismInitialized();
 
     uint32_t vtable = acc::engine::ReadU32(control, 0);
     uint32_t id = acc::engine::ReadU32(control, kControlIdOffset);
