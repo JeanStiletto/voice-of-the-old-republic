@@ -55,7 +55,7 @@ const uintptr_t kAddrGetTotal = acc::addr::R(0x006e4360); // CPazaakPlayer::GetT
 const uintptr_t kAddrHandleContinue = acc::addr::R(0x0067ec20); // End Turn
 const uintptr_t kAddrHandleStand = acc::addr::R(0x0067ed00); // Stand
 const uintptr_t kAddrHandlePlayHandCard = acc::addr::R(0x0067ede0); // Play hand card (int slot)
-const uintptr_t kAddrWagerHandleInput = acc::addr::R(0x0067e150); // CSWGuiWagerPopup::HandleInputEvent
+const uintptr_t kAddrWagerHandleInput = acc::addr::Pick(0x0067e150, 0x00887B10); // CSWGuiWagerPopup::HandleInputEvent
 typedef void (__thiscall* PFN_WagerHandleInput)(void* popup, int code, int state);
 
 // ---- Struct offsets ------------------------------------------------------

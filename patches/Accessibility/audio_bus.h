@@ -162,7 +162,7 @@ const uintptr_t kAddrCExoSoundSourceInternalCalculatePitchVarianceFrequency
 // CResRef-takers (Play, SetResRef) use the 16-byte CResRef struct.
 const uintptr_t kAddrCExoSoundSourceCtor = acc::addr::R(0x005D5870);
 const uintptr_t kAddrCExoSoundSourceCtorWithResRef = acc::addr::R(0x005D60E0);
-const uintptr_t kAddrCExoSoundSourceDtor = acc::addr::R(0x005D60A0);
+const uintptr_t kAddrCExoSoundSourceDtor = acc::addr::Pick(0x005D60A0, 0x0070AB60);
 const uintptr_t kAddrCExoSoundSourceSetPriorityGroup = acc::addr::R(0x005D5900);
 const uintptr_t kAddrCExoSoundSourceSet3D = acc::addr::R(0x005D5910);
 const uintptr_t kAddrCExoSoundSourcePlay = acc::addr::R(0x005D5930);

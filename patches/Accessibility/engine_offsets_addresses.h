@@ -117,7 +117,7 @@ const uintptr_t kVtableCSWGuiPortraitCharGen     = acc::addr::Pick(0x00759ea8, 0
 // CSWCCreatureStats.portrait_id at +0x11c, CSWGuiPortraitCharGen.portrait_id
 // at +0x1238, and CSWCObject.portrait at +0xa8 are all stale during chargen
 // — this accessor is the only reliable read-side primitive we have.
-const uintptr_t kAddrCSWCCreatureGetPortraitId = acc::addr::R(0x00617070);
+const uintptr_t kAddrCSWCCreatureGetPortraitId = acc::addr::Pick(0x00617070, 0x007650C0);
 
 // CSWCCreature::GetPortrait — __thiscall, fills caller-supplied CResRef
 // (16 bytes) with the current portrait baseresref (e.g. "po_pmhc3").
@@ -127,7 +127,7 @@ const uintptr_t kAddrCSWCCreatureGetPortraitId = acc::addr::R(0x00617070);
 // only ever pass 0 since chargen doesn't ladder dark side. Caller-pops
 // 8 bytes (BYTES_PURGED=8). Resref is 16 bytes, NOT necessarily null-
 // terminated when length == 16, so we always reserve a 17-byte buffer.
-const uintptr_t kAddrCSWCCreatureGetPortrait = acc::addr::R(0x00617030);
+const uintptr_t kAddrCSWCCreatureGetPortrait = acc::addr::Pick(0x00617030, 0x00765060);
 
 // CSWGuiAbilitiesCharGen vtable (chargen attributes panel). Member layout, and
 // why we mirror chain focus into selected_ability, are documented in
@@ -439,11 +439,11 @@ const uintptr_t kAddrGetCombatMode = acc::addr::R(0x005ede70);
 const uintptr_t kAddrGetPausedByCombat = acc::addr::R(0x005edc10);
 
 // CSWSCreature engine getters — Phase 2A snapshot path.
-const uintptr_t kAddrCSWSCreatureGetMaxHitPoints = acc::addr::R(0x004ed310);
+const uintptr_t kAddrCSWSCreatureGetMaxHitPoints = acc::addr::Pick(0x004ed310, 0x0057E8C0);
 const uintptr_t kAddrCSWSCreatureGetArmorClass = acc::addr::R(0x004ed1d0);
 const uintptr_t kAddrCSWSCreatureGetMaxForcePoints = acc::addr::R(0x004fd490);
-const uintptr_t kAddrCSWSCreatureGetDead = acc::addr::R(0x004ef820);
-const uintptr_t kAddrCSWSObjectGetCurrentHitPoints = acc::addr::R(0x004caec0);
+const uintptr_t kAddrCSWSCreatureGetDead = acc::addr::Pick(0x004ef820, 0x00563460);
+const uintptr_t kAddrCSWSObjectGetCurrentHitPoints = acc::addr::Pick(0x004caec0, 0x005413C0);
 
 // CSWSObject::GetDamageLevel @0x004cb020 — `ulong __thiscall(this)`.
 // Returns a 0..5 byte (verified via decompile 2026-05-22) representing
@@ -555,7 +555,7 @@ const uintptr_t kAddrAbilitiesDisplayPowers = acc::addr::R(0x006abe70);  // int(
 // own input handler; code 0x29 runs the engine's smart tab cycle
 // (Skills -> Powers-if-any -> Feats -> Skills, auto-skipping an empty Powers
 // tab). These are panel-internal codes, distinct from the manager kInput* codes.
-const uintptr_t kAddrAbilitiesHandleInputEvent = acc::addr::R(0x006ae5f0);
+const uintptr_t kAddrAbilitiesHandleInputEvent = acc::addr::Pick(0x006ae5f0, 0x008A3660);
 
 // CGuiInGame::ShowExamineBox — DO NOT CALL DIRECTLY (skeleton).
 // Verified 2026-05-10 from Lane's symbol table: this is a 2-parameter

@@ -37,9 +37,9 @@ const size_t kBehTargetDistOffset  = acc::off::Todo(0x110);
 const size_t kBehZOffsetOffset     = acc::off::Todo(0x120);
 
 // Engine primitives.
-const uintptr_t kAddrCameraGetDist = acc::addr::R(0x0045C1D0);
-const uintptr_t kAddrCameraGetYaw = acc::addr::R(0x0045C170);
-const uintptr_t kAddrCameraGetPitch = acc::addr::R(0x0045C1A0);
+const uintptr_t kAddrCameraGetDist = acc::addr::Pick(0x0045C1D0, 0x00481990);
+const uintptr_t kAddrCameraGetYaw = acc::addr::Pick(0x0045C170, 0x004818F0);
+const uintptr_t kAddrCameraGetPitch = acc::addr::Pick(0x0045C1A0, 0x00481940);
 const uintptr_t kAddrZoomCamera = acc::addr::R(0x006401D0);
 
 // Camera-tuning globals identified via ListSymbolsByName.java. Read-only in

@@ -502,7 +502,18 @@ const size_t    kPowersLevelUpChartOffset              = acc::off::Todo(0x19fc);
 //   +0x2c4  short    items_per_page
 //   +0x2c6  short    selection_index   ← which row is "current"
 //   +0x2c8  short    top_visible_index ← scroll offset
-const size_t kPanelActiveControlOffset      = acc::off::Todo(0x1c);
+// active_control: KOTOR 2 value read DIRECTLY out of its own
+// CSWGuiPanel::SetActiveControl decompile, which compares and assigns
+// this+0x20 where KOTOR 1 uses this+0x1c. Not inferred — observed.
+//
+// The same decompile shows CSWGuiPanel.manager at +0x1c (KOTOR 1: +0x18) and
+// the control's gui-sound byte at +0x59 (KOTOR 1: +0x55), so this region of
+// both CSWGuiPanel and CSWGuiControl is uniformly +4.
+const size_t kPanelActiveControlOffset      = acc::off::Pick(0x1c, 0x20);
+// controls: left Todo deliberately. +4 (0x24) is the obvious guess given the
+// neighbours above, but nothing has been observed reading this field on
+// KOTOR 2 yet, and a wrong array base yields plausible garbage rather than a
+// fault. Confirm against a K2 function that walks the array.
 const size_t kPanelControlsOffset           = acc::off::Todo(0x20);
 const size_t kListBoxControlsOffset         = acc::off::Todo(0x29c);
 const size_t kListBoxBitFlagsOffset         = acc::off::Todo(0x2bc);

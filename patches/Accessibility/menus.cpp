@@ -160,7 +160,13 @@ using acc::menus::MarkSpoken;
 // behind the cursor unless we explicitly set it. Enter / F1 activates
 // panel.activeControl, so without this call the engine activates the
 // previously-clicked button instead of the cursor target.
-const uintptr_t kAddrPanelSetActiveControl = acc::addr::R(0x0040a630);
+// KOTOR 2 address derived by vtable-slot correspondence
+// (tools/re-scripts/vtable_map.py): for a class present in both games, slot N
+// holds the same logical method, so pairing the tables gives K1 -> K2 without
+// decompiling. This one is as well-corroborated as that method gets — 71
+// different classes inherit it, every one puts it in the same slot, and all 71
+// agree on this K2 address.
+const uintptr_t kAddrPanelSetActiveControl = acc::addr::Pick(0x0040a630, 0x0040EC00);
 typedef void (__thiscall* PFN_PanelSetActiveControl)(void* panel, void* control);
 
 // The "fire activate" primitive (vtable[15].HandleInputEvent(0x27, 1)) used

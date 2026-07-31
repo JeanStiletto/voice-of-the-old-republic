@@ -26,7 +26,7 @@ const uintptr_t kAddrShowTutorialWindow = acc::addr::R(0x0062f4a0);
 // TLK and sets the box text. (The CExoString overload @0x006271a0 destroys its
 // arg, so we use the strref one.)
 using PFN_SetMessageStrref = void(__thiscall*)(void* box, uint32_t strref);
-const uintptr_t kAddrSetMessageStrref = acc::addr::R(0x006249d0);
+const uintptr_t kAddrSetMessageStrref = acc::addr::Pick(0x006249d0, 0x0040FFB0);
 
 // CSWGuiTutorialBox::SetTutorialReason @0x006aa900 — configures the box as a
 // TUTORIAL (single "Weiter"/OK prompt, page state) for a row, the way the funnel
