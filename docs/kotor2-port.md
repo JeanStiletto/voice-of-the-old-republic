@@ -301,6 +301,59 @@ entry; param_1 = [EBP+8], param_2 = [EBP+0xC].
 slot table, which is what makes equipment / inventory / journal / map classify
 at all — until then they fall through to vtable identification and read Unknown.
 
+*Started 2026-08-01.* The constant surface is tiny — `port_worklist.py` over
+`engine_subscreen.cpp` + `msg_router.cpp` reports **7 constants, 3 resolved, 4
+unresolved**, and all four belong to `tutorial_popup.cpp` / the combat-pause
+setter rather than to the handlers themselves. So Batch 2's real work is the
+slot table and the four hook addresses, not offset archaeology.
+
+#### The CGuiInGame slot table — RECOVERED (2026-08-01)
+
+29 of ~35 slots, by a method that needs no decompiler and is now a tool:
+`tools/re-scripts/k2_slot_table.py`. RTTI names each panel class's vtable; the
+constructor is whoever stores that vtable into `[this]`; CGuiInGame's creator
+(`0x007BE4C0`, with a smaller second creator at `0x007D0760`) calls each
+constructor and files the result into its own slot. KOTOR 2's unoptimised build
+is what makes the last step tractable — every intermediate lands in a named
+stack temporary, so following the returned pointer to its `mov [this+off], reg`
+is a short chain of `mov`s.
+
+    python tools/re-scripts/k2_slot_table.py C:/Tools/k2re/swkotor2.exe \
+        docs/llm-docs/re/k2/k2-functions.csv docs/llm-docs/re/k2/k2-vtables.csv \
+        0x007be4c0 0x007d0760
+
+**The result is the port's structural model in miniature: identical up to
++0x74, then KOTOR 2 inserts members and everything above shifts.** Do NOT mark
+this table `Same` wholesale.
+
+Unchanged (K1 == K2): Equip 0x0c, Inventory 0x10, Abilities 0x18, Journal 0x20,
+Map 0x24, Options 0x28, DialogCinematic 0x40, DialogComputer 0x44, BarkBubble
+0x4c, Examine 0x50, Container 0x54, CreateItemMenu 0x58, CreateItemSubMenu
+0x5c, DialogLetterbox 0x60, Fade 0x6c, LoadModuleDebugMenu 0x70,
+PowersFeatsSkillsDebugMenu 0x74, InGamePause 0x7c, Store 0x84.
+
+Moved — and these are the ones that would misclassify silently:
+- **InGameMessages 0x1c → 0x78.** Worse than a shift: KOTOR 1's 0x78 is
+  PartySelection, so a stale table maps the two onto each other.
+- SoloModeQuery 0x8c → 0x94, AreaTransition 0x94 → 0x9c, MessageBox 0x98 →
+  0xa0, SkillInfoBox 0x9c → 0xac, TutorialBox 0xa0 → 0xb0, StatusSummary
+  0xa8 → 0xb8.
+- **0x14 is CSWGui3DSceneView on KOTOR 2**, where KOTOR 1 has InGameCharacter.
+  KOTOR 2 also files 3DSceneView at two further slots. Check what KOTOR 2's
+  character sheet actually is before mapping `InGameCharacter` at all.
+- 0x48 is CSWGuiBlackenedLabel, where KOTOR 1 has DialogComputerCamera.
+
+Still open: InGameMenu (its call at 0x007BEF23 does not follow the common
+dataflow shape), one of the three MessageBox instances, GalaxyMap,
+MainInterface, ControllerLossBox, DialogCinematicCopy, and the two
+DialogMessages routing slots. The unresolved entries from the second creator
+are duplicates of classes the first creator already settled, so they cost
+nothing.
+
+Next in Batch 2: translate this into the `kPanelKindOffsets` table as
+per-game `acc::off::Pick/Same` values, clear `SlotTableLookup`'s KOTOR 2
+decline (engine_panels.cpp), then find the four hook addresses.
+
 **Batch 3 — World, area, transitions.** `OnSetMoveToModuleString`, `OnDoorOpen`,
 `OnShowObject`; gates in `transitions.cpp`, `door_announce.cpp`,
 `passive_narrate.cpp`. Largest offset surface — `engine_area.h` alone holds ~60.
