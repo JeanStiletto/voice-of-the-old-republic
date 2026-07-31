@@ -50,7 +50,7 @@ and add the German in parentheses if it genuinely aids clarity.
 <h3>Russian translation:</h3>
 
 - Item, store and quest descriptions, galaxy-map navigation and closing a menu back to the world now work on the Russian translation (Allard 1.72). Twelve places in the mod still called into the game using addresses valid only for the standard build. On the Russian build the code is identical but the linker moved it, so those calls landed a few hundred bytes off, in the middle of an unrelated function — anything from nothing happening to a crash. They now go through the same address-translation the rest of the mod uses, and each one checks that its address resolved before calling, so a future gap degrades to a logged no-op instead of a crash. The standard game is unaffected: there the translation step is an identity.
-- That address handling was re-checked against a second, independent copy of the same executable while the Polish edition was being added, and every one of the mod's twenty-five attachment points matched on both. The Russian and Polish releases turn out to ship the same 2004 build, so the two now share one set of addresses rather than each carrying its own.
+- That same address set was re-verified while Polish was being added, and it holds: all twenty-five of the places the mod attaches itself to the game match on the Russian executable and on the Polish one alike. The two releases turn out to ship the same 2004 build, so one set of addresses now serves both.
 
 <h3>Map hints:</h3>
 
