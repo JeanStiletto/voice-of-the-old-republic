@@ -151,6 +151,13 @@ uintptr_t PickGlobal(uintptr_t kotor1Va, uintptr_t kotor2Va) {
     return acc::game::IsKotor2() ? kotor2Va : kotor1Va;
 }
 
+uintptr_t Kotor1Only(uintptr_t referenceVa) {
+    // Same run-time behaviour as a bare R() — 0 on KOTOR 2. Distinct only so
+    // that "checked, and KOTOR 2 has no such thing" is not confusable with
+    // "not looked at yet".
+    return R(referenceVa);
+}
+
 uintptr_t TodoGlobal(uintptr_t kotor1Va) {
     return acc::game::IsKotor2() ? 0 : kotor1Va;
 }

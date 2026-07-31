@@ -162,7 +162,7 @@ bool IsWorkbenchItemsStructural(void* panel) {
 // structural check below was rejecting this panel — its category buttons use a
 // button subclass whose vtable isn't kVtableCSWGuiButton — so it fell through
 // to Unknown; the vtable test fixes that.
-const uintptr_t kVtableCSWGuiUpgradeSelection = acc::addr::R(0x007571b0);
+const uintptr_t kVtableCSWGuiUpgradeSelection = acc::addr::Pick(0x007571b0, 0x009A86CC);
 
 bool IsWorkbenchSelectStructural(void* panel) {
     if (!panel) return false;
@@ -188,7 +188,7 @@ bool IsWorkbenchSelectStructural(void* panel) {
 // CSWGuiInGameCharacter::ShowLevelUpGUI when the user clicks Levelaufst.,
 // so it has no CGuiInGame slot. Lane's SARIF labels the vtable at
 // 0x00759568 (verified via Ghidra ListSymbolsByName 2026-05-14).
-const uintptr_t kVtableCSWGuiLevelUpPanel = acc::addr::R(0x00759568);
+const uintptr_t kVtableCSWGuiLevelUpPanel = acc::addr::Pick(0x00759568, 0x009AA1AC);
 
 bool IsLevelUpStructural(void* panel) {
     return HasVtable(panel, kVtableCSWGuiLevelUpPanel);
@@ -202,8 +202,8 @@ bool IsLevelUpStructural(void* panel) {
 // their build steps (Porträt / Attribute / Fähigkeiten / Talente / Name /
 // Spielen) sequentially, enabling one at a time via CSWGuiControl::SetEnabled
 // (bit_flags bit 3) — same shape as the in-game level-up wizard.
-const uintptr_t kVtableCSWGuiCustomPanel = acc::addr::R(0x007595e0);
-const uintptr_t kVtableCSWGuiQuickPanel  = acc::addr::R(0x00759668);
+const uintptr_t kVtableCSWGuiCustomPanel = acc::addr::Pick(0x007595e0, 0x009AA9A4);
+const uintptr_t kVtableCSWGuiQuickPanel  = acc::addr::Pick(0x00759668, 0x009AAA24);
 
 bool IsCharGenStructural(void* panel) {
     if (!panel) return false;
@@ -220,8 +220,10 @@ bool IsCharGenStructural(void* panel) {
 // is single-instance and lives in the engine's title-screen UI suite, so
 // vtable equality is the cleanest identifier. Captured 2026-05-26 via the
 // LogUnknownPanelDiagnostics probe (PanelProbe block in
-// patch-20260526-180650.log).
-const uintptr_t kVtableCSWGuiOptions = acc::addr::R(0x00758838);
+// patch-20260526-180650.log). Its real class name is CSWGuiOptionsMain — the
+// constant predates knowing that, and the name is what the KOTOR 2 value was
+// looked up by.
+const uintptr_t kVtableCSWGuiOptions = acc::addr::Pick(0x00758838, 0x009A183C);
 
 bool IsMainMenuOptionsStructural(void* panel) {
     return HasVtable(panel, kVtableCSWGuiOptions);
@@ -233,7 +235,7 @@ bool IsMainMenuOptionsStructural(void* panel) {
 // `PanelProbe: first sight UNKNOWN panel=077F49D8 vtable=0x00752f70`.
 // Classifying this lets AnnouncePanelTitle skip the generic label-walk
 // (which lands on the DLC notice) and speak Id::PanelTitleMainMenu.
-const uintptr_t kVtableCSWGuiMainMenu = acc::addr::R(0x00752f70);
+const uintptr_t kVtableCSWGuiMainMenu = acc::addr::Pick(0x00752f70, 0x009A597C);
 
 bool IsMainMenuStructural(void* panel) {
     return HasVtable(panel, kVtableCSWGuiMainMenu);
@@ -243,7 +245,7 @@ bool IsMainMenuStructural(void* panel) {
 // slot), single class, so vtable equality is the identifier. Verified against
 // the live panel dump (patch-20260601-071641.log: 79-control panel,
 // vtable=0x007532e8).
-const uintptr_t kVtableCSWGuiPazaakStart = acc::addr::R(0x007532e8);
+const uintptr_t kVtableCSWGuiPazaakStart = acc::addr::Pick(0x007532e8, 0x009A614C);
 
 bool IsPazaakStartStructural(void* panel) {
     return HasVtable(panel, kVtableCSWGuiPazaakStart);
@@ -253,7 +255,7 @@ bool IsPazaakStartStructural(void* panel) {
 // side-deck builder. Single class, heap-allocated, so vtable equality is the
 // identifier (CSWGuiWagerPopup_vtable, verified against the live panel dump in
 // patch-20260601-090245.log: 8-control panel, vtable=0x007534c8).
-const uintptr_t kVtableCSWGuiWagerPopup = acc::addr::R(0x007534c8);
+const uintptr_t kVtableCSWGuiWagerPopup = acc::addr::Pick(0x007534c8, 0x009A6034);
 
 bool IsPazaakWagerStructural(void* panel) {
     return HasVtable(panel, kVtableCSWGuiWagerPopup);
@@ -264,7 +266,11 @@ bool IsPazaakWagerStructural(void* panel) {
 // vtable equality is the identifier (CSWGuiQuestItem_vtable, verified against
 // the live panel dump in patch-20260603-090028.log: 3-element chain with a
 // BTN_BACK at the bottom).
-const uintptr_t kVtableCSWGuiQuestItem = acc::addr::R(0x00757c20);
+//
+// KOTOR 2 has no such panel. Its RTTI names 122 CSWGui classes and covers every
+// one KOTOR 1 has except this and CSWGuiScriptSelect below; the exe holds no
+// "questitem" string either. K2's journal drops the quest-items sub-screen.
+const uintptr_t kVtableCSWGuiQuestItem = acc::addr::Kotor1Only(0x00757c20);
 
 bool IsQuestItemStructural(void* panel) {
     return HasVtable(panel, kVtableCSWGuiQuestItem);
@@ -274,7 +280,11 @@ bool IsQuestItemStructural(void* panel) {
 // picker. Heap-allocated modal with no CGuiInGame slot, so vtable equality is
 // the identifier (verified via Ghidra: destructor at 0x006e9ef0, vtable label
 // at 0x007590a8, against the live panel dump in patch-20260613-205358.log).
-const uintptr_t kVtableCSWGuiScriptSelect = acc::addr::R(0x007590a8);
+//
+// The other class KOTOR 2 does not have — see CSWGuiQuestItem above for the
+// evidence. K2 exposes combat behaviour differently and ships no
+// CSWGuiScriptSelect.
+const uintptr_t kVtableCSWGuiScriptSelect = acc::addr::Kotor1Only(0x007590a8);
 
 bool IsScriptSelectStructural(void* panel) {
     return HasVtable(panel, kVtableCSWGuiScriptSelect);
@@ -326,20 +336,33 @@ bool IsPowersLevelUpStructural(void* panel) {
 // label-walk speaks (e.g. 0x007587c0 → "Soundeinstellungen"). GoG-derived
 // addresses match the Steam build (see memory ghidra_gog_steam_bytes_match),
 // matching every other hardcoded title-screen vtable above.
+//
+// KOTOR 2 values by RTTI class name (all nine classes exist there). The class
+// each PanelKind corresponds to is named in the comment, because the KOTOR 1
+// column was captured from a live probe and carries no name of its own.
 struct OptionsSubScreenVtable {
     uintptr_t vtable;
     PanelKind kind;
 };
 static const OptionsSubScreenVtable kOptionsSubScreenVtables[] = {
-    { acc::addr::R(0x007587c0), PanelKind::SoundSettings            },
-    { acc::addr::R(0x00758550), PanelKind::AdvancedSoundSettings    },
-    { acc::addr::R(0x007586f8), PanelKind::GraphicsSettings         },
-    { acc::addr::R(0x007584a0), PanelKind::AdvancedGraphicsSettings },
-    { acc::addr::R(0x00758ee0), PanelKind::AutoPauseOptions         },
-    { acc::addr::R(0x007581e8), PanelKind::FeedbackOptions          },
-    { acc::addr::R(0x00758e00), PanelKind::GameSettings             },
-    { acc::addr::R(0x007585f8), PanelKind::MouseSettings            },
-    { acc::addr::R(0x00759358), PanelKind::KeyboardMapping          },
+    // CSWGuiOptionsSound
+    { acc::addr::Pick(0x007587c0, 0x009A1D8C), PanelKind::SoundSettings            },
+    // CSWGuiOptionsSoundAdvanced
+    { acc::addr::Pick(0x00758550, 0x009A1E4C), PanelKind::AdvancedSoundSettings    },
+    // CSWGuiOptionsGraphics
+    { acc::addr::Pick(0x007586f8, 0x009A1A9C), PanelKind::GraphicsSettings         },
+    // CSWGuiOptionsGraphicsAdvanced
+    { acc::addr::Pick(0x007584a0, 0x009A1BF4), PanelKind::AdvancedGraphicsSettings },
+    // CSWGuiInGameAutoPause
+    { acc::addr::Pick(0x00758ee0, 0x009A8FCC), PanelKind::AutoPauseOptions         },
+    // CSWGuiOptionsFeedback
+    { acc::addr::Pick(0x007581e8, 0x009A18DC), PanelKind::FeedbackOptions          },
+    // CSWGuiInGameGameplay
+    { acc::addr::Pick(0x00758e00, 0x009A8EE4), PanelKind::GameSettings             },
+    // CSWGuiOptionsMouse
+    { acc::addr::Pick(0x007585f8, 0x009A1EFC), PanelKind::MouseSettings            },
+    // CSWGuiInGameOptKeyMappings
+    { acc::addr::Pick(0x00759358, 0x009A9EA4), PanelKind::KeyboardMapping          },
 };
 
 // Returns the specific sub-screen kind, or Unknown if `panel`'s vtable

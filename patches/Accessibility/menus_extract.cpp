@@ -932,7 +932,7 @@ const char* TryPartyPortrait(void* control, char* outBuf, size_t bufSize,
     const char* source = nullptr;
     claimedVtable = false;
     void** vt = *reinterpret_cast<void***>(control);
-    if (reinterpret_cast<uintptr_t>(vt) != acc::addr::R(0x00756BB8)) {
+    if (reinterpret_cast<uintptr_t>(vt) != kVtableCSWGuiPartySelectionButton) {
         return nullptr;
     }
     claimedVtable = true;

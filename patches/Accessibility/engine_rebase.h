@@ -93,6 +93,15 @@ uintptr_t Pick(uintptr_t referenceVa, uintptr_t kotor2Va);
 // cross-GAME switch applies.
 uintptr_t PickGlobal(uintptr_t kotor1Va, uintptr_t kotor2Va);
 
+// The address belongs to a class or subsystem KOTOR 2 does not have, so there
+// is no K2 value to find. Behaves exactly like a plain R() at run time (0 on
+// KOTOR 2); the difference is bookkeeping, and it matters for the same reason
+// acc::off::Kotor1Only does: it keeps the remaining-work counter counting work
+// that actually remains. Establish absence, do not assume it — the evidence for
+// the two current users is that KOTOR 2's RTTI names 122 CSWGui classes and
+// contains every one KOTOR 1 has except those two.
+uintptr_t Kotor1Only(uintptr_t referenceVa);
+
 // .data global pointer whose KOTOR 2 value is NOT yet known. Returns the
 // KOTOR 1 value on KOTOR 1 and 0 on KOTOR 2.
 //

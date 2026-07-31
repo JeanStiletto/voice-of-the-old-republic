@@ -6,27 +6,40 @@ result especially — but whose cost estimate predates the RTTI finding below.
 
 ## WHERE TO RESUME (read this first)
 
-State as of 2026-07-31, end of the first port session. Working tree clean, 14
-commits on `main`, KOTOR 1 tested and behaving normally throughout.
+State as of 2026-07-31, end of the SECOND port session. KOTOR 1 untouched
+throughout — every change is a constant gaining a KOTOR 2 column, which on
+KOTOR 1 evaluates to exactly what it did before.
 
 **What works:** KOTOR 2 speaks its main menu and options submenu. One hook is
 installed (`CSWGuiPanel::SetActiveControl` → `menus_focus_k2.cpp`). Every other
 hook handler is gated off by `acc::game::HandlerEnabled()`.
 
-**The next task, already scoped:** port the menu subsystem *whole*, per THE
-METHOD below. Regenerate the worklist with
+**Menu-subsystem worklist:** regenerate with
 
     python tools/re-scripts/port_worklist.py patches/Accessibility \
         menus.cpp menus_focus.cpp menus_chain.cpp menus_extract.cpp \
         menus_dispatch.cpp menus_internal.h engine_manager.h \
         engine_reads.cpp engine_panels.cpp
 
-At the time of writing: 114 constants used, 35 resolved, **79 to verify**.
-Suggested order — the ten `kVtableCSWGui*` panel-identity constants in
-`engine_panels.cpp` first (the RTTI map should resolve them by class name for
-free), then the panel field offsets by decompiling KOTOR 2's own `Load` methods,
-which is the technique that produced the text chain. `MoveMouseToPosition` is on
-the list and should replace the `SetCursorPos` stand-in in `menus_focus_k2.cpp`.
+115 constants used, 59 resolved, **56 to verify** (was 79).
+
+**Done this session** — all of it offline, no test round spent:
+- Every panel-identity vtable in the codebase (see "Panel identity" below).
+  `CSWGuiQuestItem` and `CSWGuiScriptSelect` established as K1-only.
+- The shared control classes whole: `CSWGuiControl` tooltip + parent,
+  `CSWGuiListBox` navigation state, `CSWGuiSlider`, `CSWGuiButtonToggle`.
+- `CSWGuiListBox::SetSelectedControl` and `CTlkTable::GetSimpleString`.
+
+**The next task, and the open question about it.** What remains in this
+subsystem is panel-internal offsets, which are the expensive kind — see "What is
+left in the menu subsystem" below for why, and for the routes that do and do not
+work. Before grinding through them, decide whether to enable the shared-control
+path on KOTOR 2 for one confirming test round first. THE METHOD's rule is about
+never omitting KOTOR 1 *logic*; it does not require every panel to land at once,
+and the shared machinery is now complete with its workarounds intact.
+
+`MoveMouseToPosition` is still unfound and still needs to replace the
+`SetCursorPos` stand-in in `menus_focus_k2.cpp`.
 
 **Do not** repeat the minimal-slice approach — see THE METHOD.
 
@@ -263,25 +276,25 @@ sources are the one KPatchManager feature with a known bug.
 4. **Populate K2 values.** *(in progress)* See the coverage table below.
 5. **Feature-gate the K1-only modules**, then walk the pillars up.
 
-## Coverage (2026-07-31)
+## Coverage (2026-07-31, end of second port session)
 
 Struct offsets — `acc::off`:
-- `Todo` (K2 unknown): 488
-- `Same` (verified identical): 4
-- `Pick` (verified different): 7
+- `Todo` (K2 unknown): 459
+- `Same` (verified identical): 11
+- `Pick` (verified different): 30
 - `Kotor1Only` (no K2 counterpart): 10
 
 Addresses — `acc::addr`:
-- `R` (K2 unknown, resolves to 0): 253
-- `Pick` (.text/.rdata known): 19 — all the vtable-identity constants, from RTTI
+- `R` (K2 unknown, resolves to 0): 202
+- `Pick` (.text/.rdata known): 62
 - `PickGlobal` (.data known): 4
 - `TodoGlobal` (.data unknown, resolves to 0): 10
+- `Kotor1Only` (no K2 counterpart): 2
 
 `grep -c "Todo("` and the `R(` count are the remaining-work counters.
 
-Everything with a K2 value so far came from the seeded upstream database or the
-RTTI scan — **no fresh reverse-engineering yet**. The 253 function addresses are
-where that starts.
+Menu subsystem specifically (the `port_worklist.py` invocation in WHERE TO
+RESUME): 115 constants used, 59 resolved, **56 unresolved** — down from 79.
 
 ### The cross-check that makes the seeded database usable
 
@@ -317,6 +330,41 @@ structure — not inferred from a delta or a single witness.
 
 Also identified: `CSWGuiManager::HitCheckMouse` → `0x00411030`.
 
+### What is left in the menu subsystem, and why it is the expensive part
+
+The 56 that remain are almost entirely **panel-internal** offsets — a named
+child control or a cached handle at a fixed offset inside one huge panel struct
+(KOTOR 1's `CSWGuiInGameEquip` is 0x42bc bytes). These do NOT follow any delta
+rule. Measured witness: `CSWGuiPortraitCharGen::OnPanelAdded` stores the same
+`rand()%300 * 0.01 + 1.0` float at +0x1230 in KOTOR 1 and **+0x1ce8** in
+KOTOR 2 — a shift of 0xAB8 in a single class. Panels embed hundreds of controls
+and every one that grew pushes everything after it, so the accumulated drift is
+large and unique per panel.
+
+So each of these needs its own witness. The cheap tricks are exhausted here:
+RTTI answers class identity, the vtable-slot map answers virtual methods, and
+neither reaches a field in the middle of a panel.
+
+Two routes, both tried:
+
+- **A virtual method that touches the field.** Works and is cheap when one
+  exists — this is what produced all of `CSWGuiControl` / `CSWGuiListBox` /
+  `CSWGuiSlider` / `CSWGuiButtonToggle`. But the panel fields we need are mostly
+  read by non-virtual helpers (`UpdateInventory`, `SetCharacter`), which the
+  slot map cannot name.
+- **The destructor, to recover the whole embedded-member layout at once.**
+  Sound in principle, but vtable slot 0 is the scalar-deleting-destructor
+  *thunk* in both games; the real destructor is one CALL further in and has to
+  be recovered separately. It also only covers members with non-trivial
+  destructors — the embedded labels and buttons, not the plain `ulong` item
+  handles, which are about half of what the equip panel needs.
+
+There is also a live-observation route, which is how most of these were
+established for KOTOR 1 in the first place (the `PanelProbe` dumps). It is
+accurate and fast per panel, but it spends test rounds, which is the resource
+THE METHOD is written to protect. Worth weighing per panel rather than adopting
+wholesale.
+
 **`MoveMouseToPosition` is NOT yet found.** Its KOTOR 1 body is four
 statements (store x/y, `CExoInput::SetMousePos`, `HandleMouseMove`), but none
 of the three KOTOR 2 callers of the apparent `HandleMouseMove` matches its
@@ -339,6 +387,35 @@ Worth more than the addresses themselves, because it constrains everything else:
 - **The engine input codes are identical.** `HandleInputEvent`'s switch uses the
   same case values and produces the same translated direction codes in both
   games, so `engine_input.h`'s InputIndex constants should carry over as-is.
+
+### Panel identity: all of it, from RTTI class names (2026-07-31)
+
+Every vtable-identity constant in the codebase now has a KOTOR 2 value except
+two, and none of it needed a decompile. The route is:
+
+1. Look the KOTOR 1 address up in Lane's Ghidra XML — vtables carry a
+   `<Class>_vtable` SYMBOL, so the address yields a class NAME.
+2. Look that name up in `docs/llm-docs/re/k2/k2-vtables.csv`.
+
+23 of 25 resolved that way, including the nine title-screen Options sub-screens
+(whose KOTOR 1 values had been captured from a live probe and carried no name
+until this lookup gave them one). The convention was checked before trusting it:
+for each candidate, `vtable_va - 4` holds the complete-object locator and slot 0
+points into `.text`, which is what makes `vtable_va` the pointer an object
+actually stores.
+
+Two panels are **absent from KOTOR 2**, and this is measured rather than
+assumed: diffing the 110 `CSWGui*` classes Lane's KOTOR 1 database names against
+the 122 in KOTOR 2's RTTI leaves exactly two on the KOTOR 1 side —
+`CSWGuiQuestItem` (the journal's quest-items sub-screen) and `CSWGuiScriptSelect`
+(the character sheet's combat-behaviour picker). KOTOR 2's exe contains no
+`questitem` or `scriptselect` string either. They are marked with a new
+`acc::addr::Kotor1Only()`, mirroring `acc::off::Kotor1Only()`: same run-time
+behaviour as a bare `R()`, but it keeps the remaining-work counter honest.
+
+KOTOR 2 *adds* fourteen GUI classes — the workbench item-creation screens, a
+death display, a legal screen, the three iOS gamepad panels, a tutorial box.
+Those are surfaces the KOTOR 1 code has nothing to say about yet.
 
 ### The deltas ACCUMULATE through embedded sub-objects
 
@@ -367,6 +444,47 @@ Left as `Todo` because of this: `kLabelTextOffset` / `kLabelStrRefOffset` /
 The arithmetic says 0xe8 → 0xf0 and 0xf0 → 0xf8 for the label, but that assumes
 `CSWGuiText`'s own layout did not change, which has not been checked. These
 feed every spoken string, so they want observing rather than deriving.
+
+### The shared control classes are done (2026-07-31)
+
+Everything the whole GUI is built out of — `CSWGuiControl`, `CSWGuiListBox`,
+`CSWGuiSlider`, `CSWGuiButtonToggle` — now has observed KOTOR 2 offsets. The
+method that produced them scales, and is worth stating because it is cheaper
+than it looks:
+
+`k2-vtable-slots.csv` maps KOTOR 1 virtual methods to KOTOR 2 addresses **by
+name**. So for any offset, find a KOTOR 1 virtual that touches the field, look
+its KOTOR 2 twin up in that file, decompile both, and read the offset off the
+matching statement. No searching, no guessing which function is which.
+
+What that produced:
+
+- `CSWGuiControl` parent / tooltip strref / tooltip string: **+4** each
+  (0x14→0x18, 0x24→0x28, 0x28→0x2c), from `DisplayToolTip` (slot 36), with the
+  parent corroborated independently by `Load` (slot 18) storing its
+  `Obj_ParentID` lookup at this+0x18. The insertion point is now pinned between
+  +0x10 and +0x14: the extent at 0x4..0x10 is unshifted, +0x14 is not.
+- `CSWGuiListBox` controls / bit_flags / items_per_page / selection_index /
+  top_visible_index: **+0x10** each, from `HandleInputEvent` (slot 15). Every
+  landmark of the KOTOR 1 version reappears at exactly +0x10 — the -1 test on
+  selection_index, the 0x40 / 0x200 / bit-12 flag tests, `size -
+  items_per_page`, and the closing `controls.data[selection_index]` dispatch.
+- `CSWGuiSlider` max / cur: **+4**, from `HandleInputEvent` (slot 15).
+- `CSWGuiButtonToggle` state: **+0xc**, from `Load` (slot 18) masking the
+  "ISSELECTED" .gui byte into bit 0.
+- `CSWGuiListBox::SetSelectedControl` (an address, not an offset) fell out of
+  the same listbox decompile: KOTOR 2 calls it at all five of the places
+  KOTOR 1 does, with the same `(index, playSound)` pair.
+
+Note the three different deltas — +4, +0xc, +0x10 — in four classes that all
+derive from the same base. That is the accumulation rule below, in evidence.
+
+Two incidental cross-checks worth recording, because they cost nothing and
+constrain a lot: KOTOR 2's slider reads its extent width/height at +0xc/+0x10,
+exactly as KOTOR 1 does (so `kControlExtentOffset` really is `Same`), and its
+`CSWGuiManager::HandleInputEvent` reads the same +0x64 / +0x68 / +0x72 /
++0x88 / +0x8c / +0x94 / +0x98 the KOTOR 1 one does (so the manager really did
+not grow).
 
 ### Values that are derived rather than verified
 

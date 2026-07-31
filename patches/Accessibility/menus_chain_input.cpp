@@ -178,7 +178,7 @@ void HandleEnterActivation(void* activePanel, int code, int val, bool& consumed)
     if (acc::engine::IdentifyPanel(g_chainPanel) ==
             acc::engine::PanelKind::PartySelection) {
         void** vt = *reinterpret_cast<void***>(e.control);
-        if (reinterpret_cast<uintptr_t>(vt) == acc::addr::R(0x00756BB8)) {
+        if (reinterpret_cast<uintptr_t>(vt) == kVtableCSWGuiPartySelectionButton) {
             __try {
                 int selected = *reinterpret_cast<int*>(
                     reinterpret_cast<unsigned char*>(e.control) + 0x1c4);

@@ -632,7 +632,7 @@ bool IsDecorativeControl(void* panel, void* c,
     // returns true for that roster index.
     if (pk == PanelKind::PartySelection) {
         void** vt = *reinterpret_cast<void***>(c);
-        if (reinterpret_cast<uintptr_t>(vt) == acc::addr::R(0x00756BB8)) {
+        if (reinterpret_cast<uintptr_t>(vt) == kVtableCSWGuiPartySelectionButton) {
             const size_t kPartyPortraitPartyIdOffset = acc::off::Todo(0x44c);
             const size_t kPartyPortraitNpcSlotOffset = acc::off::Todo(0x450);
             int partyId = -1, npcSlot = -1;

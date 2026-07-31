@@ -111,6 +111,11 @@ const uintptr_t kVtableCSWGuiClassSelection      = acc::addr::Pick(0x00758020, 0
 // documented in engine_offsets_fields.h.
 const uintptr_t kVtableCSWGuiPortraitCharGen     = acc::addr::Pick(0x00759ea8, 0x009AABA4);
 
+// CSWGuiPartySelectionButton vtable (a roster portrait on the party-select
+// screen — a CSWGuiButton subclass). Named here because three call sites test
+// for it: the chain filter, the chain's input handler and the label extractor.
+const uintptr_t kVtableCSWGuiPartySelectionButton = acc::addr::Pick(0x00756BB8, 0x009A6D9C);
+
 // CSWCCreature::GetPortraitId — __thiscall, no args, returns the portrait
 // row index into portraits.2da (verified live: returned 24 → 25 across a
 // Right+Right+Left cycle in the chargen Porträtauswahl panel). The named
@@ -294,7 +299,11 @@ const uintptr_t kAddrCSWGuiSkillFlowChartSetSelectedSkill = acc::addr::R(0x006cd
 typedef void (__thiscall* PFN_CSWGuiListBoxSetSelectedControl)(void* listbox,
                                                                int index,
                                                                int playSound);
-const uintptr_t kAddrCSWGuiListBoxSetSelectedControl = acc::addr::R(0x0041c040);
+// KOTOR 2 value from its own CSWGuiListBox::HandleInputEvent (vtable slot 15),
+// which calls it at all five of the places KOTOR 1's does — wrap-to-last,
+// wrap-to-first, step up, step down, select-first — with the same (index,
+// playSound) pair.
+const uintptr_t kAddrCSWGuiListBoxSetSelectedControl = acc::addr::Pick(0x0041c040, 0x0041E870);
 
 // CTlkTable::GetSimpleString — resolves a TLK str_ref to a localized string.
 // Many KOTOR UI controls (e.g. Options screen "Annehmen"/"Abbrechen", certain
@@ -312,7 +321,15 @@ const uintptr_t kAddrCSWGuiListBoxSetSelectedControl = acc::addr::R(0x0041c040);
 typedef CExoString* (__thiscall* PFN_GetSimpleString)(void* this_,
                                                       CExoString* out,
                                                       uint32_t strref);
-const uintptr_t kAddrGetSimpleString = acc::addr::R(0x0041e8f0);
+// KOTOR 2: 0x0071dee0, established by the same idiom the KOTOR 1 note above
+// describes. Its CSWGuiControl::DisplayToolTip emits
+//   MOV ECX, [0x00A1B4B0]   ; = kAddrTlkTablePtr, already resolved separately
+//   CALL 0x0071dee0
+// at exactly the point KOTOR 1's resolves a tooltip strref, and the callee has
+// the same shape: build a 28-byte STR_RES, fetch, copy into the caller's
+// CExoString, return it. Two independent facts agree — the call site's `this`
+// is the talk table we already knew, and the callee body matches.
+const uintptr_t kAddrGetSimpleString = acc::addr::Pick(0x0041e8f0, 0x0071DEE0);
 
 // CSWGuiInGameEquip slot handlers — invoked directly to bypass click-sim
 // hit-test problems on the equip panel. See docs/equip-flow-investigation.md

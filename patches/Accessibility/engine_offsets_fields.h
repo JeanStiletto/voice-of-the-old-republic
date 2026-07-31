@@ -80,9 +80,16 @@ const size_t kLabelStrRefOffset   = acc::off::Pick(0xf0, 0xf8);
 //   CSWGuiSlider.cur_value (Lane-named) at +0x74 — uint32, current slider value.
 //                                                  HandleInputEvent calls
 //                                                  SetCurValue on inc/dec keys.
-const size_t kButtonToggleStateOffset = acc::off::Todo(0x1c8);
-const size_t kSliderMaxValueOffset    = acc::off::Todo(0x70);
-const size_t kSliderCurValueOffset    = acc::off::Todo(0x74);
+//
+// KOTOR 2 values from the same three functions in its own binary:
+//   CSWGuiButtonToggle::Load masks the "ISSELECTED" .gui byte into bit 0 of
+//   this+0x1d4 (+0xc — the toggle sits behind a CSWGuiButton, which grew).
+//   CSWGuiSlider::HandleInputEvent increments/decrements this+0x78 and compares
+//   it against this+0x74 (+4), and reads its extent width/height at 0xc/0x10 —
+//   unshifted, which is the same insertion-point evidence as everywhere else.
+const size_t kButtonToggleStateOffset = acc::off::Pick(0x1c8, 0x1d4);
+const size_t kSliderMaxValueOffset    = acc::off::Pick(0x70, 0x74);
+const size_t kSliderCurValueOffset    = acc::off::Pick(0x74, 0x78);
 
 // CSWGuiText layout (from swkotor.exe.h + decompiled CSWGuiText::Initialize
 // at 0x00417310 confirmed via headless Ghidra against Lane's gzf):
@@ -534,11 +541,19 @@ const size_t kPanelActiveControlOffset      = acc::off::Pick(0x1c, 0x20);
 // CSWGuiPanel hit-test (vtable slot 16, FUN_0040eae0) indexes the child array
 // at this+0x24 with its count at this+0x28, against KOTOR 1's 0x20/0x24.
 const size_t kPanelControlsOffset           = acc::off::Pick(0x20, 0x24);
-const size_t kListBoxControlsOffset         = acc::off::Todo(0x29c);
-const size_t kListBoxBitFlagsOffset         = acc::off::Todo(0x2bc);
-const size_t kListBoxItemsPerPageOffset     = acc::off::Todo(0x2c4);
-const size_t kListBoxSelectionIndexOffset   = acc::off::Todo(0x2c6);
-const size_t kListBoxTopVisibleIndexOffset  = acc::off::Todo(0x2c8);
+//
+// KOTOR 2: the whole listbox tail is +0x10, observed in its own
+// CSWGuiListBox::HandleInputEvent (vtable slot 15). Every landmark of KOTOR 1's
+// version reappears there at exactly +0x10: the -1 test on selection_index, the
+// bit_flags tests for 0x40 / 0x200 / clearing bit 12, `size - items_per_page`,
+// and the final `controls.data[selection_index]->HandleInputEvent`. The +0x10
+// is the accumulated growth of the bases and embedded members ahead of it
+// (control +4, border +4, scrollbar +8), not a flat class delta.
+const size_t kListBoxControlsOffset         = acc::off::Pick(0x29c, 0x2ac);
+const size_t kListBoxBitFlagsOffset         = acc::off::Pick(0x2bc, 0x2cc);
+const size_t kListBoxItemsPerPageOffset     = acc::off::Pick(0x2c4, 0x2d4);
+const size_t kListBoxSelectionIndexOffset   = acc::off::Pick(0x2c6, 0x2d6);
+const size_t kListBoxTopVisibleIndexOffset  = acc::off::Pick(0x2c8, 0x2d8);
 
 // CSWGuiControl.extent is an inline CSWGuiExtent (16 bytes) at +0x4:
 //   +0x0  left    int
@@ -564,9 +579,15 @@ const size_t kControlExtentOffset = acc::off::Same(0x4);
 //   * Else no tooltip
 // (An optional " : KeyName" suffix gated on field6_0x30 / keybind action id —
 // we skip this in keyboard nav; the user already knows which key they pressed.)
-const size_t kControlParentOffset       = acc::off::Todo(0x14);  // CSWGuiControl* parent
-const size_t kControlTooltipStrRefOffset = acc::off::Todo(0x24); // uint32 strref (0 = none)
-const size_t kControlTooltipStringOffset = acc::off::Todo(0x28); // CExoString literal
+//
+// KOTOR 2 values read out of its own DisplayToolTip (slot 36) and confirmed by
+// its CSWGuiControl::Load: all three are +4, and the parent read is corroborated
+// twice — Load stores the Obj_ParentID lookup at this+0x18, and DisplayToolTip
+// recurses through this+0x18's vtable slot 36. That also settles where the
+// insertion sits: the extent at 0x4..0x10 is unshifted, +0x14 already is not.
+const size_t kControlParentOffset       = acc::off::Pick(0x14, 0x18);  // CSWGuiControl* parent
+const size_t kControlTooltipStrRefOffset = acc::off::Pick(0x24, 0x28); // uint32 strref (0 = none)
+const size_t kControlTooltipStringOffset = acc::off::Pick(0x28, 0x2c); // CExoString literal
 
 // CSWGuiControl.id is the .gui-time numeric ID assigned by the layout file.
 // Stable across localizations and panel.controls reordering, so this is the
