@@ -761,9 +761,10 @@ bool InGameMessagesMatches(void* p) {
 }
 
 void* InGameMessagesFindLb(void* p) {
-    if (!p) return nullptr;
-    return reinterpret_cast<unsigned char*>(p) +
-           kInGameMessagesMessagesListBoxOffset;
+    // acc::off::Ptr, not raw addition: an unported offset must yield nullptr
+    // (the spec then declines and logs "empty; nav ignored") rather than a
+    // non-null wild pointer that sails through every null check downstream.
+    return acc::off::Ptr(p, kInGameMessagesMessagesListBoxOffset);
 }
 
 // The plain "<row text>, N von M" announce. Three specs want exactly this
@@ -833,8 +834,10 @@ bool DialogComputerCameraMatches(void* p) {
 }
 
 void* DialogFindRepliesLb(void* p) {
-    if (!p) return nullptr;
-    return reinterpret_cast<unsigned char*>(p) + kDialogRepliesListBoxOffset;
+    // See InGameMessagesFindLb. This is the exact site that crashed KOTOR 2 on
+    // the first in-world arrow key: kDialogRepliesListBoxOffset is still Todo,
+    // and `panel + poison` passed the caller's `lb &&` check.
+    return acc::off::Ptr(p, kDialogRepliesListBoxOffset);
 }
 
 // Dialogue reply panels intentionally have NO announce callback: the engine
@@ -1165,9 +1168,8 @@ bool ExamineMatches(void* p) {
 }
 
 void* ExamineFindLb(void* p) {
-    if (!p) return nullptr;
-    return reinterpret_cast<unsigned char*>(p) +
-           kExaminePanelListBoxOffset;
+    // See InGameMessagesFindLb.
+    return acc::off::Ptr(p, kExaminePanelListBoxOffset);
 }
 
 // The `rowCount <= 0` guard is this spec's own, and InGameMessagesAnnounce

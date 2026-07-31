@@ -202,13 +202,39 @@ const char* acc::menus::detail::ReadSaveLoadEntryString(void* entry, size_t fiel
 //
 // Returns false iff `listbox` is null or has rowCount==0; caller logs +
 // ignores. On true, `out` is fully populated.
+static bool DriveListBoxSelectionBody(void* listbox,
+                                      acc::menus::detail::ListBoxNavOp op,
+                                      short minSel,
+                                      acc::menus::detail::ListBoxNavResult& out);
+
 bool acc::menus::detail::DriveListBoxSelection(void* listbox, ListBoxNavOp op,
                                                short minSel,
                                                ListBoxNavResult& out)
 {
     out = {};
     if (!listbox) return false;
+    // Every field access below is an engine read and belongs under SEH like
+    // the rest of this codebase's engine reads. The guard is what turns a
+    // stale or unported-offset listbox pointer into a declined navigation
+    // instead of a process kill — the KOTOR 2 in-world arrow-key crash
+    // (2026-08-01) died on the very first read here. Callers already treat
+    // false as "nothing to navigate".
+    __try {
+        return DriveListBoxSelectionBody(listbox, op, minSel, out);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        out = {};
+        return false;
+    }
+}
 
+// The body, split out so the SEH wrapper above stays free of anything needing
+// unwinding (MSVC C2712) — see the CLAUDE.md note on __try and objects.
+static bool DriveListBoxSelectionBody(void* listbox,
+                                      acc::menus::detail::ListBoxNavOp op,
+                                      short minSel,
+                                      acc::menus::detail::ListBoxNavResult& out)
+{
+    using acc::menus::detail::ListBoxNavOp;
     auto* lbBase = reinterpret_cast<unsigned char*>(listbox);
     auto* lbList = reinterpret_cast<CExoArrayList*>(
         lbBase + kListBoxControlsOffset);
@@ -265,6 +291,10 @@ bool acc::menus::detail::DriveListBoxSelection(void* listbox, ListBoxNavOp op,
     return true;
 }
 
+static bool DriveListBoxSelectionEngineBody(
+    void* listbox, acc::menus::detail::ListBoxNavOp op, short minSel,
+    acc::menus::detail::ListBoxNavResult& out);
+
 bool acc::menus::detail::DriveListBoxSelectionEngine(void* listbox,
                                                      ListBoxNavOp op,
                                                      short minSel,
@@ -272,7 +302,22 @@ bool acc::menus::detail::DriveListBoxSelectionEngine(void* listbox,
 {
     out = {};
     if (!listbox) return false;
+    // SEH for the same reason as its raw-write twin above — this one also
+    // CALLS the engine's SetSelectedControl on the pointer, so a bad listbox
+    // would hand a wild `this` to engine code.
+    __try {
+        return DriveListBoxSelectionEngineBody(listbox, op, minSel, out);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        out = {};
+        return false;
+    }
+}
 
+static bool DriveListBoxSelectionEngineBody(
+    void* listbox, acc::menus::detail::ListBoxNavOp op, short minSel,
+    acc::menus::detail::ListBoxNavResult& out)
+{
+    using acc::menus::detail::ListBoxNavOp;
     auto* lbBase = reinterpret_cast<unsigned char*>(listbox);
     auto* lbList = reinterpret_cast<CExoArrayList*>(
         lbBase + kListBoxControlsOffset);

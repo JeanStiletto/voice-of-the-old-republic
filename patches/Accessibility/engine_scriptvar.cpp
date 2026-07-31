@@ -73,9 +73,10 @@ void ExoFree(ExoStr* s) {
 
 // creature+0x100, or nullptr when no server-side player creature is loaded.
 void* PlayerVarTable() {
-    void* creature = GetPlayerServerCreature();
-    if (!creature) return nullptr;
-    return reinterpret_cast<unsigned char*>(creature) + kScriptVarTableOffset;
+    // acc::off::Ptr, not raw addition: kScriptVarTableOffset is still Todo on
+    // KOTOR 2, and a poisoned offset must yield nullptr rather than a non-null
+    // wild pointer (see acc::off::Ptr's note).
+    return acc::off::Ptr(GetPlayerServerCreature(), kScriptVarTableOffset);
 }
 
 }  // namespace

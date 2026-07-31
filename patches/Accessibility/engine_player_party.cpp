@@ -313,12 +313,16 @@ int GetPartyMembers(uint32_t* outHandles, int maxCount) {
 void* GetServerPartyTable() {
     // The party_table is embedded in CServerExoAppInternal at +0x1b770 —
     // inside the INTERNAL, not the facade (engine_player.h records what the
-    // facade-relative walk returned instead). Address arithmetic only from
-    // here, no dereference, so no guard is needed past the resolve.
+    // facade-relative walk returned instead).
+    //
+    // "Address arithmetic only, so no guard is needed" was this function's
+    // original reasoning, and it is exactly the assumption that broke on
+    // KOTOR 2: when the offset is unported it poisons, and `internal + poison`
+    // is a NON-NULL wild pointer that every caller's `if (!table)` waves
+    // through to a fault. acc::off::Ptr returns nullptr instead, which is what
+    // those callers already handle.
     void* serverInternal = GetServerAppInternal();
-    if (!serverInternal) return nullptr;
-    return reinterpret_cast<unsigned char*>(serverInternal) +
-           kServerInternalPartyTableOffset;
+    return acc::off::Ptr(serverInternal, kServerInternalPartyTableOffset);
 }
 
 bool GetSoloMode() {

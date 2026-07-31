@@ -63,8 +63,55 @@ that surface comes with its own batch). The K1 crash-history dumps show
 three identical chargen crashes on the Batch 1 build the evening before, so
 this predates Batch 2 entirely.
 
-**The test round this batch needs (chargen crash fix included, retest from
-step 0):**
+### The poison only degrades safely if nothing FORMS A POINTER from it
+
+**Learned 2026-08-01, by crashing on the first in-world arrow key — and the
+most important structural lesson since the batch plan itself, because it
+affects every remaining batch rather than one feature.**
+
+`acc::off::Todo()` poisons to `kUnportedOffset` (0x7BAD0000) so a premature
+read faults instead of silently returning a neighbouring field. That contract
+holds for a READ. It does NOT hold for `base + offset`, which is ordinary
+arithmetic yielding a wild but emphatically **non-null** pointer — and a
+non-null pointer passes every `if (!p)` check between there and whatever
+finally dereferences it, possibly in another TU.
+
+The crash: an arrow key with a dialogue panel foreground. Panel identity
+resolved fine (DialogCinematic is a ported slot), the listbox spec matched,
+and its finder returned `panel + kDialogRepliesListBoxOffset` — still `Todo`.
+The caller's `lb && ...` guard passed, and `DriveListBoxSelection` — which had
+no SEH, because on KOTOR 1 that pointer is always real — dereferenced it.
+
+**Why KOTOR 1 never saw this, though the code is identical:** on KOTOR 1 every
+one of these offsets is a real value, so the pointer is always valid and the
+missing guard never mattered. The defect cannot fire there. It is not
+"unported in-world logic misbehaving" either — that class degrades correctly
+by design. It is the *decline mechanism itself* having a hole, which is why
+porting more code would not have fixed it: every future `Todo` offset used
+this way crashes the same way, and Batch 3 alone carries ~60.
+
+The fix, in three parts:
+
+- `acc::off::Ok(off)` and `acc::off::Ptr(base, off)` in
+  `engine_offsets_select.h`. **Use `Ptr` wherever an interior pointer is
+  RETURNED or STORED** rather than read immediately under SEH; it converts a
+  wild pointer into an honest null that existing guards handle.
+- `DriveListBoxSelection` / `DriveListBoxSelectionEngine` now run their bodies
+  under SEH (split into `*Body` helpers, since C2712 forbids objects in a
+  `__try` frame). They are engine reads and every other engine read here is
+  guarded.
+- Converted the reachable-on-KOTOR-2 pointer-formers: the three listbox
+  finders in `menus_listbox.cpp`, `GetServerPartyTable` (its comment
+  explicitly reasoned "address arithmetic only, no guard needed" — precisely
+  the assumption that breaks), and `PlayerVarTable`.
+
+Still on raw addition, deliberately: the finders in `engine_radial.cpp`,
+`engine_actionbar.cpp` and `minigame_pazaak.cpp`. Their modules are gated on
+`IsKotor1()`, so they are unreachable on KOTOR 2 today — convert them when
+their batch clears the gate, and prefer `Ptr` in new code from the start.
+
+**The test round this batch needs (chargen + arrow-key crash fixes included,
+retest from step 0):**
 
 0. Character creation: open the name field (crashed before the fix), type or
    take the default/random name, proceed into the world. Typing is NOT

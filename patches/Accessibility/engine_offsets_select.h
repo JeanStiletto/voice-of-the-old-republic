@@ -91,4 +91,25 @@ inline size_t Kotor1Only(size_t kotor1) {
     return acc::game::IsKotor2() ? kUnportedOffset : kotor1;
 }
 
+// Is this offset usable on the running game? False for the poison value.
+//
+// Needed because the poison's fault-loudly contract only holds for a READ.
+// `base + poison` is itself a perfectly ordinary arithmetic result — a wild
+// but decidedly NON-NULL pointer — so any code that forms such a pointer and
+// hands it onward defeats every `if (!p)` check between there and the
+// eventual dereference. That is how an in-world arrow key crashed KOTOR 2
+// (2026-08-01): a dialogue panel's reply-listbox pointer was
+// `panel + Todo(0x19c4)`, the null check passed, and an unguarded helper
+// dereferenced it. Full record in docs/kotor2-port.md.
+inline bool Ok(size_t off) { return off != kUnportedOffset; }
+
+// Form an interior pointer, or nullptr when the offset is unported. Use this
+// wherever `base + kSomeOffset` is RETURNED or STORED rather than immediately
+// read under SEH — it converts a silent wild pointer into an honest null that
+// every existing guard already handles.
+inline void* Ptr(void* base, size_t off) {
+    if (!base || !Ok(off)) return nullptr;
+    return static_cast<unsigned char*>(base) + off;
+}
+
 }  // namespace acc::off
