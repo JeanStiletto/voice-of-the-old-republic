@@ -72,6 +72,12 @@ and add the German in parentheses if it genuinely aids clarity.
 - The map cursor now follows only your primary movement keys — W, A, S and D on the default setup — which frees the arrow keys for menu navigation on that screen. KOTOR binds the arrows to movement as a second set alongside WASD, and the cursor had been honouring every bound movement key, so a single press of Down both panned the cursor south and stepped the menu at the same time. If you have rebound movement the cursor follows the new keys, as before.
 - Four buttons that duplicate something the keyboard already does are gone from arrow navigation. On the map screen, "Previous map note" and "Next map note" — the map cursor sweeps those same notes with W, A, S and D — so Up and Down now step straight to the party-select and return buttons. On the party-selection screen, "Add", because Enter on a companion's portrait already adds or removes them. In the inventory, "Use": Enter on the item does the same thing and is safer, because the button acts on whichever row the game still considers current, which is not always the one you are standing on.
 
+<h3>Under the hood:</h3>
+
+- A large internal cleanup runs through this release. The mod's code was broken up into smaller, self-contained modules and its shared machinery — logging, speech, menu navigation, the way it reads the game's memory — was consolidated so each job is done in one place instead of several. None of this changes what the mod does; it is groundwork, and it is why this release carries so many commits for so few visible changes.
+- The same work separates what is specific to the first game from what is not, in preparation for the KOTOR II port. Everything tied to KOTOR 1's executable now sits behind a single boundary, so the second game can supply its own layout without the rest of the mod being rewritten around it.
+- Project pages in Polish and Russian. The README that describes the mod, its keys and its settings is now available in all six languages the mod speaks.
+
 <h2>v0.6.3</h2>
 
 <h3>Russian translation:</h3>

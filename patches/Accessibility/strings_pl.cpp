@@ -111,7 +111,7 @@ const char* Get(Id id) {
         case Id::ActionMenuClosed:        return "Menu akcji zamkni\xEAte.";
 
         case Id::MenuCatAttacks:       return "Ataki";
-        case Id::MenuCatForcePowers:   return "Moce";
+        case Id::MenuCatForcePowers:   return "Moce Jedi";
         case Id::MenuCatItems:         return "Przedmioty";
         case Id::MenuCatSelfPowers:    return "Moce na siebie";
         case Id::MenuCatMedical:       return "Medycyna";
@@ -137,10 +137,10 @@ const char* Get(Id id) {
         case Id::FmtItemChargeSuffix:  return "%d \xB3""adunk\xF3w";
 
         case Id::EquipSlotHead:        return "G\xB3owa";
-        case Id::EquipSlotImplant:     return "Implant";
-        case Id::EquipSlotBody:        return "Korpus";
-        case Id::EquipSlotArmL:        return "Lewe rami\xEA";
-        case Id::EquipSlotArmR:        return "Prawe rami\xEA";
+        case Id::EquipSlotImplant:     return "Wszczep";
+        case Id::EquipSlotBody:        return "Cia\xB3o";
+        case Id::EquipSlotArmL:        return "Lewa r\xEAka";
+        case Id::EquipSlotArmR:        return "Prawa r\xEAka";
         case Id::EquipSlotWeapL:       return "Lewa bro\xF1";
         case Id::EquipSlotWeapR:       return "Prawa bro\xF1";
         case Id::EquipSlotBelt:        return "Pas";
@@ -404,7 +404,7 @@ const char* Get(Id id) {
         case Id::PazaakDeckRemoved:      return "Usuni\xEAto %s.";
         case Id::PazaakDeckFull:         return "Talia pe\xB3na.";
         case Id::PazaakFmtOppHand:       return "Przeciwnik ma %d kart na r\xEA""ce.";
-        case Id::PazaakStandLabel:       return "Pas";
+        case Id::PazaakStandLabel:       return "Do\x9C\xE6";
         case Id::PazaakEndTurnLabel:     return "Zako\xF1""cz tur\xEA";
         case Id::PazaakWagerLess:        return "Zmniejsz stawk\xEA";
         case Id::PazaakWagerMore:        return "Zwi\xEAksz stawk\xEA";
@@ -799,7 +799,7 @@ const char* Get(Id id) {
         case Id::FmtChargenFeatUnnamed: return "Atut %u";
         case Id::ChargenBtnRecommended: return "Zalecane";
         case Id::ChargenBtnAccept:      return "Akceptuj";
-        case Id::ChargenBtnBack:        return "Wstecz";
+        case Id::ChargenBtnBack:        return "Cofnij";
         case Id::Count_:               return "";
     }
     return "";

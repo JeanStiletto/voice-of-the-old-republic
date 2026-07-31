@@ -114,7 +114,7 @@ const char* Get(Id id) {
         case Id::ActionMenuClosed:        return "\xCC\xE5\xED\xFE \xE4\xE5\xE9\xF1\xF2\xE2\xE8\xE9 \xE7\xE0\xEA\xF0\xFB\xF2\xEE.";
 
         case Id::MenuCatAttacks:       return "\xC0\xF2\xE0\xEA\xE8";
-        case Id::MenuCatForcePowers:   return "\xD1\xE8\xEB\xFB Force";
+        case Id::MenuCatForcePowers:   return "\xD1\xEF\xEE\xF1\xEE\xE1\xED\xEE\xF1\xF2\xE8 \xD1\xE8\xEB\xFB";
         case Id::MenuCatItems:         return "\xCF\xF0\xE5\xE4\xEC\xE5\xF2\xFB";
         case Id::MenuCatSelfPowers:    return "\xD1\xE8\xEB\xFB \xED\xE0 \xF1\xE5\xE1\xFF";
         case Id::MenuCatMedical:       return "\xCC\xE5\xE4\xE8\xF6\xE8\xED\xE0";
@@ -140,14 +140,14 @@ const char* Get(Id id) {
         case Id::FmtItemChargeSuffix:  return "\xE7\xE0\xF0\xFF\xE4\xEE\xE2: %d";
 
         case Id::EquipSlotHead:        return "\xC3\xEE\xEB\xEE\xE2\xE0";
-        case Id::EquipSlotImplant:     return "\xC8\xEC\xEF\xEB\xE0\xED\xF2";
+        case Id::EquipSlotImplant:     return "\xC8\xEC\xEF\xEB\xE0\xED\xF2\xE0\xF2";
         case Id::EquipSlotBody:        return "\xD2\xE5\xEB\xEE";
-        case Id::EquipSlotArmL:        return "\xCB\xE5\xE2\xE0\xFF \xF0\xF3\xEA\xE0";
-        case Id::EquipSlotArmR:        return "\xCF\xF0\xE0\xE2\xE0\xFF \xF0\xF3\xEA\xE0";
-        case Id::EquipSlotWeapL:       return "\xCE\xF0\xF3\xE6\xE8\xE5 \xF1\xEB\xE5\xE2\xE0";
-        case Id::EquipSlotWeapR:       return "\xCE\xF0\xF3\xE6\xE8\xE5 \xF1\xEF\xF0\xE0\xE2\xE0";
+        case Id::EquipSlotArmL:        return "\xCB\xE5\xE2\xEE\xE5 \xEF\xF0\xE5\xE4\xEF\xEB\xE5\xF7\xFC\xE5";
+        case Id::EquipSlotArmR:        return "\xCF\xF0\xE0\xE2\xEE\xE5 \xEF\xF0\xE5\xE4\xEF\xEB\xE5\xF7\xFC\xE5";
+        case Id::EquipSlotWeapL:       return "\xCE\xF0\xF3\xE6\xE8\xE5 \xE2 \xEB\xE5\xE2\xEE\xE9 \xF0\xF3\xEA\xE5";
+        case Id::EquipSlotWeapR:       return "\xCE\xF0\xF3\xE6\xE8\xE5 \xE2 \xEF\xF0\xE0\xE2\xEE\xE9 \xF0\xF3\xEA\xE5";
         case Id::EquipSlotBelt:        return "\xCF\xEE\xFF\xF1";
-        case Id::EquipSlotHands:       return "\xCA\xE8\xF1\xF2\xE8";
+        case Id::EquipSlotHands:       return "\xCA\xE8\xF1\xF2\xE8 \xF0\xF3\xEA";
 
         case Id::FmtEquipSlotItem:     return "%s, %s";
         case Id::FmtEquipSlotEmpty:    return "%s, \xEF\xF3\xF1\xF2\xEE";
@@ -416,14 +416,14 @@ const char* Get(Id id) {
         case Id::PazaakDeckRemoved:      return "\xD3\xE4\xE0\xEB\xE5\xED\xEE %s.";
         case Id::PazaakDeckFull:         return "\xCA\xEE\xEB\xEE\xE4\xE0 \xE7\xE0\xEF\xEE\xEB\xED\xE5\xED\xE0.";
         case Id::PazaakFmtOppHand:       return "\xD3 \xEF\xF0\xEE\xF2\xE8\xE2\xED\xE8\xEA\xE0 \xEA\xE0\xF0\xF2 \xED\xE0 \xF0\xF3\xEA\xE5: %d.";
-        case Id::PazaakStandLabel:       return "\xCE\xF1\xF2\xE0\xED\xEE\xE2\xE8\xF2\xFC\xF1\xFF";
+        case Id::PazaakStandLabel:       return "\xCF\xE0\xF1";
         case Id::PazaakEndTurnLabel:     return "\xC7\xE0\xE2\xE5\xF0\xF8\xE8\xF2\xFC \xF5\xEE\xE4";
         case Id::PazaakWagerLess:        return "\xD3\xEC\xE5\xED\xFC\xF8\xE8\xF2\xFC \xF1\xF2\xE0\xE2\xEA\xF3";
         case Id::PazaakWagerMore:        return "\xD3\xE2\xE5\xEB\xE8\xF7\xE8\xF2\xFC \xF1\xF2\xE0\xE2\xEA\xF3";
         case Id::PazaakFmtWager:         return "\xD1\xF2\xE0\xE2\xEA\xE0 %d \xE8\xE7 %d \xEC\xE0\xEA\xF1\xE8\xEC\xF3\xEC.";
         case Id::PazaakFmtWagerRow:      return "\xD1\xF2\xE0\xE2\xEA\xE0 %d. %s";
         case Id::FmtStoreNotEnoughCredits:  return "\xCD\xE5 \xF5\xE2\xE0\xF2\xE0\xE5\xF2 \xEA\xF0\xE5\xE4\xE8\xF2\xEE\xE2, \xED\xF3\xE6\xED\xEE %d, \xE5\xF1\xF2\xFC %d";
-        case Id::JournalQuestItemsButton:   return "\xCF\xF0\xE5\xE4\xEC\xE5\xF2\xFB \xE7\xE0\xE4\xE0\xED\xE8\xE9";
+        case Id::JournalQuestItemsButton:   return "\xCF\xF0\xE5\xE4\xEC\xE5\xF2\xFB \xE4\xEB\xFF \xE7\xE0\xE4\xE0\xED\xE8\xE9";
 
         case Id::FmtCredits:                return "\xCA\xF0\xE5\xE4\xE8\xF2\xFB: %s";
 
@@ -537,7 +537,7 @@ const char* Get(Id id) {
         case Id::GamePaused:            return "\xCF\xE0\xF3\xE7\xE0.";
         case Id::GameResumed:           return "\xCF\xE0\xF3\xE7\xE0 \xF1\xED\xFF\xF2\xE0.";
 
-        case Id::GalaxyMapTitle:        return "\xCA\xE0\xF0\xF2\xE0 \xE3\xE0\xEB\xE0\xEA\xF2\xE8\xEA\xE8";
+        case Id::GalaxyMapTitle:        return "\xC3\xE0\xEB\xE0\xEA\xF2\xE8\xF7\xE5\xF1\xEA\xE0\xFF \xEA\xE0\xF0\xF2\xE0";
 
         // ---- Help system ----
         case Id::HelpGroupGeneral:      return "\xCD\xE0\xE2\xE8\xE3\xE0\xF6\xE8\xFF";
@@ -821,11 +821,11 @@ const char* Get(Id id) {
         case Id::FloorPuzzleSolved:
             return "\xC3\xEE\xEB\xEE\xE2\xEE\xEB\xEE\xEC\xEA\xE0 \xF0\xE5\xF8\xE5\xED\xE0. \xCC\xE0\xF1\xF1\xE8\xE2\xED\xE0\xFF \xE4\xE2\xE5\xF0\xFC \xEE\xF2\xEA\xF0\xFB\xE2\xE0\xE5\xF2\xF1\xFF.";
 
-        case Id::FmtModLoadedVersion:   return "Voice of the Old Republic загружен, версия %s";
-        case Id::FmtChargenFeatUnnamed: return "Умение %u";
-        case Id::ChargenBtnRecommended: return "Рекомендуется";
-        case Id::ChargenBtnAccept:      return "Принять";
-        case Id::ChargenBtnBack:        return "Назад";
+        case Id::FmtModLoadedVersion:   return "Voice of the Old Republic пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅпїЅпїЅ %s";
+        case Id::FmtChargenFeatUnnamed: return "пїЅпїЅпїЅпїЅпїЅпїЅ %u";
+        case Id::ChargenBtnRecommended: return "пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ";
+        case Id::ChargenBtnAccept:      return "пїЅпїЅпїЅпїЅпїЅпїЅпїЅ";
+        case Id::ChargenBtnBack:        return "пїЅпїЅпїЅпїЅпїЅ";
         case Id::Count_:               return "";
     }
     return "";

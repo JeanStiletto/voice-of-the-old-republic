@@ -5,19 +5,25 @@ permalink: /
 ---
 <h1>Voice of the Old Republic</h1>
 
-<p><strong>English</strong> · <a href="/voice-of-the-old-republic/docs/README.de.html">Deutsch</a> · <a href="/voice-of-the-old-republic/docs/README.fr.html">Français</a> · <a href="/voice-of-the-old-republic/docs/README.it.html">Italiano</a> · <a href="/voice-of-the-old-republic/docs/README.es.html">Español</a></p>
+<p><strong>English</strong> · <a href="/voice-of-the-old-republic/docs/README.de.html">Deutsch</a> · <a href="/voice-of-the-old-republic/docs/README.fr.html">Français</a> · <a href="/voice-of-the-old-republic/docs/README.it.html">Italiano</a> · <a href="/voice-of-the-old-republic/docs/README.es.html">Español</a> · <a href="/voice-of-the-old-republic/docs/README.pl.html">Polski</a> · <a href="/voice-of-the-old-republic/docs/README.ru.html">Русский</a></p>
 
 <h2>What is this mod</h2>
 
-**Voice of the Old Republic** is a screen-reader and keyboard-navigation mod for **Star Wars: Knights of the Old Republic 1** (BioWare, 2003, Steam / GoG release) that lets fully blind players play KOTOR 1 with any modern screen reader. It adds spoken output and keyboard navigation to nearly every part of the game — moving through the world, combat, dialogue, inventory, the map, level-ups, and the minigames.
+**Voice of the Old Republic** is a project to make the Star Wars: Knights of the Old Republic games accessible for fully blind players. It uses the Prism speech bridge to support every screen reader, adds navigational helpers, menu accessibility and special sound cues to make minigames accessible.
 
-This mod is for **blind and visually impaired players**. Speech is routed through the Prism speech bridge, which supports every major screen reader on every major platform, so if your screen reader works with anything else on your system, it will work here. The mod is written by a fully blind developer, and every workflow — installing, playing, contributing — is designed to be doable with a screen reader and keyboard alone.
+At the current state Knights of the Old Republic I is fully playable and completable, with all minigames, quests and playstyles. It only has keyboard support yet, because a community mod for controller support is being worked on and will be integrated once it is finished.
 
-<h2>What is Knights of the Old Republic</h2>
+The port for part II is being worked on.
 
-Knights of the Old Republic (KOTOR) is a story-driven Star Wars role-playing game made by BioWare in 2003, set about four thousand years before the films. You create your own character, gather a party of companions, travel between planets, and shape the story through your dialogue choices and whether you follow the light or dark side of the Force. Combat is real-time with a pause, built on the tabletop Star Wars d20 rules — you queue actions and the dice resolve them.
+The mod is translated into all supported languages — English, German, French, Italian, Spanish — and supports a Polish and a Russian translation. It supports the 1.03 Steam and GoG version and the 2004 version that is used by the Polish and Russian translations.
 
-It is widely considered one of the greatest RPGs ever made, and for over twenty years it had no screen-reader access at all. If you have played other BioWare RPGs like Baldur's Gate or Mass Effect, you will recognise the structure. If you are new to the genre, the game eases you in, and this mod narrates the parts you would otherwise have to see.
+<h2>What are the Knights of the Old Republic games</h2>
+
+Knights of the Old Republic is a pair of story-driven Star Wars role-playing games set about four thousand years before the films. The first one was made by BioWare in 2003; the second — Knights of the Old Republic II: The Sith Lords — by Obsidian in 2004, and it plays a few years after part I. Both run on the same engine, which is why the mod can carry over from one to the other.
+
+In both games you create your own character, gather a party of companions, travel between planets, and shape the story through your dialogue choices and whether you follow the light or dark side of the Force.
+
+Combat works the same way in both: real-time with a pause, built on the tabletop Star Wars d20 rules — you queue actions and the dice resolve them. Each round needs 6 real seconds and you can pause at any time to examine the battlefield and queue special actions that are way stronger than the character's auto attacks. You can queue up to 4 actions on each character before you have to let the fight run along, and you can cancel some of the actions if events of the fight require you to change your strategy.
 
 <h2>Requirements</h2>
 
@@ -55,16 +61,17 @@ You then wake on the **Endar Spire**, a Republic ship under attack. This is the 
 
 A few habits that make the early game much easier:
 
-- **Save often.** F4 quick-saves; F5 quick-loads.
 - **Find things with Q / E**, and get back to things you have already found with the `,` / `.` cycle (see the keyboard shortcuts below).
 - **Press H** at any time to hear your health and status, and **F1** for the full list of keys.
 - **Listen to the room.** Entering a room speaks its name, shape, and exits, and a soft audio layer keeps you aware of the nearest walls as you move.
+- **Have a look at the settings early.** Press O for the game's Options. Under Gameplay you will find the auto-pause options, which decide when combat stops on its own — worth setting up before your first real fight — and the key mapping.
+- **And at the bottom of the Options list: Mod settings.** Nearly everything this mod adds can be adjusted or turned on and off there, the mod's own keys can be re-bound, and the audio glossary plays every sound cue with its name so you can learn what each one means.
 
 After the Endar Spire you reach **Taris**, the first large world, and the story opens up from there.
 
 <h2>Keyboard shortcuts</h2>
 
-The mod keeps the game's default key map intact, with one ergonomic change the installer applies on a fresh install (see the strafe / camera-rotate note below). Anything not listed here behaves as in the unmodded game. Game keys can be re-bound in `swkotor.ini`; mod-added keys will be re-bindable from an in-game settings screen in a later release.
+The mod keeps the game's default key map intact, with one ergonomic change the installer applies on a fresh install (see the strafe / camera-rotate note below). Anything not listed here behaves as in the unmodded game. The game's own keys can be re-bound in Options → Gameplay → Key Mapping, or directly in `swkotor.ini`. The keys the mod adds can be re-bound in Mod settings → Key bindings.
 
 <h3>Game keys you will use most</h3>
 
@@ -92,14 +99,13 @@ The mod keeps the game's default key map intact, with one ergonomic change the i
 - Shift+Enter — Open the unified action menu for the current target (every action — attack, talk, Force powers, items, special abilities — in one menu)
 - Shift+1 … Shift+7 — Open one action category to choose from it (1–3 are the target's actions, 4–7 your Force powers / items / mines)
 - H — Announce your own health, active effects, and equipped weapon
-- Backtick (US layout) / Ö (German layout) — Read the Examine panel for the current target
 - Shift+H — Open the action queue (review or clear queued actions)
 - Shift+L — Open the level-up panel
 - F1 — Open or close the full key list; Ctrl+F1 — read the keys for the current screen
 
 <h3>Mod keys — discovered-object cycle</h3>
 
-A second cycle, on top of Q / E, that steps through the objects you have already discovered in the current area — doors, containers, characters, area transitions, landmarks, and your own map markers — grouped by category. (Turn on "Extended cycling" in Mod Settings to also include things you haven't found yet.)
+A second cycle, on top of Q / E, that steps through the objects you have already discovered in the current area — doors, containers, characters, area transitions, landmarks, and your own map markers — grouped by category. (Turn on "Map-wide object selection" in Mod settings to also include things you haven't found yet.)
 
 - `,` / `.` — Previous / next object in the current category
 - Shift+`,` / Shift+`.` — Previous / next category (creatures, doors, containers, transitions, map pins, …)
@@ -166,7 +172,7 @@ While the Pazaak board is open:
 - Shift+C — How many cards the opponent is still holding
 - Plus/minus flip card — Enter opens a sign chooser; Left / Right pick plus or minus, Enter plays with that sign, Esc cancels
 
-On the pre-game wager screen, the top entry reads your current bet, the table maximum, and your credits; move to "Einsatz verringern" / "Einsatz erhöhen" (decrease / increase) and press Enter to change the bet, then "Setzen" to place it. The side-deck builder reads every card and deck slot.
+On the pre-game wager screen, the top entry reads your current bet, the table maximum, and your credits; move to "Decrease wager" / "Increase wager" and press Enter to change the bet, then the game's wager button to place it. The side-deck builder reads every card and deck slot.
 
 <h2>Navigation systems at a glance</h2>
 
@@ -178,7 +184,7 @@ Your main way to find and act on things. Q / E step through the creatures, doors
 
 <h3>Discovered-object cycle — `,` / `.`</h3>
 
-For getting back to things you've already found. `,` / `.` step through every object you've discovered in the current area — doors, containers, characters, transitions, landmarks, your own markers — grouped by category. Announce one, autowalk to it, or arm an audio beacon. (Mod Settings → "Extended cycling" widens it to also include things you haven't found yet.)
+For getting back to things you've already found. `,` / `.` step through every object you've discovered in the current area — doors, containers, characters, transitions, landmarks, your own markers — grouped by category. Announce one, autowalk to it, or arm an audio beacon. (Mod settings → "Map-wide object selection" widens it to also include things you haven't found yet.)
 
 <h3>Unified action menu — Shift+Enter</h3>
 
@@ -191,6 +197,20 @@ KOTOR's in-game map, made navigable. Move the cursor with the arrow keys to read
 <h3>Wall cues and room-shape descriptions</h3>
 
 As you move, a continuous 3D audio layer plays soft positional clicks off the nearest walls — closer walls sound louder — so you keep a constant feel for the space around you. And entering a room speaks its name, its shape (corridor, junction, dead-end, open space), and the visible exits, all computed live from the game's walk-mesh.
+
+<h2>Mod settings</h2>
+
+Nearly every system the mod adds can be adjusted or turned on and off while you play. Open the game's Options screen (O) and choose **Mod settings** at the bottom of the list. Up / Down move through the rows, Enter toggles a setting or opens a submenu, Left / Right move a slider, and Esc goes back.
+
+- Map-wide object selection — widens the `,` / `.` cycle to objects you have not discovered yet
+- Room shape descriptions — the spoken room name, shape, and exits when you enter a room
+- Wall sounds — the continuous positional wall-cue layer
+- Read voiced-speaker subtitles — speak the subtitles of lines that are voice-acted
+- Autoaiming — the aim assist in the turret minigame
+- Skip launch intro movies — takes effect on the next launch
+- Hint sound volume and Spoken announcement volume — volume sliders for the mod's own sounds and speech
+- Key bindings — re-bind the keys the mod adds
+- Audio glossary — plays every sound cue the mod uses, one at a time with its name, so you can learn what each sound means
 
 <h2>Troubleshooting</h2>
 
@@ -215,6 +235,11 @@ As you move, a continuous 3D audio layer plays soft positional clicks off the ne
 - Make sure the game window is focused (Alt+Tab to it).
 - Press F1. If you hear the key list, the mod is active.
 - Some keys only work in a specific context (the Pazaak keys only work on the Pazaak board, the submenu keys only inside a mod submenu, and so on).
+
+<h3>The camera no longer turns with the keys</h3>
+
+- You have probably switched on the game's free look mode. The game's default key map lists Caps Lock as the free look toggle, so it is easy to hit by accident — try pressing Caps Lock again. Otherwise check the mouse and camera settings in Options.
+- Also check that you are not in the mod's view mode (B), where A / D pan the camera instead of moving your character. Press B again to leave it.
 
 <h3>Wrong language</h3>
 
@@ -260,9 +285,30 @@ Contributions are welcome — especially fixes for languages, system configurati
 
 <h2>Credits</h2>
 
-This project stands on a lot of other people's work, and on a community that helped, taught, and encouraged along the way. Please DM me if I forgot you, or if you'd like to be listed under a different name or not at all.
+And now I want to thank a whole lot of people. First, this mod relies massively on community work, and many people did the really hard things, so I just had to pick their tools up and create my own thing with them. Further, thankfully, this was not just me and the AI in a black box, but a whole network around me, helping out, empowering, just being social and nice.
 
-The reverse-engineering and patch framework this mod runs on top of come from **Lane Dibello**, whose [Kotor-Patch-Manager](https://github.com/LaneDibello/Kotor-Patch-Manager) and Ghidra work made it possible to hook the game at all. Thanks also to the KOTOR modding community around **DeadlyStream**, who figured out the tools and formats I only had to pick up and use, and to **Ahix** for the [refactoring prompts for large AI-coded projects](https://github.com/ahicks92/llm-mod-refactoring-prompts) I ran on top of my own to keep the code maintainable.
+Please DM me if I forgot you, or if you want to be known under a different name or not mentioned at all.
+
+The reverse-engineering and patch framework this mod runs on top of come from **Lane Dibello**, whose [Kotor-Patch-Manager](https://github.com/LaneDibello/Kotor-Patch-Manager) and Ghidra work made it possible to hook the game at all. Thanks also to the KOTOR modding community around **DeadlyStream**, who figured out the tools and formats I only had to pick up and use.
+
+A lot of people helped me testing the game, found all the bugs I couldn't find, and gave me feedback to pinpoint the weaknesses and inconveniences of the project. Without them it could not have become a project at all. So I want to thank:
+
+- Kenny
+- Berenion
+- unexplained entity
+- Grinvold
+- dansc93
+- Mojsior
+- stirlock
+- Druidah
+- SightlessKombat
+- Destranis
+- Ozuaw
+- mkdbzfan
+- Kamilana
+- ABlindFellow
+- zargontheevilgod
+- zersiax
 
 **Foundations and dependencies:**
 
@@ -306,5 +352,7 @@ The mod source is licensed under the GNU General Public License v3 (see [LICENSE
 - [Français](/voice-of-the-old-republic/docs/README.fr.html)
 - [Italiano](/voice-of-the-old-republic/docs/README.it.html)
 - [Español](/voice-of-the-old-republic/docs/README.es.html)
+- [Polski](/voice-of-the-old-republic/docs/README.pl.html)
+- [Русский](/voice-of-the-old-republic/docs/README.ru.html)
 
-Translations are kept in `docs/README.{de,fr,it,es}.md`. To improve or add a translation, see [docs/CONTRIBUTING_TRANSLATIONS.md](docs/CONTRIBUTING_TRANSLATIONS.md).
+Translations are kept in `docs/README.{de,fr,it,es,pl,ru}.md`. To improve or add a translation, see [docs/CONTRIBUTING_TRANSLATIONS.md](docs/CONTRIBUTING_TRANSLATIONS.md).
