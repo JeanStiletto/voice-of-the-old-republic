@@ -405,43 +405,67 @@ struct PanelKindOffset {
     const char* name;
 };
 
+// KOTOR 2 values recovered 2026-08-01 by tools/re-scripts/k2_slot_table.py,
+// which reads each slot off the `mov [this+off], eax` that files away the
+// panel CGuiInGame's creator just constructed. See docs/kotor2-port.md.
+//
+// The shape: identical up to +0x74, then KOTOR 2 inserts members and every
+// slot above shifts. So this table is a mixture and `Same` is NOT the default
+// — InGameMessages in particular moves 0x1c -> 0x78, which on KOTOR 1 is
+// PartySelection, so an unported table maps those two screens onto each other
+// and misclassifies in silence rather than failing.
+//
+// Todo() rows are slots whose KOTOR 2 counterpart is not yet located. They
+// poison to kUnportedOffset there and SlotTableLookup skips them, so the rest
+// of the walk still runs; each simply falls through to structural / vtable
+// identification the way it did before this port.
 static const PanelKindOffset kPanelKindOffsets[] = {
-    { 0x08, PanelKind::InGameMenu,                 "InGameMenu" },
-    { 0x0c, PanelKind::InGameEquip,                "InGameEquip" },
-    { 0x10, PanelKind::InGameInventory,            "InGameInventory" },
-    { 0x14, PanelKind::InGameCharacter,            "InGameCharacter" },
-    { 0x18, PanelKind::InGameAbilities,            "InGameAbilities" },
-    { 0x1c, PanelKind::InGameMessages,             "InGameMessages" },
-    { 0x20, PanelKind::InGameJournal,              "InGameJournal" },
-    { 0x24, PanelKind::InGameMap,                  "InGameMap" },
-    { 0x28, PanelKind::InGameOptions,              "InGameOptions" },
-    { 0x3c, PanelKind::DialogCinematicCopy,        "DialogCinematicCopy" },
-    { 0x40, PanelKind::DialogCinematic,            "DialogCinematic" },
-    { 0x44, PanelKind::DialogComputer,             "DialogComputer" },
-    { 0x48, PanelKind::DialogComputerCamera,       "DialogComputerCamera" },
-    { 0x4c, PanelKind::BarkBubble,                 "BarkBubble" },
-    { 0x50, PanelKind::Examine,                    "Examine" },
-    { 0x54, PanelKind::Container,                  "Container" },
-    { 0x58, PanelKind::CreateItemMenu,             "CreateItemMenu" },
-    { 0x5c, PanelKind::CreateItemSubMenu,          "CreateItemSubMenu" },
-    { 0x60, PanelKind::DialogLetterbox1,           "DialogLetterbox1" },
-    { 0x64, PanelKind::DialogLetterbox2,           "DialogLetterbox2" },
-    { 0x68, PanelKind::DialogLetterbox3,           "DialogLetterbox3" },
-    { 0x6c, PanelKind::Fade,                       "Fade" },
-    { 0x70, PanelKind::LoadModuleDebugMenu,        "LoadModuleDebugMenu" },
-    { 0x74, PanelKind::PowersFeatsSkillsDebugMenu, "PowersFeatsSkillsDebugMenu" },
-    { 0x78, PanelKind::PartySelection,             "PartySelection" },
-    { 0x7c, PanelKind::InGamePause,                "InGamePause" },
-    { 0x80, PanelKind::InGameGalaxyMap,            "InGameGalaxyMap" },
-    { 0x84, PanelKind::Store,                      "Store" },
-    { 0x8c, PanelKind::SoloModeQuery,              "SoloModeQuery" },
-    { 0x90, PanelKind::MainInterface,              "MainInterface" },
-    { 0x94, PanelKind::AreaTransition,             "AreaTransition" },
-    { 0x98, PanelKind::MessageBoxModal,            "MessageBox" },
-    { 0x9c, PanelKind::SkillInfoBox,               "SkillInfoBox" },
-    { 0xa0, PanelKind::TutorialBox,                "TutorialBox" },
-    { 0xa4, PanelKind::ControllerLossBox,          "ControllerLossBox" },
-    { 0xa8, PanelKind::StatusSummary,              "StatusSummary" },
+    { acc::off::Todo(0x08), PanelKind::InGameMenu,          "InGameMenu" },
+    { acc::off::Same(0x0c), PanelKind::InGameEquip,         "InGameEquip" },
+    { acc::off::Same(0x10), PanelKind::InGameInventory,     "InGameInventory" },
+    // KOTOR 2 puts a CSWGui3DSceneView at 0x14 — its character sheet is a
+    // different class, or lives elsewhere. Resolve before mapping.
+    { acc::off::Todo(0x14), PanelKind::InGameCharacter,     "InGameCharacter" },
+    { acc::off::Same(0x18), PanelKind::InGameAbilities,     "InGameAbilities" },
+    { acc::off::Pick(0x1c, 0x78), PanelKind::InGameMessages, "InGameMessages" },
+    { acc::off::Same(0x20), PanelKind::InGameJournal,       "InGameJournal" },
+    { acc::off::Same(0x24), PanelKind::InGameMap,           "InGameMap" },
+    { acc::off::Same(0x28), PanelKind::InGameOptions,       "InGameOptions" },
+    { acc::off::Todo(0x3c), PanelKind::DialogCinematicCopy, "DialogCinematicCopy" },
+    { acc::off::Same(0x40), PanelKind::DialogCinematic,     "DialogCinematic" },
+    { acc::off::Same(0x44), PanelKind::DialogComputer,      "DialogComputer" },
+    // 0x48 holds CSWGuiBlackenedLabel on KOTOR 2.
+    { acc::off::Todo(0x48), PanelKind::DialogComputerCamera, "DialogComputerCamera" },
+    { acc::off::Same(0x4c), PanelKind::BarkBubble,          "BarkBubble" },
+    { acc::off::Same(0x50), PanelKind::Examine,             "Examine" },
+    { acc::off::Same(0x54), PanelKind::Container,           "Container" },
+    { acc::off::Same(0x58), PanelKind::CreateItemMenu,      "CreateItemMenu" },
+    { acc::off::Same(0x5c), PanelKind::CreateItemSubMenu,   "CreateItemSubMenu" },
+    { acc::off::Same(0x60), PanelKind::DialogLetterbox1,    "DialogLetterbox1" },
+    { acc::off::Same(0x64), PanelKind::DialogLetterbox2,    "DialogLetterbox2" },
+    { acc::off::Same(0x68), PanelKind::DialogLetterbox3,    "DialogLetterbox3" },
+    { acc::off::Same(0x6c), PanelKind::Fade,                "Fade" },
+    { acc::off::Same(0x70), PanelKind::LoadModuleDebugMenu, "LoadModuleDebugMenu" },
+    { acc::off::Same(0x74), PanelKind::PowersFeatsSkillsDebugMenu,
+                                                            "PowersFeatsSkillsDebugMenu" },
+    // KOTOR 2's 0x78 is InGameMessages (above), so this must NOT inherit it.
+    { acc::off::Todo(0x78), PanelKind::PartySelection,      "PartySelection" },
+    { acc::off::Same(0x7c), PanelKind::InGamePause,         "InGamePause" },
+    // 0x80 holds CSWGui3DSceneView on KOTOR 2.
+    { acc::off::Todo(0x80), PanelKind::InGameGalaxyMap,     "InGameGalaxyMap" },
+    { acc::off::Same(0x84), PanelKind::Store,               "Store" },
+    { acc::off::Pick(0x8c, 0x94), PanelKind::SoloModeQuery, "SoloModeQuery" },
+    { acc::off::Todo(0x90), PanelKind::MainInterface,       "MainInterface" },
+    { acc::off::Pick(0x94, 0x9c), PanelKind::AreaTransition, "AreaTransition" },
+    // KOTOR 2 files three CSWGuiMessageBox instances (0xa0, 0xa4, one more not
+    // yet followed); KOTOR 1 tracks only the modal one. 0xa0 is the first.
+    { acc::off::Pick(0x98, 0xa0), PanelKind::MessageBoxModal, "MessageBox" },
+    { acc::off::Pick(0x9c, 0xac), PanelKind::SkillInfoBox,  "SkillInfoBox" },
+    { acc::off::Pick(0xa0, 0xb0), PanelKind::TutorialBox,   "TutorialBox" },
+    // KOTOR 2's 0xa4 is a CSWGuiMessageBox, not the controller-loss box —
+    // which it does have as a class (CSWGuiControllerLossBox in the RTTI).
+    { acc::off::Todo(0xa4), PanelKind::ControllerLossBox,   "ControllerLossBox" },
+    { acc::off::Pick(0xa8, 0xb8), PanelKind::StatusSummary, "StatusSummary" },
     // Dialogue input-routing surfaces (per CGuiInGame layout in
     // swkotor.exe.h:10282). The in-game session log shows that during
     // a CSWGuiDialogCinematic conversation, arrow-key input routes to
@@ -449,8 +473,8 @@ static const PanelKindOffset kPanelKindOffsets[] = {
     // distinct from the rendering panel (DialogCinematicCopy at +0x3c).
     // Hypothesis: that routing target is one of these two — registering
     // both so the next log identifies which.
-    { 0xf8, PanelKind::DialogMessagesAux,          "DialogMessagesAux" },
-    { 0xfc, PanelKind::DialogMessages,             "DialogMessages" },
+    { acc::off::Todo(0xf8), PanelKind::DialogMessagesAux, "DialogMessagesAux" },
+    { acc::off::Todo(0xfc), PanelKind::DialogMessages,    "DialogMessages" },
     // Heap-allocated kinds with no CGuiInGame slot. The sentinel offset
     // skips them during slot lookup; PanelKindName still resolves the
     // friendly name, and IdentifyPanel falls through to a structural
@@ -658,23 +682,30 @@ void LogUnknownPanelDiagnostics(void* panel) {
 // The CGuiInGame slot walk, hoisted out of IdentifyPanel so the __try owns no
 // unwinding objects (C2712) and returns the matching table index, or -1.
 //
-// KOTOR 2 skips the walk outright: both the slot offsets and the
-// ResolveGuiInGame pointer chain describe KOTOR 1's CGuiInGame, and Batch 2
-// is where that table gets ported. Before this gate the walk dereferenced a
-// garbage base UNGUARDED and took the process down on the first Update ticks
-// of a session (first Batch 1 test round, 2026-07-31: WER fault in
-// accessibility.dll at this very CMP). The SEH is belt and braces on KOTOR 1
-// too — the walk reads engine memory through a multi-hop pointer chain.
+// The SEH is not optional. Before it existed this walk ran on KOTOR 2 against
+// a KOTOR 1 pointer chain and dereferenced a garbage base, taking the process
+// down within the first Update ticks of a session (first Batch 1 test round,
+// 2026-07-31: WER fault inside accessibility.dll at this very compare). It
+// stays on KOTOR 1 too — the walk reads engine memory through a multi-hop
+// pointer chain that a mid-teardown frame can invalidate.
+//
+// Runs on BOTH games since Batch 2 (2026-08-01), when the slot table gained
+// its KOTOR 2 column. Rows still on Todo() poison to kUnportedOffset there and
+// are skipped alongside the no-slot sentinel, so an unported row costs that
+// one kind its slot-table identification — it falls through to the structural
+// and vtable detectors, exactly as it did before the port — and never a fault
+// that would abandon the rest of the walk.
 int SlotTableLookup(void* panel) {
-    if (!acc::game::IsKotor1()) return -1;
     void* gui = ResolveGuiInGame();
     if (!gui) return -1;
     __try {
         auto* base = reinterpret_cast<unsigned char*>(gui);
         for (int i = 0; i < kPanelKindOffsetCount; ++i) {
-            if (kPanelKindOffsets[i].offset == kNoSlotOffset) continue;
-            void* slot = *reinterpret_cast<void**>(
-                base + kPanelKindOffsets[i].offset);
+            const size_t off = kPanelKindOffsets[i].offset;
+            if (off == kNoSlotOffset || off == acc::off::kUnportedOffset) {
+                continue;
+            }
+            void* slot = *reinterpret_cast<void**>(base + off);
             if (slot == panel) return i;
         }
     } __except (EXCEPTION_EXECUTE_HANDLER) {

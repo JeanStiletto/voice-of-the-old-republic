@@ -201,11 +201,16 @@ def main():
                 if nxt.mnemonic == "call":
                     break
             if slot is not None:
-                results.setdefault(cls, slot)
+                # Keyed by (class, slot), not class: several classes occupy
+                # MORE THAN ONE slot — CGuiInGame holds three CSWGuiMessageBox
+                # instances and three CSWGuiDialogLetterbox ones, and KOTOR 1
+                # tracks each separately (Letterbox1/2/3). Deduping by class
+                # alone silently reports the first and loses the rest.
+                results[(cls, slot)] = True
             else:
                 unresolved.append((cls, ins.address))
 
-    for cls, slot in sorted(results.items(), key=lambda kv: kv[1]):
+    for cls, slot in sorted(results, key=lambda kv: kv[1]):
         print(f"{cls},0x{slot:02x}")
     for cls, va in unresolved:
         print(f"# UNRESOLVED {cls} (call at 0x{va:08x})")

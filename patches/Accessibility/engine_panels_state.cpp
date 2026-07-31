@@ -22,6 +22,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "engine_game.h"     // IsKotor1 — the client-internal state plumbing
 #include "engine_manager.h"
 #include "log.h"
 
@@ -202,6 +203,12 @@ bool CloseInGameMenuToWorld() {
 // 2 = a menu/sub-screen owns input (mouse shown). Diagnostic + gating helper.
 // Chain: GetClientAppInternal() → +0x9c.
 int GetInputClass() {
+    // KOTOR 2 (Batch 2): the +0x9c below is a raw KOTOR 1 field position, and
+    // it is now REACHABLE on KOTOR 2 — Batch 2 resolved the client-app chain,
+    // so GetClientAppInternal() returns a real pointer there instead of null.
+    // A wrong-but-mapped read returns a plausible integer rather than failing,
+    // which is worse than not answering. Resolve the field before clearing.
+    if (!acc::game::IsKotor1()) return -1;
     void* internal = GetClientAppInternal();
     if (!internal) return -1;
     __try {
@@ -220,6 +227,16 @@ int GetInputClass() {
 // the manager's nav codes (181-185), so the wizard sits unreachable on the
 // modal stack (the "frozen until Escape" limbo).
 bool SetGuiInputClass(int klass) {
+    // Address check first, mirroring CloseInGameMenuToWorld above. It matters
+    // more since Batch 2: GetClientApp() now returns a real pointer on KOTOR 2,
+    // so without this the function would reach the CALL and fault into its own
+    // SEH on every invocation rather than declining cheaply.
+    if (!acc::addr::Ok(kAddrSetInputClass)) {
+        acclog::Write("InputClass",
+                      "SetGuiInputClass(%d) skipped: address unresolved on "
+                      "build %s", klass, acc::addr::ActiveBuildName());
+        return false;
+    }
     void* client = GetClientApp();
     if (!client) {
         acclog::Write("InputClass", "SetGuiInputClass(%d) skipped: no client", klass);

@@ -350,9 +350,48 @@ DialogMessages routing slots. The unresolved entries from the second creator
 are duplicates of classes the first creator already settled, so they cost
 nothing.
 
-Next in Batch 2: translate this into the `kPanelKindOffsets` table as
-per-game `acc::off::Pick/Same` values, clear `SlotTableLookup`'s KOTOR 2
-decline (engine_panels.cpp), then find the four hook addresses.
+**The table is now IN the code** (engine_panels.cpp): 22 rows `Same`, 6 `Pick`,
+10 `Todo`. `SlotTableLookup` runs on both games again — Todo rows poison to
+`kUnportedOffset` and are skipped alongside the no-slot sentinel, so an
+unported row costs its kind the slot-table route and falls through to the
+structural / vtable detectors, never a fault that would abandon the walk.
+
+#### The CGuiInGame pointer chain — also settled, from the same listing
+
+The table is useless without a correct `CGuiInGame*`, and that chain fell out
+of the creator's own callers. Two forwarders lead to it:
+
+    0x0073F870:  MOV ECX,[this+0x04]  → call 0x0078C330
+    0x0078C330:  MOV ECX,[this+0x40]  → call 0x007BE4C0   (the panel creator)
+
+So `kClientExoAppInternalOffset` (0x4) and `kClientExoAppGuiInGameOff` (0x40)
+are both confirmed identical on KOTOR 2, witnessed by a chain that provably
+ends at the very object the slot table was read out of. `kClientExoApp-
+InternalOffset` moved Todo → Same; the SERVER-side twin did NOT — same shape
+is not evidence, and it has no witness yet.
+
+**Unblocking a chain root unblocks its consumers, and that needs auditing.**
+While `GetClientAppInternal()` returned null on KOTOR 2, everything downstream
+failed safe for free. It no longer does. Most consumers stayed safe because
+their own offsets are still `Todo` (kClientAppOptionsOffset and friends poison,
+the read faults, SEH returns null) — but two did not, and both are now handled:
+
+- `GetInputClass` reads a RAW `+0x9c` literal, not a marked constant, so it
+  would have returned a plausible integer from the wrong field rather than
+  failing. Now declines on KOTOR 2 until the field is resolved. Raw literals
+  are invisible to `port_worklist.py`, which is why this needed reading rather
+  than counting.
+- `SetGuiInputClass` called its engine setter with no `acc::addr::Ok()` check
+  (unlike its sibling `CloseInGameMenuToWorld`), so it would have faulted into
+  its own SEH on every call instead of declining cheaply.
+
+Next in Batch 2: the four hook addresses (`SwitchToSWInGameGui`,
+`HideSWInGameGui`, `SetSWGuiStatus`, `AppendToMsgBuffer`). None of their
+classes carry RTTI, so the route is caller-tracing and structure-matching, the
+method that settled `MoveMouseToPosition` — not the vtable-slot map. The six
+still-Todo slots (InGameMenu, InGameCharacter, GalaxyMap, MainInterface,
+PartySelection, ControllerLossBox, DialogCinematicCopy, DialogComputerCamera,
+the DialogMessages pair) can follow, or wait for their subsystem's batch.
 
 **Batch 3 — World, area, transitions.** `OnSetMoveToModuleString`, `OnDoorOpen`,
 `OnShowObject`; gates in `transitions.cpp`, `door_announce.cpp`,

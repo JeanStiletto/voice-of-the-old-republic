@@ -26,7 +26,12 @@ namespace acc::engine {
 // Last link of the chain, specific to the panels module: CClientExoApp
 // internal -> CGuiInGame. Verified against the struct definitions in
 // docs/llm-docs/re/swkotor.exe.h.
-inline constexpr size_t    kClientExoAppGuiInGameOff = 0x40;
+//
+// Identical on KOTOR 2, and directly witnessed there (2026-08-01): the
+// forwarder at 0x0078C330 does `MOV ECX,[this+0x40]` and calls the CGuiInGame
+// panel creator, so this offset is what produces the very object the K2 slot
+// table was read out of. See engine_app.h's note on the chain above it.
+inline constexpr size_t    kClientExoAppGuiInGameOff = acc::off::Same(0x40);
 
 // CGuiInGame -> CSWGuiMainInterface. Canonical home for what engine_radial,
 // engine_actionbar, engine_picker and combat_diag each declared privately.

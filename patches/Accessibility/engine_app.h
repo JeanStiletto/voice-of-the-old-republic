@@ -58,7 +58,17 @@ const size_t kAppManagerServerAppOffset = acc::off::Same(0x8);
 // Both facades are 8 bytes (vtable@0, internal@4) and the *Internal carries
 // the state. Server side verified via CServerExoApp::GetPartyTable @0x004aee70
 // (MOV EAX,[ECX+4]; ADD EAX,...); the client split is the same shape.
-const size_t kClientExoAppInternalOffset = acc::off::Todo(0x4);
+//
+// The CLIENT side is confirmed for KOTOR 2 (2026-08-01) by a two-hop forwarder
+// chain that provably ends at CGuiInGame: 0x0073F870 does `MOV ECX,[this+4]`
+// and calls 0x0078C330, which does `MOV ECX,[this+0x40]` and calls the
+// CGuiInGame panel creator (0x007BE4C0, the function k2_slot_table.py reads
+// the slot table out of). Both hops carry KOTOR 1's values, and the second is
+// kClientExoAppGuiInGameOff — so one listing settles the whole chain.
+//
+// The SERVER side has no such witness yet, and "the client matched" is not
+// evidence for it: these are different classes that merely share a shape.
+const size_t kClientExoAppInternalOffset = acc::off::Same(0x4);
 const size_t kServerExoAppInternalOffset = acc::off::Todo(0x4);
 
 // The client side continues into the world view:
