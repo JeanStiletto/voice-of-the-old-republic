@@ -28,13 +28,15 @@
 // kAurGuiStringCStrOffset — the one offset in the text chain still unverified
 // (CAurGUIStringInternal is a class whose vtable slot count did not match).
 // Reading the inline CExoString sidesteps it. On KOTOR 1 the inline field is
-// often empty, which is why the real extractor prefers gui_string; if KOTOR 2
-// turns out to behave the same way, the log will show empty captions and that
-// is the signal to go and verify that last offset.
+// often empty, which is why the real extractor prefers gui_string — and the
+// first working run answered the open question: KOTOR 2 DOES populate it on
+// buttons ("Neues Spiel" / "Spiel laden" / "Filmsequenzen" all read straight
+// out of it). So the unverified gui_string offset does not block text
+// extraction here, which is a real divergence from KOTOR 1.
 //
 // The vtable is logged on purpose: it tells us which control classes actually
-// reach focus in KOTOR 2, which is the cheapest way to learn whether the
-// class set matches KOTOR 1's.
+// reach focus in KOTOR 2. So far the main menu produces only CSWGuiButton
+// (vtable 00987A1C), matching the RTTI scan exactly.
 
 #include <windows.h>
 #include <cstdint>
@@ -43,6 +45,7 @@
 
 #include "engine_game.h"
 #include "engine_offsets.h"
+#include "engine_rebase.h"
 #include "engine_reads.h"
 #include "log.h"
 #include "menus_focus_k2.h"
@@ -62,6 +65,31 @@ namespace acc::menus::k2 {
 
 namespace {
 
+// CSWGuiControl::HandleFocusChange. It calls SetActiveControl itself, so it
+// arrives at our hook looking like a genuine focus change when it is not — and
+// this is a KNOWN engine quirk, not a KOTOR 2 novelty: KOTOR 1's notes already
+// record that HandleFocusChange "fires twice and reports the wrong control",
+// which is precisely why SetActiveControl is the canonical signal there.
+//
+// Observed on the first speaking KOTOR 2 build: every arrow-key navigation
+// produced two events, the real one from CSWGuiNavigable::HandleInputEvent and
+// a second from here that dragged focus back to one fixed button, so the menu
+// read "Neues Spiel, Spiel laden, Filmsequenzen, Spiel laden".
+//
+// The KOTOR 1 address is corroborated independently: hooks.toml hooks
+// HandleFocusChange at 0x41896b, i.e. this function +0xb.
+const uintptr_t kAddrControlHandleFocusChange =
+    acc::addr::Pick(0x00418960, 0x00418FE0);
+constexpr size_t kHandleFocusChangeSize = 116;   // K2 body length
+
+// Did this SetActiveControl originate inside HandleFocusChange?
+bool CallerIsFocusChange(void* caller) {
+    if (!caller || !acc::addr::Ok(kAddrControlHandleFocusChange)) return false;
+    uintptr_t va = reinterpret_cast<uintptr_t>(caller);
+    return va >= kAddrControlHandleFocusChange &&
+           va < kAddrControlHandleFocusChange + kHandleFocusChangeSize;
+}
+
 // Last caption spoken, so the engine re-firing focus on the same control does
 // not repeat it. Same reason menus.cpp dedups: SetActiveControl fires far more
 // often than focus actually changes.
@@ -69,7 +97,7 @@ char s_lastSpoken[256] = {0};
 
 }  // namespace
 
-void AnnounceFocus(void* panel, void* control) {
+void AnnounceFocus(void* panel, void* control, void* caller) {
     if (!control) return;
     EnsurePrismInitialized();
 
@@ -96,10 +124,23 @@ void AnnounceFocus(void* panel, void* control) {
         which = "button";
     }
 
+    // `caller` is the return address, i.e. WHICH engine function set focus.
+    // Present because the first working run showed a second SetActiveControl
+    // firing on one fixed control after every keyboard navigation, and the
+    // candidate explanations (mouse hover re-asserting, the panel restoring a
+    // default, the engine's own nav running alongside ours) are
+    // indistinguishable from the arguments alone. The caller names it outright,
+    // and maps back to a function via docs/llm-docs/re/k2/k2-functions.csv.
     acclog::Write("K2.Focus",
-                  "panel=%p control=%p vtable=%08X id=%d src=%s text=\"%s\"",
-                  panel, control, vtable, static_cast<int>(id), which,
+                  "panel=%p control=%p vtable=%08X id=%d src=%s caller=%p%s text=\"%s\"",
+                  panel, control, vtable, static_cast<int>(id), which, caller,
+                  CallerIsFocusChange(caller) ? " [focus-change, suppressed]" : "",
                   text ? text : "");
+
+    // Logged above but never spoken: see CallerIsFocusChange. Keeping the log
+    // line means a future change in the engine's focus dance stays visible
+    // rather than silently altering what the user hears.
+    if (CallerIsFocusChange(caller)) return;
 
     if (!text || !text[0]) return;
     if (strncmp(s_lastSpoken, text, sizeof(s_lastSpoken)) == 0) return;
@@ -130,12 +171,15 @@ extern "C" void __cdecl OnSetActiveControlK2(void* ebp) {
 
     void* panel = nullptr;
     void* control = nullptr;
+    void* caller = nullptr;
     __try {
         panel = *reinterpret_cast<void**>(static_cast<char*>(ebp) - 8);
         control = *reinterpret_cast<void**>(static_cast<char*>(ebp) + 8);
+        // Standard frame: [EBP] = saved EBP, [EBP+4] = return address.
+        caller = *reinterpret_cast<void**>(static_cast<char*>(ebp) + 4);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return;
     }
 
-    acc::menus::k2::AnnounceFocus(panel, control);
+    acc::menus::k2::AnnounceFocus(panel, control, caller);
 }

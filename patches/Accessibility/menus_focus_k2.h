@@ -8,6 +8,6 @@ namespace acc::menus::k2 {
 // Read the newly focused control's inline caption and speak it. Uses only
 // offsets verified against the KOTOR 2 binary; performs no engine calls and no
 // panel classification, so it cannot reach an unresolved address.
-void AnnounceFocus(void* panel, void* control);
+void AnnounceFocus(void* panel, void* control, void* caller);
 
 }  // namespace acc::menus::k2
