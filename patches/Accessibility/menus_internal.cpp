@@ -169,12 +169,23 @@ bool acc::menus::detail::IsSaveLoadPanel(void* panel) {
 // CExoStrings populated from the save GFF — no TLK indirection, no engine
 // rendering callback needed. Output is borrowed from the engine; valid until
 // the entry is freed (we use it inline within a single input event).
+// SEH-guarded because the caller cannot supply the frame: it uses the returned
+// pointer in a snprintf, so the read has to have already succeeded or yielded
+// null. The KOTOR 1 offsets are known-good, but kSaveLoadEntry*Offset is still
+// Todo for KOTOR 2, where it resolves to acc::off::kUnportedOffset — this would
+// then dereference far outside the mapping and take the process down instead of
+// falling back to the plain row text. Found by tools/re-scripts/
+// handler_chain_audit.py while clearing the KOTOR 2 handler gates.
 const char* acc::menus::detail::ReadSaveLoadEntryString(void* entry, size_t fieldOffset) {
     if (!entry) return nullptr;
-    auto* base = reinterpret_cast<unsigned char*>(entry);
-    auto* str  = reinterpret_cast<CExoString*>(base + fieldOffset);
-    if (!str || !str->c_string || str->length == 0) return nullptr;
-    return str->c_string;
+    __try {
+        auto* base = reinterpret_cast<unsigned char*>(entry);
+        auto* str  = reinterpret_cast<CExoString*>(base + fieldOffset);
+        if (!str || !str->c_string || str->length == 0) return nullptr;
+        return str->c_string;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
 }
 
 // ListBoxNavResult struct + DriveListBoxSelection signature now live in

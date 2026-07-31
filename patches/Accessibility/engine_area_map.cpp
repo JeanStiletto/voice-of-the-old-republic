@@ -62,11 +62,24 @@ bool GetWaypointMapNote(void* waypoint, char* outBuf, size_t bufSize) {
     // corridor labels ("S\xFCdlicher Pfad") speak their transition
     // destination instead (see map_note_renames) — then fall back to the
     // vanilla tlk text.
-    if (ReadCExoString(waypoint, kWaypointMapNoteLocOffset,
-                       outBuf, bufSize)) {
-        return outBuf[0] != '\0';
+    //
+    // The two raw reads need their own SEH frame. ReadCExoString / ReadU32
+    // deliberately carry none — callers supply it — and this caller did not.
+    // On KOTOR 2 kWaypointMapNoteLocOffset is still Todo, so it resolves to
+    // acc::off::kUnportedOffset and both reads land far outside the mapping:
+    // an unrecoverable fault rather than the graceful miss the rest of the
+    // engine-reading code degrades to. Found by tools/re-scripts/
+    // handler_chain_audit.py while clearing the KOTOR 2 handler gates.
+    uint32_t strref = 0;
+    __try {
+        if (ReadCExoString(waypoint, kWaypointMapNoteLocOffset,
+                           outBuf, bufSize)) {
+            return outBuf[0] != '\0';
+        }
+        strref = ReadU32(waypoint, kWaypointMapNoteLocOffset + 4);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
     }
-    uint32_t strref = ReadU32(waypoint, kWaypointMapNoteLocOffset + 4);
     Vector notePos;
     if (GetObjectPosition(waypoint, notePos) &&
         acc::map_note_renames::Override(strref, notePos, outBuf, bufSize)) {
@@ -164,6 +177,14 @@ bool IsLoadingSaveGame() {
         // this->internal->load_from_savegame (decompile-verified). The getter
         // does the facade→internal deref itself, so we pass the facade.
         const uintptr_t kAddrGetLoadFromSaveGame = acc::addr::R(0x004af050);
+        // Unresolved on KOTOR 2, where R() hands back 0. The SEH below would
+        // catch the null call, but this runs on every focus change and every
+        // routed message — an exception per event is a real cost, and it buries
+        // genuine faults in the log. `false` is also the correct answer to
+        // degrade to: "no save-load in progress" leaves the caller's burst
+        // suppression off, which is the same behaviour KOTOR 1 has whenever no
+        // load is running.
+        if (!acc::addr::Ok(kAddrGetLoadFromSaveGame)) return false;
         using PFN = int(__thiscall*)(void*);
         return reinterpret_cast<PFN>(kAddrGetLoadFromSaveGame)(serverApp) != 0;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
@@ -288,10 +309,19 @@ bool GetMapPinNoteText(void* mapPin, char* outBuf, size_t bufSize) {
     // script-created pins may carry strref-only. Strref-resolved pins get
     // the same curated rename pass as GetWaypointMapNote so both readers
     // of one note always speak one label.
-    if (ReadCExoString(mapPin, kMapPinNoteTextOffset, outBuf, bufSize)) {
-        return outBuf[0] != '\0';
+    //
+    // SEH for the same reason as GetWaypointMapNote above: these two offsets
+    // are still Todo for KOTOR 2, and the read helpers carry no guard of their
+    // own.
+    uint32_t strref = 0;
+    __try {
+        if (ReadCExoString(mapPin, kMapPinNoteTextOffset, outBuf, bufSize)) {
+            return outBuf[0] != '\0';
+        }
+        strref = ReadU32(mapPin, kMapPinNoteStrrefOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
     }
-    uint32_t strref = ReadU32(mapPin, kMapPinNoteStrrefOffset);
     Vector notePos;
     if (GetMapPinPosition(mapPin, notePos) &&
         acc::map_note_renames::Override(strref, notePos, outBuf, bufSize)) {
