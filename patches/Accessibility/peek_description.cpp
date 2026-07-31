@@ -256,17 +256,23 @@ void* WorkbenchUpgradeFindLb(void* panel) {
     return FindControlById(panel, 0);
 }
 
-void* QuestItemFindLb(void* panel) {
-    // CSWGuiQuestItem.LB_ITEMS at +0x488 (the plot/quest-item list).
-    return reinterpret_cast<unsigned char*>(panel) + 0x488;
-}
-
+// Membership rule: this table is ONLY for panels whose rows are navigated by
+// DriveListBoxSelection, where the listbox's selection_index IS the user's
+// cursor. HandleItemTooltip below reads that field and nothing else.
+//
+// A chain-navigated panel must never be listed here. Its cursor is
+// g_chainIndex; selection_index sits wherever the engine last left it, so
+// every peek would describe that one row. InGameQuestItems was listed and did
+// exactly that — patch-20260731-095910.log shows "Peek.Item: panel=
+// InGameQuestItems row sel=0/16" repeating unchanged while the chain stepped
+// 0 -> 1 -> 2, so all 16 quest items read out the first one's description. It
+// now goes through the chain-focus branch in HandleShiftArrow instead, which
+// is also where its Enter handler (isQuestItemRow) already resolved the row.
 constexpr ItemTooltipPanelInfo kItemTooltipPanels[] = {
     { acc::engine::PanelKind::Container,        ContainerFindLb,        0 },
     { acc::engine::PanelKind::InGameEquip,      InGameEquipFindLb,      1 },
     { acc::engine::PanelKind::WorkbenchItems,   WorkbenchItemsFindLb,   0 },
     { acc::engine::PanelKind::WorkbenchUpgrade, WorkbenchUpgradeFindLb, 0 },
-    { acc::engine::PanelKind::InGameQuestItems, QuestItemFindLb,        0 },
 };
 
 // Per-slot peek for the 9 equip buttons. itemIdOffset is the panel-
@@ -712,12 +718,19 @@ bool HandleShiftArrow(int param_1, int param_2, void* activePanel,
         return true;
     }
 
-    // Inventory / Store: the chain-focused control is the item entry row itself
-    // (client item handle at +0x1c4). Read the item and navigate its four
-    // categorised blocks, instead of paging the single-row description listbox
-    // the engine renders. Falls through to the listbox path only if the focused
-    // row doesn't resolve to an item (e.g. focus parked on a non-item control).
+    // Inventory / Store / QuestItems: the chain-focused control is the item
+    // entry row itself (client item handle at +0x1c4). Read the item and
+    // navigate its four categorised blocks, instead of paging the single-row
+    // description listbox the engine renders. Falls through to the listbox
+    // path only if the focused row doesn't resolve to an item (e.g. focus
+    // parked on a non-item control).
+    //
+    // All three are chain-navigated and all three build their rows from the
+    // same CSWGuiInGameItemEntry class, so the chain entry is the only thing
+    // that knows where the user is — see the membership rule on
+    // kItemTooltipPanels.
     if (kind == acc::engine::PanelKind::InGameInventory ||
+        kind == acc::engine::PanelKind::InGameQuestItems ||
         kind == acc::engine::PanelKind::Store) {
         if (void* item = ResolveRowItem(focusedControl)) {
             acclog::Write("Peek.Blocks",
