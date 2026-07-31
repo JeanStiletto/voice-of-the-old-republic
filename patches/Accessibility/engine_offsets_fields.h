@@ -510,11 +510,10 @@ const size_t    kPowersLevelUpChartOffset              = acc::off::Todo(0x19fc);
 // the control's gui-sound byte at +0x59 (KOTOR 1: +0x55), so this region of
 // both CSWGuiPanel and CSWGuiControl is uniformly +4.
 const size_t kPanelActiveControlOffset      = acc::off::Pick(0x1c, 0x20);
-// controls: left Todo deliberately. +4 (0x24) is the obvious guess given the
-// neighbours above, but nothing has been observed reading this field on
-// KOTOR 2 yet, and a wrong array base yields plausible garbage rather than a
-// fault. Confirm against a K2 function that walks the array.
-const size_t kPanelControlsOffset           = acc::off::Todo(0x20);
+// controls: +0x24, now OBSERVED rather than guessed. KOTOR 2's own
+// CSWGuiPanel hit-test (vtable slot 16, FUN_0040eae0) indexes the child array
+// at this+0x24 with its count at this+0x28, against KOTOR 1's 0x20/0x24.
+const size_t kPanelControlsOffset           = acc::off::Pick(0x20, 0x24);
 const size_t kListBoxControlsOffset         = acc::off::Todo(0x29c);
 const size_t kListBoxBitFlagsOffset         = acc::off::Todo(0x2bc);
 const size_t kListBoxItemsPerPageOffset     = acc::off::Todo(0x2c4);
@@ -526,7 +525,15 @@ const size_t kListBoxTopVisibleIndexOffset  = acc::off::Todo(0x2c8);
 //   +0x4  top     int
 //   +0x8  width   int
 //   +0xC  height  int
-const size_t kControlExtentOffset = acc::off::Todo(0x4);
+// Identical in both games — observed. KOTOR 2's CSWGuiPanel hit-test reads its
+// own extent as left/top/width/height at +0x4/+0x8/+0xc/+0x10, exactly as
+// KOTOR 1 does (a panel IS a control, so this is the base-class field).
+//
+// This pins down where KOTOR 2's insertion sits: the extent at 0x4..0x10 is
+// unshifted, while active_control (0x1c->0x20), controls (0x20->0x24) and
+// bit_flags (0x44->0x48) all move +4. So the added field lands between +0x10
+// and +0x1c, and anything below +0x14 can be expected to carry over.
+const size_t kControlExtentOffset = acc::off::Same(0x4);
 
 // CSWGuiControl tooltip fields (verified against the
 // CSWGuiControl::DisplayToolTip @ 0x418a90 decompile + struct definition in
@@ -1098,7 +1105,9 @@ const size_t    kStorePlayerGoldOffset                 = acc::off::Todo(0x2270);
 // Bit 1 (0x02) of the listbox's CSWGuiControl.bit_flags is set on the
 // "visible" listbox by ShowBuyGUI / ShowSellGUI. Same offset (+0x44)
 // every other CSWGuiControl uses.
-const size_t    kControlBitFlagsOffset                 = acc::off::Todo(0x44);
+// +4 in KOTOR 2, observed: its CSWGuiPanel hit-test tests bit 0 of this+0x48
+// to decide whether to letterbox-adjust the cursor, where KOTOR 1 uses +0x44.
+const size_t    kControlBitFlagsOffset                 = acc::off::Pick(0x44, 0x48);
 const uint32_t  kStoreListBoxVisibleBit                = acc::off::Todo(0x2);
 // The same bit_flags 0x02 is the general CSWGuiControl "shown" bit. The
 // StatusSummary popup lays out one label per notification type and sets

@@ -196,6 +196,34 @@ Worth more than the addresses themselves, because it constrains everything else:
   same case values and produces the same translated direction codes in both
   games, so `engine_input.h`'s InputIndex constants should carry over as-is.
 
+### The deltas ACCUMULATE through embedded sub-objects
+
+The single most important structural finding so far, because it invalidates the
+obvious shortcut.
+
+The seeded database suggested "a constant delta per class". That is true within
+a flat class, but KOTOR 1's GUI classes are built by embedding whole
+sub-objects, and each one that grows shifts everything after it. Observed in
+`CSWGuiLabelHilight::Draw`, decompiled in both games:
+
+- `CSWGuiControl` base: 0x5c → **0x60** (+4)
+- the embedded border: 0x74 → **0x78** (+4)
+- so `CSWGuiLabel`'s text sub-object: 0xd0 → **0xd8** (+8, not +4)
+
+Both borders confirm it: the label's own border moved 0x5c → 0x60, and the
+hilight's second border sits at +0x148.
+
+So **do not extrapolate +4 down a class**. The correct model is: sum the growth
+of every base and embedded member that precedes the field. Anything at or below
++0x14 in `CSWGuiControl` is unshifted (the extent is proof); past the insertion
+point the delta is +4 per grown object crossed, not +4 total.
+
+Left as `Todo` because of this: `kLabelTextOffset` / `kLabelStrRefOffset` /
+`kButtonTextOffset` / `kButtonStrRefOffset` and the `kTextObject*` internals.
+The arithmetic says 0xe8 → 0xf0 and 0xf0 → 0xf8 for the label, but that assumes
+`CSWGuiText`'s own layout did not change, which has not been checked. These
+feed every spoken string, so they want observing rather than deriving.
+
 ### Values that are derived rather than verified
 
 Flagged in the code, listed here so they are not forgotten:
