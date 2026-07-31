@@ -176,14 +176,13 @@ bool IsLoadingSaveGame() {
         // CServerExoApp::GetLoadFromSaveGame(this) — returns
         // this->internal->load_from_savegame (decompile-verified). The getter
         // does the facade→internal deref itself, so we pass the facade.
-        const uintptr_t kAddrGetLoadFromSaveGame = acc::addr::R(0x004af050);
-        // Unresolved on KOTOR 2, where R() hands back 0. The SEH below would
-        // catch the null call, but this runs on every focus change and every
-        // routed message — an exception per event is a real cost, and it buries
-        // genuine faults in the log. `false` is also the correct answer to
-        // degrade to: "no save-load in progress" leaves the caller's burst
-        // suppression off, which is the same behaviour KOTOR 1 has whenever no
-        // load is running.
+        //
+        // KOTOR 2: 0x0051CDE0, found by aligning the two games' server-facade
+        // getter-thunk clusters — both read the SAME internal field +0x100C4,
+        // and the alignment is anchored by the already-verified
+        // GetObjectArray pair (K1 0x004AED70 / K2 0x0051C080, both +0x1005C).
+        const uintptr_t kAddrGetLoadFromSaveGame =
+            acc::addr::Pick(0x004af050, 0x0051CDE0);
         if (!acc::addr::Ok(kAddrGetLoadFromSaveGame)) return false;
         using PFN = int(__thiscall*)(void*);
         return reinterpret_cast<PFN>(kAddrGetLoadFromSaveGame)(serverApp) != 0;

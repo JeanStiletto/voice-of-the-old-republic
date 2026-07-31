@@ -196,11 +196,27 @@ bool GetPartyNpcNameForSlot(int npcSlot, char* outBuf, size_t bufSize);
 // kAddrAppManagerPtr and the client/server hop offsets live in engine_app.h
 // (included above) — one home for the whole resolve chain.
 
-const uintptr_t kAddrGetPlayerCreature = acc::addr::R(0x005ED540);
+// CClientExoApp::GetPlayerCreature (facade). KOTOR 2's facade at 0x0073F450
+// is byte-witnessed as `MOV ECX,[this+4]; CALL 0x0078CEE0` — the same
+// facade→internal thunk shape KOTOR 1 has, and the internal is identified by
+// the dispatcher's free-look case reading the same +0x138 guard field off its
+// result that KOTOR 1's case 0xd0 does.
+const uintptr_t kAddrGetPlayerCreature = acc::addr::Pick(0x005ED540, 0x0073F450);
 const uintptr_t kAddrCSWSObjectGetArea = acc::addr::R(0x004CB120);
 
-// CSWCObject.server_object — same for every client object.
+// CSWCObject.server_object — same for every client object. KOTOR 1 reads the
+// field directly; KOTOR 2's value is unestablished, so there the code calls
+// the engine's own resolver below instead. Do not "fix" the Todo by copying
+// 0xf8 — the K2 client object may have shifted it.
 const size_t kClientObjectServerObjectOffset = acc::off::Todo(0xf8);
+
+// CSWCCreature::GetServerCreature — __thiscall(void) → CSWSCreature*. The
+// engine's own client→server resolver (vtable-dispatched internally, so it is
+// layout-proof where the raw field read is not). KOTOR 1 entry from Lane's
+// XML; KOTOR 2 entry identified from the dispatcher's free-look case, where
+// it fills the same GetPlayerCreature → GetServerCreature slot KOTOR 1's
+// decompile shows.
+const uintptr_t kAddrGetServerCreature = acc::addr::Pick(0x0060FB20, 0x0077D800);
 
 // CSWSObject.Position / .Orientation. KOTOR 2 values from the seeded
 // kotor2_steam_aspyr.db. Every CSWSObject field shifts by exactly +4 there

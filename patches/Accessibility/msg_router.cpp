@@ -90,7 +90,13 @@ namespace { void EnsureRulesRegistered(); }
 
 extern "C" void __cdecl OnAppendToMsgBuffer(void* /*guiInGame*/,
                                             void* esp_param1_addr) {
-    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
+    // Runs on both games since Batch 2. KOTOR 2 reaches it via
+    // OnAppendToMsgBufferK2 below — hooked on BOTH of KOTOR 2's category
+    // rings (0x007BE090 / 0x007BE1B0), which together are the split twin of
+    // KOTOR 1's single buffer. The save-load replay gate's chain
+    // (IsLoadingSaveGame, GetPlayerPosition) is K2-resolved: GetLoadFromSave-
+    // Game via the facade-cluster alignment, the player position via
+    // GetPlayerCreature + the engine's own GetServerCreature.
     EnsureRulesRegistered();
 
     CExoString* exoStr = nullptr;
@@ -184,3 +190,16 @@ void EnsureRulesRegistered() {
 }
 
 }  // namespace
+
+// KOTOR 2 frame-unpacking wrapper (Batch 2). Both category-ring appends
+// (0x007BE090 / 0x007BE1B0) hook this same function at entry+3, after the
+// prologue stored nothing but the frame — `this` is still in ECX and the row
+// text CExoString* sits at [EBP+8]. The handler expects the ADDRESS of that
+// stack slot (KOTOR 1 esp+4 LEA semantics), which is exactly EBP+8.
+// [EBP+0xC] = type, [EBP+0x10] = color — available if routing ever wants
+// the category, unused today to keep the handler shared.
+extern "C" void __cdecl OnAppendToMsgBufferK2(void* thisGui, void* ebp) {
+    if (!acc::game::IsKotor2()) return;
+    if (!thisGui || !ebp) return;
+    OnAppendToMsgBuffer(thisGui, static_cast<char*>(ebp) + 8);
+}

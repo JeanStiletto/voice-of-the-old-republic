@@ -116,7 +116,10 @@ bool SetLevelUpMode(void* gui, int mode) {
 // alone keeps the in-world key codes — confirmed by the F2-opened menu strip in
 // patch-20260723-161404.log, which set status=3 with NO character panel and the
 // wizard then navigated with 181/182/183.
-const uintptr_t kAddrCGuiInGameSetSWGuiStatus = acc::addr::R(0x0062aa00);
+// KOTOR 2: 0x007C9C40, decompile-confirmed — the case-1..4 status machine is
+// byte-identical, with sw_gui_status at +0x34 there (vs +0x30 region reads on
+// KOTOR 1). Same (status, p2) signature.
+const uintptr_t kAddrCGuiInGameSetSWGuiStatus = acc::addr::Pick(0x0062aa00, 0x007C9C40);
 typedef void (__thiscall* PFN_SetSWGuiStatus)(void* this_, int status, int p2);
 
 void DriveSWGuiStatus(void* gui, int status, int p2) {

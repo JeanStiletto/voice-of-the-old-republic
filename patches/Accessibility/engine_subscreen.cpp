@@ -343,7 +343,11 @@ void TickInputClassReassert() {
 }  // namespace acc::engine
 
 extern "C" void __cdecl OnSwitchToSWInGameGui(void* thisPtr, int guiId) {
-    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
+    // Runs on both games since Batch 2. KOTOR 1 hooks this directly
+    // (mid-function, register params); KOTOR 2 reaches it through
+    // OnSwitchToSWInGameGuiK2 below. Whole chain K2-verified:
+    // HasActiveSubScreen walks the ported slot table, CallPrevSWInGameGui
+    // resolves via Pick(0x0062cdf0, 0x007CA3C0).
     // First-fire diagnostic — single line per session so absence proves
     // the hook never installed (vs. installing but firing silently in
     // the cold path with no active sub-screen to clean up).
@@ -398,7 +402,10 @@ extern "C" void __cdecl OnSwitchToSWInGameGui(void* thisPtr, int guiId) {
 extern "C" void __cdecl OnSetSWGuiStatus(void* thisPtr,
                                           void* p1_addr,
                                           void* p2_addr) {
-    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
+    // Runs on both games since Batch 2 (KOTOR 2 via OnSetSWGuiStatusK2).
+    // Chain is log + mod-internal state only (InvalidateChain /
+    // ClearPendingAnnounce), and the status-4 teardown hazard it guards
+    // is byte-identical in KOTOR 2's status machine.
     if (!p1_addr || !p2_addr) return;
 
     int new_status = -1;
@@ -457,7 +464,8 @@ extern "C" void __cdecl OnSetSWGuiStatus(void* thisPtr,
 // CALL instruction, so we can identify the engine function that's
 // closing pause and decide how to suppress it.
 extern "C" void __cdecl OnHideSWInGameGui(void* thisPtr, void* p1_addr) {
-    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
+    // Runs on both games since Batch 2 (KOTOR 2 via OnHideSWInGameGuiK2).
+    // Log-only — no engine reads beyond the caller-provided addresses.
     if (!p1_addr) return;
 
     int param_1 = -1;
@@ -556,5 +564,59 @@ extern "C" void __cdecl OnSetPauseState(void* thisPtr,
             nowPaused ? acc::strings::Id::GamePaused
                       : acc::strings::Id::GameResumed),
         /*interrupt=*/false);
+}
+
+// ============================================================================
+// Batch 2 — KOTOR 2 frame-unpacking wrappers (same pattern as the Batch 1 set
+// at the bottom of menus_focus_k2.cpp). KOTOR 2 compiles its GUI unoptimised,
+// so every argument lives in the frame; the hook passes ECX (`this`, not yet
+// stored at the cut) plus EBP, the wrapper does the frame arithmetic, and the
+// SAME handler KOTOR 1 hooks directly runs on both games. No logic here.
+//
+// The address-style handlers (OnSetSWGuiStatus / OnHideSWInGameGui /
+// OnAppendToMsgBuffer's twin in msg_router.cpp) expect the ADDRESS of each
+// stack argument — KOTOR 1's esp+X parameter source yields addresses via the
+// framework's LEA emission (project_kpatchmanager_lea_bug). EBP+8 is exactly
+// that address in a standard frame, and it keeps their caller_eip trick
+// intact: [EBP+4] is the return address, i.e. *(p1_addr - 1).
+// ============================================================================
+
+// CGuiInGame::SwitchToSWInGameGui @0x007CA550, hooked at 0x007CA575 — after
+// the prologue, before the guards (mirroring KOTOR 1's pre-guard cut).
+//   ECX     = this      (CGuiInGame*)
+//   [EBP+8] = GUI_id    (int, 0..7)
+extern "C" void __cdecl OnSwitchToSWInGameGuiK2(void* thisGui, void* ebp) {
+    if (!acc::game::IsKotor2()) return;
+    if (!thisGui || !ebp) return;
+
+    int guiId = -1;
+    __try {
+        guiId = *reinterpret_cast<int*>(static_cast<char*>(ebp) + 8);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return;
+    }
+
+    OnSwitchToSWInGameGui(thisGui, guiId);
+}
+
+// CGuiInGame::HideSWInGameGui @0x007CA060, hooked at 0x007CA066.
+//   ECX     = this      (CGuiInGame*)
+//   [EBP+8] = param_1   (0 = re-open pause panel path)
+extern "C" void __cdecl OnHideSWInGameGuiK2(void* thisGui, void* ebp) {
+    if (!acc::game::IsKotor2()) return;
+    if (!thisGui || !ebp) return;
+    OnHideSWInGameGui(thisGui, static_cast<char*>(ebp) + 8);
+}
+
+// CGuiInGame::SetSWGuiStatus @0x007C9C40, hooked at 0x007C9C46.
+//   ECX      = this     (CGuiInGame*)
+//   [EBP+8]  = status   (1..4)
+//   [EBP+0xC]= param_2
+extern "C" void __cdecl OnSetSWGuiStatusK2(void* thisGui, void* ebp) {
+    if (!acc::game::IsKotor2()) return;
+    if (!thisGui || !ebp) return;
+    OnSetSWGuiStatus(thisGui,
+                     static_cast<char*>(ebp) + 8,
+                     static_cast<char*>(ebp) + 0xC);
 }
 

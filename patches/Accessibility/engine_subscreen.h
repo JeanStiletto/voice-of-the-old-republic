@@ -97,3 +97,11 @@ extern "C" void __cdecl OnHideSWInGameGui(void* thisPtr, void* p1_addr);
 extern "C" void __cdecl OnSetSWGuiStatus(void* thisPtr,
                                           void* p1_addr,
                                           void* p2_addr);
+
+// KOTOR 2 frame-unpacking wrappers (Batch 2) — the hooks pass ECX (`this`)
+// plus EBP; each wrapper does the frame arithmetic and forwards to the shared
+// handler above. Cut points in kotor2.hooks.toml; design in
+// docs/kotor2-port.md "The four hook addresses — ALL IDENTIFIED".
+extern "C" void __cdecl OnSwitchToSWInGameGuiK2(void* thisGui, void* ebp);
+extern "C" void __cdecl OnHideSWInGameGuiK2(void* thisGui, void* ebp);
+extern "C" void __cdecl OnSetSWGuiStatusK2(void* thisGui, void* ebp);

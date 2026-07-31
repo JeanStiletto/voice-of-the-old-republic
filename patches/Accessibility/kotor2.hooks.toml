@@ -191,6 +191,165 @@ type = "pointer"
 source = "ebp"
 type = "pointer"
 
+# ============================================================================
+# Batch 2 — in-game GUI lifecycle (sub-screen switch/hide, status machine,
+# combat-log/feedback append). All five targets identified by caller-count
+# fingerprinting + parallel decompile comparison against KOTOR 1; cut bytes
+# byte-confirmed off the exe. See docs/kotor2-port.md "The four hook
+# addresses — ALL IDENTIFIED". Same wrapper convention as Batch 1: ECX =
+# `this` (not yet stored at the cut), EBP for frame params, never esp+X
+# (project_kpatchmanager_lea_bug).
+# ============================================================================
+
+# CGuiInGame::SwitchToSWInGameGui @ 0x007CA550 — the warm-path sub-screen
+# switch (KOTOR 1: 0x0062cf10). Identity: 9 call sites matching KOTOR 1's
+# 9 (eight per-GUI-id trampolines pushing 0..7 + the input dispatcher), and
+# the decompile shows the same 0<=id<8 / id!=last / initialized guards,
+# panel swap on the +0xC slot array, and "k_pend_screenchg" script call.
+#
+#   007ca570: 64 89 25 00 00 00 00  MOV FS:[0],ESP        ; SEH prologue ends
+#   007ca575: 89 4d e0              MOV [EBP-0x20],ECX    ← hook here, 7 bytes
+#   007ca578: 83 7d 08 00           CMP [EBP+8],0
+#   007ca57c: 7c 06                 JL +0x6               ; resume point — the
+#                                   ; replayed CMP re-establishes its flags
+#
+# Pre-guard cut, mirroring KOTOR 1's 0x0062cf2d placement (also before the
+# range checks). ECX = this (the prologue only clobbers EAX), GUI_id=[EBP+8].
+[[hooks]]
+address = 0x007ca575
+type = "detour"
+function = "OnSwitchToSWInGameGuiK2"
+
+# 89 4d e0              MOV [EBP-0x20], ECX
+# 83 7d 08 00           CMP dword [EBP+8], 0
+original_bytes = [0x89, 0x4d, 0xe0, 0x83, 0x7d, 0x08, 0x00]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "ebp"
+type = "pointer"
+
+# CGuiInGame::HideSWInGameGui @ 0x007CA060 — the universal sub-screen close
+# (KOTOR 1: 0x0062cba0). Identity decompile-confirmed: modal-stack early-out,
+# SetSWGuiStatus(4,1), strip + panel removal, PlayGuiSound(5), SetSoundMode(0)
+# — every KOTOR 1 landmark in the same order. (The Batch 2 recon note calling
+# this a "status getter" was wrong — the tested return value is the engine's
+# own `if (Hide(0)) SetInputClass(0,1)` pattern.)
+#
+#   007ca060: 55 8b ec 83 ec 2c     prologue
+#   007ca066: 89 4d d4              MOV [EBP-0x2C],ECX    ← hook here, 6 bytes
+#   007ca069: 8b 45 d4              MOV EAX,[EBP-0x2C]
+#   007ca06c: 83 b8 28 01 00 00 00  CMP [EAX+0x128],0     ; resume point
+[[hooks]]
+address = 0x007ca066
+type = "detour"
+function = "OnHideSWInGameGuiK2"
+
+# 89 4d d4              MOV [EBP-0x2C], ECX
+# 8b 45 d4              MOV EAX, [EBP-0x2C]
+original_bytes = [0x89, 0x4d, 0xd4, 0x8b, 0x45, 0xd4]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "ebp"
+type = "pointer"
+
+# CGuiInGame::SetSWGuiStatus @ 0x007C9C40 — the sub-screen status machine
+# (KOTOR 1: 0x0062aa00). The case-1..4 switch writing sw_gui_status (+0x34 on
+# KOTOR 2) is byte-identical to KOTOR 1's, down to the "3 wins over 4" rule;
+# afterwards it adds/removes the main-interface HUD (+0x98) exactly as
+# KOTOR 1 does at +0x90.
+#
+#   007c9c40: 55 8b ec 83 ec 08     prologue
+#   007c9c46: 89 4d fc              MOV [EBP-0x4],ECX     ← hook here, 6 bytes
+#   007c9c49: 8b 45 08              MOV EAX,[EBP+8]
+#   007c9c4c: 89 45 f8              MOV [EBP-0x8],EAX     ; resume point
+[[hooks]]
+address = 0x007c9c46
+type = "detour"
+function = "OnSetSWGuiStatusK2"
+
+# 89 4d fc              MOV [EBP-0x4], ECX
+# 8b 45 08              MOV EAX, [EBP+8]
+original_bytes = [0x89, 0x4d, 0xfc, 0x8b, 0x45, 0x08]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "ebp"
+type = "pointer"
+
+# CGuiInGame::AppendToMsgBuffer — a PAIR on KOTOR 2. Aspyr split KOTOR 1's
+# single 64-entry message ring (0x0062b5c0, 78 callers) into two category
+# rings with the same body and the same (CExoString* msg, ulong type, byte
+# color) signature: 0x007BE090 (ring ptr +0x110 / count +0x11C, 67 callers —
+# the dense feedback-builder block at 0x82E000-0x830000 is the twin of
+# KOTOR 1's 0x653000-0x665400 block) and 0x007BE1B0 (ring ptr +0x118 / count
+# +0x124, 23 callers). Both hooks share one wrapper; the router treats every
+# line the same, exactly as it does on KOTOR 1's single buffer.
+#
+# Identical prologues, so the cut is the same 6 bytes at entry+3:
+#   007be090/007be1b0: 55 8b ec    prologue (PUSH EBP; MOV EBP,ESP)
+#   +3: 83 ec 10                   SUB ESP,0x10          ← hook here, 6 bytes
+#   +6: 89 4d f0                   MOV [EBP-0x10],ECX
+#   +9: 68 25 69 98 00             PUSH 0x986925 ("")    ; resume point
+[[hooks]]
+address = 0x007be093
+type = "detour"
+function = "OnAppendToMsgBufferK2"
+
+# 83 ec 10              SUB ESP, 0x10
+# 89 4d f0              MOV [EBP-0x10], ECX
+original_bytes = [0x83, 0xec, 0x10, 0x89, 0x4d, 0xf0]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "ebp"
+type = "pointer"
+
+[[hooks]]
+address = 0x007be1b3
+type = "detour"
+function = "OnAppendToMsgBufferK2"
+
+# 83 ec 10              SUB ESP, 0x10
+# 89 4d f0              MOV [EBP-0x10], ECX
+original_bytes = [0x83, 0xec, 0x10, 0x89, 0x4d, 0xf0]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "ebp"
+type = "pointer"
+
 # CSWGuiListBox::SetActiveControl — hook the IMPLEMENTATION at 0x0041E9A0, not
 # the vtable slot: slot 2 (0x0041FEE0) is a forwarder whose body is just
 # `CALL 0x0041E9A0` (byte-confirmed), so the implementation catches both the

@@ -76,6 +76,13 @@ const size_t kServerExoAppInternalOffset = acc::off::Todo(0x4);
 const size_t kClientInternalModuleOffset = acc::off::Todo(0x18);
 const size_t kCSWCModuleCameraOffset     = acc::off::Todo(0x40);
 
+// CClientExoAppInternal.input_class. 0/4 = in-world routing, 2 = a menu or
+// sub-screen owns input. Same on KOTOR 2, by two independent witnesses
+// (2026-08-01): KOTOR 1's GetInputClass facade thunk reads [internal+0x9c],
+// and KOTOR 2's SetInputClass internal (0x007B3050) guards and stores the
+// same [this+0x9c] field.
+const size_t kClientInternalInputClassOffset = acc::off::Same(0x9c);
+
 namespace acc::engine {
 
 // *kAddrAppManagerPtr. Null during very early init and after teardown.

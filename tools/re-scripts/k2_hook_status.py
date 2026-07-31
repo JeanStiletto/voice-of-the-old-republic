@@ -92,6 +92,11 @@ def main():
         "OnHandleInputEvent": "OnHandleInputEventK2",
         "OnHandleFocusChange": "OnHandleFocusChangeK2",
         "OnListBoxSetActiveControl": "OnListBoxSetActiveControlK2",
+        # Batch 2 — in-game GUI lifecycle
+        "OnSwitchToSWInGameGui": "OnSwitchToSWInGameGuiK2",
+        "OnHideSWInGameGui": "OnHideSWInGameGuiK2",
+        "OnSetSWGuiStatus": "OnSetSWGuiStatusK2",
+        "OnAppendToMsgBuffer": "OnAppendToMsgBufferK2",
     }
 
     print(f"{'handler':38s} {'K1 addr':12s} {'K2 hook':9s} {'K2 gate':9s} verdict")

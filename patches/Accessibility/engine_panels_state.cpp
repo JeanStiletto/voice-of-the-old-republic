@@ -63,7 +63,10 @@ bool HasActiveBarkBubble() {
 // Verified address from the RE database (Lane's gzf, exposed via
 // k1_win_gog_swkotor.exe.xml: FUNCTION ENTRY_POINT="0062cdf0").
 // __thiscall, this in ECX, no params, void return.
-static const uintptr_t kAddrPrevSWInGameGui = acc::addr::R(0x0062cdf0);
+// KOTOR 2: one of a twin pair of 389-byte functions; 0x007CA3C0 DECREMENTS
+// last_gui_panel with -1 -> 7 wrap (Prev), its twin 0x007CA230 increments
+// with 8 -> 0 wrap (Next). Byte-read 2026-08-01 — do not swap them.
+static const uintptr_t kAddrPrevSWInGameGui = acc::addr::Pick(0x0062cdf0, 0x007CA3C0);
 typedef void (__thiscall* PFN_PrevSWInGameGui)(void* gui);
 
 bool CallPrevSWInGameGui() {
@@ -93,7 +96,10 @@ bool CallPrevSWInGameGui() {
 //
 // __thiscall, this in ECX, single int parameter on the stack, undefined4
 // return.
-static const uintptr_t kAddrHideSWInGameGui = acc::addr::R(0x0062cba0);
+// KOTOR 2 identity decompile-confirmed 2026-08-01: modal-stack early-out,
+// SetSWGuiStatus(4,1), strip+panel removal, PlayGuiSound(5), SetSoundMode(0)
+// — every KOTOR 1 landmark, same order. Same signature.
+static const uintptr_t kAddrHideSWInGameGui = acc::addr::Pick(0x0062cba0, 0x007CA060);
 typedef int (__thiscall* PFN_HideSWInGameGui)(void* gui, int param_1);
 
 bool CallHideSWInGameGui(int param_1) {
@@ -157,7 +163,11 @@ bool SetGlobalDialogState(int state) {
 // CClientExoApp::SetInputClass @ 0x005eda60. __thiscall(this, int klass, int).
 // klass 0 = in-world keyboard/mouse routing; the engine raises it while a
 // menu/sub-screen owns input.
-static const uintptr_t kAddrSetInputClass = acc::addr::R(0x005eda60);
+// KOTOR 2: the facade at 0x0073FEE0, witnessed by the engine's own tab-close
+// paths calling it with (0,1)/(1,1) on the client facade; it forwards to the
+// internal implementation at 0x007B3050 exactly as KOTOR 1's facade jumps to
+// its internal. Both games take (klass, p2).
+static const uintptr_t kAddrSetInputClass = acc::addr::Pick(0x005eda60, 0x0073FEE0);
 typedef void (__thiscall* PFN_SetInputClass)(void* client, int klass, int p2);
 
 bool CloseInGameMenuToWorld() {
@@ -203,17 +213,16 @@ bool CloseInGameMenuToWorld() {
 // 2 = a menu/sub-screen owns input (mouse shown). Diagnostic + gating helper.
 // Chain: GetClientAppInternal() → +0x9c.
 int GetInputClass() {
-    // KOTOR 2 (Batch 2): the +0x9c below is a raw KOTOR 1 field position, and
-    // it is now REACHABLE on KOTOR 2 — Batch 2 resolved the client-app chain,
-    // so GetClientAppInternal() returns a real pointer there instead of null.
-    // A wrong-but-mapped read returns a plausible integer rather than failing,
-    // which is worse than not answering. Resolve the field before clearing.
-    if (!acc::game::IsKotor1()) return -1;
     void* internal = GetClientAppInternal();
     if (!internal) return -1;
     __try {
+        // Verified Same on KOTOR 2 (2026-08-01), by two independent
+        // witnesses: KOTOR 1's own GetInputClass facade thunk reads
+        // [internal+0x9c], and KOTOR 2's SetInputClass internal
+        // (0x007B3050) guards and stores the same [this+0x9c] field.
         return *reinterpret_cast<int*>(
-            reinterpret_cast<unsigned char*>(internal) + 0x9c);
+            reinterpret_cast<unsigned char*>(internal) +
+            kClientInternalInputClassOffset);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return -1;
     }

@@ -35,7 +35,9 @@ inline constexpr size_t    kClientExoAppGuiInGameOff = acc::off::Same(0x40);
 
 // CGuiInGame -> CSWGuiMainInterface. Canonical home for what engine_radial,
 // engine_actionbar, engine_picker and combat_diag each declared privately.
-inline constexpr size_t    kGuiInGameMainInterfaceOff = 0x90;
+// KOTOR 2 value witnessed in SetSWGuiStatus @0x007C9C40, which adds/removes
+// the [this+0x98] panel exactly where KOTOR 1's uses main_interface (+0x90).
+inline const size_t        kGuiInGameMainInterfaceOff = acc::off::Pick(0x90, 0x98);
 
 // Walk that chain and return the CGuiInGame*. Defined in
 // engine_panels.cpp next to the identity registry; the state readers in

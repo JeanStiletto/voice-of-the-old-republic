@@ -27,6 +27,16 @@ void* GetPlayerServerObject() {
         void* clientCreature = getCreature(exoApp);
         if (!clientCreature) return nullptr;
 
+        // KOTOR 1 keeps its tested field read. KOTOR 2's server_object field
+        // position is unestablished, so there we call the engine's own
+        // CSWCCreature::GetServerCreature — which resolves through a virtual
+        // and is therefore immune to the client-object layout shift.
+        if (acc::game::IsKotor2()) {
+            using PFN_GetServerCreature = void* (__thiscall*)(void*);
+            return reinterpret_cast<PFN_GetServerCreature>(
+                kAddrGetServerCreature)(clientCreature);
+        }
+
         void* serverObject = *reinterpret_cast<void**>(
             reinterpret_cast<unsigned char*>(clientCreature) +
             kClientObjectServerObjectOffset);

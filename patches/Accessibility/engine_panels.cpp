@@ -420,7 +420,9 @@ struct PanelKindOffset {
 // of the walk still runs; each simply falls through to structural / vtable
 // identification the way it did before this port.
 static const PanelKindOffset kPanelKindOffsets[] = {
-    { acc::off::Todo(0x08), PanelKind::InGameMenu,          "InGameMenu" },
+    // Witnessed on both games (2026-08-01): ShowSWInGameGui / HideSWInGameGui
+    // add/remove the [this+0x08] panel as the strip menu in both decompiles.
+    { acc::off::Same(0x08), PanelKind::InGameMenu,          "InGameMenu" },
     { acc::off::Same(0x0c), PanelKind::InGameEquip,         "InGameEquip" },
     { acc::off::Same(0x10), PanelKind::InGameInventory,     "InGameInventory" },
     // KOTOR 2 puts a CSWGui3DSceneView at 0x14 — its character sheet is a
@@ -455,7 +457,10 @@ static const PanelKindOffset kPanelKindOffsets[] = {
     { acc::off::Todo(0x80), PanelKind::InGameGalaxyMap,     "InGameGalaxyMap" },
     { acc::off::Same(0x84), PanelKind::Store,               "Store" },
     { acc::off::Pick(0x8c, 0x94), PanelKind::SoloModeQuery, "SoloModeQuery" },
-    { acc::off::Todo(0x90), PanelKind::MainInterface,       "MainInterface" },
+    // KOTOR 2 witnessed by SetSWGuiStatus @0x007C9C40: status 1 adds, any
+    // other status removes, the panel at [this+0x98] — the exact behaviour
+    // KOTOR 1's SetSWGuiStatus shows for main_interface at +0x90.
+    { acc::off::Pick(0x90, 0x98), PanelKind::MainInterface, "MainInterface" },
     { acc::off::Pick(0x94, 0x9c), PanelKind::AreaTransition, "AreaTransition" },
     // KOTOR 2 files three CSWGuiMessageBox instances (0xa0, 0xa4, one more not
     // yet followed); KOTOR 1 tracks only the modal one. 0xa0 is the first.

@@ -15,11 +15,15 @@ EXPORTS
     OnSetListenerPosition
     OnCalculatePitchVarianceFrequency
     OnSwitchToSWInGameGui
+    OnSwitchToSWInGameGuiK2
     OnProcessInput
     OnClientHandleInputEvent
     OnSetSWGuiStatus
+    OnSetSWGuiStatusK2
     OnHideSWInGameGui
+    OnHideSWInGameGuiK2
     OnAppendToMsgBuffer
+    OnAppendToMsgBufferK2
     OnShowObject
     OnCombatRoundAddAction
     OnCombatRoundRemoveAllActions
