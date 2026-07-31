@@ -229,6 +229,16 @@ void RetryColdStartReacquire() {
 void Dispatch() {
     LARGE_INTEGER tickStart = WatchdogBeginTick();
 
+    // KOTOR 2 (Batch 1, GUI spine) runs the MENU-SYSTEM phases only: panel
+    // validation, help overlay, the menu monitors (whose TickGeneralMonitors
+    // is the sole consumer of the pending-announce slot), Home/End synthesis,
+    // mod settings, the updater, and the pending-op drain. Every other phase
+    // reads engine state its batch has not ported (world, combat, camera,
+    // minigames, dialog, in-game panels) and is gated to KOTOR 1 below —
+    // handler_chain_audit.py counts 300+ unresolved-constant reads across
+    // those subsystems. Later batches clear their own phases from this gate.
+    const bool k1 = acc::game::IsKotor1();
+
     // Snapshot hotkey state for the whole tick — EndTick at the bottom
     // shifts now→last for next tick's rising-edge math.
     acc::hotkeys::BeginTick();
@@ -252,7 +262,7 @@ void Dispatch() {
     // door "Q/E can't find the door in front of me"). Since the fade can't be
     // cleared, drive DoPassiveSelection ourselves while that's the only blocker.
     // No-op in normal play. See engine_area.cpp.
-    acc::engine::MaybeDrivePassiveSelection();
+    if (k1) acc::engine::MaybeDrivePassiveSelection();
 
     // Speak the "Steam Big Picture is eating your keypresses" warning if the
     // focus-probe poll thread queued one (windowed-mode focus theft — the
@@ -266,7 +276,7 @@ void Dispatch() {
     // Pazaak minigame board — runs ahead of TickMonitors and the in-world /
     // menu pollers so it can Consume() the shared keys (Tab / Enter / arrows /
     // Esc) on its own tick before those pollers sample them.
-    PHASE("pazaak", acc::pazaak::Tick());
+    if (k1) PHASE("pazaak", acc::pazaak::Tick());
 
     // Help system — F1 toggles the global keybind list, Ctrl+F1 reads the
     // current screen's keys. Runs ahead of the menu/cycle/interact pollers so
@@ -281,139 +291,154 @@ void Dispatch() {
     // Home/End in menus — engine drops the scancodes; we synth-dispatch.
     PHASE("menus.PollHomeEnd", acc::menus::PollHomeEndKeys());
 
-    // Cycle keys (`,`/`.`/`-`) and AltGr — engine drops unbound scancodes.
-    PHASE("cycle_input", acc::cycle_input::PollWin32());
-    PHASE("announce_degrees", acc::announce_degrees::PollWin32());
+    if (k1) {
+        // Cycle keys (`,`/`.`/`-`) and AltGr — engine drops unbound scancodes.
+        PHASE("cycle_input", acc::cycle_input::PollWin32());
+        PHASE("announce_degrees", acc::announce_degrees::PollWin32());
 
-    // Shift+N drops a map marker; in-world Shift+N stays silent.
-    PHASE("map_user_markers", acc::map_user_markers::PollWin32());
+        // Shift+N drops a map marker; in-world Shift+N stays silent.
+        PHASE("map_user_markers", acc::map_user_markers::PollWin32());
 
-    // Diagnostic probes (Shift+AltGr Mouse Look, F9 pathfind, F10 audio
-    // frame, F12 camera state, Ctrl+F12 camera distance, B view mode).
-    PHASE("probe_audio_frame", acc::probe_audio_frame::PollWin32());
-    PHASE("probe_camera_state", acc::probe_camera_state::PollWin32());
-    PHASE("probe_camera_distance", acc::probe_camera_distance::Tick());
-    PHASE("view_mode.poll", acc::view_mode::PollWin32());
+        // Diagnostic probes (Shift+AltGr Mouse Look, F9 pathfind, F10 audio
+        // frame, F12 camera state, Ctrl+F12 camera distance, B view mode).
+        PHASE("probe_audio_frame", acc::probe_audio_frame::PollWin32());
+        PHASE("probe_camera_state", acc::probe_camera_state::PollWin32());
+        PHASE("probe_camera_distance", acc::probe_camera_distance::Tick());
+        PHASE("view_mode.poll", acc::view_mode::PollWin32());
 
-    // Beacon driver.
-    PHASE("guidance.beacon", acc::guidance::beacon::Tick());
+        // Beacon driver.
+        PHASE("guidance.beacon", acc::guidance::beacon::Tick());
 
-    // Restore player input once the handed-off engine action drains from
-    // the queue (or a ceiling backstop fires).
-    PHASE("engine.inputRestore", acc::engine::TickPlayerInputRestore());
+        // Restore player input once the handed-off engine action drains from
+        // the queue (or a ceiling backstop fires).
+        PHASE("engine.inputRestore", acc::engine::TickPlayerInputRestore());
 
-    // Unified walk-to-act approach tracker — both the Shift+- autowalk and the
-    // Enter-interact (loot/talk/door) dispatches arm it; it disarms quietly on
-    // success and announces "way blocked" on a walkmesh-blocked stall.
-    PHASE("guidance.approach", acc::guidance::TickApproach());
+        // Unified walk-to-act approach tracker — both the Shift+- autowalk and
+        // the Enter-interact (loot/talk/door) dispatches arm it; it disarms
+        // quietly on success and announces "way blocked" on a walkmesh-blocked
+        // stall.
+        PHASE("guidance.approach", acc::guidance::TickApproach());
 
-    // W/S/A/D/C/Y movement-cancel. Runs AFTER TickApproach so that if a
-    // dialog/loot/cutscene result surfaced this tick, the tracker has already
-    // disarmed and the cancel sees nothing in flight — it can't clobber a
-    // freshly-queued scripted move on the same tick the scene takes over.
-    PHASE("guidance.cancel", acc::guidance::PollMovementKeysCancel());
+        // W/S/A/D/C/Y movement-cancel. Runs AFTER TickApproach so that if a
+        // dialog/loot/cutscene result surfaced this tick, the tracker has
+        // already disarmed and the cancel sees nothing in flight — it can't
+        // clobber a freshly-queued scripted move on the same tick the scene
+        // takes over.
+        PHASE("guidance.cancel", acc::guidance::PollMovementKeysCancel());
 
-    // Diagnostic: log player action-queue depth changes (delta only).
-    PHASE("engine.actionQueueDiag", acc::engine::TickActionQueueDiag());
+        // Diagnostic: log player action-queue depth changes (delta only).
+        PHASE("engine.actionQueueDiag", acc::engine::TickActionQueueDiag());
 
-    // Drain deferred Q/E reannounce.
-    PHASE("passive_narrate", acc::passive_narrate::Tick());
+        // Drain deferred Q/E reannounce.
+        PHASE("passive_narrate", acc::passive_narrate::Tick());
 
-    // Tab speaks the new leader's name.
-    PHASE("party_leader_announce", acc::party_leader_announce::Tick());
+        // Tab speaks the new leader's name.
+        PHASE("party_leader_announce", acc::party_leader_announce::Tick());
 
-    // ----- ORDER LOAD-BEARING -----
-    // camera_announce → camera_orient → spatial::change_detector →
-    // transitions → view_mode.
-    //   camera_announce derives camera yaw from positions.
-    //   camera_orient reads it for closed-loop arrival (same frame).
-    //   spatial::change_detector reads camera yaw + rebuilds wall cache.
-    //   transitions builds room_topology that depends on the wall cache —
-    //     must run AFTER change_detector or the first tick of an area
-    //     change uses stale walls from the previous area.
-    //   view_mode reads camera yaw + walls + region/landmark caches.
-    PHASE("camera_announce", acc::camera_announce::Tick());
-    // Door-open facing readout — after camera_announce so its same-sector
-    // dedup sees this frame's last-spoken direction. Cheap when idle.
-    PHASE("door_announce", acc::door_announce::Tick());
-    // Story-locked-object bark replay — flushes a queued explanation the frame
-    // after the router spoke the generic "locked" line, so ordering holds.
-    PHASE("locked_recall", acc::locked_recall::Tick());
-    PHASE("camera_orient", acc::camera_orient::Tick());
-    PHASE("camera_spin_diag", acc::camera_spin_guard::Tick());
-    PHASE("spatial.change_detector", acc::spatial::change_detector::Tick());
+        // ----- ORDER LOAD-BEARING -----
+        // camera_announce → camera_orient → spatial::change_detector →
+        // transitions → view_mode.
+        //   camera_announce derives camera yaw from positions.
+        //   camera_orient reads it for closed-loop arrival (same frame).
+        //   spatial::change_detector reads camera yaw + rebuilds wall cache.
+        //   transitions builds room_topology that depends on the wall cache —
+        //     must run AFTER change_detector or the first tick of an area
+        //     change uses stale walls from the previous area.
+        //   view_mode reads camera yaw + walls + region/landmark caches.
+        PHASE("camera_announce", acc::camera_announce::Tick());
+        // Door-open facing readout — after camera_announce so its same-sector
+        // dedup sees this frame's last-spoken direction. Cheap when idle.
+        PHASE("door_announce", acc::door_announce::Tick());
+        // Story-locked-object bark replay — flushes a queued explanation the
+        // frame after the router spoke the generic "locked" line, so ordering
+        // holds.
+        PHASE("locked_recall", acc::locked_recall::Tick());
+        PHASE("camera_orient", acc::camera_orient::Tick());
+        PHASE("camera_spin_diag", acc::camera_spin_guard::Tick());
+        PHASE("spatial.change_detector", acc::spatial::change_detector::Tick());
 
-    // Swoop race entry/exit cues. Gated to CSWMiniGame.type==0.
-    PHASE("swoop_race", acc::swoop_race::Tick());
+        // Swoop race entry/exit cues. Gated to CSWMiniGame.type==0.
+        PHASE("swoop_race", acc::swoop_race::Tick());
 
-    // Turret / space-combat gunner minigame — shares CSWMiniGame with the
-    // swoop race but reports type==3. Entry/exit announce + reticle diag.
-    PHASE("turret_game", acc::turret_game::Tick());
+        // Turret / space-combat gunner minigame — shares CSWMiniGame with the
+        // swoop race but reports type==3. Entry/exit announce + reticle diag.
+        PHASE("turret_game", acc::turret_game::Tick());
 
-    // Area + room transition announces.
-    PHASE("transitions", acc::transitions::Tick());
+        // Area + room transition announces.
+        PHASE("transitions", acc::transitions::Tick());
 
-    // Discovery-tier deferred load (runs after transitions has set the area).
-    PHASE("discovery", acc::discovery::Tick());
+        // Discovery-tier deferred load (runs after transitions has set the
+        // area).
+        PHASE("discovery", acc::discovery::Tick());
 
-    // Endar Spire room-5 softlock guard + plot-state diagnostic. Inert outside
-    // END_M01AA (self-gated); flushes queued door hints every frame.
-    PHASE("endar_softlock", acc::endar::Tick());
+        // Endar Spire room-5 softlock guard + plot-state diagnostic. Inert
+        // outside END_M01AA (self-gated); flushes queued door hints every
+        // frame.
+        PHASE("endar_softlock", acc::endar::Tick());
 
-    // Trap ("mine") detected-state watcher — mirrors the engine's per-trap
-    // detected-by lists for sighted-parity trap warnings. Internally
-    // throttled to 250ms scans.
-    PHASE("trap_watch", acc::trap_watch::Tick());
+        // Trap ("mine") detected-state watcher — mirrors the engine's per-trap
+        // detected-by lists for sighted-parity trap warnings. Internally
+        // throttled to 250ms scans.
+        PHASE("trap_watch", acc::trap_watch::Tick());
 
-    // Temple floor-plate puzzle assist — inert outside unk_m44ab.
-    // Internally throttled to 150ms scans.
-    PHASE("floor_puzzle", acc::floor_puzzle::Tick());
+        // Temple floor-plate puzzle assist — inert outside unk_m44ab.
+        // Internally throttled to 150ms scans.
+        PHASE("floor_puzzle", acc::floor_puzzle::Tick());
 
-    PHASE("view_mode", acc::view_mode::Tick());
+        PHASE("view_mode", acc::view_mode::Tick());
 
-    // Map UI cursor — gates on PanelKind::InGameMap.
-    PHASE("map_ui_cursor", acc::map_ui_cursor::Tick());
+        // Map UI cursor — gates on PanelKind::InGameMap.
+        PHASE("map_ui_cursor", acc::map_ui_cursor::Tick());
 
-    // Stuck-detection — feeds g_was_stuck for OnPlayFootstep.
-    PHASE("footstep_suppress", acc::audio::footstep_suppress::Tick());
+        // Stuck-detection — feeds g_was_stuck for OnPlayFootstep.
+        PHASE("footstep_suppress", acc::audio::footstep_suppress::Tick());
 
-    // Combat — mode entry/exit, log narration, attack resolution, saves,
-    // leader-change announce, examine panel monitor, queue submenu,
-    // examine view, specials heartbeat.
-    PHASE("combat.mode", acc::combat::TickCombatMode());
-    PHASE("combat.log", acc::combat::TickCombatLog());
-    PHASE("combat.absorb", acc::combat::TickCombatAbsorb());
-    PHASE("combat.deflect", acc::combat::TickCombatDeflect());
-    PHASE("combat.effects", acc::combat::TickCombatEffects());
-    PHASE("combat.leaderChange", acc::combat::query::TickLeaderChangeAutoAnnounce());
-    PHASE("combat.queue", acc::combat::queue::Tick());
-    PHASE("combat_diag", acc::combat_diag::Tick());
-    PHASE("examine_view", acc::examine_view::Tick());
+        // Combat — mode entry/exit, log narration, attack resolution, saves,
+        // leader-change announce, examine panel monitor, queue submenu,
+        // examine view, specials heartbeat.
+        PHASE("combat.mode", acc::combat::TickCombatMode());
+        PHASE("combat.log", acc::combat::TickCombatLog());
+        PHASE("combat.absorb", acc::combat::TickCombatAbsorb());
+        PHASE("combat.deflect", acc::combat::TickCombatDeflect());
+        PHASE("combat.effects", acc::combat::TickCombatEffects());
+        PHASE("combat.leaderChange",
+              acc::combat::query::TickLeaderChangeAutoAnnounce());
+        PHASE("combat.queue", acc::combat::queue::Tick());
+        PHASE("combat_diag", acc::combat_diag::Tick());
+        PHASE("examine_view", acc::examine_view::Tick());
+    }
+
+    // Help overlay lifecycle (self-disarm on world teardown, list state).
+    // Engine-free apart from the in-world pause hold, whose engine calls are
+    // guarded — and menus never take the hold. Runs on both games, in its
+    // original slot between examine_view and special_watch.
     PHASE("help.tick", acc::help::Tick());
-    PHASE("combat.special_watch", acc::combat::special_watch::Tick());
 
-    // Stealth distance readout — while the leader is stealthed and a hostile
-    // creature is the narrated-target focus, speak the closing distance every
-    // ~2 m. Inert otherwise (no stealth / no hostile focus).
-    PHASE("stealth_watch", acc::stealth_watch::Tick());
+    if (k1) {
+        PHASE("combat.special_watch", acc::combat::special_watch::Tick());
 
-    // One-shot priority-group dump.
+        // Stealth distance readout — while the leader is stealthed and a
+        // hostile creature is the narrated-target focus, speak the closing
+        // distance every ~2 m. Inert otherwise (no stealth / no hostile
+        // focus).
+        PHASE("stealth_watch", acc::stealth_watch::Tick());
 
-    // Dialog screen + bark bubble narration.
-    PHASE("dialog_speech", acc::dialog_speech::Tick());
+        // Dialog screen + bark bubble narration.
+        PHASE("dialog_speech", acc::dialog_speech::Tick());
 
-    // Enter (interact) — engine click pipeline with localised pre-roll.
-    PHASE("interact", acc::input_poll::PollHotkey());
+        // Enter (interact) — engine click pipeline with localised pre-roll.
+        PHASE("interact", acc::input_poll::PollHotkey());
 
-    // Release the level-up wizard's overlay pause once the panel closes (the
-    // wizard's own Accept/Back buttons close it, so there's no close site to
-    // call EndOverlayPause). After PollHotkey so a wizard opened this frame is
-    // already live when we check.
-    PHASE("levelup_pause", acc::engine_levelup::TickLevelUpPause());
+        // Release the level-up wizard's overlay pause once the panel closes
+        // (the wizard's own Accept/Back buttons close it, so there's no close
+        // site to call EndOverlayPause). After PollHotkey so a wizard opened
+        // this frame is already live when we check.
+        PHASE("levelup_pause", acc::engine_levelup::TickLevelUpPause());
 
-    // MessageBoxModal close cleanup — engine's close path doesn't unpause
-    // or unmute on its own.
-    PHASE("engine.inputReassert", acc::engine::TickInputClassReassert());
+        // MessageBoxModal close cleanup — engine's close path doesn't unpause
+        // or unmute on its own.
+        PHASE("engine.inputReassert", acc::engine::TickInputClassReassert());
+    }
 
     // Audio-glossary delayed-playback timer.
     PHASE("modsettings", acc::menus::modsettings::Tick());
@@ -424,7 +449,7 @@ void Dispatch() {
 
     // Drain the Pazaak deck-builder's staged add/remove/play before the generic
     // pending-op drain (a Play queues an Activate that drains in TickPendingOps).
-    PHASE("pazaakdeck", acc::menus::pazaakdeck::Tick());
+    if (k1) PHASE("pazaakdeck", acc::menus::pazaakdeck::Tick());
 
     // Drain queued actions LAST — monitors above must see consistent state.
     PHASE("menus.TickPendingOps", acc::menus::TickPendingOps());
@@ -438,9 +463,12 @@ void Dispatch() {
 
 }  // namespace acc::tick
 
-// CSWGuiManager::Update detour @0x40ce76. Per-frame, post-input. Safe
-// callback site for deferred cursor moves — input pipeline isn't mid-flight.
-extern "C" void __cdecl OnUpdate(void* /*gmFromEbp*/) {
-    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
+// CSWGuiManager::Update detour — @0x40ce76 on KOTOR 1 (argument = the manager,
+// from EBP), @0x4113a9 on KOTOR 2 (argument = the frame pointer). Per-frame,
+// post-input. Safe callback site for deferred cursor moves — input pipeline
+// isn't mid-flight. The argument is ignored on both games, which is what makes
+// one handler serve both hook shapes; Dispatch() itself decides per-game which
+// phases run (Batch 1: KOTOR 2 gets the menu spine only).
+extern "C" void __cdecl OnUpdate(void* /*unused*/) {
     acc::tick::Dispatch();
 }

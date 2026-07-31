@@ -1,6 +1,7 @@
 #include "peek_description.h"
 
 #include "engine_area.h"      // kItemLocNameOffset
+#include "engine_game.h"      // IsKotor2 — Batch 1 decline
 #include "engine_input.h"
 #include "engine_offsets.h"
 #include "engine_panels.h"
@@ -649,6 +650,10 @@ bool SpeakItemRowDescription(void* row) {
 
 bool HandleShiftArrow(int param_1, int param_2, void* activePanel,
                       void* focusedControl) {
+    // KOTOR 2 (Batch 1): the per-panel refresh addresses (OnControlEntered
+    // family) and several description offsets are unresolved there. Decline;
+    // Shift+arrow falls through to the underlying panel handling.
+    if (acc::game::IsKotor2()) return false;
     // Press edge only — release events fall through.
     if (param_2 == 0) return false;
     if (param_1 != kInputNavUp && param_1 != kInputNavDown) return false;

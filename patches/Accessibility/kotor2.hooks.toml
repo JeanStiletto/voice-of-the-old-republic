@@ -72,3 +72,154 @@ exclude_from_restore = []
 [[hooks.parameters]]
 source = "ebp"
 type = "pointer"
+
+# ============================================================================
+# Batch 1 — the GUI spine (per-frame tick, input dispatch, focus-change
+# diagnostic, listbox row focus). Cut points designed from PrintListing reads
+# and byte-confirmed straight off the exe (it is not SteamStub-encrypted).
+# Every cut is frame- or register-relative with no absolute operand. See
+# docs/kotor2-port.md "Batch 1 cut points".
+# ============================================================================
+
+# CSWGuiManager::Update @ 0x004113A0 — the per-frame tick, and the ONLY thing
+# that drains the pending-announce slot: without this hook every queued focus
+# announcement is written and discarded (the half-system failure of the first
+# test round). One call per frame from the client main loop.
+#
+#   004113a6: 89 4d b4              MOV [EBP-0x4C],ECX    ← `this` stored
+#   004113a9: 8b 45 b4              MOV EAX,[EBP-0x4C]    ← hook here, 9 bytes
+#   004113ac: 8b 88 8c 00 00 00     MOV ECX,[EAX+0x8C]    ; panels.size — the
+#                                   ; same +0x8c field KOTOR 1's hook point
+#                                   ; reads, confirming identity a third time
+#
+# OnUpdate ignores its argument (core_tick.cpp), so EBP is passed only to
+# satisfy the one-parameter contract; no frame arithmetic happens.
+[[hooks]]
+address = 0x004113a9
+type = "detour"
+function = "OnUpdate"
+
+# 8b 45 b4              MOV EAX, [EBP-0x4C]
+# 8b 88 8c 00 00 00     MOV ECX, [EAX+0x8C]
+original_bytes = [0x8b, 0x45, 0xb4, 0x8b, 0x88, 0x8c, 0x00, 0x00, 0x00]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ebp"
+type = "pointer"
+
+# CSWGuiManager::HandleInputEvent @ 0x00410AA0 — the GUI input dispatcher, and
+# the navigation chain's entry point. Hooked at 0x00410AC8, after the SEH
+# prologue has stored `this`:
+#
+#   00410ac5: 89 4d 98              MOV [EBP-0x68],ECX    ← `this` stored
+#   00410ac8: 8b 45 98              MOV EAX,[EBP-0x68]    ← hook here, 9 bytes
+#   00410acb: 8b 4d 08              MOV ECX,[EBP+8]
+#   00410ace: 89 48 68              MOV [EAX+0x68],ECX    ; input_code = param_1
+#   00410ad1: 83 7d 0c 00           CMP [EBP+0xC],0       ; resume point
+#
+# skip_original_bytes is the load-bearing choice: the wrapper's consumed-exit
+# TEST EAX,EAX runs AFTER the cut replay, and this cut's first instruction
+# loads EAX with `this` — always non-zero, so a replayed cut would make every
+# event read as consumed (project_kpatchmanager_consume_test_bugs bug 2,
+# a design constraint, not a fixable wrapper bug). Instead the handler
+# performs the cut's one effect itself (the input_code store, via
+# kMgrInputCodeOffset = Same(0x68)) and the TEST sees the real return value.
+# Register liveness at the resume CMP was checked over the whole listing:
+# EAX/ECX/EDX are all written before their next read on both branch paths.
+#
+# consumed_exit_address is the function's common epilogue — the ONLY exit
+# (single RET), where FS:[0] is restored from [EBP-0xC], so the SEH frame the
+# prologue registered is properly unregistered on the consume path. The
+# engine's own repeat-debounce jumps there from mid-body (0x00410BF1,
+# 0x00410C45), skipping the same panel-dispatch and deferred-close code we
+# skip — consuming this way is a control flow the function already has. At the
+# hook the SEH scope index [EBP-4] is still -1 (untouched since PUSH -1), and
+# the cut is register/frame-only so stack depth at the jump matches the
+# natural fall-through exactly.
+[[hooks]]
+address = 0x00410ac8
+type = "detour"
+function = "OnHandleInputEventK2"
+
+# 8b 45 98              MOV EAX, [EBP-0x68]   (NOT replayed — see above)
+# 8b 4d 08              MOV ECX, [EBP+8]
+# 89 48 68              MOV [EAX+0x68], ECX
+original_bytes = [0x8b, 0x45, 0x98, 0x8b, 0x4d, 0x08, 0x89, 0x48, 0x68]
+
+skip_original_bytes = true
+exclude_from_restore = ["eax"]
+consumed_exit_address = 0x00410fa9
+
+[[hooks.parameters]]
+source = "ebp"
+type = "pointer"
+
+# CSWGuiControl::HandleFocusChange @ 0x00418FE0 — the focus-change diagnostic
+# (log-only handler; SetActiveControl is the announcement signal). Hooked at
+# 0x00418FE6, BEFORE `this` is stored, so it comes from ECX:
+#
+#   00418fe0: 55 8b ec 83 ec 14     prologue
+#   00418fe6: 89 4d f0              MOV [EBP-0x10],ECX    ← hook here, 7 bytes
+#   00418fe9: 83 7d 08 00           CMP [EBP+8],0
+#   00418fed: 74 5f                 JZ +0x5f              ; resume point — NOT
+#                                   ; in the cut: relative jump, relocating it
+#                                   ; would change its target
+#
+# The wrapper replays the cut after the handler, so the CMP re-establishes the
+# flags the JZ reads (the wrapper's PUSHFD/POPFD framework fix keeps them
+# intact — PR-4).
+[[hooks]]
+address = 0x00418fe6
+type = "detour"
+function = "OnHandleFocusChangeK2"
+
+# 89 4d f0              MOV [EBP-0x10], ECX
+# 83 7d 08 00           CMP dword [EBP+8], 0
+original_bytes = [0x89, 0x4d, 0xf0, 0x83, 0x7d, 0x08, 0x00]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "ebp"
+type = "pointer"
+
+# CSWGuiListBox::SetActiveControl — hook the IMPLEMENTATION at 0x0041E9A0, not
+# the vtable slot: slot 2 (0x0041FEE0) is a forwarder whose body is just
+# `CALL 0x0041E9A0` (byte-confirmed), so the implementation catches both the
+# virtual route and direct calls. Its listing also independently confirms two
+# constants resolved by other means: ADD ECX,0x2AC (kListBoxControlsOffset)
+# and CALL 0x0041E870 (SetSelectedControl).
+#
+# Hooked at 0x0041E9A4, BEFORE `this` is stored, so it comes from ECX:
+#
+#   0041e9a0: 55 8b ec 51           prologue
+#   0041e9a4: 89 4d fc              MOV [EBP-0x4],ECX     ← hook here, 6 bytes
+#   0041e9a7: 8b 45 0c              MOV EAX,[EBP+0xC]
+#   0041e9aa: 50                    PUSH EAX              ; resume point
+[[hooks]]
+address = 0x0041e9a4
+type = "detour"
+function = "OnListBoxSetActiveControlK2"
+
+# 89 4d fc              MOV [EBP-0x4], ECX
+# 8b 45 0c              MOV EAX, [EBP+0xC]
+original_bytes = [0x89, 0x4d, 0xfc, 0x8b, 0x45, 0x0c]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "ebp"
+type = "pointer"

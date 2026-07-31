@@ -6,13 +6,70 @@ result especially — but whose cost estimate predates the RTTI finding below.
 
 ## WHERE TO RESUME (read this first)
 
-State as of 2026-07-31, end of the SECOND port session. KOTOR 1 untouched
-throughout — every change is a constant gaining a KOTOR 2 column, which on
-KOTOR 1 evaluates to exactly what it did before.
+State as of 2026-08-01: **Batch 1 (GUI spine) is TESTED AND WORKING** — the
+user confirmed menu navigation, Options + sub-panels, listbox rows and speech
+all behave as intended on KOTOR 2. Next up: **Batch 2** (see THE BATCH PLAN).
 
-**What works:** KOTOR 2 speaks its main menu and options submenu. One hook is
-installed (`CSWGuiPanel::SetActiveControl` → `menus_focus_k2.cpp`). Every other
-hook handler is gated off by `acc::game::HandlerEnabled()`.
+The first test round surfaced two crash classes, both fixed and re-verified:
+
+- **Unguarded engine reads in a K2-only diagnostic path.** AnnounceFocus read
+  control captions via ReadCExoString/ReadU32 (guard-free by design) with no
+  SEH — a garbage caption pointer crashed the process inside memcpy, including
+  in a PRE-batch session. The probe now runs in one SEH-guarded pass
+  (FocusProbe in menus_focus_k2.cpp) and an unreadable control is skipped, not
+  announced. Lesson: the audit tool only sweeps files it is pointed at —
+  K2-only TUs must be audited too, not just the shared chain.
+- **The CGuiInGame slot walk ran on KOTOR 2.** IdentifyPanel's slot-table walk
+  dereferences KOTOR 1's CGuiInGame layout and ran before the vtable fall-
+  through; on KOTOR 2 it dereferenced a garbage base unguarded (WER fault in
+  accessibility.dll, resolved by disassembling the DLL at the crash offset).
+  Now: SlotTableLookup declines on KOTOR 2 outright and is SEH-guarded on
+  KOTOR 1 too. Batch 2 ports the real table and clears the decline.
+
+KOTOR 1's behaviour is intended to be untouched throughout, but this batch's
+changes are the first that alter code KOTOR 1 executes (`Dispatch()` gained an
+`if (k1)` structure, four handlers lost their `HandlerEnabled()` gates, the
+slot walk moved into a guarded helper), so the next KOTOR 1 session should
+sanity-run menus + one in-world area before trusting it.
+
+**What Batch 1 shipped:**
+
+- `kotor2.hooks.toml` now installs five hooks: SetActiveControl (was live) plus
+  Update @0x004113A9, HandleInputEvent @0x00410AC8, HandleFocusChange
+  @0x00418FE6, ListBox SetActiveControl @0x0041E9A4 (the implementation; the
+  vtable slot is a forwarder). All cut bytes byte-confirmed off the exe.
+- The three new frame-unpacking wrappers live at the bottom of
+  `menus_focus_k2.cpp` (OnHandleInputEventK2 / OnHandleFocusChangeK2 /
+  OnListBoxSetActiveControlK2), exported in exports.def. OnUpdate is hooked
+  directly — it ignores its argument.
+- **The HandleInputEvent hook uses `skip_original_bytes = true`** because its
+  cut's first instruction loads EAX and the wrapper's consumed-exit TEST reads
+  EAX after the cut replay (KPatchManager bug 2, by design). The wrapper
+  emulates the cut's one effect (`this->input_code = param_1`, via the new
+  `kMgrInputCodeOffset = Same(0x68)`). consumed_exit_address = 0x00410FA9, the
+  single common epilogue where FS:[0] is unregistered — the engine's own
+  repeat-debounce jumps there from mid-body, so the shape is engine-native.
+- `Dispatch()` in core_tick.cpp is game-aware: KOTOR 2 runs the menu spine
+  only (ValidatePanels, help, TickMonitors, PollHomeEnd, modsettings,
+  update_checker, TickPendingOps, hotkeys/watchdog); every world / combat /
+  camera / minigame / dialog phase sits in `if (k1)` blocks that later batches
+  clear one by one.
+- Panel-specific sub-handlers whose KOTOR 2 constants are still Todo/R now
+  **decline at their own entry** with `if (acc::game::IsKotor2()) return...`:
+  abilities, chargen feats, powers level-up, editbox (+ its monitor), galaxy
+  map (+ Tick), keymap (+ Tick), pazaak board + deck builder, peek, cycle
+  input, and the chargen-feats diagnostic dump. `grep -rn "KOTOR 2 (Batch"
+  patches/Accessibility` enumerates them; clearing one means resolving its
+  constants, deleting the decline, and re-running handler_chain_audit.py.
+
+The first test round exercised the full loop (2026-08-01, PASSED after the two
+crash fixes above): main-menu arrow navigation with speech, Enter/Esc into
+Options and its sub-panels, the Gameplay settings chain (13 entries), listbox
+row announces. Log channels for future rounds: K2.Focus / Menus.Input /
+Menus.ListBox / Menus.FocusChange, plus "probe faulted" lines naming controls
+whose caption offsets need per-class fixing.
+
+Every other hook handler stays gated off by `acc::game::HandlerEnabled()`.
 
 **Menu-subsystem worklist:** regenerate with
 
@@ -137,7 +194,7 @@ Start any session by running
 
 which reports, per hook, whether KOTOR 2 has it installed AND has its
 `HandlerEnabled()` gate cleared. Both halves are needed; either alone is worse
-than neither. At the time of writing: **1 of 25 READY**.
+than neither. After Batch 1: **5 of 25 READY** (the whole GUI spine).
 
 Each batch means the same three things: resolve the constants its handlers'
 call graphs touch (`port_worklist.py`), find its KOTOR 2 hook cut points (one
@@ -161,12 +218,15 @@ cut-points. KOTOR 2 addresses already known: Update 0x004113A0,
 HandleInputEvent 0x00410AA0, HandleFocusChange 0x00418FE0, ListBox
 SetActiveControl 0x0041FEE0 (a forwarder to 0x0041E9A0 — decide which to hook).
 
-### Batch 1 cut points (listings read 2026-07-31)
+### Batch 1 cut points (listings read 2026-07-31; WRITTEN + byte-confirmed)
 
-Designed but NOT yet written into `kotor2.hooks.toml` — the byte sequences below
-are read off the listing and must be confirmed with `DumpBytes.java` before they
-go in. Every cut is frame- or register-relative with no absolute operand, which
-is what makes it safe to relocate into a trampoline.
+All four are now in `kotor2.hooks.toml`. The bytes were confirmed straight off
+the exe (it is not SteamStub-encrypted; `capstone` is installed for the Python
+at reference_python_path, so full-function disassembly needs no Ghidra round).
+Every cut is frame- or register-relative with no absolute operand, which is
+what makes it safe to relocate into a trampoline. The listings below are kept
+as the design record; where the implementation differs (HandleInputEvent's
+skip_original_bytes), WHERE TO RESUME is authoritative.
 
 **`OnUpdate` — `CSWGuiManager::Update` @ 0x004113A0. Cut at 0x004113A9, 9 bytes.**
 
@@ -191,13 +251,22 @@ Arguments: `this` = [EBP-0x68], param_1 = [EBP+8], param_2 = [EBP+0xC] — so pa
 EBP and read them, as `OnSetActiveControlK2` does. KOTOR 1 takes three registers;
 none of that transfers.
 
-**Two open problems on this one, and they are the hard part of Batch 1.** It uses
-`consumed_exit_address` for selective key consumption, so it needs KOTOR 2's
-epilogue address, which has not been read yet. And KOTOR 2's version opens with a
-full SEH prologue (`PUSH -1` / `PUSH handler` / `MOV FS:[0]`) that KOTOR 1's does
-not have — so a consumed-exit jump must land where the SEH frame is properly
-unregistered, or it corrupts the exception chain. Read the whole function before
-choosing that target.
+**The two open problems this section used to list are SOLVED** (third session,
+whole-function disassembly via capstone):
+
+- The consumed-exit target is **0x00410FA9** — the function's single common
+  epilogue (one RET; every path funnels there), which restores FS:[0] from
+  [EBP-0xC] and so unregisters the SEH frame itself. The engine's own
+  repeat-debounce consumes events by jumping there from mid-body (0x00410BF1,
+  0x00410C45), so the jump shape is engine-native. At the hook the SEH scope
+  index [EBP-4] is still -1 and stack depth matches the natural fall-through.
+- A third problem surfaced and forced a design change: the cut's first
+  instruction loads EAX, and the wrapper's consumed-exit TEST reads EAX after
+  the cut replay (KPatchManager bug 2 — unfixable by design). Hence
+  `skip_original_bytes = true` with the handler emulating the cut's one effect,
+  the `this->input_code = param_1` store (`kMgrInputCodeOffset = Same(0x68)`).
+  Register liveness at the resume CMP was checked across both branch paths:
+  EAX/ECX/EDX are each written before their next read.
 
 **`OnHandleFocusChange` — `CSWGuiControl::HandleFocusChange` @ 0x00418FE0. Cut at
 0x00418FE6, 7 bytes.**

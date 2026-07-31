@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <cstdio>
 
+#include "engine_game.h"     // IsKotor2 — Batch 1 decline
 #include "engine_input.h"    // kInputNav* / kInputEnter*
 #include "engine_manager.h"  // IsPanelInManager
 #include "engine_offsets.h"  // CExoArrayList, kPanelControlsOffset, kControlIdOffset
@@ -237,6 +238,9 @@ void AnnounceFocus(void* panel) {
 }  // namespace
 
 bool TryHandleInput(void* panel, int param_1, int param_2, int& rv) {
+    // KOTOR 2 (Batch 1): the side-deck card table offsets and the add/remove
+    // handler addresses are unresolved there (minigame triage is Batch 6).
+    if (acc::game::IsKotor2()) return false;
     if (!IsDeckPanel(panel)) return false;
     if (panel != g_navPanel) { g_navPanel = panel; g_row = 0; g_col = 0; }
 

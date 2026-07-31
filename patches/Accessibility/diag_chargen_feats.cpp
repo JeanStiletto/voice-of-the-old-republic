@@ -6,6 +6,7 @@
 
 #include "diag_chargen_feats.h"
 
+#include "engine_game.h"
 #include "engine_offsets.h"
 #include "log.h"
 
@@ -140,6 +141,10 @@ void DumpChartCells(void* fcp) {
 }  // namespace
 
 void DumpStructureIfNeeded(void* panel) {
+    // KOTOR 2 (Batch 1): this diagnostic reads the feat chart and the rules
+    // feat table through constants unresolved there. It sits on the focus
+    // path, which is live on KOTOR 2, so decline explicitly.
+    if (acc::game::IsKotor2()) return;
     if (!panel || panel == s_loggedFeatsPanel) return;
     void** vt = nullptr;
     __try {

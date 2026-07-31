@@ -99,6 +99,12 @@ const size_t kMgrPanelsDataOffset      = acc::off::Same(0x88);
 const size_t kMgrPanelsSizeOffset      = acc::off::Same(0x8c);
 const size_t kMgrModalStackDataOffset  = acc::off::Same(0x94);
 const size_t kMgrModalStackSizeOffset  = acc::off::Same(0x98);
+// The manager's "current input code" field, written by HandleInputEvent as its
+// first action in both games. The KOTOR 2 hook needs it by name: its cut bytes
+// perform exactly this store, and they are skipped (skip_original_bytes) because
+// their first instruction clobbers EAX — the consume-signal register — so the
+// handler replays the store itself. See OnHandleInputEventK2.
+const size_t kMgrInputCodeOffset       = acc::off::Same(0x68);
 
 // Cursor move + hover refresh in one call. Updates hover only;
 // panel.activeControl lags unless explicitly committed (PanelSetActive-

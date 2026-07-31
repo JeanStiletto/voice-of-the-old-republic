@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <cstring>
 
+#include "engine_game.h"     // IsKotor1 — the CGuiInGame slot walk is K1-only
 #include "engine_manager.h"  // kAddrGuiManagerPtr, kMgrPanels*Offset, GetForegroundPanel
 #include "engine_offsets.h"  // CExoArrayList, kPanelControlsOffset, kVtableListBox
 #include "engine_reads.h"    // ReadGuiString
@@ -654,6 +655,33 @@ void LogUnknownPanelDiagnostics(void* panel) {
     }
 }
 
+// The CGuiInGame slot walk, hoisted out of IdentifyPanel so the __try owns no
+// unwinding objects (C2712) and returns the matching table index, or -1.
+//
+// KOTOR 2 skips the walk outright: both the slot offsets and the
+// ResolveGuiInGame pointer chain describe KOTOR 1's CGuiInGame, and Batch 2
+// is where that table gets ported. Before this gate the walk dereferenced a
+// garbage base UNGUARDED and took the process down on the first Update ticks
+// of a session (first Batch 1 test round, 2026-07-31: WER fault in
+// accessibility.dll at this very CMP). The SEH is belt and braces on KOTOR 1
+// too — the walk reads engine memory through a multi-hop pointer chain.
+int SlotTableLookup(void* panel) {
+    if (!acc::game::IsKotor1()) return -1;
+    void* gui = ResolveGuiInGame();
+    if (!gui) return -1;
+    __try {
+        auto* base = reinterpret_cast<unsigned char*>(gui);
+        for (int i = 0; i < kPanelKindOffsetCount; ++i) {
+            if (kPanelKindOffsets[i].offset == kNoSlotOffset) continue;
+            void* slot = *reinterpret_cast<void**>(
+                base + kPanelKindOffsets[i].offset);
+            if (slot == panel) return i;
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+    }
+    return -1;
+}
+
 }  // namespace
 
 PanelKind IdentifyPanel(void* panel) {
@@ -677,16 +705,10 @@ PanelKind IdentifyPanel(void* panel) {
         return k;
     };
 
-    void* gui = ResolveGuiInGame();
-    if (gui) {
-        auto* base = reinterpret_cast<unsigned char*>(gui);
-        for (int i = 0; i < kPanelKindOffsetCount; ++i) {
-            if (kPanelKindOffsets[i].offset == kNoSlotOffset) continue;
-            void* slot = *reinterpret_cast<void**>(base + kPanelKindOffsets[i].offset);
-            if (slot != panel) continue;
-            return recordAndReturn(kPanelKindOffsets[i].kind,
-                                   kPanelKindOffsets[i].name);
-        }
+    int slotIdx = SlotTableLookup(panel);
+    if (slotIdx >= 0) {
+        return recordAndReturn(kPanelKindOffsets[slotIdx].kind,
+                               kPanelKindOffsets[slotIdx].name);
     }
 
     // Slot-table miss: structural detectors for heap-allocated kinds. Run

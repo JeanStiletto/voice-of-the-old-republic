@@ -27,6 +27,7 @@
 
 #include "minigame_pazaak.h"
 
+#include "engine_game.h"      // IsKotor2 — Batch 1 decline
 #include "engine_input.h"     // kInputNav* / kInputEnter* / kInputEsc*
 #include "engine_manager.h"   // GetForegroundPanel, IsPanelInManager, kAddrGuiManagerPtr
 #include "engine_panels.h"    // IdentifyPanel, PanelKind
@@ -713,6 +714,10 @@ void FormatCardLabel(int index, int flip, CardContext ctx, char* out, size_t n) 
 // consumes the key. Letters fall through to PollShortcuts; Esc (outside the
 // sub-zone) falls through to the engine's quit-confirm.
 bool TryHandleInput(void* /*activePanel*/, int param_1, int param_2, int& rv) {
+    // KOTOR 2 (Batch 1): the pazaak board model offsets are unresolved there
+    // (and KOTOR 2's pazaak differs anyway — minigame triage is Batch 6).
+    // Tick() is gated in core_tick.cpp, so g_boardForeground also never arms.
+    if (acc::game::IsKotor2()) return false;
     if (!g_boardForeground || !g_panel) return false;
     void* panel = g_panel;
 

@@ -532,7 +532,10 @@ extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
 // (race / class / portrait pickers in chargen, save-game list, etc.).
 extern "C" void __cdecl OnListBoxSetActiveControl(void* listBox, void* newRow,
                                                   int param2) {
-    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
+    // Cleared for KOTOR 2 (Batch 1): the chain is the listbox internals
+    // (verified +0x10 shift), the control id (verified), FromControl (menu
+    // closure, resolved) and the two load-suppression reads, both of which
+    // degrade to false on KOTOR 2.
     EnsurePrismInitialized();
 
     static int n = 0;

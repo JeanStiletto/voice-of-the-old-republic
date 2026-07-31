@@ -70,7 +70,8 @@ void EnsurePrismInitialized();
 // real announcement signal; HandleFocusChange fires twice per navigation
 // (old loses focus + new gains focus) so speaking from here would echo.
 extern "C" void __cdecl OnHandleFocusChange(void* thisPtr, int param_1) {
-    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
+    // Cleared for KOTOR 2 (Batch 1): the whole chain is ReadControlNameFields,
+    // whose control-id and tooltip offsets are verified for both games.
     EnsurePrismInitialized();
     static int n = 0;
     ++n;
@@ -94,7 +95,14 @@ extern "C" void __cdecl OnHandleFocusChange(void* thisPtr, int param_1) {
 // At hook entry: ECX = this, EBX = param_1 (InputIndices key/button code),
 // EAX = param_2 (state).
 extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_2) {
-    if (!acc::game::HandlerEnabled()) return param_2;  // KOTOR 2: not ported yet — pass state through unchanged
+    // Cleared for KOTOR 2 (Batch 1). The generic path — press-release pairing,
+    // foreground resolution, chain navigation, Enter/Esc dispatch — uses only
+    // constants verified for both games (port_worklist: the menu closure is
+    // resolved). Panel-specific sub-handlers whose KOTOR 2 constants are still
+    // Todo/R decline individually at their own entry points (grep
+    // "KOTOR 2 (Batch" to enumerate); the key then falls through to the
+    // generic chain, so those screens navigate without their enhancements
+    // instead of faulting.
     EnsurePrismInitialized();
     static int n = 0;
     ++n;

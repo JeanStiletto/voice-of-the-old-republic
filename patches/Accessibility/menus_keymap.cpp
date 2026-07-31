@@ -8,6 +8,7 @@
 
 #include "menus_keymap.h"
 
+#include "engine_game.h"
 #include "engine_input.h"
 #include "engine_keymap.h"       // InputIndexToVk — new game bind -> VK for mod check
 #include "engine_manager.h"      // IsPanelInManager
@@ -263,6 +264,9 @@ bool IsKeyMapPanel(void* panel) {
 }
 
 void Tick() {
+    // KOTOR 2 (Batch 1): declined with HandleInput below — one gate per
+    // entry point, same reason.
+    if (acc::game::IsKotor2()) return;
     // Cursor park — must run from the Update tick, never the input hook
     // (MoveMouseToPosition recurses through the hover pipeline).
     if (s_parkPending &&
@@ -294,6 +298,10 @@ void Tick() {
 }
 
 bool HandleInput(void* activePanel, int param_1, int param_2, int& outRv) {
+    // KOTOR 2 (Batch 1): the category-filter handler addresses and the
+    // capture-active flag offset are unresolved there. Decline; the generic
+    // chain still navigates the screen (rebinds just can't be armed).
+    if (acc::game::IsKotor2()) return false;
     if (!IsKeyMapPanel(activePanel)) return false;
 
     // Fresh open → start at the tab level on the first entry, and arm the

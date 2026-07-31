@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstdio>
 
+#include "engine_game.h"      // IsKotor2 — Batch 1 decline
 #include "engine_input.h"     // kInput* logical codes
 #include "engine_manager.h"   // kAddrGuiManagerPtr, kMgrPanels{Data,Size}Offset
 #include "engine_offsets.h"   // kLabelGuiStringPtrOffset
@@ -78,6 +79,9 @@ bool IsGalaxyMapPanel(void* panel) {
 }
 
 bool TryHandleInput(void* activePanel, int param_1, int param_2, int& rv) {
+    // KOTOR 2 (Batch 1): the planet-name / description label offsets are
+    // unresolved there. Decline; the generic chain still navigates.
+    if (acc::game::IsKotor2()) return false;
     if (!IsGalaxyMapPanel(activePanel)) return false;
 
     const bool isUp    = (param_1 == kInputNavUp);
@@ -172,6 +176,8 @@ void DispatchInput(void* panel, int engineCode, bool announcePlanet) {
 }
 
 void Tick() {
+    // KOTOR 2 (Batch 1): declined with TryHandleInput above — same reason.
+    if (acc::game::IsKotor2()) return;
     void* panel = FindGalaxyMapInPanels();
     if (!panel) {
         // Map closed — drop the latch so the next open re-announces.

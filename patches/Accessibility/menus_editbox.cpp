@@ -16,6 +16,7 @@
 
 #include "menus_editbox.h"
 
+#include "engine_game.h"
 #include "engine_input.h"
 #include "engine_manager.h"
 #include "engine_offsets.h"
@@ -476,6 +477,10 @@ void DisarmIfArmed(const char* reason) {
 
 bool TryHandleInput(int /*n*/, void* /*thisPtr*/, void* activePanel,
                     int param_1, int param_2, int& outRv) {
+    // KOTOR 2 (Batch 1): the chargen-name and save-name editbox offsets are
+    // unresolved there, so the monitor never arms and edit mode can't engage;
+    // this early-out is then belt and braces.
+    if (acc::game::IsKotor2()) return false;
     if (!s_state.editMode) return false;
     if (!activePanel || activePanel != s_state.panel) return false;
     if (param_2 == 0) return false;  // press-edge only
@@ -540,6 +545,9 @@ bool TryHandleInput(int /*n*/, void* /*thisPtr*/, void* activePanel,
 }
 
 void TickEditboxMonitors() {
+    // KOTOR 2 (Batch 1): the editbox panel offsets its specs point at are
+    // unresolved there. Decline the whole monitor.
+    if (acc::game::IsKotor2()) return;
     PanelMatch m = FindMatchingPanel();
     if (!m.spec) {
         // No spec-matching panel anywhere. Disarm if we were armed against

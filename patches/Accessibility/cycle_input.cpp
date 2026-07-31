@@ -18,6 +18,7 @@
 #include "cycle_state.h"
 #include "engine_area.h"
 #include "engine_compass.h"      // ClockPosition — shared clock-direction math
+#include "engine_game.h"
 #include "engine_input.h"
 #include "engine_panels.h"
 #include "engine_player.h"
@@ -891,6 +892,11 @@ void OnPathfindFocusForce() {
 }  // namespace
 
 bool TryHandleEvent(int param_1, int param_2) {
+    // KOTOR 2 (Batch 1): in-world cycling belongs to the world batch; its
+    // chain reads player/area/discovery state whose KOTOR 2 constants are
+    // unresolved. Decline so the key falls through to the menu logic.
+    if (acc::game::IsKotor2()) return false;
+
     // Shift state tracking — fires on both press and release, never consumed.
     // Notify peek_description on the release edge so its block cursor resets
     // (so the next Shift+arrow starts at block 0 again).

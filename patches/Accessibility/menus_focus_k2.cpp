@@ -62,11 +62,17 @@
 // because this call was missing and prism::Speak had nothing to speak through.
 void EnsurePrismInitialized();
 
-// The shared focus handler, defined in menus.cpp and hooked directly on
-// KOTOR 1. KOTOR 2 reaches it through this file instead, because its hook has
-// to do frame arithmetic and the cursor warp first — see OnSetActiveControlK2.
-// Forward-declared per TU the same way EnsurePrismInitialized is.
+// The shared handlers, defined in menus.cpp / menus_dispatch.cpp and hooked
+// directly on KOTOR 1. KOTOR 2 reaches them through this file instead, because
+// its hooks have to do frame arithmetic first (and, for focus, the cursor warp)
+// — see the *K2 wrappers at the bottom. Forward-declared per TU the same way
+// EnsurePrismInitialized is.
 extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl);
+extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1,
+                                          int param_2);
+extern "C" void __cdecl OnHandleFocusChange(void* thisPtr, int param_1);
+extern "C" void __cdecl OnListBoxSetActiveControl(void* listBox, void* newRow,
+                                                  int param2);
 
 namespace acc::menus::k2 {
 
@@ -211,6 +217,88 @@ void WarpCursorToControl(void* control) {
     s_inWarp = false;
 }
 
+// Everything the K2.Focus diagnostic line needs, gathered in one SEH-guarded
+// pass. POD on purpose: the struct is declared by the SEH-free caller and a
+// pointer passed in, the C2712 pattern the project already uses
+// (map_ui_cursor / combat_special_watch).
+struct FocusProbe {
+    uint32_t vtable;
+    uint32_t id;
+    void*    prevActive;
+    uint32_t prevId;
+    char     labelText[192];
+    char     buttonText[192];
+    bool     haveLabel;
+    bool     haveButton;
+    void*    hovered;
+    uint32_t hoveredId;
+    int      curX, curY;
+    int      ex, ey;
+};
+
+// Returns false when any read faulted. That case is not theoretical: this
+// probe used to run these reads bare, and ReadU32 / ReadCExoString carry no
+// guard of their own by design (callers supply it) — a control whose caption
+// field holds a plausible-looking garbage pointer took the whole process down
+// inside memcpy. Three of the five crashes of the first Batch 1 test round
+// (2026-07-31, VCRUNTIME AVs incl. one pre-batch session) fingerprint here.
+// A control we cannot even read is mid-teardown or not a control; the caller
+// must neither announce it nor warp to it.
+bool ReadFocusProbe(void* panel, void* control, FocusProbe* p) {
+    __try {
+        p->vtable = acc::engine::ReadU32(control, 0);
+        p->id = acc::engine::ReadU32(control, kControlIdOffset);
+
+        // The panel's CURRENT active control, read before the engine changes
+        // it — the hook sits ahead of SetActiveControl's own
+        // `if (active != param_1)` test, so no-op calls are visible as such.
+        if (panel) {
+            p->prevActive = reinterpret_cast<void*>(
+                acc::engine::ReadU32(panel, kPanelActiveControlOffset));
+            if (p->prevActive) {
+                p->prevId =
+                    acc::engine::ReadU32(p->prevActive, kControlIdOffset);
+            }
+        }
+
+        // Try both caption shapes and let the caller take whichever yielded
+        // text. Distinguishing by vtable would be tidier, but it needs a
+        // KOTOR 2 vtable constant per control class and this probe exists
+        // precisely to find out which classes turn up.
+        p->haveLabel = acc::engine::ReadCExoString(
+            control, kLabelTextOffset, p->labelText, sizeof(p->labelText));
+        p->haveButton = acc::engine::ReadCExoString(
+            control, kButtonTextOffset, p->buttonText, sizeof(p->buttonText));
+
+        // The manager's hovered control + stored cursor — the other half of
+        // the hover-vs-keyboard picture the K2.Focus line documents.
+        if (acc::addr::Ok(kAddrGuiManagerPtr)) {
+            void* mgr = reinterpret_cast<void*>(
+                *reinterpret_cast<uintptr_t*>(kAddrGuiManagerPtr));
+            if (mgr) {
+                p->hovered =
+                    reinterpret_cast<void*>(acc::engine::ReadU32(mgr, 8));
+                if (p->hovered) {
+                    p->hoveredId =
+                        acc::engine::ReadU32(p->hovered, kControlIdOffset);
+                }
+                p->curX = static_cast<int>(acc::engine::ReadU32(mgr, 0));
+                p->curY = static_cast<int>(acc::engine::ReadU32(mgr, 4));
+            }
+        }
+
+        // Where the control actually is, so the log shows both halves of the
+        // coordinate conversion side by side.
+        p->ex = static_cast<int>(
+            acc::engine::ReadU32(control, kControlExtentOffset));
+        p->ey = static_cast<int>(
+            acc::engine::ReadU32(control, kControlExtentOffset + 4));
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 }  // namespace
 
 void AnnounceFocus(void* panel, void* control, void* caller) {
@@ -219,44 +307,35 @@ void AnnounceFocus(void* panel, void* control, void* caller) {
     if (s_inWarp) return;
     EnsurePrismInitialized();
 
-    uint32_t vtable = acc::engine::ReadU32(control, 0);
-    uint32_t id = acc::engine::ReadU32(control, kControlIdOffset);
-
-    // The panel's CURRENT active control, read before the engine changes it —
-    // we hook at 0x0040EC09, ahead of SetActiveControl's own
-    // `if (active != param_1)` test, so we also see calls that change nothing.
-    //
-    // This distinguishes the two readings of the doubled events that the
-    // arguments alone cannot: if prev == the incoming control the second call
-    // is a no-op and focus is not really moving, whereas if it differs then
-    // focus genuinely snaps to that control after every navigation and the
-    // menu only ever leaves from there — which would explain why just its two
-    // neighbours are reachable.
-    void* prevActive = nullptr;
-    uint32_t prevId = 0xFFFFFFFFu;
-    if (panel) {
-        prevActive = reinterpret_cast<void*>(
-            acc::engine::ReadU32(panel, kPanelActiveControlOffset));
-        if (prevActive) prevId = acc::engine::ReadU32(prevActive, kControlIdOffset);
+    FocusProbe probe;
+    probe.vtable = 0;
+    probe.id = 0;
+    probe.prevActive = nullptr;
+    probe.prevId = 0xFFFFFFFFu;
+    probe.labelText[0] = '\0';
+    probe.buttonText[0] = '\0';
+    probe.haveLabel = false;
+    probe.haveButton = false;
+    probe.hovered = nullptr;
+    probe.hoveredId = 0xFFFFFFFFu;
+    probe.curX = -1;
+    probe.curY = -1;
+    probe.ex = -1;
+    probe.ey = -1;
+    if (!ReadFocusProbe(panel, control, &probe)) {
+        acclog::Write("K2.Focus",
+                      "probe faulted control=%p caller=%p — skipped (control "
+                      "unreadable, likely mid-teardown)", control, caller);
+        return;
     }
-
-    // Try both shapes and take whichever yields text. Distinguishing by vtable
-    // would be tidier, but it needs a KOTOR 2 vtable constant per control class
-    // and this probe exists precisely to find out which classes turn up.
-    char labelText[192] = {0};
-    char buttonText[192] = {0};
-    bool haveLabel = acc::engine::ReadCExoString(control, kLabelTextOffset,
-                                                 labelText, sizeof(labelText));
-    bool haveButton = acc::engine::ReadCExoString(control, kButtonTextOffset,
-                                                  buttonText, sizeof(buttonText));
 
     const char* text = nullptr;
     const char* which = "none";
-    if (haveLabel && labelText[0]) {
-        text = labelText;
+    if (probe.haveLabel && probe.labelText[0]) {
+        text = probe.labelText;
         which = "label";
-    } else if (haveButton && buttonText[0]) {
-        text = buttonText;
+    } else if (probe.haveButton && probe.buttonText[0]) {
+        text = probe.buttonText;
         which = "button";
     }
 
@@ -267,42 +346,16 @@ void AnnounceFocus(void* panel, void* control, void* caller) {
     // default, the engine's own nav running alongside ours) are
     // indistinguishable from the arguments alone. The caller names it outright,
     // and maps back to a function via docs/llm-docs/re/k2/k2-functions.csv.
-    // The CSWGuiManager's hovered control (manager+8), i.e. what the mouse is
-    // over. KOTOR 2's hover path (FUN_00413c50) hit-tests at the stored cursor
-    // and writes the result here.
-    //
-    // Present to settle why focus snaps back to one fixed control after every
-    // keypress. Hover was dismissed earlier because it writes THIS field rather
-    // than the panel's active_control — but that only rules out a direct write,
-    // not HandleFocusChange propagating it into the panel afterwards. If this
-    // reads as the same control the bounce lands on, the cursor is simply
-    // parked over that button and the engine keeps reclaiming focus for it,
-    // which is the same fight KOTOR 1 has and solves by warping the cursor.
-    uint32_t hoveredId = 0xFFFFFFFFu;
-    void* hovered = nullptr;
-    int curX = -1, curY = -1;
-    if (acc::addr::Ok(kAddrGuiManagerPtr)) {
-        void* mgr = reinterpret_cast<void*>(
-            *reinterpret_cast<uintptr_t*>(kAddrGuiManagerPtr));
-        if (mgr) {
-            hovered = reinterpret_cast<void*>(acc::engine::ReadU32(mgr, 8));
-            if (hovered) hoveredId = acc::engine::ReadU32(hovered, kControlIdOffset);
-            curX = static_cast<int>(acc::engine::ReadU32(mgr, 0));
-            curY = static_cast<int>(acc::engine::ReadU32(mgr, 4));
-        }
-    }
-
-    // Where the control actually is, in its own (virtual 640x480) space, so the
-    // log shows both halves of the coordinate conversion side by side.
-    int ex = static_cast<int>(acc::engine::ReadU32(control, kControlExtentOffset));
-    int ey = static_cast<int>(acc::engine::ReadU32(control, kControlExtentOffset + 4));
-
-    bool noop = (prevActive == control);
+    // hoveredId (manager+8, written by KOTOR 2's hover path FUN_00413c50)
+    // documents the other side of the hover-vs-keyboard fight the cursor warp
+    // settles.
+    bool noop = (probe.prevActive == control);
     acclog::Write("K2.Focus",
                   "prev=%d -> id=%d %s hoveredId=%d cursor=%d,%d extent=%d,%d src=%s caller=%p%s text=\"%s\"",
-                  static_cast<int>(prevId), static_cast<int>(id),
-                  noop ? "[NO-OP]" : "[change]", static_cast<int>(hoveredId),
-                  curX, curY, ex, ey,
+                  static_cast<int>(probe.prevId), static_cast<int>(probe.id),
+                  noop ? "[NO-OP]" : "[change]",
+                  static_cast<int>(probe.hoveredId),
+                  probe.curX, probe.curY, probe.ex, probe.ey,
                   which, caller,
                   CallerIsFocusChange(caller) ? " [focus-change]" : "",
                   text ? text : "");
@@ -377,4 +430,101 @@ extern "C" void __cdecl OnSetActiveControlK2(void* ebp) {
     }
 
     acc::menus::k2::AnnounceFocus(panel, control, caller);
+}
+
+// ============================================================================
+// Batch 1 — the remaining GUI-spine wrappers (input dispatch, focus-change
+// diagnostic, listbox row focus). Same pattern as OnSetActiveControlK2: KOTOR 2
+// compiles its GUI unoptimised, so every argument lives in the frame, the hook
+// passes EBP (plus ECX where `this` has not been stored yet at the cut), and
+// the wrapper does the frame arithmetic before handing off to the SAME handler
+// KOTOR 1 hooks directly. No logic lives here — behaviour stays shared.
+// ============================================================================
+
+// CSWGuiManager::HandleInputEvent @0x00410AA0, hooked at 0x00410AC8 — after
+// the SEH prologue has stored `this` at [EBP-0x68].
+//
+//   [EBP-0x68] = this      (CSWGuiManager*)
+//   [EBP+8]    = param_1   (InputIndex key/button code)
+//   [EBP+0xC]  = param_2   (state; 0 = release)
+//
+// The hook sets skip_original_bytes: the three cut instructions perform
+// `this->input_code = param_1` but their first one loads EAX, and EAX is the
+// consume-signal register the wrapper's TEST reads after the cut replay
+// (project_kpatchmanager_consume_test_bugs bug 2, unfixed by design). So the
+// cut is not replayed and this wrapper performs the store itself via
+// kMgrInputCodeOffset (verified Same +0x68 in both games).
+//
+// Return value: non-zero = consumed. The wrapper jumps to the function's
+// common epilogue at 0x00410FA9, which restores FS:[0] before returning —
+// the same target the engine's own repeat-debounce paths jump to from
+// mid-body, so consuming this way is a control flow the function already has.
+extern "C" int __cdecl OnHandleInputEventK2(void* ebp) {
+    if (!acc::game::IsKotor2()) return 0;
+    if (!ebp) return 0;
+
+    void* mgr = nullptr;
+    int param1 = 0;
+    int param2 = 0;
+    __try {
+        mgr = *reinterpret_cast<void**>(static_cast<char*>(ebp) - 0x68);
+        param1 = *reinterpret_cast<int*>(static_cast<char*>(ebp) + 8);
+        param2 = *reinterpret_cast<int*>(static_cast<char*>(ebp) + 0xC);
+        // Replay the skipped cut: this->input_code = param_1.
+        if (mgr) {
+            *reinterpret_cast<int*>(static_cast<char*>(mgr) +
+                                    kMgrInputCodeOffset) = param1;
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;  // not consumed — engine proceeds normally
+    }
+    if (!mgr) return 0;
+
+    return OnHandleInputEvent(mgr, param1, param2);
+}
+
+// CSWGuiControl::HandleFocusChange @0x00418FE0, hooked at 0x00418FE6 — before
+// `this` is stored, so the hook passes ECX (this) and EBP (frame) separately.
+//
+//   ECX      = this      (CSWGuiControl*)
+//   [EBP+8]  = param_1   (0 = losing focus, non-zero = gaining)
+//
+// The cut replays MOV [EBP-0x10],ECX + CMP [EBP+8],0 after this returns, so
+// the flags feeding the engine's JZ at 0x00418FED are set by the replayed CMP,
+// not by anything this wrapper does.
+extern "C" void __cdecl OnHandleFocusChangeK2(void* thisCtrl, void* ebp) {
+    if (!acc::game::IsKotor2()) return;
+    if (!thisCtrl || !ebp) return;
+
+    int param1 = 0;
+    __try {
+        param1 = *reinterpret_cast<int*>(static_cast<char*>(ebp) + 8);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return;
+    }
+
+    OnHandleFocusChange(thisCtrl, param1);
+}
+
+// CSWGuiListBox::SetActiveControl implementation @0x0041E9A0 (vtable slot
+// 0x0041FEE0 is a forwarder that calls it, so hooking the body catches both
+// routes), hooked at 0x0041E9A4 — before `this` is stored.
+//
+//   ECX       = this      (CSWGuiListBox*)
+//   [EBP+8]   = param_1   (CSWGuiControl*, the newly active row)
+//   [EBP+0xC] = param_2   (int, the engine's play-sound flag)
+extern "C" void __cdecl OnListBoxSetActiveControlK2(void* listBox, void* ebp) {
+    if (!acc::game::IsKotor2()) return;
+    if (!listBox || !ebp) return;
+
+    void* newRow = nullptr;
+    int param2 = 0;
+    __try {
+        newRow = *reinterpret_cast<void**>(static_cast<char*>(ebp) + 8);
+        param2 = *reinterpret_cast<int*>(static_cast<char*>(ebp) + 0xC);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return;
+    }
+
+    OnListBoxSetActiveControl(listBox, newRow, param2);
 }

@@ -8,6 +8,7 @@
 
 #include "menus_abilities.h"
 
+#include "engine_game.h"
 #include "engine_input.h"
 #include "engine_offsets.h"
 #include "engine_panels.h"
@@ -385,6 +386,10 @@ void BrowseList(void* panel, int tab, ListBoxNavOp op) {
 
 bool HandleInput(int /*n*/, void* /*thisPtr*/, void* activePanel,
                  int param_1, int param_2, int& outRv) {
+    // KOTOR 2 (Batch 1): every kAbilities* offset and the three tab-handler
+    // addresses are unresolved there. Decline; the generic chain still
+    // navigates the screen.
+    if (acc::game::IsKotor2()) return false;
     if (!IsAbilitiesPanel(activePanel)) return false;
 
     // Fresh open -> start at the tab level.

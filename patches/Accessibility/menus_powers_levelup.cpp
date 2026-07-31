@@ -8,6 +8,7 @@
 
 #include "menus_powers_levelup.h"
 
+#include "engine_game.h"
 #include "engine_input.h"
 #include "engine_offsets.h"
 #include "engine_panels.h"
@@ -434,6 +435,10 @@ bool HandleInput(int n, void* thisPtr, void* panel,
                  int param_1, int param_2, int& outRv)
 {
     (void)n; (void)thisPtr;
+    // KOTOR 2 (Batch 1): kPowersLevelUpChartOffset and the skill-flow row
+    // constants are unresolved there. Decline; the generic chain still
+    // navigates.
+    if (acc::game::IsKotor2()) return false;
     if (!IsPowersLevelUpPanel(panel)) return false;
     EnsureBound(panel);
     if (s_chartRowCount + kButtonRowCount == 0) return false;
