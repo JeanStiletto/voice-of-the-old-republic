@@ -161,6 +161,71 @@ cut-points. KOTOR 2 addresses already known: Update 0x004113A0,
 HandleInputEvent 0x00410AA0, HandleFocusChange 0x00418FE0, ListBox
 SetActiveControl 0x0041FEE0 (a forwarder to 0x0041E9A0 — decide which to hook).
 
+### Batch 1 cut points (listings read 2026-07-31)
+
+Designed but NOT yet written into `kotor2.hooks.toml` — the byte sequences below
+are read off the listing and must be confirmed with `DumpBytes.java` before they
+go in. Every cut is frame- or register-relative with no absolute operand, which
+is what makes it safe to relocate into a trampoline.
+
+**`OnUpdate` — `CSWGuiManager::Update` @ 0x004113A0. Cut at 0x004113A9, 9 bytes.**
+
+    004113a6  MOV [EBP-0x4c],ECX          ; this stored
+    004113a9  MOV EAX,[EBP-0x4c]          ; \ cut, 3 bytes
+    004113ac  MOV ECX,[EAX+0x8c]          ; / cut, 6 bytes — panels.size
+
+The +0x8c read is the same field KOTOR 1's hook point reads, which confirms the
+function identity a third time. `OnUpdate` ignores its argument, so pass EBP.
+**This is the hook the whole announce path depends on** — nothing else drains
+the pending-announce slot.
+
+**`OnHandleInputEvent` — `CSWGuiManager::HandleInputEvent` @ 0x00410AA0. Cut at
+0x00410AC8, 9 bytes.**
+
+    00410ac5  MOV [EBP-0x68],ECX          ; this stored
+    00410ac8  MOV EAX,[EBP-0x68]          ; \
+    00410acb  MOV ECX,[EBP+0x8]           ;  } cut, 3+3+3 = 9 bytes
+    00410ace  MOV [EAX+0x68],ECX          ; / this->input_code = param_1
+
+Arguments: `this` = [EBP-0x68], param_1 = [EBP+8], param_2 = [EBP+0xC] — so pass
+EBP and read them, as `OnSetActiveControlK2` does. KOTOR 1 takes three registers;
+none of that transfers.
+
+**Two open problems on this one, and they are the hard part of Batch 1.** It uses
+`consumed_exit_address` for selective key consumption, so it needs KOTOR 2's
+epilogue address, which has not been read yet. And KOTOR 2's version opens with a
+full SEH prologue (`PUSH -1` / `PUSH handler` / `MOV FS:[0]`) that KOTOR 1's does
+not have — so a consumed-exit jump must land where the SEH frame is properly
+unregistered, or it corrupts the exception chain. Read the whole function before
+choosing that target.
+
+**`OnHandleFocusChange` — `CSWGuiControl::HandleFocusChange` @ 0x00418FE0. Cut at
+0x00418FE6, 7 bytes.**
+
+    00418fe6  MOV [EBP-0x10],ECX          ; \ cut, 3 bytes
+    00418fe9  CMP [EBP+0x8],0x0           ; / cut, 4 bytes
+    00418fed  JZ 0x0041904e               ; NOT in the cut — relative
+
+Stop before the JZ: it is a relative jump and relocating it changes its target.
+`this` is NOT yet stored when the handler runs, so take it from ECX and pass EBP
+alongside for param_1 at [EBP+8]. The trampoline replays the CMP immediately
+before returning to the JZ, so EFLAGS are set correctly — provided the wrapper
+preserves flags across the handler call, which the local KPatchManager does
+(see project_kpatchmanager_consume_test_bugs).
+
+**`OnListBoxSetActiveControl` — hook the IMPLEMENTATION at 0x0041E9A0, not the
+vtable entry. Cut at 0x0041E9A4, 6 bytes.**
+
+Vtable slot 2 (0x0041FEE0) is only a forwarder; 0x0041E9A0 is the real body and
+is what KOTOR 1 hooks the equivalent of. Its listing confirms the identification
+outright, and incidentally confirms two constants resolved separately:
+
+    0041e9b2  ADD ECX,0x2ac               ; kListBoxControlsOffset  = 0x2ac
+    0041e9c1  CALL 0x0041e870             ; SetSelectedControl      = 0x0041E870
+
+Cut covers `MOV [EBP-0x4],ECX` (3) + `MOV EAX,[EBP+0xc]` (3). `this` is in ECX at
+entry; param_1 = [EBP+8], param_2 = [EBP+0xC].
+
 **Batch 2 — In-game GUI lifecycle.** `OnSwitchToSWInGameGui`,
 `OnHideSWInGameGui`, `OnSetSWGuiStatus`, `OnAppendToMsgBuffer`; gates in
 `engine_subscreen.cpp` (4) and `msg_router.cpp`. Includes porting the CGuiInGame
