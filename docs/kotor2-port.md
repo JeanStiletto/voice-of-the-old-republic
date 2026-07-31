@@ -98,9 +98,52 @@ Nothing new is needed to ship one mod into two games:
   `.kpatch` files (4GB-aware, borderless) against known Steam and GOG hashes.
 - `swkotor2.exe` imports `dinput8.dll`, so the proxy loader works unchanged.
 
-## Why KOTOR 2 hooks are still not installed
+## The lesson from the first working slice: addresses port, WORKAROUNDS do not
 
-Two independent blockers, both discovered by trying. Neither is a reason to
+The first KOTOR 2 feature (menu focus announce) works. Getting there cost four
+attempts, and none of them was an address being wrong — every offset, vtable
+and function address derived for this port read correctly on first contact with
+the running game. The whole cost was in engine BEHAVIOUR.
+
+What went wrong: keyboard navigation only ever reached two menu entries, because
+the mouse cursor was parked on a button and the engine kept handing it focus via
+HandleFocusChange, overriding the arrow keys. KOTOR 1 has the identical
+conflict. Our KOTOR 1 mod has solved it since forever, by warping the engine's
+cursor onto the focused control with MoveMouseToPosition.
+
+Why that was not obvious: in the KOTOR 1 codebase, that warp reads as
+housekeeping. It is documented as "cursor move + hit-test + hover +
+active-control update", with a note that "active control lags behind the cursor
+unless we explicitly set it". Both true. Neither says *omit this and keyboard
+navigation is unusable*. So when deciding what a minimal KOTOR 2 slice needed,
+it did not look load-bearing.
+
+**Every KOTOR 1 workaround is a fossilised bug fix, and fossils do not announce
+what they are for.** The cursor warp, the click-simulation activation path, the
+overlay-Esc latch, the DirectInput reacquisition fixes — each encodes a
+behaviour fought once already. On KOTOR 2 the bug gets rediscovered BEFORE it is
+recognised that the fix is already owned. Budget the port accordingly: the
+addresses are the cheap half.
+
+Two method notes worth keeping:
+
+- **Identical failures mean the cause is untouched.** Three fixes failed in
+  exactly the same way while hypotheses were refined (write the coordinates →
+  also re-run the hover hit-test → convert the coordinate space). One log line
+  showing the manager's cursor settled it immediately: the field read the same
+  value regardless of what was written, because the engine re-derives it from
+  the real mouse every frame. Different failures mean progress; identical ones
+  mean measure instead of theorise.
+- **A minimal slice was still the right call.** Porting the whole KOTOR 1
+  handler might have worked first time, but a failure would have had thirty
+  variables rather than three. The trade was "rediscover one countermeasure" in
+  exchange for a tractable debug, and it was worth it.
+
+## Hook status
+
+The first hook (CSWGuiPanel::SetActiveControl -> menu focus announce) is
+installed and working. The rest are still gated off, for two reasons found by
+trying. Neither is a reason to
 slow down — but each has to be cleared per hook, so "enable them all" is not a
 single step.
 
