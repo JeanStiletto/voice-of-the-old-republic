@@ -935,7 +935,17 @@ const char* TryPartyPortrait(void* control, char* outBuf, size_t bufSize,
                              bool& claimedVtable) {
     const char* source = nullptr;
     claimedVtable = false;
-    void** vt = *reinterpret_cast<void***>(control);
+    // The vtable read must sit under SEH: the walked control array can hold
+    // a non-null GARBAGE entry (KOTOR 2 chargen name panel, WER offset
+    // 0x198511, 2026-08-01 — the crash was exactly this line unguarded).
+    // Same crash class as Batch 1's FocusProbe lesson: an unreadable control
+    // is skipped, never trusted.
+    void** vt = nullptr;
+    __try {
+        vt = *reinterpret_cast<void***>(control);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
     if (reinterpret_cast<uintptr_t>(vt) != kVtableCSWGuiPartySelectionButton) {
         return nullptr;
     }
@@ -1068,7 +1078,14 @@ const char* TrySpeculativeVtableRead(void* control, char* outBuf,
         // inline text, so the speculative offset reader never
         // resolves anything useful for them.
     };
-    void** vt = *reinterpret_cast<void***>(control);
+    // Guarded like TryPartyPortrait's head: a walked control slot can hold a
+    // non-null garbage pointer, and the vtable read is the first deref.
+    void** vt = nullptr;
+    __try {
+        vt = *reinterpret_cast<void***>(control);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
     uintptr_t vta = reinterpret_cast<uintptr_t>(vt);
     for (const auto& ov : k_knownOverrides) {
         // Table stays reference-build and compile-time: giving it a runtime

@@ -13,31 +13,80 @@ needs is now identified offline** — the slot table (previous session) and all
 four hook targets with byte-confirmed cut points plus Show/Prev/SetInputClass
 (fourth session; see "The four hook addresses — ALL IDENTIFIED" under Batch 2).
 
-What remains for Batch 2 is now pure implementation, no more archaeology:
+**Batch 2 is IMPLEMENTED (2026-08-01, same session) — built clean, NOT yet
+tested in game, NOT committed.** `k2_hook_status.py` now reports **9 of 25
+READY** (GUI spine + the four in-game-GUI-lifecycle handlers). What landed:
 
-1. Write the five `kotor2.hooks.toml` entries (Switch 0x007CA575, Hide
-   0x007CA066, SetSWGuiStatus 0x007C9C46, AppendToMsgBuffer x2 at 0x007BE093
-   and 0x007BE1B3 — cut bytes in the Batch 2 section) and the K2
-   frame-unpacking wrappers next to Batch 1's in `menus_focus_k2.cpp` (or a
-   new `subscreen_k2.cpp`): ECX = this, EBP passed for params, mirroring
-   OnHandleFocusChangeK2.
-2. Move the newly witnessed constants into code: `kAddrSwitchToSWInGameGui`,
-   `kAddrHideSWInGameGui` (+ engine_panels_state's CloseInGameMenuToWorld
-   pair), `kAddrCGuiInGameSetSWGuiStatus` (engine_levelup.cpp),
-   PrevSWInGameGui, SetInputClass 0x007B3050 + input-class field +0x9C
-   (clears `GetInputClass`'s K2 decline), sw_gui_status offset +0x34,
-   slot-table rows InGameMenu 0x8 (Same) and MainInterface 0x98 (Pick).
-3. `port_worklist.py` over `engine_subscreen.cpp` + `msg_router.cpp` again —
-   4 unresolved constants remain, all in `tutorial_popup.cpp` / the
-   combat-pause setter; decide per constant whether Batch 2 or later.
-4. Clear the gates in `engine_subscreen.cpp` (4) and `msg_router.cpp` (1),
-   then `handler_chain_audit.py` over both plus everything their handlers
-   call. Note OnAppendToMsgBuffer's handler calls IsLoadingSaveGame and
-   GetPlayerPosition — both engine-reading, both must resolve or decline
-   cleanly on KOTOR 2 before the gate clears (the Batch 1 lesson).
-5. One test round: open/close/switch sub-screens by hotkey and Esc, then
-   trigger feedback lines (loot pickup, combat hit) and confirm the router
-   speaks them. Log channels: Panels.* and Combat.MsgBuf.
+- `kotor2.hooks.toml`: five new entries — Switch @0x007CA575, Hide
+  @0x007CA066, SetSWGuiStatus @0x007C9C46, and BOTH AppendToMsgBuffer rings
+  @0x007BE093 / @0x007BE1B3 sharing one wrapper. All cuts byte-confirmed.
+- K2 wrappers: `OnSwitchToSWInGameGuiK2` / `OnHideSWInGameGuiK2` /
+  `OnSetSWGuiStatusK2` at the bottom of `engine_subscreen.cpp`,
+  `OnAppendToMsgBufferK2` at the bottom of `msg_router.cpp`; exported. The
+  address-style handlers keep their caller_eip trick because EBP+8 IS the
+  esp+4-LEA address and [EBP+4] the return address.
+- Constants: PrevSWInGameGui, HideSWInGameGui, SetInputClass (facade
+  0x0073FEE0), SetSWGuiStatus, GetPlayerCreature (facade 0x0073F450),
+  GetServerCreature (Pick 0x0060FB20 / 0x0077D800), GetLoadFromSaveGame
+  (Pick 0x004af050 / 0x0051CDE0, via facade-cluster alignment), input_class
+  +0x9C now a named Same constant (`kClientInternalInputClassOffset`,
+  engine_app.h), slot rows InGameMenu Same(0x8) and MainInterface
+  Pick(0x90, 0x98) (+ the canonical `kGuiInGameMainInterfaceOff`).
+- `GetPlayerServerObject` gained a K2 branch calling the engine's own
+  `CSWCCreature::GetServerCreature` instead of the K1 field read (+0xf8 is
+  unestablished on K2 and the resolver is layout-proof). This makes
+  `GetPlayerPosition` REAL on KOTOR 2 — without it the msg handler's replay
+  gate would have silently suppressed every feedback line.
+- Gates cleared: the three in `engine_subscreen.cpp` + msg_router's. NOT
+  OnSetPauseState (Batch 4). `handler_chain_audit.py` over the whole chain
+  set: 1 flagged line, in K1-gated `TickCombatLog` — unreachable on K2.
+- Deliberately deferred: kAddrSetPauseState / kAddrSetSoundMode /
+  kAddrExoSoundPtr stay unresolved. Their only consumers
+  (TickInputClassReassert → DispatchUnpauseCleanup, tutorial_popup) are
+  K1-gated ticks. CAUTION for whoever resolves SetSoundMode: KOTOR 2's
+  (0x0070BC60, ExoSound global 0xA1B494) takes TWO args where KOTOR 1's
+  takes one — banking the address without adapting the call corrupts the
+  stack.
+
+**Crash found by the first Batch 2 test attempt (2026-08-01, FIXED, needs
+retest):** opening the chargen NAME field on KOTOR 2 crashed the process —
+WER: c0000005 in accessibility.dll @0x198511. The faulting line was
+`TryPartyPortrait`'s vtable read, which ran BEFORE its own `__try`: the
+panel-walk's control array held a non-null garbage entry after the name
+panel's last real control, every OTHER extractor in the ladder faulted
+quietly inside its own guard, and this one unguarded head killed the
+process. `TrySpeculativeVtableRead` had the identical unguarded head; both
+now read the vtable under SEH and skip the control. Same crash class as
+Batch 1's FocusProbe lesson — and NOT an input-field/editbox gap: the
+editbox handler correctly declines on KOTOR 2 (typing is not narrated yet;
+that surface comes with its own batch). The K1 crash-history dumps show
+three identical chargen crashes on the Batch 1 build the evening before, so
+this predates Batch 2 entirely.
+
+**The test round this batch needs (chargen crash fix included, retest from
+step 0):**
+
+0. Character creation: open the name field (crashed before the fix), type or
+   take the default/random name, proceed into the world. Typing is NOT
+   expected to speak yet — the editbox surface is a later batch; the field
+   itself, the buttons around it and the rest of chargen should navigate
+   and speak, and nothing may crash.
+
+1. `kdev apply --game k2`, launch, load into the world.
+2. Sub-screen lifecycle: open Equipment/Inventory/Map/Journal by hotkey,
+   switch between them by hotkey while one is open (the Switch handler's
+   PrevSWInGameGui cleanup), Esc to close, Esc from world into the pause
+   menu. Watch `SubScreen.Switch` / `SubScreen.Status` / `SubScreen.Hide`
+   log channels; the Switch first-fire line proves the hook installed.
+3. Feedback lines: pick up loot / get hit in combat and confirm spoken
+   output + `Combat.MsgBuf raw:` lines for BOTH rings (combat and feedback
+   categories land in different rings — exercise one of each).
+4. Save-load replay suppression: quick-load and confirm the historical
+   lines log as `replay-suppressed` rather than speaking.
+5. KOTOR 1 regression pass afterwards (shared code moved: GetInputClass
+   ungated, MainInterface offset now Pick, GetPlayerServerObject branch,
+   four handlers ungated): menus + one in-world area, sub-screen open/
+   close, one combat message.
 
 The first test round surfaced two crash classes, both fixed and re-verified:
 
