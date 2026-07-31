@@ -1,10 +1,10 @@
-# allard.hooks.toml (443 lines)
+# relink2004.hooks.toml (447 lines)
 
-Generated hooks file for the Allard Russian build of swkotor.exe. Mirrors `hooks.toml`'s hook set 1:1 — same `original_bytes` at every site since the engine code is byte-identical between builds, only relocated (+16..+512 bytes per function, produced by the linker). Addresses come from `kdev sigscan` (relocation-tolerant signature match); `consumed_exit_address` values are NOT sigscan output — they were manually rebased by each hook's own delta and byte-verified against the reference image (2026-07-25). Design rationale for each hook intentionally lives only in `hooks.toml`, not duplicated here, so this file stays mechanical/regeneratable.
+Generated hooks file for the 2004-03-05 relink of swkotor.exe, shared by two distributions: Allard's Russian 1.72 and the official Polish LEM edition. Those two are the same binary for hooking purposes — `.text`, `.data` and `.rsrc` byte-identical, 16 bytes of `.rdata` apart (Allard translated the hardcoded "Points Remaining" string, which is neither code nor a vtable). Verified against both exes 2026-07-31: 25/25 sites match each. Mirrors `hooks.toml`'s hook set 1:1 — same `original_bytes` at every site since the engine code is byte-identical between builds, only relocated (+16..+512 bytes per function, produced by the linker). Addresses come from `kdev sigscan` (relocation-tolerant signature match); `consumed_exit_address` values are NOT sigscan output — they were manually rebased by each hook's own delta and byte-verified against the reference image (2026-07-25). Design rationale for each hook intentionally lives only in `hooks.toml`, not duplicated here, so this file stays mechanical/regeneratable.
 
 ## Declarations (in source order)
 
-- L19 — `[metadata] target_versions = [...]` — single SHA-256 for the Allard build
+- L22 — `[metadata] target_versions = [...]` — two SHA-256s: Allard Russian 1.72 and LEM Polish 1.03
 - L22 — `[[hooks]] OnRulesInit` — detour @0x00552dba (was +288B); param esi:pointer
 - L35 — `[[hooks]] OnHandleFocusChange` — detour @0x004189cb (was +96B); params edi:pointer, eax:int
 - L52 — `[[hooks]] OnSetActiveControl` — detour @0x0040a6d8 (was +160B); params edi:pointer, esi:pointer

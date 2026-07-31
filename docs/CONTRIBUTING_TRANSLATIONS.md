@@ -24,20 +24,29 @@ French game French, and so on. There is no in-game language switch yet.
 
 ## Currently supported languages
 
-These are the five languages KOTOR 1 itself ships in, and the only ones the mod
-can select automatically today:
-
 - English (`en`)
 - German (`de`) — the project's default and most complete
 - French (`fr`)
 - Italian (`it`)
 - Spanish (`es`)
+- Polish (`pl`)
+- Russian (`ru`)
 
-**Languages beyond these five are not supported yet.** Polish and Russian
-translations already exist and will be supported in a future release, once the
-manual language-override described below is in place (the game ships no Polish or
-Russian `dialog.tlk`, so they can't be auto-detected the way the five native
-languages are — see [How to add a new language](#how-to-add-a-new-language)).
+The first five are the languages KOTOR 1 shipped in through stores. Polish and
+Russian are supported too, and both are selected automatically — no manual
+override is needed:
+
+- **Polish** is BioWare's own `LanguageID` 5, used by the official 2004 Licomp
+  Empik Multimedia (LEM) localisation. It was never sold on Steam or GoG, so
+  players install it over one of those, but the header declares it honestly and
+  detection works the same way as for the five above.
+- **Russian** has no BioWare language ID at all — the community translation
+  (Allard) ships `LanguageID` 0, the English slot, with Windows-1251 text. It is
+  therefore detected by *content*: `TlkLooksCyrillic` samples the string blob
+  and overrides the declared ID.
+
+French, Italian, Spanish, Polish and Russian are machine-translated first passes
+and would all benefit from a native-speaker pass.
 
 ## Where the strings live
 
@@ -50,9 +59,9 @@ All spoken strings are in the patch source, under
   order.
 - `strings_en.cpp` — the English table. Copy this as your starting point when
   adding a language; it is the canonical, comment-annotated set.
-- `strings_de.cpp`, `strings_fr.cpp`, `strings_it.cpp`, `strings_es.cpp` — one
-  file per language, each a single `Get(Id)` switch that returns the translated
-  text for every ID.
+- `strings_de.cpp`, `strings_fr.cpp`, `strings_it.cpp`, `strings_es.cpp`,
+  `strings_pl.cpp`, `strings_ru.cpp` — one file per language, each a single
+  `Get(Id)` switch that returns the translated text for every ID.
 - `strings.cpp` — the dispatcher that selects the active language. You normally
   don't touch this unless you're adding a brand-new language.
 
@@ -82,20 +91,29 @@ The string files are C++ source, but for translation they read like a simple
 list of `case Id::Something: return "text";` lines.
 
 **Encoding — important for accented characters.** Source files use 7-bit ASCII
-for English and **Windows-1252 hex escapes** for accented letters, so the bytes
-match what the speech bridge expects. That means an accented character is
-written as a hex escape, not typed directly. For example:
+for English and **hex escapes** for everything else, so the bytes match what the
+speech bridge expects. That means an accented character is written as a hex
+escape, not typed directly.
 
-- `ü` → `\xFC`  (as in `"T\xFCr"` for "Tür")
-- `à` → `\xE0`
-- `é` → `\xE9`
-- `ñ` → `\xF1`
-- `ç` → `\xE7`
+Which codepage the escapes are in depends on the language, because the mod pins
+the speech codepage per language rather than using the system one (that is what
+lets a Polish or Russian install speak correctly on an English Windows):
 
-Look at the existing `strings_de.cpp` / `strings_fr.cpp` / `strings_es.cpp`
-files for the pattern — every accented word in them is already written this way,
-so you can copy the exact escapes. If you're unsure of a code, translate in
-plain text and note in your PR "needs escaping"; a maintainer can convert it.
+- **de / fr / it / es** — Windows-1252. `ü` → `\xFC` (as in `"T\xFCr"`),
+  `à` → `\xE0`, `é` → `\xE9`, `ñ` → `\xF1`, `ç` → `\xE7`.
+- **pl** — Windows-**1250**, not 1252: `ą ć ę ł ń ś ź ż` do not exist in 1252 at
+  all. `ó` → `\xF3`, `ł` → `\xB3`, `ę` → `\xEA`, `ż` → `\xBF`, `ś` → `\x9C`.
+- **ru** — Windows-**1251**.
+
+One trap to know about: a `\x` escape swallows *every* hex digit that follows
+it, so `"\xE6a"` is one broken character rather than `ć` + `a`. Where the next
+letter is one of `a`-`f`, split the literal: `"\xE6""a"`. The existing files do
+this in several places.
+
+Look at the existing per-language files for the pattern — every accented word in
+them is already written this way, so you can copy the exact escapes. If you're
+unsure of a code, translate in plain text and note in your PR "needs escaping";
+a maintainer can convert it.
 
 <!-- TODO (maintainer): if you later switch the build to /utf-8 and drop the
      hex-escape convention, update this section — plain UTF-8 source is much
@@ -153,24 +171,26 @@ rather just supply the translated text — but here is the full checklist:
    to the `LangName()` debug-name switch. Detection works by reading the
    `LanguageID` field (a little-endian int32 at byte offset 8) of the game's
    `dialog.tlk` header and mapping it to a `Lang`. The IDs BioWare uses are:
-   `0 = English`, `1 = French`, `2 = German`, `3 = Italian`, `4 = Spanish`.
-   Anything unrecognised falls back to English.
+   `0 = English`, `1 = French`, `2 = German`, `3 = Italian`, `4 = Spanish`,
+   `5 = Polish`. Anything unrecognised falls back to English.
+6. **`strings.cpp`** — `CodepageFor()`, if your language's letters are not in
+   Windows-1252 (see the encoding section above).
 
-**Important caveat — languages beyond the game's five.** KOTOR 1 itself only
-ships in English, French, German, Italian, and Spanish, so a stock `dialog.tlk`
-only ever reports one of those five `LanguageID`s. That means a language outside
-those five **cannot be auto-selected from a stock install** — there is no
-`LanguageID` for it to detect. Such a language needs a *different* selection
-trigger (a manual override / setting) rather than the `dialog.tlk`
-auto-detection above, and the game's own dialogue and item names would still be
-read out in whichever of the five languages the player's `dialog.tlk` is.
+There are two more places worth translating once the main table is done, both
+optional and both degrading gracefully to English if you skip them:
+`examine_view_effect_names.cpp` (effect and power names on the examine screen)
+and `combat_strings.cpp` (the combat callouts — note that half of that table is
+*engine* anchors extracted from the game's own `dialog.tlk`, not free text, so
+read the comments on an existing table before touching it).
 
-**Polish and Russian** are the concrete case here: translations for both already
-exist and will ship in a future release, once the manual language-override lands.
-They are not wired into `DetectLanguageFromTlk()` — that path would never fire
-for them. If you want to contribute another language outside the five, open an
-issue first so it can be hooked up to the manual override rather than to
-auto-detection.
+**Caveat — languages the game never shipped.** A stock `dialog.tlk` only reports
+one of the six IDs above, so a language outside them cannot be auto-selected by
+ID. Russian is the worked example: its community translation claims `LanguageID`
+0 and is identified by a content probe instead (`TlkLooksCyrillic`). If you want
+to contribute a language with no BioWare ID, open an issue first — it needs a
+detection trigger of its own. Note also that the game's own dialogue and item
+names still come from whatever `dialog.tlk` the player has; the mod translates
+only what *it* says.
 
 **Translated README (optional but nice).** If the new language should also get a
 translated landing page, copy `docs/README.de.md` to `docs/README.<lang>.md`,

@@ -10,7 +10,7 @@ namespace KotorAccessibilityInstaller
     /// </summary>
     public static class LanguageDetector
     {
-        public static readonly string[] SupportedLanguages = new[] { "en", "de", "fr", "it", "es", "ru" };
+        public static readonly string[] SupportedLanguages = new[] { "en", "de", "fr", "it", "es", "ru", "pl" };
 
         public static readonly Dictionary<string, string> DisplayNames = new Dictionary<string, string>
         {
@@ -19,7 +19,8 @@ namespace KotorAccessibilityInstaller
             { "fr", "Français (French)" },
             { "it", "Italiano (Italian)" },
             { "es", "Español (Spanish)" },
-            { "ru", "Русский (Russian)" }
+            { "ru", "Русский (Russian)" },
+            { "pl", "Polski (Polish)" }
         };
 
         private static readonly Dictionary<string, string> LanguageMap = new Dictionary<string, string>
@@ -29,7 +30,8 @@ namespace KotorAccessibilityInstaller
             { "fr", "fr" },
             { "it", "it" },
             { "es", "es" },
-            { "ru", "ru" }
+            { "ru", "ru" },
+            { "pl", "pl" }
         };
 
         public static string DetectLanguage()

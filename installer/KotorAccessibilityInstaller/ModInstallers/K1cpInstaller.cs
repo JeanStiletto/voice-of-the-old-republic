@@ -154,7 +154,8 @@ namespace KotorAccessibilityInstaller.ModInstallers
 
             if (translationDir == null)
             {
-                if (locale == GameLocale.Italian || locale == GameLocale.Spanish)
+                if (locale == GameLocale.Italian || locale == GameLocale.Spanish ||
+                    locale == GameLocale.Polish)
                 {
                     Logger.Info($"K1CP: no official translation for {locale}; " +
                                 "installing English append.tlk (bugfix strings will appear in English).");

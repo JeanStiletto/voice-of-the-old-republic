@@ -41,14 +41,25 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h2>v0.6.4</h2>
 
+<h3>Polish translation:</h3>
+
+- The mod now speaks Polish, and the installer runs in Polish. KOTOR's Polish release — the 2004 Licomp Empik Multimedia edition, subtitles only — was never sold on Steam or GoG, so Polish players lay it over a Steam or GoG copy; the mod recognises that and switches language on its own. Everything the mod says is translated: menus, navigation cues, help, the tutorial hints, effect names on the examine screen, and the combat callouts. Like French, Italian, Spanish and Russian, this is a machine-translated first pass that a native speaker will want to improve. The game's own dialogue and item names come from the Polish translation itself, as before.
+- The Polish edition's own `swkotor.exe` works too, so it no longer matters whether a player copied it over their Steam or GoG one. It is the same 2004-03-05 build the Russian translation uses — byte-identical code, sixteen bytes of stored text apart — so the address handling already in this release covers both.
+- Polish combat callouts needed more than a translation. The Polish game builds its attack lines in a different order, naming the target before saying whether the blow landed, where every other language reads "X hits Y". The mod now understands that shape instead of assuming the usual one. This is the one part not yet confirmed against a live Polish game; if a phrase turns out not to match, that line is read out in full rather than shortened.
+
 <h3>Russian translation:</h3>
 
 - Item, store and quest descriptions, galaxy-map navigation and closing a menu back to the world now work on the Russian translation (Allard 1.72). Twelve places in the mod still called into the game using addresses valid only for the standard build. On the Russian build the code is identical but the linker moved it, so those calls landed a few hundred bytes off, in the middle of an unrelated function — anything from nothing happening to a crash. They now go through the same address-translation the rest of the mod uses, and each one checks that its address resolved before calling, so a future gap degrades to a logged no-op instead of a crash. The standard game is unaffected: there the translation step is an identity.
+- That address handling was re-checked against a second, independent copy of the same executable while the Polish edition was being added, and every one of the mod's twenty-five attachment points matched on both. The Russian and Polish releases turn out to ship the same 2004 build, so the two now share one set of addresses rather than each carrying its own.
 
 <h3>Map hints:</h3>
 
 - Dantooine's cryptic path markers now speak their destination. Vanilla reuses the same map-note strings for different transitions — "Southern Path" (Südlicher Pfad) marks the way to three different areas depending on the map, "Northern Path" (Nordpfad) three more, and "Exit" (Ausgang) four — so the spoken hint never said where the path actually leads. Those notes now announce the destination area's own name instead ("Matale Estate", "Courtyard", "Grove", ...), taken live from the game's string table so it self-localises in every game language. The two identical "Exit" notes inside the Sandral estate are now told apart as front exit and back exit. Speech-side only: no game file is modified, and mods that rewrite these notes keep their own text.
 - The mod now ships its own curated map hints for story spots the game never marks: the unmarked backdoor of the Sandral estate (the feud-quest sneak entrance), the two dead rebels with the Promised-Land datapads in the Taris sewers, and the bantha herd's grazing ground near the krayt dragon cave. They appear in the map-hint cycle and under the map cursor like vanilla notes — hidden until the player has explored that part of the map — and support the beacon like a placed marker, but are never drawn on the visual map.
+
+<h3>Bug fixes:</h3>
+
+- French, Italian and Spanish games now speak the Endar Spire warning that the Republic soldiers cannot be saved and the way to the bridge is blocked. The line existed only in English, German and Russian, so on those three languages that moment passed in silence — leaving a blind player with no idea why walking toward the fight kept failing.
 
 <h3>Character screen:</h3>
 

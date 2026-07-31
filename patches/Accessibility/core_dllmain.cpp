@@ -34,6 +34,7 @@ const char* LangName(acc::strings::Lang l) {
         case acc::strings::Lang::It: return "Italian";
         case acc::strings::Lang::Es: return "Spanish";
         case acc::strings::Lang::Ru: return "Russian";
+        case acc::strings::Lang::Pl: return "Polish";
     }
     return "Unknown";
 }
@@ -49,6 +50,12 @@ const char* LangName(acc::strings::Lang l) {
 // sampled bytes were >= 0xC0. English prose is ~0%. The 20% threshold sits
 // far from both, so a mixed tlk (Russian text with long ASCII resrefs) still
 // classifies correctly and no plausible Latin-1 text trips it.
+//
+// The one non-Latin-1 page we also ship for is Polish CP1250, and it was
+// measured rather than assumed, because four of its letters (ó ć ę ń) do land
+// >= 0xC0: the LEM Polish dialog.tlk reads 1.88%, against German's 1.29% and
+// the 20% bar. Polish is safely on the not-Cyrillic side and falls through to
+// the LanguageID switch, which recognises it as ID 5.
 //
 // `entriesOffset` is the tlk header's offset-to-string-entries field.
 bool TlkLooksCyrillic(FILE* fp, uint32_t entriesOffset) {
@@ -83,7 +90,10 @@ bool TlkLooksCyrillic(FILE* fp, uint32_t entriesOffset) {
 //
 // TLK header layout (20 bytes): "TLK " "V3.0" int32_le LanguageID
 // uint32_le StringCount uint32_le OffsetToStringEntries.
-// Locale IDs (per kdev `LanguageIdToCode`): 0=En 1=Fr 2=De 3=It 4=Es.
+// Locale IDs (per kdev `LanguageIdToCode`): 0=En 1=Fr 2=De 3=It 4=Es 5=Pl.
+// ID 5 is real BioWare Polish, used by the official LEM localisation — the game
+// never shipped Polish on Steam or GoG, but the tlk is first-party and declares
+// it honestly, so Polish needs no content probe the way Russian does.
 acc::strings::Lang DetectLanguageFromTlk() {
     using L = acc::strings::Lang;
 
@@ -141,6 +151,7 @@ acc::strings::Lang DetectLanguageFromTlk() {
         case 2: detected = L::De; break;
         case 3: detected = L::It; break;
         case 4: detected = L::Es; break;
+        case 5: detected = L::Pl; break;
         default:
             acclog::Write("Lang", "unknown LanguageID=%d; defaulting to English", langId);
             return L::En;

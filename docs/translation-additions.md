@@ -1,11 +1,11 @@
-# Translation additions — Polish & Russian (parked)
+# Translation additions — Polish & Russian
 
-**Status: Russian UNPARKED (2026-07-25) — Polish still parked.**
-The Russian distribution (Allard 1.72) is now in hand and fully characterised
-against the two-case model below: it is **Case B** (it replaces `swkotor.exe`).
-See "Russian — findings" for the measured results and "Decision" for the two
-paths. Polish still waits on its tester's direct link; the two Polish
-populations described below are unchanged.
+**Status: both UNPARKED. Russian 2026-07-25, Polish 2026-07-31.**
+Both distributions are in hand and fully characterised against the two-case
+model below. Russian (Allard 1.72) is **Case B**. Polish (the official LEM
+edition) is **Case B as well, and the same binary** — see "Polish — measured
+(2026-07-31)", which supersedes the speculative "Polish — findings" section
+kept below it for the record.
 
 Related: `docs/known-issues.md` ("Integrate a Polish translation" Planned item;
 the Polish LanguageID=5 speech-default fix), `docs/upstream-prs.md` (PR C /
@@ -76,7 +76,131 @@ may change how (or whether) it should ship. See `docs/upstream-prs.md` PR C.
 
 ---
 
-## Polish — findings
+## Polish — measured (2026-07-31)
+
+The maintainer obtained the actual distribution from a user: a 163 MB 7-Zip
+archive, "Star Wars Knights of the Old Republic Spolszczenie". Everything here
+is measured against those files.
+
+### What the distribution is
+
+- The **official Polish localisation**, extracted from the retail release:
+  KOTOR 1 was localised by **Licomp Empik Multimedia (LEM)** and published
+  2004-04-05, subtitles only ("wersja kinowa"), on 4 discs already carrying
+  patch 1.03. Not a fan translation — the archive's own `docs/` are the
+  LucasArts Polish ReadMe and EULA, and `dialog.tlk` declares BioWare's real
+  Polish **LanguageID 5**.
+- Payload: `dialog.tlk` + `dialogF.TLK` (49,265 strings each), 19 `Override\`
+  entries (12 diacritic font sheets, 6 endgame `.dlg`, `k_pebo_mgheart.ncs`,
+  `lbl_iplotxp.tpc`), 7 of the 58 `.bik` cutscenes (the ones with on-screen
+  text), `utils/*.ini` from the retail launcher, and `swkotor.exe`.
+- The chain the user received it through is a Steam guide by "Manunu"
+  (`sharedfiles/filedetails/?id=2136715883`) that credits nobody and mirrors the
+  files on ufile/mega/4shared/PCGamingWiki. The upstream rights-holder is
+  LucasArts, not a modder — which is why we link rather than bundle.
+
+### `swkotor.exe` — Case B, and the same build as Allard's
+
+- 4,042,752 bytes, SHA-256
+  `F96AC62BEE256DAC66B3F7DA3ED62DA4005B4710868E33FD0DB51164015D8137`,
+  PE link timestamp `2004-03-05 00:43:51 UTC` — **the same timestamp as
+  Allard 1.72**.
+- Diffed against the Allard exe directly: `.text` (3,391,488 bytes), `.data`
+  and `.rsrc` are **byte-identical**. Exactly **16 bytes of `.rdata`** differ,
+  at one hardcoded string — LEM has `"Points Remaining"`, Allard translated it
+  to CP1251 Cyrillic. Not code, not a vtable; no entry in
+  `engine_rebase_rdata.inc` covers that range (the nearest,
+  `kVtableCSWGuiAbilitiesCharGen`, ends well before it).
+- Consequence: **the entire existing rebase apparatus applied unchanged.** All
+  25 rebased hook signatures match the LEM exe byte-for-byte; all 25
+  vanilla-layout ones match none of it. Because `engine_rebase.cpp` identifies
+  the build by PE link timestamp rather than by hash, it already returned the
+  right mapping for this exe before any edit — only the hash allow-lists needed
+  changing.
+- This is also a **correction to the Russian section below**, which reasoned
+  that Allard patched the exe to make the engine read `dialogF.tlk`. Since
+  `.text` is identical to the stock LEM retail binary, that behaviour is the
+  2004-03-05 build's own; Allard chose that build, and changed one string.
+
+### Renaming that followed
+
+`allard.hooks.toml` → **`relink2004.hooks.toml`**, and `Build::Allard172` →
+`Build::Relink2004` (`ActiveBuildName()` now reports `relink-2004-03-05`). One
+file and one identity now serve two distributions, and a third on the same build
+would work for free. Discovery is a `*hooks.toml` glob at both ends
+(`BuildCommand.cs`, `PatchRepository.cs`), so the rename needed no build change.
+
+### Language detection
+
+- LanguageID 5 → `Lang::Pl` directly; no content probe needed, unlike Russian.
+- The CP1251 Cyrillic probe runs *before* the ID switch, so it was checked for a
+  false positive: four Polish CP1250 letters (ó ć ę ń) do sit ≥ 0xC0. Measured
+  **1.88%** on the LEM `dialog.tlk` against German's 1.29% and the 20% bar.
+  Safely on the not-Cyrillic side. Recorded at `TlkLooksCyrillic`.
+- Strref space is aligned with the other locales (48218 "Zadania" = "Aufträge",
+  48220 "Przedmioty" = "Inventar", 48225 "Karta postaci" = "Charakterblatt"), so
+  every strref-keyed lookup — including the whole of `tutorial_hints.cpp`, which
+  resolves through `LookupTlk` — carried over with no work at all.
+
+### Combat anchors — the one place Polish is genuinely different
+
+`kdev combat-strings-extract` **crashes** on the Polish tlk, and the crash is
+informative rather than a bug to paper over: `ReconstructHitMissPhrase` assumes
+`<CUSTOM1>` precedes `<CUSTOM2>` in strref 42042, and Polish orders the
+placeholders `<CUSTOM0> <CUSTOM2> <CUSTOM1>`.
+
+Four structural divergences, all read off the tlk:
+
+- **42042** is `Atakujący: <CUSTOM0> Cel: <CUSTOM2> Atak: <CUSTOM1>`. The actor
+  sits behind a label rather than opening the line, the target comes *before*
+  the verb, and the verb — the only hit/miss signal — is last. No choice of
+  separator expresses that, so `MsgStrings` gained `summary_actor_prefix` /
+  `summary_target_marker` / `summary_verb_marker` and `combat_log.cpp` gained
+  `ParseSummaryLabelled` beside the extracted `ParseSummaryClassic`. All six
+  existing locales pass `nullptr` and take the original path unchanged.
+  Note 42044 "nie trafia" *contains* 42043 "trafia", so the parser tests miss
+  first and matches at the verb position rather than searching the line.
+- **42046** is `Użyto atutu: <CUSTOM0>` — the feat label leads the name where DE
+  trails it with `" verwendet."`. Hence `feat_marker_leads`.
+- **1403** is `<CUSTOM0> trafia. <CUSTOM1> otrzymuje <CUSTOM2> pkt obrażeń` —
+  no colon between target and amount, which `RuleDirectDamage` relied on. Hence
+  `damage_amount_marker`.
+- **42158** is a bare `<CUSTOM0> <CUSTOM1>`, no status-echo copula — the same
+  situation Russian is in, so `status_ist_marker` takes the same `\x01`
+  sentinel. Save types 1374-1376 likewise share a *leading* phrase, so
+  `save_marker` uses 1406's `". "` separator as Russian does.
+
+**`kPl` is UNVERIFIED against a live combat log** — the one open item. Every
+value is transcribed from the tlk by the documented per-field rules, and all 55
+round-trip correctly through CP1250, but Polish is the first locale where the
+line *structure* was inferred rather than just its words. One fight on a Polish
+install settles it: compare `MsgBuf: raw:` against `emit-*` in the patch log.
+Failure mode is a line read out in full instead of shortened.
+
+### Encoding
+
+Windows-1250, pinned through `CodepageFor(Lang::Pl)` → `prism::SetSpeechCodepage`
+before the first utterance. This matters more than it did for Russian: ą ć ę ł ń
+ś ź ż are absent from 1252 *entirely*, and a Polish KOTOR is almost always a
+Polish tlk dropped onto an English or German install, so `CP_ACP` is the wrong
+page more often than not. Escapes were generated from UTF-8 by a scratchpad
+`escape-cp1250.ps1` (same maximal-munch handling as the Russian pass), and
+verified by round-trip decode plus a `check-table.ps1` that compares Id set,
+order and printf specifier sequence against `strings_en.cpp`: 620/620 labels,
+order identical, all specifiers matching, zero non-ASCII bytes left in the file.
+
+That checker also turned up a **pre-existing gap unrelated to Polish**:
+`strings_fr.cpp`, `strings_it.cpp` and `strings_es.cpp` are missing
+`Id::SpectatorBattleDoomed` (619 labels against en/de/ru/pl's 620), so that cue
+is silent on those three locales.
+
+---
+
+## Polish — findings (superseded, kept for the record)
+
+The section below was written before the distribution was in hand. Its "two
+populations" model turned out to be one population: the archive is the LEM
+edition, and it does ship a different exe — but that exe needed no new work.
 
 There are **two distinct Polish populations**, and they are different cases:
 
@@ -613,11 +737,12 @@ verification-heavy rebase for gendered PC lines only.
 
 ## Still to gather (Polish only)
 
-1. **Direct link** to the exact Polish translation the tester installed.
-2. Their `<install>/logs/patch-*.log` from a session (shows whether our hooks
-   attached, the detected LanguageID, and any VerifyBytes mismatches).
-3. If the LEM edition turns out to be in play, its `swkotor.exe`, so it can go
-   through the same characterisation the Russian one just had.
+All three original items are settled — the distribution was supplied directly,
+and its `swkotor.exe` went through the same characterisation as the Russian one
+(see "Polish — measured"). What remains:
+
+1. **One Polish combat capture** to confirm `kPl`. See the combat-anchors note
+   above for the exact grep.
 
 ## Sources
 - KOTOR Polish translation (PCGamingWiki): https://community.pcgamingwiki.com/files/file/2516-star-wars-knights-of-the-old-republic-polish-translation/

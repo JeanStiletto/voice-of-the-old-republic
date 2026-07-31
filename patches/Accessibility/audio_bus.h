@@ -138,7 +138,7 @@ const uintptr_t kAddrCExoSoundSetListenerPosition = acc::addr::R(0x005D5DF0);
 // per-cue identification.
 //
 // Nothing reads this constant: the detour is declared in hooks.toml (and
-// rebased for the Allard build in allard.hooks.toml), and the patcher resolves
+// rebased for the 2004-03-05 build in relink2004.hooks.toml), and the patcher resolves
 // hook sites itself. It is kept because the address belongs next to the rest of
 // the CExoSound surface, and R()-wrapped like every other .text address here so
 // that the file has one rule rather than an exception someone has to explain.

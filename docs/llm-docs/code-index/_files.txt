@@ -1,4 +1,4 @@
-allard.hooks.toml
+relink2004.hooks.toml
 announce_degrees.cpp
 announce_degrees.h
 audio_bus.cpp
@@ -244,6 +244,7 @@ strings_en.cpp
 strings_es.cpp
 strings_fr.cpp
 strings_it.cpp
+strings_pl.cpp
 strings_ru.cpp
 swoop_race.cpp
 swoop_race.h

@@ -20,6 +20,7 @@ const char* Get(Id id) {
         case Lang::It: return lang_it::Get(id);
         case Lang::Es: return lang_es::Get(id);
         case Lang::Ru: return lang_ru::Get(id);
+        case Lang::Pl: return lang_pl::Get(id);
     }
     return "";
 }
@@ -36,6 +37,11 @@ unsigned CodepageFor(Lang l) {
         // Cyrillic. Must be pinned: a Russian KOTOR install is commonly run on
         // a non-Russian Windows, where CP_ACP would be 1252 and garble it.
         case Lang::Ru: return 1251;
+        // Central European. Same reasoning as Russian, and it bites harder:
+        // ą ć ę ł ń ś ź ż are absent from 1252 entirely, and a Polish KOTOR is
+        // usually a Polish tlk dropped onto an English or German install, so
+        // CP_ACP is the wrong page far more often than not.
+        case Lang::Pl: return 1250;
     }
     return 1252;
 }

@@ -1,10 +1,16 @@
-# GENERATED for the Allard Russian build of swkotor.exe -- addresses only.
+# GENERATED for the 2004-03-05 relink of swkotor.exe -- addresses only.
 #
 # Same hooks as hooks.toml, same original_bytes: the engine code at every
 # hook site is byte-identical between the two builds, the linker just put it
 # elsewhere (displacements of +16..+512 bytes, varying per function). The
 # addresses come from `kdev sigscan`, which locates each site by a
 # relocation-tolerant signature; the report is in build/re/sigscan/.
+#
+# Two distributions ship this build and share this one file: Allard's Russian
+# 1.72 and the official Polish LEM edition. They are the same binary for our
+# purposes -- .text, .data and .rsrc byte-identical, 16 bytes of .rdata apart
+# (Allard translated the hardcoded "Points Remaining" string, which is neither
+# code nor a vtable). Verified against both exes 2026-07-31: 25/25 sites match.
 #
 # consumed_exit_address values are NOT emitted by sigscan. They were rebased
 # by their own hook's delta and each verified by comparing the opcode bytes
@@ -17,7 +23,10 @@
 # here; keep this file mechanical so it stays easy to regenerate.
 
 [metadata]
-target_versions = ["7B961A140667336D22B06686CBDCBE2DDDF8A0EA13C20A27B63BDC57A75D7628"]
+target_versions = [
+    "7B961A140667336D22B06686CBDCBE2DDDF8A0EA13C20A27B63BDC57A75D7628",  # Allard Russian 1.72
+    "F96AC62BEE256DAC66B3F7DA3ED62DA4005B4710868E33FD0DB51164015D8137",  # LEM Polish 1.03
+]
 
 [[hooks]]
 # OnRulesInit -- was 0x00552c9a (+288 bytes)

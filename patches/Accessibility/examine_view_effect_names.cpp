@@ -736,6 +736,145 @@ const char* EffectIconNameEs(int id) {
         default: return nullptr;
     }
 }
+const char* EffectNamePl(int type) {
+    switch (type) {
+        case 1:   return "Przyspieszenie";
+        case 2:   return "Odporno\x9C\xE6 na obra\xBF""enia";
+        case 3:   return "Spowolnienie";
+        case 5:   return "Choroba";
+        case 7:   return "Regeneracja";
+        case 8:   return "Stan";
+        case 10:  return "Premia do ataku";
+        case 11:  return "Kara do ataku";
+        case 12:  return "Redukcja obra\xBF""e\xF1";
+        case 13:  return "Premia do obra\xBF""e\xF1";
+        case 14:  return "Kara do obra\xBF""e\xF1";
+        case 15:  return "Tymczasowe punkty \xBFycia";
+        case 16:  return "Niewra\xBFliwo\x9C\xE6 na obra\xBF""enia";
+        case 17:  return "Podatno\x9C\xE6 na obra\xBF""enia";
+        case 18:  return "Unieruchomiony";
+        case 19:  return "\x8Cmier\xE6";
+        case 20:  return "Powalony";
+        case 21:  return "G\xB3uchy";
+        case 22:  return "Niewra\xBFliwo\x9C\xE6";
+        case 25:  return "Niepowodzenie magii";
+        case 26:  return "Premia do rzut\xF3w obronnych";
+        case 27:  return "Kara do rzut\xF3w obronnych";
+        case 28:  return "Premia do szybko\x9C""ci";
+        case 29:  return "Kara do szybko\x9C""ci";
+        case 33:  return "Premia do odporno\x9C""ci na Moc";
+        case 34:  return "Kara do odporno\x9C""ci na Moc";
+        case 35:  return "Zatruty";
+        case 36:  return "Premia do cechy";
+        case 37:  return "Kara do cechy";
+        case 38:  return "Obra\xBF""enia";
+        case 39:  return "Leczenie";
+        case 43:  return "Droid og\xB3uszony";
+        case 44:  return "Zmieniona liczba atak\xF3w";
+        case 45:  return "Przekl\xEAty";
+        case 46:  return "Uciszony";
+        case 47:  return "Niewidzialny";
+        case 48:  return "Premia do klasy pancerza";
+        case 49:  return "Kara do klasy pancerza";
+        case 50:  return "Niewra\xBFliwo\x9C\xE6 na magi\xEA";
+        case 53:  return "Sprowokowany";
+        case 55:  return "Premia do umiej\xEAtno\x9C""ci";
+        case 56:  return "Kara do umiej\xEAtno\x9C""ci";
+        case 60:  return "Pchni\xEA""cie Mocy";
+        case 61:  return "Tarcza obra\xBF""e\xF1";
+        case 62:  return "Przebrany";
+        case 63:  return "Azyl";
+        case 64:  return "Zatrzymanie czasu";
+        case 73:  return "O\x9Clepiony";
+        case 75:  return "Szansa chybienia";
+        case 76:  return "Ukrycie";
+        case 82:  return "Poziom ujemny";
+        case 84:  return "Rana";
+        case 87:  return "Rozbrojony";
+        case 90:  return "Wyssanie Mocy";
+        case 91:  return "Tymczasowe punkty Mocy";
+        case 92:  return "Premia do odbijania strza\xB3\xF3w";
+        case 93:  return "Kara do odbijania strza\xB3\xF3w";
+        case 94:  return "Przera\xBFony";
+        case 95:  return "Obra\xBF""enia punkt\xF3w Mocy";
+        case 96:  return "Leczenie punkt\xF3w Mocy";
+        case 97:  return "Duszony";
+        case 99:  return "Zak\xB3\xF3""cenia psychiczne";
+        case 100: return "Rzut mieczem \x9Cwietlnym";
+        case 101: return "Pewne trafienie";
+        case 104: return "Pewne odbicie";
+        case 107: return "Tarcza Mocy";
+        case 108: return "Czyste moce dobra";
+        case 109: return "Czyste moce z\xB3""a";
+        default:  return nullptr;
+    }
+}
+
+const char* EffectIconNamePl(int id) {
+    switch (id) {
+        case 1:  return "N\xEAkanie";
+        case 2:  return "Przyp\xB3yw szybko\x9C""ci";
+        case 3:  return "Duszenie";
+        case 4:  return "Unieruchom droida";
+        case 5:  return "Zniszcz droida";
+        case 6:  return "Strach";
+        case 7:  return "Pancerz Mocy";
+        case 8:  return "Aura Mocy";
+        case 9:  return "Niewra\xBFliwo\x9C\xE6 na Moc";
+        case 10: return "M\xEAstwo Mocy";
+        case 11: return "Pchni\xEA""cie Mocy";
+        case 12: return "Tarcza Mocy";
+        case 13: return "Fala Mocy";
+        case 14: return "Wir Mocy";
+        case 15: return "Zast\xF3j";
+        case 16: return "Groza";
+        case 17: return "Szale\xF1stwo";
+        case 18: return "Zabicie";
+        case 19: return "M\xEAstwo rycerza";
+        case 20: return "Szybko\x9C\xE6 rycerza";
+        case 21: return "M\xEAstwo mistrza";
+        case 22: return "Szybko\x9C\xE6 mistrza";
+        case 23: return "Zaraza";
+        case 24: return "Ulepszona odporno\x9C\xE6 na energi\xEA";
+        case 25: return "Odporno\x9C\xE6 na Moc";
+        case 26: return "Odporno\x9C\xE6 na energi\xEA";
+        case 27: return "Pole zastoju";
+        case 28: return "Spowolnienie";
+        case 29: return "Og\xB3uszenie";
+        case 30: return "Og\xB3usz droida";
+        case 31: return "Rana";
+        case 32: return "Zastrzyk adrenaliny: si\xB3""a";
+        case 33: return "Zastrzyk adrenaliny: zwinno\x9C\xE6";
+        case 34: return "Zastrzyk adrenaliny: wytrzyma\xB3o\x9C\xE6";
+        case 35: return "Hiperzastrzyk adrenaliny: si\xB3""a";
+        case 36: return "Hiperzastrzyk adrenaliny: zwinno\x9C\xE6";
+        case 37: return "Hiperzastrzyk adrenaliny: wytrzyma\xB3o\x9C\xE6";
+        case 38: return "Zastrzyk bojowy: stymulator bojowy";
+        case 39: return "Zastrzyk bojowy: hiperstymulator bojowy";
+        case 40: return "Zastrzyk bojowy: stymulator szybko\x9C""ci";
+        case 41: return "Granat: og\xB3uszaj\xB9""cy";
+        case 42: return "Granat: d\x9Fwi\xEAkowy";
+        case 43: return "Granat: klej\xB9""cy";
+        case 44: return "Granat: krioban";
+        case 45: return "Tarcza energetyczna";
+        case 46: return "Sitha\xF1ska tarcza energetyczna";
+        case 47: return "Arkania\xF1ska tarcza energetyczna";
+        case 48: return "Tarcza Echani";
+        case 49: return "Mandaloria\xF1ska tarcza bojowa";
+        case 50: return "Mandaloria\xF1ska tarcza si\xB3owa";
+        case 51: return "Pojedynkowa tarcza Echani";
+        case 52: return "Pojedynkowa tarcza Yusanisa";
+        case 53: return "Prototypowa tarcza Verpine";
+        case 54: return "Pole si\xB3owe droida";
+        case 55: return "Promie\xF1 og\xB3uszaj\xB9""cy droida";
+        case 56: return "Miotacz ognia droida";
+        case 57: return "Strumie\xF1 karbonitu droida";
+        case 58: return "Generator grawitacji droida";
+        case 59: return "Mina b\xB3yskowa";
+        default: return nullptr;
+    }
+}
+
 }  // namespace
 
 const char* EffectName(int type) {
@@ -744,6 +883,7 @@ const char* EffectName(int type) {
         case acc::strings::Lang::Fr: return EffectNameFr(type);
         case acc::strings::Lang::It: return EffectNameIt(type);
         case acc::strings::Lang::Es: return EffectNameEs(type);
+        case acc::strings::Lang::Pl: return EffectNamePl(type);
         // No Russian effect-name table yet; English is the fallback.
         case acc::strings::Lang::Ru:
         case acc::strings::Lang::En: break;
@@ -757,6 +897,7 @@ const char* EffectIconName(int iconId) {
         case acc::strings::Lang::Fr: return EffectIconNameFr(iconId);
         case acc::strings::Lang::It: return EffectIconNameIt(iconId);
         case acc::strings::Lang::Es: return EffectIconNameEs(iconId);
+        case acc::strings::Lang::Pl: return EffectIconNamePl(iconId);
         // No Russian effect-icon table yet; English is the fallback.
         case acc::strings::Lang::Ru:
         case acc::strings::Lang::En: break;

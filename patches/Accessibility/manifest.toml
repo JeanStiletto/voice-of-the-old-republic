@@ -17,9 +17,19 @@ kotor1_steam_103 = "34E6D971C034222A417995D8E1E8FDD9F8781795C9C289BD86C499A439F3
 kotor1_gog_103 = "9C10E0450A6EECA417E036E3CDE7474FED1F0A92AAB018446D156944DEA91435"
 kotor1_gog_103_cdrepack = "761F9466F456A83909036BAEBB5C43167D722387BE66E54617BA20A8C49E9886"
 
-# Allard Russian translation 1.72. Same BioWare source, relinked: the engine
-# code is byte-identical but relocated (+16..+512 bytes, per function). Hook
-# addresses come from allard.hooks.toml; the in-DLL constants are remapped at
-# runtime by acc::addr::R (engine_rebase.cpp), which identifies the build from
-# its PE link timestamp.
+# The 2004-03-05 relink (PE link timestamp 0x4047CD47). Same BioWare source as
+# the three above, relinked: the engine code is byte-identical but relocated
+# (-320..+640 bytes, per function). Hook addresses come from relink2004.hooks.toml;
+# the in-DLL constants are remapped at runtime by acc::addr::R
+# (engine_rebase.cpp), which identifies the build from that timestamp.
+#
+# Two distributions ship this build, and they are the SAME binary for our
+# purposes -- .text, .data and .rsrc are byte-identical between them and only
+# 16 bytes of .rdata differ (Allard translated the hardcoded "Points Remaining"
+# string). Both therefore use one hooks file and one rebase table; only the
+# hashes differ.
 kotor1_allard_ru_172 = "7B961A140667336D22B06686CBDCBE2DDDF8A0EA13C20A27B63BDC57A75D7628"
+# Official Polish edition by Licomp Empik Multimedia (LEM), 2004. Stock, unmodified
+# LEM retail exe -- verified 2026-07-31: all 25 rebased hook signatures match it
+# byte-for-byte, none of the vanilla-layout ones do.
+kotor1_lem_pl_103 = "F96AC62BEE256DAC66B3F7DA3ED62DA4005B4710868E33FD0DB51164015D8137"

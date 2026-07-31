@@ -817,6 +817,7 @@ public static class CombatStringsExtractCommand
         2 => "de",
         3 => "it",
         4 => "es",
+        5 => "pl",
         _ => $"lang{languageId}",
     };
 }

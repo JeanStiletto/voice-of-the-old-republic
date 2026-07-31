@@ -126,6 +126,37 @@ struct MsgStrings {
     const char* reflect_mid_marker;  // " reflektiert Projektil mit "
     const char* fmt_deflect_one;     // "%s reflektiert 1 Schuss"
     const char* fmt_deflect_many;    // "%s reflektiert %d Schüsse"
+
+    // ---- Attack-summary layout.
+    //
+    // DE/EN/FR/IT/ES/RU all render strref 42042 as
+    // "<actor><phrase_hit|phrase_miss><target>", so the phrase does double duty:
+    // it separates actor from target AND carries the hit/miss distinction.
+    // Polish renders it "Atakujacy: <actor> Cel: <target> Atak: <verb>" — the
+    // actor sits behind a label instead of opening the line, the target comes
+    // before the verb, and the verb (the only hit/miss signal) is last. No
+    // choice of separator expresses that, so such locales describe their layout
+    // with the three markers below; phrase_hit / phrase_miss then hold the bare
+    // verbs, matched at the verb position rather than searched line-wide.
+    //
+    // nullptr on every classic locale, which selects the original parse path.
+    // All three belong together — set all or none.
+    const char* summary_actor_prefix;   // "Atakujacy: "
+    const char* summary_target_marker;  // " Cel: "
+    const char* summary_verb_marker;    // " Atak: "
+
+    // Feat clause direction. Classic locales trail the feat name with a marker
+    // ("<name> verwendet."); Polish leads with a label ("Uzyto atutu: <name>").
+    // When true, feat_marker is that leading label and the name runs to the
+    // next '.'. Only consulted on the labelled path.
+    bool feat_marker_leads;
+
+    // Direct-damage line (strref 1403) separator. Classic locales render it
+    // "<actor><damage_marker><target>: N ...", so a ':' closes the target.
+    // Polish renders "<actor> trafia. <target> otrzymuje N pkt obrazen" with no
+    // colon at all, so the target closes at this marker and the number follows
+    // it. nullptr keeps the ':' rule.
+    const char* damage_amount_marker;   // " otrzymuje "
 };
 
 const MsgStrings& Get();

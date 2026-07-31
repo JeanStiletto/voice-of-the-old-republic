@@ -223,22 +223,37 @@ namespace KotorAccessibilityInstaller
         }
 
         /// <summary>
-        /// Base footnote, plus the Russian-specific paragraphs when the game
-        /// install is a Russian community translation.
+        /// Base footnote, plus the locale-specific paragraphs for the two
+        /// translations KOTOR never shipped through a store: a Russian
+        /// community translation, or the official Polish LEM localisation.
         /// </summary>
         private string BuildFootnote()
         {
             string footnote = InstallerLocale.Get("ModSelection_FootnoteBody");
-            if (_gameLocale != GameLocale.Russian) return footnote;
 
-            return string.Join("\n\n", new[]
+            if (_gameLocale == GameLocale.Russian)
             {
-                $"{InstallerLocale.Get("Russian_Detected_Heading")}: " +
-                InstallerLocale.Get("Russian_Detected_Body"),
-                $"{InstallerLocale.Get("Russian_K1cpUntested_Heading")}: " +
-                InstallerLocale.Get("Russian_K1cpUntested_Body"),
-                footnote
-            });
+                return string.Join("\n\n", new[]
+                {
+                    $"{InstallerLocale.Get("Russian_Detected_Heading")}: " +
+                    InstallerLocale.Get("Russian_Detected_Body"),
+                    $"{InstallerLocale.Get("Russian_K1cpUntested_Heading")}: " +
+                    InstallerLocale.Get("Russian_K1cpUntested_Body"),
+                    footnote
+                });
+            }
+
+            if (_gameLocale == GameLocale.Polish)
+            {
+                return string.Join("\n\n", new[]
+                {
+                    $"{InstallerLocale.Get("Polish_Detected_Heading")}: " +
+                    InstallerLocale.Get("Polish_Detected_Body"),
+                    footnote
+                });
+            }
+
+            return footnote;
         }
     }
 }

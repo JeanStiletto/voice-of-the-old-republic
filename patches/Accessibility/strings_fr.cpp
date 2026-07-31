@@ -63,6 +63,7 @@ const char* Get(Id id) {
         case Id::MovementCancelled:    return "D\xE9placement annul\xE9";
         case Id::InteractWayBlocked:   return "D\xE9placement annul\xE9, chemin bloqu\xE9";
         case Id::FmtInteractWayBlockedTarget: return "D\xE9placement annul\xE9, chemin bloqu\xE9. %s, %d m\xE8tres, %s";
+        case Id::SpectatorBattleDoomed: return "Les soldats de la R\xE9publique sont perdus. Vous ne pouvez plus les aider. Le chemin est bloqu\xE9. H\xE2tez-vous vers la passerelle\xA0!";
 
         // Beacon (Ctrl+-).
         case Id::FmtBeaconStarted:     return "Balise vers %s";
@@ -798,9 +799,9 @@ const char* Get(Id id) {
         case Id::DialogRepeatLineHint:
             return "Appuyez sur R pour r\xE9p\xE9ter la derni\xE8re ligne de dialogue.";
 
-        case Id::FmtModLoadedVersion:   return "Voice of the Old Republic chargé, version %s";
+        case Id::FmtModLoadedVersion:   return "Voice of the Old Republic chargï¿½, version %s";
         case Id::FmtChargenFeatUnnamed: return "Don %u";
-        case Id::ChargenBtnRecommended: return "Recommandé";
+        case Id::ChargenBtnRecommended: return "Recommandï¿½";
         case Id::ChargenBtnAccept:      return "Accepter";
         case Id::ChargenBtnBack:        return "Retour";
         case Id::Count_:               return "";

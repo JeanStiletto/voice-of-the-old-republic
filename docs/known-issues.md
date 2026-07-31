@@ -65,9 +65,11 @@ The former "Additional manual map hints" / "Waypoints" backlog, resolved 2026-07
 - The old "Dantooine paths correlate with transitions" observation is **explained, not a bug**: the vanilla notes ARE transition markers, authored 2–11 m from the transition triggers with corridor names instead of destinations. The rename addresses the actual confusion.
 - The map-cursor WASD hover finds shipped hints too (`FindNearestShippedHint`, third scan next to waypoints and user pins, fog-gated, closest-in-pixel-space wins). Like the cycle, the hover never surfaces an unexplored hint.
 
-### Integrate a Polish translation
+### Integrate a Polish translation — done 2026-07-31
 
-Add Polish as a supported language. Decide the integration path — installer locale JSON (alongside de/en/fr/it/es) and/or in-game speech strings routed through the shared strings system — and wire it in. Source of the Polish strings (community contribution vs AI draft like fr/it/es) to be determined. **Parked pending tester links** — full findings, the two-case (Case A tlk-only vs Case B modified-exe) model, the confirmed Polish LanguageID=5, the LEM-official-edition `dialogF.tlk`/different-exe lead, the Prism encoding decision (Polish is Windows-1250, not 1252), and the verified code seams live in `docs/translation-additions.md`.
+Shipped: `Lang::Pl` (LanguageID 5, CP1250 speech codepage), `strings_pl.cpp`, `combat_strings.cpp::kPl`, Polish effect-name tables, installer `GameLocale.Polish` + `Locales/pl.json`, and the LEM edition's `swkotor.exe` added to `supported_versions` — it is the same 2004-03-05 relink as the Allard Russian exe, so the existing rebase tables covered it with no new address work. Measurements and the Polish-specific engine quirks are in `docs/translation-additions.md`.
+
+**One thing still open:** `kPl`'s combat anchors are transcribed from the tlk but **not yet confirmed against a live Polish combat log**, and Polish is the first locale whose attack-line *structure* differs (target before verb), which needed a second parse path rather than different strings. Verify with one fight on a Polish install: grep the patch log for `MsgBuf: raw:` against `emit-*`. A wrong anchor degrades to raw speech, never a crash.
 
 ### Nameable personal map pins
 

@@ -71,7 +71,7 @@ namespace KotorAccessibilityInstaller
             // the Russian notes can ride that screen's footnote instead of
             // adding a step. Content-based for Russian — see GameLocaleDetector.
             GameLocale gameLocale = GameLocaleDetector.Detect(resolvedPath);
-            WarnIfRussianTranslationMissing(welcomeForm.SelectedLanguage, gameLocale);
+            WarnIfGameTranslationMissing(welcomeForm.SelectedLanguage, gameLocale);
 
             // Optional mods: K1CP / cut content / companion + swoop. All default on.
             var selectionForm = new ModSelectionForm(gameLocale);
@@ -411,26 +411,39 @@ namespace KotorAccessibilityInstaller
         }
 
         /// <summary>
-        /// The user picked Russian for the installer but the game itself is not
-        /// translated. Point them at the translation's own source and stop
-        /// there: KOTOR has no official Russian release, and the community
-        /// translation is not published under a licence that lets us bundle or
-        /// mirror it, nor at a location stable enough to download and verify.
-        /// The mod still speaks Russian either way, so this is guidance, not an
-        /// error, and it must not block the install.
+        /// The user picked a language for the installer whose game translation
+        /// KOTOR never shipped on Steam or GoG, but this install is not
+        /// translated to it. Point them at the translation's own source and stop
+        /// there — we cannot bundle or mirror either one. Russian's community
+        /// translation carries no redistribution licence and no stable download
+        /// location; the Polish one is first-party LucasArts content extracted
+        /// from the 2004 retail release, which is not ours to hand out at all.
+        ///
+        /// The mod still speaks the chosen language either way, so this is
+        /// guidance, not an error, and it must not block the install.
         /// </summary>
-        private static void WarnIfRussianTranslationMissing(string installerLanguage, GameLocale gameLocale)
+        private static readonly (string Lang, GameLocale Locale, string Key)[] TranslationGuidance =
         {
-            if (!string.Equals(installerLanguage, "ru", StringComparison.OrdinalIgnoreCase)) return;
-            if (gameLocale == GameLocale.Russian) return;
+            ("ru", GameLocale.Russian, "Russian"),
+            ("pl", GameLocale.Polish,  "Polish"),
+        };
 
-            Logger.Info($"Installer language is Russian but game locale is {gameLocale}; " +
-                        "showing translation guidance.");
-            MessageBox.Show(
-                InstallerLocale.Get("Russian_NotFound_Body"),
-                InstallerLocale.Get("Russian_NotFound_Heading"),
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
+        private static void WarnIfGameTranslationMissing(string installerLanguage, GameLocale gameLocale)
+        {
+            foreach (var (lang, locale, key) in TranslationGuidance)
+            {
+                if (!string.Equals(installerLanguage, lang, StringComparison.OrdinalIgnoreCase)) continue;
+                if (gameLocale == locale) return;
+
+                Logger.Info($"Installer language is {key} but game locale is {gameLocale}; " +
+                            "showing translation guidance.");
+                MessageBox.Show(
+                    InstallerLocale.Get($"{key}_NotFound_Body"),
+                    InstallerLocale.Get($"{key}_NotFound_Heading"),
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                return;
+            }
         }
 
         /// <summary>

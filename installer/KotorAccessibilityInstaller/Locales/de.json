@@ -39,7 +39,7 @@
     "ModSelection_CutContentDescription": "Stellt Dialoge wieder her, die BioWare spät in der QA herausgeschnitten hat. Verwendet die vorhandenen Texte und Sprachausgaben deiner Sprachversion — kein englischer Bruch im Dialog.",
     "ModSelection_CompanionsCheckbox": "Begleiter-Balance + Swoop-Upgrades (Thematic Companions + Swoop Bike Upgrades)",
     "ModSelection_CompanionsDescription": "Weiterhin Vanilla, aber verbessert: Begleiter-Werte passend zu ihrem Hintergrund, plus zwei wiederhergestellte geschnittene Swoop-Upgrade-Gegenstände.",
-    "ModSelection_FootnoteBody": "Hinweis zu italienischen und spanischen Installationen: K1CP bietet offizielle Übersetzungspatches nur für Deutsch, Französisch und Russisch. Italienische und spanische Installationen erhalten K1CP auf Englisch — der Bugfix-Text erscheint dann auf Englisch, während der Rest des Spiels lokalisiert bleibt.",
+    "ModSelection_FootnoteBody": "Hinweis zu italienischen, spanischen und polnischen Installationen: K1CP bietet offizielle Übersetzungspatches nur für Deutsch, Französisch und Russisch. Italienische, spanische und polnische Installationen erhalten K1CP auf Englisch — der Bugfix-Text erscheint dann auf Englisch, während der Rest des Spiels lokalisiert bleibt.",
     "ModSelection_NextButton": "Weiter zur Installation",
     "ModSelection_BackButton": "Zurück",
 
@@ -87,6 +87,11 @@
     "K2Patches_Applied": "Engine-Patches auf swkotor2.exe angewendet: 4-GB-Speicher und randloser Vollbildmodus (swkotor2.ini auf Fenstermodus gestellt).",
     "K2Patches_Skipped_Format": "Engine-Patches (4-GB-Speicher, randloser Vollbildmodus) wurden nicht angewendet: {0}",
     "K2Patches_Failed_Format": "Anwenden der Engine-Patches fehlgeschlagen: {0}",
+
+    "Polish_Detected_Heading": "Polnische Ãœbersetzung erkannt",
+    "Polish_Detected_Body": "Deine dialog.tlk ist die offizielle polnische Lokalisierung, daher spricht die Mod Polnisch. Der polnische Text ist eine maschinell Ã¼bersetzte erste Fassung und wird nach und nach von Mitwirkenden verbessert.",
+    "Polish_NotFound_Heading": "Polnische SpielÃ¼bersetzung",
+    "Polish_NotFound_Body": "Du hast Polnisch gewÃ¤hlt, aber diese KOTOR-Installation ist nicht auf Polnisch Ã¼bersetzt. Die Mod kann Polnisch sprechen, der Text des Spiels bleibt jedoch in der bisherigen Sprache.\n\nKOTOR erschien 2004 offiziell auf Polnisch bei Licomp Empik Multimedia (LEM), nur mit Untertiteln. Diese Fassung wurde nie Ã¼ber Steam oder GoG verkauft, und ihre Dateien sind LucasArts-Inhalte â€” wir dÃ¼rfen sie weder mitliefern noch herunterladen oder spiegeln.\n\nWenn du die polnische Retail-Fassung besitzt, kopiere daraus dialog.tlk, dialogF.tlk und den Inhalt des Override-Ordners in deinen Spielordner. Ihre swkotor.exe brauchst du nicht zu kopieren: die Mod unterstÃ¼tzt diese Programmdatei zwar, aber die Steam- oder GoG-Datei funktioniert mit polnischem Text genauso, und Steam stellt ihre eigene ohnehin wieder her.\n\nInstalliere zuerst den polnischen Text und starte diesen Installer danach erneut. Er erkennt ihn automatisch.",
 
     "Main_TitleInstaller": "Voice of the Old Republic - Installationsprogramm",
     "Main_TitleUpdater": "Voice of the Old Republic - Aktualisierung",

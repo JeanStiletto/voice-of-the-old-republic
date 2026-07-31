@@ -1944,6 +1944,12 @@ enum class Lang : int {
     // (the English slot) and re-encodes the strings in Windows-1251, so
     // detection is content-based. See DetectLanguageFromTlk.
     Ru,
+    // Polish — the official Licomp Empik Multimedia (LEM) localisation, 2004.
+    // Never sold on Steam or GoG, so players install it over one of those, but
+    // it is a first-party translation and its tlk carries BioWare's real Polish
+    // LanguageID 5. That makes it ID-detected like the five above, not
+    // content-detected like Russian.
+    Pl,
 };
 
 // Windows codepage the language's narrow string bytes are written in. Fed to
@@ -1963,7 +1969,7 @@ const char* Get(Id id);
 
 // Per-language tables. Defined in strings_en.cpp / strings_de.cpp /
 // strings_fr.cpp; the dispatcher in strings.cpp picks one based on the
-// active language. All six are complete, independent tables — strings_fr.cpp
+// active language. All seven are complete, independent tables — strings_fr.cpp
 // is a real 651-entry French translation, not an alias for lang_en (that
 // claim was stale). Combat speech is localised separately, in
 // combat_strings.cpp.
@@ -1973,5 +1979,6 @@ namespace lang_fr { const char* Get(Id id); }
 namespace lang_it { const char* Get(Id id); }
 namespace lang_es { const char* Get(Id id); }
 namespace lang_ru { const char* Get(Id id); }
+namespace lang_pl { const char* Get(Id id); }
 
 }  // namespace acc::strings

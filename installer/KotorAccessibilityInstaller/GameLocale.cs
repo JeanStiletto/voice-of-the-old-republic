@@ -14,6 +14,13 @@ namespace KotorAccessibilityInstaller
         Italian = 3,
         Spanish = 4,
 
+        // Polish IS a real BioWare language ID, unlike Russian below. The
+        // official Licomp Empik Multimedia (LEM) localisation from 2004 declares
+        // it honestly in the tlk header, so it detects like the five above.
+        // Neither Steam nor GoG ever sold Polish, so in practice a Polish
+        // dialog.tlk is dropped onto one of those installs by the player.
+        Polish = 5,
+
         // Russian is NOT a BioWare language ID. The community translations
         // re-encode an existing slot instead of claiming a new one — Allard
         // 1.72, the current active one, ships LanguageID 0 (the English slot)
@@ -27,8 +34,9 @@ namespace KotorAccessibilityInstaller
     /// Reads the game install's locale from the dialog.tlk header.
     /// TLK format: bytes 0..3 = "TLK ", 4..7 = "V3.0", 8..11 = uint32 language ID (LE),
     /// 12..15 = uint32 string count, 16..19 = uint32 offset to the string blob.
-    /// 0=EN, 1=FR, 2=DE, 3=IT, 4=ES, others unknown — except Russian, which is
-    /// identified by content rather than by ID (see <see cref="LooksCyrillic"/>).
+    /// 0=EN, 1=FR, 2=DE, 3=IT, 4=ES, 5=PL, others unknown — except Russian,
+    /// which is identified by content rather than by ID (see
+    /// <see cref="LooksCyrillic"/>).
     /// </summary>
     public static class GameLocaleDetector
     {
@@ -80,6 +88,7 @@ namespace KotorAccessibilityInstaller
                     2 => GameLocale.German,
                     3 => GameLocale.Italian,
                     4 => GameLocale.Spanish,
+                    5 => GameLocale.Polish,
                     _ => GameLocale.Unknown,
                 };
                 Logger.Info($"Detected game locale: {locale} (dialog.tlk language id = {lang})");
@@ -98,6 +107,8 @@ namespace KotorAccessibilityInstaller
         /// at 0xC0-0xFF, so Russian prose is overwhelmingly high-byte:
         /// measured 77.8% on Allard 1.72 against 1.3% on a German tlk (whose
         /// umlauts also sit above 0xC0). The 20% threshold sits far from both.
+        /// The Polish CP1250 tlk was measured too, since four of its letters
+        /// also land above 0xC0: 1.9%, safely on the not-Cyrillic side.
         /// </summary>
         private static bool LooksCyrillic(FileStream fs, uint blobOffset)
         {

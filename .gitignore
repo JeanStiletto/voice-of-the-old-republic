@@ -92,7 +92,17 @@ Thumbs.db
 
 # Third-party game translations kept locally for testing. Redistributing
 # someone else's translation is not ours to do, and the archives are large
-# (Allard's Russian 1.72 is ~166 MB). Mirror from the community source when
-# a rebased build needs re-verifying; the addresses derived from it live in
-# patches/Accessibility/engine_rebase*.inc, which IS committed.
+# (Allard's Russian 1.72 is ~166 MB, the Polish one ~164 MB). Mirror from the
+# community source when a rebased build needs re-verifying; the addresses
+# derived from them live in patches/Accessibility/engine_rebase*.inc, which
+# IS committed.
+#
+# The Polish archive is the official Licomp Empik Multimedia (LEM) 2004
+# localisation, i.e. LucasArts content rather than a community mod — even
+# less ours to commit than Allard's. Both the archive and anything unpacked
+# from it stay local.
 /KotOR_Rus_*.rar
+/Star Wars Knights of the Old Republic Spolszczenie.7z
+/Star Wars Knights of the Old Republic Spolszczenie/
+/*Spolszczenie*.7z
+/*Spolszczenie*/

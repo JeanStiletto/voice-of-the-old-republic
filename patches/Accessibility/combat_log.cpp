@@ -205,21 +205,87 @@ void CopyRange(char* dst, size_t cap, const char* start, const char* end) {
     dst[n] = '\0';
 }
 
-bool ParseSummary(const char* text, AttackBlock& b) {
+// Numeric tail of the attack summary, shared by both layouts: the attack /
+// defence / damage values behind phrase_mit, and the crit and auto tags.
+// `mit_at` is phrase_mit's position, passed in rather than found here because
+// the classic layout has to locate it first anyway — it bounds the target.
+void ParseSummaryTail(const char* text, const char* mit_at, AttackBlock& b) {
+    const auto& L = acc::combat::loc::Get();
+    const char* p = mit_at + strlen(L.phrase_mit);
+    b.sum_attack = atoi(p);
+
+    const char* vert_at = strstr(p, L.word_verteidigung);
+    if (vert_at) b.sum_defense = atoi(vert_at + strlen(L.word_verteidigung));
+
+    const char* schaden_at = strstr(p, L.word_schaden_colon);
+    if (schaden_at) b.sum_damage = atoi(schaden_at + strlen(L.word_schaden_colon));
+
+    if (strstr(text, L.tag_krit_summary)) b.crit_tag  = true;
+    if (strstr(text, L.tag_auto_hit))     b.auto_hit  = true;
+    if (strstr(text, L.tag_auto_fail))    b.auto_fail = true;
+}
+
+// Labelled summary layout — Polish. "Atakujacy: <actor> Cel: <target> Atak:
+// <verb>", where the verb is the only hit/miss signal and comes last. See the
+// summary_actor_prefix block in combat_strings.h for why this needs its own
+// path rather than a different set of anchors.
+bool ParseSummaryLabelled(const char* text, AttackBlock& b) {
+    const auto& L = acc::combat::loc::Get();
+    if (!MsgStartsWith(text, L.summary_actor_prefix)) return false;
+
+    const char* actor_start = text + strlen(L.summary_actor_prefix);
+    const char* tgt_at = strstr(actor_start, L.summary_target_marker);
+    if (!tgt_at) return false;
+    const char* verb_at = strstr(tgt_at, L.summary_verb_marker);
+    if (!verb_at) return false;
+
+    // Miss is tested first: Polish "nie trafia" ends in "trafia", so testing
+    // hit first would read every miss as a hit. Matching at the verb position
+    // rather than searching the line keeps both tests exact.
+    const char* verb = verb_at + strlen(L.summary_verb_marker);
+    if (MsgStartsWith(verb, L.phrase_miss))     b.hit = false;
+    else if (MsgStartsWith(verb, L.phrase_hit)) b.hit = true;
+    else return false;
+
+    const char* mit_at = strstr(verb, L.phrase_mit);
+    if (!mit_at) return false;
+
+    CopyRange(b.actor,  sizeof(b.actor),  actor_start, tgt_at);
+    CopyRange(b.target, sizeof(b.target), tgt_at + strlen(L.summary_target_marker), verb_at);
+
+    // Feat clause, when present, sits between the verb and phrase_mit behind a
+    // leading label ("Uzyto atutu: <name>") instead of trailing its name the
+    // way the classic locales do.
+    if (L.feat_marker_leads) {
+        const char* feat_at = strstr(verb, L.feat_marker);
+        if (feat_at && feat_at < mit_at) {
+            const char* feat_start = feat_at + strlen(L.feat_marker);
+            const char* feat_end = strchr(feat_start, '.');
+            if (!feat_end || feat_end > mit_at) feat_end = mit_at;
+            CopyRange(b.feat, sizeof(b.feat), feat_start, feat_end);
+        }
+    }
+
+    ParseSummaryTail(text, mit_at, b);
+    return true;
+}
+
+// Classic summary layout — DE/EN/FR/IT/ES/RU. "<actor><phrase><target>.
+// [<feat> verwendet.]<phrase_mit>...", where the phrase between actor and
+// target is itself the hit/miss signal.
+bool ParseSummaryClassic(const char* text, AttackBlock& b) {
     const auto& L = acc::combat::loc::Get();
     const char* hit_at  = strstr(text, L.phrase_hit);
     const char* miss_at = strstr(text, L.phrase_miss);
     if (!hit_at && !miss_at) return false;
     const char* anchor = hit_at ? hit_at : miss_at;
     size_t alen = strlen(hit_at ? L.phrase_hit : L.phrase_miss);
-    b = {};
     b.hit = (hit_at != nullptr);
     CopyRange(b.actor, sizeof(b.actor), text, anchor);
 
     const char* after_auf = anchor + alen;
     const char* mit_at = strstr(after_auf, L.phrase_mit);
     if (!mit_at) return false;
-    size_t mit_len = strlen(L.phrase_mit);
 
     const char* target_dot = strchr(after_auf, '.');
     if (!target_dot || target_dot > mit_at) return false;
@@ -234,18 +300,16 @@ bool ParseSummary(const char* text, AttackBlock& b) {
         }
     }
 
-    const char* p = mit_at + mit_len;
-    b.sum_attack = atoi(p);
+    ParseSummaryTail(text, mit_at, b);
+    return true;
+}
 
-    const char* vert_at = strstr(p, L.word_verteidigung);
-    if (vert_at) b.sum_defense = atoi(vert_at + strlen(L.word_verteidigung));
-
-    const char* schaden_at = strstr(p, L.word_schaden_colon);
-    if (schaden_at) b.sum_damage = atoi(schaden_at + strlen(L.word_schaden_colon));
-
-    if (strstr(text, L.tag_krit_summary)) b.crit_tag  = true;
-    if (strstr(text, L.tag_auto_hit))     b.auto_hit  = true;
-    if (strstr(text, L.tag_auto_fail))    b.auto_fail = true;
+bool ParseSummary(const char* text, AttackBlock& b) {
+    const auto& L = acc::combat::loc::Get();
+    b = {};
+    const bool ok = L.summary_actor_prefix ? ParseSummaryLabelled(text, b)
+                                           : ParseSummaryClassic(text, b);
+    if (!ok) return false;
 
     // Status tail: an applied effect rides the end of the summary as
     // "<target> ist <status>" (e.g. "Kath-Hund ist betäubt"). The target
@@ -832,13 +896,24 @@ bool RuleDirectDamage(const char* text) {
     char actor[96];
     CopyRange(actor, sizeof(actor), text, dm);
     const char* tstart = dm + strlen(L.damage_marker);
-    const char* colon  = strchr(tstart, ':');
-    if (!colon) return false;
+    // Where the target ends and the number begins. See damage_amount_marker in
+    // combat_strings.h — Polish has no colon here.
+    const char* tend = nullptr;
+    const char* amount = nullptr;
+    if (L.damage_amount_marker) {
+        tend = strstr(tstart, L.damage_amount_marker);
+        if (!tend) return false;
+        amount = tend + strlen(L.damage_amount_marker);
+    } else {
+        tend = strchr(tstart, ':');
+        if (!tend) return false;
+        amount = tend + 1;
+    }
     char target[96];
-    CopyRange(target, sizeof(target), tstart, colon);
+    CopyRange(target, sizeof(target), tstart, tend);
     if (!actor[0] || !target[0]) return false;
 
-    const char* p = colon + 1;
+    const char* p = amount;
     while (*p == ' ') ++p;
     int dmg = atoi(p);
 

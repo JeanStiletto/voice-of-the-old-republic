@@ -61,7 +61,7 @@ constexpr size_t kRdataCount = sizeof(kRdataTable) / sizeof(kRdataTable[0]);
 //   bytes in, which is what rules it out.
 //
 // The `kdev-sigscan: ignore` markers keep the harvester off these lines: the
-// right-hand column is an Allard address, which is meaningless in the reference
+// right-hand column is a relink address, which is meaningless in the reference
 // build and would be scanned as if it were one. Both left-hand values are
 // harvested from their real declarations instead (engine_input.cpp:23 and
 // engine_area.h:404), so nothing is lost by skipping the pair here.
@@ -73,13 +73,19 @@ constexpr Entry kXrefTable[] = {
 constexpr size_t kXrefCount = sizeof(kXrefTable) / sizeof(kXrefTable[0]);
 
 // PE link timestamps identify the build. The reference (Steam/GoG 1.0.3) is
-// 2004-02-12 18:15:53Z; Allard 1.72 ships a 2004-03-05 00:43:51Z build. Reading
-// the timestamp costs one header walk of our own image and, unlike hashing the
+// 2004-02-12 18:15:53Z; the relink is 2004-03-05 00:43:51Z. Reading the
+// timestamp costs one header walk of our own image and, unlike hashing the
 // file, needs no I/O — so it is safe from a static initialiser.
+//
+// The relink timestamp is deliberately matched rather than either
+// distribution's hash: Allard's Russian 1.72 and the official Polish LEM
+// edition are the same binary here (.text, .data and .rsrc byte-identical; the
+// only difference is 16 bytes of .rdata string data), so one identity covers
+// both and a third distribution on the same build would work for free.
 constexpr uint32_t kTimestampReference = 0x402BC2D9;  // 1076609753, 2004-02-12 18:15:53Z
-constexpr uint32_t kTimestampAllard172 = 0x4047CD47;  // 1078447431, 2004-03-05 00:43:51Z
+constexpr uint32_t kTimestampRelink2004 = 0x4047CD47;  // 1078447431, 2004-03-05 00:43:51Z
 
-enum class Build { Reference, Allard172, Unknown };
+enum class Build { Reference, Relink2004, Unknown };
 
 uint32_t ReadOwnLinkTimestamp() {
     // GetModuleHandle(nullptr) is the exe, not this DLL — the addresses we
@@ -101,7 +107,7 @@ uint32_t ReadOwnLinkTimestamp() {
 Build DetectBuild() {
     switch (ReadOwnLinkTimestamp()) {
         case kTimestampReference: return Build::Reference;
-        case kTimestampAllard172: return Build::Allard172;
+        case kTimestampRelink2004: return Build::Relink2004;
         default:                  return Build::Unknown;
     }
 }
@@ -119,7 +125,7 @@ Build CurrentBuild() {
 }  // namespace
 
 uintptr_t R(uintptr_t referenceVa) {
-    if (CurrentBuild() != Build::Allard172) {
+    if (CurrentBuild() != Build::Relink2004) {
         // Reference build, or a build we do not know. An unknown build cannot
         // be rebased, and the version gate should have refused it long before
         // this point, so pass the value through unchanged.
@@ -162,12 +168,12 @@ uintptr_t R(uintptr_t referenceVa) {
     return 0;
 }
 
-bool IsRebased() { return CurrentBuild() == Build::Allard172; }
+bool IsRebased() { return CurrentBuild() == Build::Relink2004; }
 
 const char* ActiveBuildName() {
     switch (CurrentBuild()) {
         case Build::Reference: return "reference";
-        case Build::Allard172: return "allard-1.72";
+        case Build::Relink2004: return "relink-2004-03-05";
         default:               return "unknown";
     }
 }

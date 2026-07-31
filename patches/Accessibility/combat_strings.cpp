@@ -6,10 +6,10 @@
 //
 // Encoding: hex escapes in the *game's* codepage, because the anchors are
 // memcmp'd/strstr'd directly against CExoString bytes. For de/en/fr/it/es
-// that is Windows-1252 (\xFC=ü, \xF6=ö, \xE4=ä, \xDF=ß). kRu is the
-// exception: Russian installs are Windows-1251, so its escapes are 1251 and
-// must not be read as 1252. acc::strings::CodepageFor(Lang) reports which,
-// and prism::SetSpeechCodepage pins it for the speech path.
+// that is Windows-1252 (\xFC=ü, \xF6=ö, \xE4=ä, \xDF=ß). kRu and kPl are the
+// exceptions: Russian installs are Windows-1251 and Polish ones Windows-1250,
+// so those escapes must not be read as 1252. acc::strings::CodepageFor(Lang)
+// reports which, and prism::SetSpeechCodepage pins it for the speech path.
 //
 // Field order in the initialiser MUST match the declaration order in
 // combat_strings.h — we use positional init (no designated initialisers
@@ -90,6 +90,14 @@ const MsgStrings kDe = {
     " reflektiert Projektil mit ", // reflect_mid_marker
     "%s reflektiert 1 Schuss",     // fmt_deflect_one
     "%s reflektiert %d Sch\xFCsse", // fmt_deflect_many
+
+    // ---- Summary layout: classic <actor><phrase><target>. See kPl for the
+    // labelled alternative and why it needs one.
+    nullptr,                                    // summary_actor_prefix
+    nullptr,                                    // summary_target_marker
+    nullptr,                                    // summary_verb_marker
+    false,                                      // feat_marker_leads
+    nullptr,                                    // damage_amount_marker
 };
 
 // English — engine anchors extracted from EN dialog.tlk on 2026-05-28
@@ -169,6 +177,14 @@ const MsgStrings kEn = {
     " deflects projectile with ",        // reflect_mid_marker
     "%s deflects 1 shot",                // fmt_deflect_one
     "%s deflects %d shots",              // fmt_deflect_many
+
+    // ---- Summary layout: classic <actor><phrase><target>. See kPl for the
+    // labelled alternative and why it needs one.
+    nullptr,                                    // summary_actor_prefix
+    nullptr,                                    // summary_target_marker
+    nullptr,                                    // summary_verb_marker
+    false,                                      // feat_marker_leads
+    nullptr,                                    // damage_amount_marker
 };
 
 // French — engine anchors extracted from FR dialog.tlk on 2026-05-28
@@ -247,6 +263,14 @@ const MsgStrings kFr = {
     " d\xE9tourne un projectile gr\xE2""ce \xE0 un ",  // reflect_mid_marker
     "%s d\xE9vie 1 tir",                               // fmt_deflect_one
     "%s d\xE9vie %d tirs",                             // fmt_deflect_many
+
+    // ---- Summary layout: classic <actor><phrase><target>. See kPl for the
+    // labelled alternative and why it needs one.
+    nullptr,                                    // summary_actor_prefix
+    nullptr,                                    // summary_target_marker
+    nullptr,                                    // summary_verb_marker
+    false,                                      // feat_marker_leads
+    nullptr,                                    // damage_amount_marker
 };
 
 // Italian — engine anchors extracted from IT dialog.tlk on 2026-05-28
@@ -322,6 +346,14 @@ const MsgStrings kIt = {
     " respinge il proiettile con ",                 // reflect_mid_marker
     "%s devia 1 colpo",                             // fmt_deflect_one
     "%s devia %d colpi",                            // fmt_deflect_many
+
+    // ---- Summary layout: classic <actor><phrase><target>. See kPl for the
+    // labelled alternative and why it needs one.
+    nullptr,                                    // summary_actor_prefix
+    nullptr,                                    // summary_target_marker
+    nullptr,                                    // summary_verb_marker
+    false,                                      // feat_marker_leads
+    nullptr,                                    // damage_amount_marker
 };
 
 // Spanish — engine anchors extracted from ES dialog.tlk on 2026-05-28
@@ -398,6 +430,14 @@ const MsgStrings kEs = {
     " desv\xED""a proyectil con ",           // reflect_mid_marker
     "%s desv\xED""a 1 disparo",              // fmt_deflect_one
     "%s desv\xED""a %d disparos",            // fmt_deflect_many
+
+    // ---- Summary layout: classic <actor><phrase><target>. See kPl for the
+    // labelled alternative and why it needs one.
+    nullptr,                                    // summary_actor_prefix
+    nullptr,                                    // summary_target_marker
+    nullptr,                                    // summary_verb_marker
+    false,                                      // feat_marker_leads
+    nullptr,                                    // damage_amount_marker
 };
 
 // Russian — engine anchors extracted from Allard 1.72's dialog.tlk on
@@ -516,6 +556,148 @@ const MsgStrings kRu = {
     // for 0 and 5+, understandable for 2-4.
     "%s \xEE\xF2\xF0\xE0\xE6\xE0\xE5\xF2 1 \xE2\xFB\xF1\xF2\xF0\xE5\xEB",  // fmt_deflect_one
     "%s \xEE\xF2\xF0\xE0\xE6\xE0\xE5\xF2 %d \xE2\xFB\xF1\xF2\xF0\xE5\xEB\xEE\xE2",  // fmt_deflect_many
+
+    // ---- Summary layout: classic <actor><phrase><target>. See kPl for the
+    // labelled alternative and why it needs one.
+    nullptr,                                    // summary_actor_prefix
+    nullptr,                                    // summary_target_marker
+    nullptr,                                    // summary_verb_marker
+    false,                                      // feat_marker_leads
+    nullptr,                                    // damage_amount_marker
+};
+
+// Polish — engine anchors extracted from the LEM dialog.tlk on 2026-07-31 by
+// dumping the same strrefs `kdev combat-strings-extract` uses. The extractor
+// itself cannot emit this table: it crashes on 42042 because the Polish
+// template orders the placeholders <CUSTOM0> <CUSTOM2> <CUSTOM1>, and its
+// stitching assumes CUSTOM1 precedes CUSTOM2. Every value below is still taken
+// straight from the tlk, by the same per-field rules, so it is transcription
+// rather than invention — but see the UNVERIFIED note.
+//
+// Encoding: Windows-1250, not 1252 — ą ć ę ł ń ś ź ż are absent from 1252
+// entirely. See acc::strings::CodepageFor(Lang::Pl).
+//
+// UNVERIFIED against a live Polish combat log. DE is engine-verified;
+// EN/FR/IT/ES were extracted mechanically and still want one in-locale capture;
+// Polish needs that capture more than they do, because it is the first locale
+// whose *line structure* differs rather than just its words. To verify: play
+// one fight on a Polish install and compare `MsgBuf: raw:` against `emit-*` in
+// the patch log. Every anchor that does not match falls through to raw speech,
+// so a wrong value here is a missing shortening, never a crash.
+//
+// Four Polish-specific engine quirks, all read off the tlk:
+//
+//  (a) 42042 is "Atakujący: <CUSTOM0> Cel: <CUSTOM2> Atak: <CUSTOM1>" — the
+//      actor sits behind a label, the target comes BEFORE the verb, and the
+//      verb is last. phrase_hit/phrase_miss are therefore the bare verbs
+//      (42043/42044) matched at the verb position, and the layout is described
+//      by summary_actor_prefix / _target_marker / _verb_marker instead. Note
+//      42044 "nie trafia" contains 42043 "trafia", which is why the parser
+//      tests miss first.
+//
+//  (b) 42046 is "Użyto atutu: <CUSTOM0>" — the feat label LEADS the name,
+//      where DE trails it with " verwendet.". Hence feat_marker_leads.
+//
+//  (c) 1403 is "<CUSTOM0> trafia. <CUSTOM1> otrzymuje <CUSTOM2> pkt obrażeń" —
+//      no colon between target and amount, so damage_amount_marker closes the
+//      target instead. The " trafia. " actor marker also appears in a summary
+//      line that carries a feat clause, but CombatSummary is registered ahead
+//      of CombatDirectDamage and claims that line first.
+//
+//  (d) Like Russian, there is no status-echo copula: 42158 is a bare
+//      "<CUSTOM0> <CUSTOM1>". A single space cannot be used as an anchor, so
+//      status_ist_marker takes the same 0x01 sentinel — the status word is not
+//      lifted onto the attack line, the echo is still claimed and suppressed by
+//      prefix_auswirkung, and nothing regresses.
+//
+//  Save types 1374-1376 also share a LEADING phrase ("Rzut obronny na …")
+//  rather than a trailing one, so save_marker uses 1406's ". " separator, the
+//  same fallback Russian needed.
+const MsgStrings kPl = {
+    // ---- Engine-side parse anchors (LEM dialog.tlk)
+    "trafia",                                   // phrase_hit   (42043, bare verb — see quirk (a))
+    "nie trafia",                               // phrase_miss  (42044)
+    "  za ",                                    // phrase_mit          (42119, +1 glue space)
+    "obrona ",                                  // word_verteidigung   (42119 gap CUSTOM1..CUSTOM2)
+    "obra\xBF""e\xF1: ",                                // word_schaden_colon  (42119 gap CUSTOM2..CUSTOM3)
+    "U\xBFyto atutu: ",                            // feat_marker         (42046, leading label)
+    "Szczeg\xF3\xB3y ataku: ",                        // prefix_angriff      (42146)
+    "Szczeg\xF3\xB3y obrony: ",                       // prefix_abwehr       (42149)
+    "Szczeg\xF3\xB3y obra\xBF""e\xF1: ",                      // prefix_schaden      (42150)
+    "Szczeg\xF3\xB3y zagro\xBF""enia:",                    // prefix_bedrohung    (42148)
+    "Trafienie krytyczne!",                     // tag_krit_summary    (1511)
+    "Automatyczne trafienie!",                  // tag_auto_hit        (42390)
+    "Automatyczne pud\xB3o!",                      // tag_auto_fail       (42391)
+    "rzut ",                                    // token_wuerfel       (42316)
+    "modyfikator ze ZR ",                       // token_gesch_mod     (42339)
+    "premia za bliski zasi\xEAg ",                 // token_entfernung    (42330)
+    "premia za efekt ",                         // token_effekt        (42332)
+    // 42386 is "Trafienie krytyczne x <CUSTOM0> za" — unlike DE there is a
+    // space before the multiplier, which atoi skips, and the tail carries no
+    // trailing space.
+    "Trafienie krytyczne x ",                   // krit_x_prefix       (42386)
+    " za",                                      // phrase_fuer         (42386 tail)
+    "premia do obra\xBF""e\xF1:",                       // token_bonusschaden  (42155)
+    "G\xB3\xF3wna r\xEAka",                              // hand_main           (42314)
+
+    // ---- Output-side labels (hand-translated; machine-translation quality
+    // bar, same as fr/it/es/ru — flagged for a native-speaker pass)
+    "trafia",                                   // verb_hit
+    "chybia",                                   // verb_miss
+    "krytycznie",                               // word_critical
+    "Atak",                                     // word_angriff
+    "Obrona",                                   // word_vert
+    "kontra",                                   // word_gg
+    "Obra\xBF""enia",                                // word_schaden
+    "z",                                        // word_von
+    "Automatyczne trafienie.",                  // word_auto_hit
+    "Automatyczne pud\xB3o.",                      // word_auto_fail
+
+    // ---- Short replacements. Spelled out rather than clipped to initials, per
+    // the project rule that a short label must never sound like another word.
+    // "rzut " keeps its trailing space where DE's "W" drops it: "rzut 14" reads,
+    // "rzut14" does not.
+    "rzut ",                                    // short_wuerfel
+    "zr\xEA""czno\x9C\xE6 ",                               // short_gesch
+    "zasi\xEAg ",                                  // short_reichweite
+    "efekt ",                                   // short_effekt
+    "premia",                                   // short_bonus
+
+    // ---- Results-only labels + effect/save/damage/kill anchors
+    "chybione",                                 // word_failed
+    "Szczeg\xF3\xB3y na\xB3o\xBF""enia efektu:",              // prefix_auswirkung   (42157)
+    // The verb shared by both absorb forms: 1455 "zmniejszenie obrażeń
+    // absorbuje" and 1456 "odporność absorbuje". (1454 uses "odpiera" and is
+    // left on raw speech, as in DE.)
+    "absorbuje",                                // absorb_anchor       (1455/1456)
+    " u\xBFywa: ",                                 // ability_use_marker  (32292)
+    ". ",                                       // save_marker         (1406 gap C1..C2)
+    "sukces!",                                  // save_success        (1392 + "!")
+    "pora\xBFka!",                                 // save_fail           (1393 + "!")
+    " trafia. ",                                // damage_marker       (1403 gap C0..C1)
+    "opiera si\xEA",                               // word_resists
+    "nieudany",                                 // word_save_failed
+    "zabija",                                   // kill_marker         (1407)
+
+    // ---- Status-echo copula: none in Polish. See quirk (d).
+    "\x01",                                     // status_ist_marker (sentinel)
+
+    // ---- Blaster-deflection breakdown (42417: "Szczegóły odbicia: <CUSTOM0>
+    // odbija pocisk za pomocą <CUSTOM1> = <CUSTOM2> kontra atak <CUSTOM3>")
+    "Szczeg\xF3\xB3y odbicia: ",                      // prefix_reflexion
+    " odbija pocisk za pomoc\xB9 ",                // reflect_mid_marker
+    // Polish counts in three plural forms (1 / 2-4 / 5+) against the two the
+    // format API offers, so the many-form uses the 5+ genitive plural: right
+    // for 0 and 5+, understandable for 2-4. Same compromise as Russian.
+    "%s odbija 1 strza\xB3",                       // fmt_deflect_one
+    "%s odbija %d strza\xB3\xF3w",                    // fmt_deflect_many
+
+    // ---- Summary layout: labelled. See quirks (a)-(c).
+    "Atakuj\xB9""cy: ",                              // summary_actor_prefix
+    " Cel: ",                                   // summary_target_marker
+    " Atak: ",                                  // summary_verb_marker
+    true,                                       // feat_marker_leads
+    " otrzymuje ",                              // damage_amount_marker (1403 gap C1..C2)
 };
 
 }  // namespace
@@ -528,6 +710,7 @@ const MsgStrings& Get() {
         case acc::strings::Lang::It: return kIt;
         case acc::strings::Lang::Es: return kEs;
         case acc::strings::Lang::Ru: return kRu;
+        case acc::strings::Lang::Pl: return kPl;
     }
     return kDe;
 }
