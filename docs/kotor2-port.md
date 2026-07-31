@@ -1,0 +1,212 @@
+# KOTOR 2 port — plan and findings
+
+**Status: ACTIVE (started 2026-07-31).** Supersedes the conclusion of
+`kotor2-port-feasibility.md`, whose *measurements* remain valid — the sigscan
+result especially — but whose cost estimate predates the RTTI finding below.
+
+## Target
+
+Steam / GOG KOTOR 2, Aspyr's 2015 rebuild. PE link timestamp
+2015-09-23 19:41:17Z (`0x5603005D`). The installed Steam copy's SHA-256 matches
+the `kotor2_steam_aspyr` entry in KPatchManager's `AddressDatabases/`, so the
+framework and this patch agree on which binary this is.
+
+The exe is **not** SteamStub-encrypted (no `.bind` section), so unlike KOTOR 1
+it can be read straight off disk — no `kdev dump-text` step to get byte
+reference material.
+
+## Architecture decision — one binary, runtime dispatch
+
+**Decided 2026-07-31.** A single DLL serves both games, selecting addresses and
+struct offsets at runtime from the detected game.
+
+The alternative considered and rejected was a second build target (per-game
+compile-time constants, two `.kpatch` artifacts). It was rejected on
+maintenance grounds, and the argument is worth keeping: a few hundred files
+here encode behaviour that is *identical* between the games. With two binaries
+every KOTOR 1 fix must be consciously re-applied to KOTOR 2, forever, and the
+failure mode is silent — a fix that simply never arrives in the other game.
+With one binary, divergence is explicit and local (`if (acc::game::IsKotor2())`
+at the handful of places that genuinely differ) and everything else is shared
+by construction.
+
+The cost objection to the single binary turned out to be much smaller than it
+first looked. Converting `constexpr size_t kFoo = 0x90;` to a runtime variable
+leaves **every call site unchanged** — same name, same expression. Only the
+declaration and a per-game table move. A codebase-wide check of the 243
+constants in `engine_offsets_*.h` found **zero** used where C++ requires a
+compile-time constant:
+
+- array bounds: 0
+- `static_assert`: 0
+- `case` labels: 0
+- template arguments: 0
+- feeding another `constexpr`: 0
+
+The conversion is mechanical.
+
+## What the port actually costs
+
+**Not the vtables.** The K2 exe ships full RTTI — 389 type descriptors with
+class names identical to K1's. `tools/re-scripts/rtti_scan.py` walks
+type descriptor → complete object locator → vtable and recovers **392 named
+vtables**; output is checked in at `docs/llm-docs/re/k2/k2-vtables.csv`. All 19
+of our vtable-identity constants resolve by name automatically. Beyond the
+constants themselves, this gives named anchors for decompiling everything else,
+which is the part the feasibility doc could not have priced.
+
+Regenerate with:
+
+    python tools/re-scripts/rtti_scan.py <path-to-swkotor2.exe> > out.csv
+
+**Struct offsets shift by a constant delta per class, not randomly.** Diffing
+the 21 offsets that both seeded databases share:
+
+- Base/shallow classes are **identical**: `CAppManager`, `CExoString`,
+  `CGameObject`, `CSWBaseItem`.
+- Derived classes shift **uniformly**: every `CSWSObject` field by 4, every
+  `CSWSCreatureStats` field by 4, both `CSWSCreature` fields by the same larger
+  delta.
+
+That is field insertion near the top of a base class, not a redesign. Verifying
+two fields per class carries the rest — but confirm, don't assume: the delta is
+piecewise, identity below the insertion point and constant above it.
+
+**The offsets surface is about double what the headers suggest.** Codebase-wide
+there are ~494 offset-shaped constants; only ~half live in `engine_offsets_*.h`.
+The other ~258 are scattered across ~40 files — `engine_area.h` alone holds 60,
+then `engine_radial`, the minigames, `engine_picker`, `engine_actionbar`. The
+Phase-2 consolidation captured part of this, not all of it. Consolidating the
+strays is part of the offsets step, and would have been needed under either
+architecture.
+
+**`kdev sigscan` contributes nothing here** and that has not changed. It finds
+the same compiled bytes relocated; K2 is a recompile, so functions were
+re-emitted rather than moved. 0 of 213. Its value stays confined to KOTOR 1
+build variants.
+
+## Delivery mechanism — already supported
+
+Nothing new is needed to ship one mod into two games:
+
+- `hooks.toml` already carries `[metadata] target_versions` keyed by executable
+  SHA-256, and we already ship a second hooks file for K1's 2004 relink
+  (`relink2004.hooks.toml`). K2 gets `kotor2.hooks.toml` the same way.
+- `manifest.toml` `[patch.supported_versions]` takes the two K2 hashes.
+- The installer already has the K2 half: game-version selection, K2 path
+  detection, TSLRCM / K2CP / Tweak Pack flows, and it already applies two K2
+  `.kpatch` files (4GB-aware, borderless) against known Steam and GOG hashes.
+- `swkotor2.exe` imports `dinput8.dll`, so the proxy loader works unchanged.
+
+## Steps
+
+1. **Game-identity seam.** *(done 2026-07-31)* `engine_game.{h,cpp}` owns
+   "which game, which build", detected from the game image's PE link timestamp
+   — safe from static init and DllMain, the same constraint that shaped
+   `engine_rebase`. `engine_rebase` now consumes it rather than detecting
+   separately. Logged as the first line of the startup snapshot
+   (`Game.Identity title=… build=…`).
+2. **Load-and-log on K2.** K2 hashes in the manifest, a minimal
+   `kotor2.hooks.toml`, everything else gated off. Proves the framework
+   end-to-end before any mass change.
+3. **Offsets go runtime.** *(done 2026-07-31)* `engine_offsets_select.h`
+   introduces `Same` / `Pick` / `Todo` / `Kotor1Only`; 246 constants in
+   `engine_offsets_fields.h` plus 255 scattered across 43 other files were
+   converted. The strays were marked **in place**, not relocated — a named
+   constant next to the subsystem that reads it is good cohesion; what was
+   missing was a marker saying "engine-version-dependent", and the marker is
+   greppable wherever it lives.
+4. **Populate K2 values.** *(in progress)* See the coverage table below.
+5. **Feature-gate the K1-only modules**, then walk the pillars up.
+
+## Coverage (2026-07-31)
+
+Struct offsets — `acc::off`:
+- `Todo` (K2 unknown): 488
+- `Same` (verified identical): 4
+- `Pick` (verified different): 7
+- `Kotor1Only` (no K2 counterpart): 10
+
+Addresses — `acc::addr`:
+- `R` (K2 unknown, resolves to 0): 253
+- `Pick` (.text/.rdata known): 19 — all the vtable-identity constants, from RTTI
+- `PickGlobal` (.data known): 4
+- `TodoGlobal` (.data unknown, resolves to 0): 10
+
+`grep -c "Todo("` and the `R(` count are the remaining-work counters.
+
+Everything with a K2 value so far came from the seeded upstream database or the
+RTTI scan — **no fresh reverse-engineering yet**. The 253 function addresses are
+where that starts.
+
+### The cross-check that makes the seeded database usable
+
+On every field and pointer the two databases share, upstream's **KOTOR 1**
+column matches ours exactly — offsets 0x4, 0x8, 0x8c, 0x90, 0x9c, 0xa2c, 0xa74,
+and globals 0x7A39F4, 0x7A39FC, 0x7A3A08, 0x7A3A28. Two independent
+reverse-engineering efforts agreeing on the column we can verify is what earns
+trust in the column we cannot.
+
+The structural predictions held exactly:
+- `CGameObject` (shallow root) — unchanged
+- `CSWSObject` — uniformly +4
+- `CSWSCreature` — uniformly +0x724
+- the whole `.data` globals block — uniformly +0x2A1AA8, i.e. relocated intact
+
+### Values that are derived rather than verified
+
+Flagged in the code, listed here so they are not forgotten:
+- `kWaypointPositionOffset` — `CSWSObject.Position` read on a waypoint, so it
+  should inherit the +4 shift, but the database says nothing about waypoints.
+- `kScriptVarTableOffset` (+0x100) — left `Todo`. `CSWSObject`'s shallow fields
+  shift +4, but +0x100 is far enough down the class that the same shift cannot
+  be assumed. Save-persistent mod state on KOTOR 2 depends on getting this
+  right.
+
+Controller support comes after the mod runs on K2 at all — see below.
+
+## The pass-through hazard (fixed, worth understanding)
+
+Before step 1, `acc::addr::R()` returned the *reference value* for any
+unrecognised build. On KOTOR 2 that would have handed out 267 KOTOR 1 addresses
+pointing into unrelated K2 code — silent jumps into the middle of other
+functions, which is precisely the failure mode `engine_rebase.h` warns about
+for stale addresses.
+
+`R()` now returns **0** for KOTOR 2. That faults recognisably at address 0, and
+the ~12 call sites already wrapped in `acc::addr::Ok()` degrade gracefully with
+no changes. But `Ok()` is not what makes K2 safe — it covers 12 of 267 sites.
+**Engine-touching code must be gated on `acc::game::IsKotor1()` before it
+runs.** That gating is step 5, and until it exists K2 must not be given a hook
+set beyond the minimum.
+
+## Controller support
+
+KOTOR 2's native pad support came from Aspyr's iOS/Android port, and the RTTI
+names show it plainly: `CSWGamepadMenuIos`, `CSWGuiActionMenuIos`,
+`CSWGuiHelpPanel` (all nested in `CSWGuiMainInterface`), plus
+`CSWGuiControllerLossBox` and a `CExoInputeventDesc2ButtonAxis` input
+descriptor. It is a **parallel UI**, not a remapping of the keyboard one — so
+it is not something the K1 nav-chain work ports into directly.
+
+Two facts that will shape the design:
+
+- The exe does **not** import XInput. The pad goes through DirectInput. If we
+  poll the pad ourselves we would be a second reader of the same device, and
+  both we and the engine would see every press — the same double-fire problem
+  documented for keyboard polling in `controller-mod-techniques.md` §4.
+- Our mod adds many keyboard-only affordances (discovery cycling, the unified
+  action menu, interact hotkeys). These need pad bindings that do not collide
+  with what K2 already binds.
+
+`docs/controller-mod-techniques.md` is the existing hand-off note on our input
+pipelines and is the right starting point, but it describes K1 surfaces.
+
+## Sources
+
+- `kotor2-port-feasibility.md` — the original measurement (sigscan 0/213) and
+  why it will not improve.
+- `docs/llm-docs/CLAUDE.md` — which modules are K1-story-only, which minigames
+  do not carry.
+- `docs/controller-mod-techniques.md` — input pipelines, nav chain, activation.
+- `archiev/refactoring/END-REPORT.md` — what the pre-K2 refactoring bought.

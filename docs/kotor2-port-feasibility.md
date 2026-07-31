@@ -1,9 +1,15 @@
-# KOTOR 2 port — feasibility check (PARKED)
+# KOTOR 2 port — feasibility check (SUPERSEDED)
 
-**Status: PARKED (2026-07-25).** Investigated as a side-step while building the
-KOTOR 1 multi-exe support, to find out whether that work could double as a head
-start on a KOTOR 2 port. It cannot. Recorded here so the question does not get
-re-opened from scratch; nothing below is in progress.
+**Status: SUPERSEDED (2026-07-31) by `docs/kotor2-port.md`,** which is the live
+plan. Read this file for the sigscan measurement and why it will not improve —
+that part still holds and is still referenced from `kdev-design.md`. Do **not**
+read its cost estimate as current: "the KOTOR 2 address database is fresh
+reverse-engineering, budget it as such" predates the discovery that the K2 exe
+ships full RTTI, which resolves all 392 vtables by class name automatically.
+
+Originally written 2026-07-25 as a side-step while building the KOTOR 1
+multi-exe support, to find out whether that work could double as a head start on
+a KOTOR 2 port. It cannot — that conclusion is unchanged.
 
 ## The question
 
