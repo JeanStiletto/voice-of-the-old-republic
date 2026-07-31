@@ -125,7 +125,37 @@ behaviour fought once already. On KOTOR 2 the bug gets rediscovered BEFORE it is
 recognised that the fix is already owned. Budget the port accordingly: the
 addresses are the cheap half.
 
-Two method notes worth keeping:
+## THE METHOD: port whole subsystems, verify every constant first
+
+**Decided 2026-07-31, after the minimal-slice approach cost four test rounds to
+rediscover a countermeasure KOTOR 1 already had.** This supersedes the
+"start minimal and grow" instinct. Do not repeat it.
+
+**Do NOT build reduced KOTOR 2 paths that omit KOTOR 1 logic.** Omitting a
+workaround does not defer its cost, it multiplies it: the bug gets rediscovered
+from symptoms, debugged blind, and fixed again — and every cycle costs a test
+round with the user at the keyboard.
+
+The procedure for each subsystem:
+
+1. Take the KOTOR 1 implementation **whole**, workarounds included.
+2. Enumerate every address and offset its full call graph touches.
+3. Verify each against the KOTOR 2 binary offline — vtable-slot correspondence,
+   RTTI, decompiling both sides and comparing structure.
+4. Port the entire subsystem, gate cleared, and test **once**.
+
+The reasoning is about which resource is scarce. Analysis is cheap, offline, and
+repeatable; test rounds need the user and are the real bottleneck. A minimal
+slice optimises the developer's debugging convenience at the user's expense.
+KOTOR 1's logic is known-good — the only genuine unknowns are the KOTOR 2
+constants, and those are exactly what step 3 settles before anything runs.
+
+Corollary: when a KOTOR 1 module contains something whose purpose is unclear,
+**port it anyway**. The cursor warp looked like housekeeping and was
+load-bearing. Assume every line earned its place until proven otherwise, rather
+than the reverse.
+
+One diagnostic note still worth keeping:
 
 - **Identical failures mean the cause is untouched.** Three fixes failed in
   exactly the same way while hypotheses were refined (write the coordinates →
@@ -134,10 +164,6 @@ Two method notes worth keeping:
   value regardless of what was written, because the engine re-derives it from
   the real mouse every frame. Different failures mean progress; identical ones
   mean measure instead of theorise.
-- **A minimal slice was still the right call.** Porting the whole KOTOR 1
-  handler might have worked first time, but a failure would have had thirty
-  variables rather than three. The trade was "rediscover one countermeasure" in
-  exchange for a tractable debug, and it was worth it.
 
 ## Hook status
 
