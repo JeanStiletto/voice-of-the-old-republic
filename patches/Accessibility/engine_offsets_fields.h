@@ -701,9 +701,23 @@ const size_t    kUpgradePickerOpenFlagOff = acc::off::Todo(0x2f48);  // panel.fi
 // CSWGuiUpgrade slot-type table geometry, plus the two panel/button fields that
 // index it. The table base is kAddrUpgradeSlotTypeTable in
 // engine_offsets_addresses.h, where the per-entry layout is documented.
-const size_t    kUpgradeSlotTypeStride    = acc::off::Todo(12);
+// Entry stride is 0xc in BOTH games — observed, not assumed: KOTOR 2's
+// OnPanelAdded indexes the table with `slot * 0xc + (category - 1) * 0x48`
+// against KOTOR 1's `((custom_value - 4) + category * 4) * 0xc`.
+//
+// **But the INDEX FORMULA differs and that is not a constant.** KOTOR 1 packs
+// FOUR slot types per category (its category term is `category * 4 * 0xc`);
+// KOTOR 2 packs SIX (`(category - 1) * 0x48`), and biases the category by one
+// instead of the slot by four. A caller that keeps KOTOR 1's arithmetic and
+// only swaps the base address will read the wrong entry on KOTOR 2 — so the
+// index needs a per-game branch in the code, not a per-game constant here.
+// See kAddrUpgradeSlotTypeTable in engine_offsets_addresses.h.
+const size_t    kUpgradeSlotTypeStride    = acc::off::Same(12);
 const size_t    kUpgradeSlotTypeStrRefOff = acc::off::Todo(8);
-const size_t    kUpgradePanelCategoryOff  = acc::off::Todo(0x2f4c);  // panel.field25
+// KOTOR 2 +0x3d2c, from its own OnPanelAdded — same `(char)category == 1`
+// saber test, same use as the table's category term. Shifts by 0xDE0, matching
+// kUpgradeSlotInstalledItemsOff above.
+const size_t    kUpgradePanelCategoryOff  = acc::off::Pick(0x2f4c, 0x3d2c);  // panel.field25
 const size_t    kUpgradeSlotCustomValueOff = acc::off::Todo(0x58);   // slot_btn.custom_value
 
 // CSWGuiUpgrade.field35_0x2f74 — array of installed-mod CSWSItem* indexed by
@@ -713,7 +727,11 @@ const size_t    kUpgradeSlotCustomValueOff = acc::off::Todo(0x58);   // slot_btn
 // OnPanelAdded @0x006c4d70); null = empty. Both OnEnterSlot @0x006c3c30 (saber
 // branch) and OnSlotSelected @0x006c6500 (install/remove branch) index this
 // array by custom_value, so it is the authoritative per-slot occupancy field.
-const size_t    kUpgradeSlotInstalledItemsOff = acc::off::Todo(0x2f74);  // panel.field35
+// KOTOR 2 +0x3d54, from its own OnPanelAdded, which walks the same array in the
+// same place: `installed[slot] != 0` guards the free-slot search, and the slot
+// that wins gets a freshly constructed CSWSItem stored into it. Its category
+// byte (below) shifts by exactly the same 0xDE0, which is the cross-check.
+const size_t    kUpgradeSlotInstalledItemsOff = acc::off::Pick(0x2f74, 0x3d54);  // panel.field35
 
 // CSWGuiUpgrade.field27_0x2f54 — the CSWSItem* currently being upgraded (the
 // weapon/armor/saber). OnEnterSlot / OnControlEntered pass it to

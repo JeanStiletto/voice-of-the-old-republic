@@ -447,7 +447,24 @@ const uintptr_t kAddrCSWGuiUpgradeShowItems = acc::addr::R(0x006c2f80);
 // the category doesn't use. RE'd from OnEnterSlot @0x006c3c30 (the
 // `DAT_00756fb8` reference, +8 from the table base) and verified against
 // a 240-byte dump at 0x00756fb0.
-const uintptr_t kAddrUpgradeSlotTypeTable = acc::addr::R(0x00756fb0);
+//
+// KOTOR 2's table is at 0x009A84E8, located by scanning .text for references to
+// it: exactly two functions touch it, and one of them (0x008ce3f0) references
+// both base+0 and base+8 — the same pair KOTOR 1's OnPanelAdded and OnEnterSlot
+// touch. Entry stride is 0xc in both.
+//
+// **The INDEX FORMULA IS NOT THE SAME**, and swapping only this address is
+// therefore not enough. KOTOR 1 lays the table out as four slot types per
+// category and indexes `((custom_value - 4) + category * 4) * 0xc`; KOTOR 2
+// uses SIX per category and indexes `slot * 0xc + (category - 1) * 0x48`. The
+// entry COUNT differs too, so the 16-entry assumption above is KOTOR 1's.
+// Callers must branch on acc::game::IsKotor2() for the index; this constant
+// only fixes the base.
+// Pick(), NOT PickGlobal(): this is .rdata, and .rdata DOES move on the 2004
+// relink — this very table is one of the entries engine_rebase_rdata.inc
+// resolves. PickGlobal skips R() and would hand out the reference address on
+// the relink build.
+const uintptr_t kAddrUpgradeSlotTypeTable = acc::addr::Pick(0x00756fb0, 0x009A84E8);
 
 // Server-side combat-mode global. Read via accessor for safety; the
 // CClientExoApp facade is 8 bytes (vtable + internal), and the actual
