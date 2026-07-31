@@ -687,7 +687,10 @@ const size_t kSaveLoadEntryLastModuleOffset    = acc::off::Todo(0x1f0);
 // OnControlEntered handler tests before doing anything. Keyboard-driven callers
 // must raise it first and restore it after; the handlers themselves are
 // documented in engine_offsets_addresses.h.
-const size_t    kControlIsActiveOffset       = acc::off::Todo(0x4c);
+// KOTOR 2 +0x50, observed: its upgrade OnEnterSlot opens with the identical
+// `if (control->is_active != 0)` gate, reading param_1+0x50 where KOTOR 1 reads
+// +0x4c. Consistent with the rest of this region of CSWGuiControl being +4.
+const size_t    kControlIsActiveOffset       = acc::off::Pick(0x4c, 0x50);
 
 // CSWGuiUpgrade.field9 - the description label CSWGuiUpgrade::OnControlEntered
 // writes its built string into (see engine_offsets_addresses.h); we read the
@@ -713,12 +716,19 @@ const size_t    kUpgradePickerOpenFlagOff = acc::off::Todo(0x2f48);  // panel.fi
 // index needs a per-game branch in the code, not a per-game constant here.
 // See kAddrUpgradeSlotTypeTable in engine_offsets_addresses.h.
 const size_t    kUpgradeSlotTypeStride    = acc::off::Same(12);
-const size_t    kUpgradeSlotTypeStrRefOff = acc::off::Todo(8);
+// Same +8 in KOTOR 2: its OnEnterSlot reads the UpgradeType at
+// `&DAT_009a84e8 + idx` and the strref at `&DAT_009a84f0 + idx` — the same two
+// fields of the same entry, 8 bytes apart, exactly as KOTOR 1 does.
+const size_t    kUpgradeSlotTypeStrRefOff = acc::off::Same(8);
 // KOTOR 2 +0x3d2c, from its own OnPanelAdded — same `(char)category == 1`
 // saber test, same use as the table's category term. Shifts by 0xDE0, matching
 // kUpgradeSlotInstalledItemsOff above.
 const size_t    kUpgradePanelCategoryOff  = acc::off::Pick(0x2f4c, 0x3d2c);  // panel.field25
-const size_t    kUpgradeSlotCustomValueOff = acc::off::Todo(0x58);   // slot_btn.custom_value
+// KOTOR 2 +0x5c, observed rather than inferred from the neighbouring +4s: its
+// OnEnterSlot loads the slot index from param_1+0x5c and uses it as both the
+// slot-type table index and the installed-items index, exactly as KOTOR 1 uses
+// custom_value at +0x58.
+const size_t    kUpgradeSlotCustomValueOff = acc::off::Pick(0x58, 0x5c);   // slot_btn.custom_value
 
 // CSWGuiUpgrade.field35_0x2f74 — array of installed-mod CSWSItem* indexed by
 // the slot button's custom_value. Non-null = slot occupied (the engine

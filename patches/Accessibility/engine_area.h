@@ -463,7 +463,14 @@ const size_t kDoorTransitionDestOffset     = acc::off::Todo(0x3c8);
 const size_t kCreatureStatsPtrOffset       = acc::off::Pick(0xa74, 0x1198);  // CSWSCreatureStats*
 const size_t kCreatureStatsFirstNameOffset = acc::off::Todo(0x14);
 const size_t kPlaceableLocNameOffset       = acc::off::Todo(0x228);
-const size_t kItemLocNameOffset            = acc::off::Todo(0x280);
+// CSWSItem.localized_name — KOTOR 2 +0x2c0, observed in its upgrade
+// OnEnterSlot, which builds the installed mod's display name from
+// `installed[slot] + 0x2c0` exactly where KOTOR 1's builds it from
+// `installed[slot] + 0x280`. Note the delta is +0x40, NOT the +4 the shallow
+// CSWSObject fields take — CSWSItem's own body grew as well, so the sibling
+// LocName offsets below (placeable / waypoint / trigger) must NOT be assumed to
+// follow this one; each needs its own witness.
+const size_t kItemLocNameOffset            = acc::off::Pick(0x280, 0x2c0);
 const size_t kWaypointLocNameOffset        = acc::off::Todo(0x238);
 const size_t kTriggerLocNameOffset         = acc::off::Todo(0x228);
 
