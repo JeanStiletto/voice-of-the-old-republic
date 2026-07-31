@@ -141,11 +141,11 @@ Two method notes worth keeping:
 
 ## Hook status
 
-The first hook (CSWGuiPanel::SetActiveControl -> menu focus announce) is
-installed and working. The rest are still gated off, for two reasons found by
-trying. Neither is a reason to
-slow down — but each has to be cleared per hook, so "enable them all" is not a
-single step.
+The first hook (`CSWGuiPanel::SetActiveControl` → menu focus announce) is
+installed and working. The rest are still gated off by
+`acc::game::HandlerEnabled()`, for two reasons found by trying. Neither is a
+reason to slow down — but each has to be cleared per hook, so "enable them all"
+is not a single step.
 
 **1. Handlers are not self-contained.** `OnSetActiveControl` calls
 `IsLoadingSaveGame`, which dispatches through
