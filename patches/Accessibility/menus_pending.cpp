@@ -218,6 +218,44 @@ bool IsPending() {
     return g_op.kind != Kind::None;
 }
 
+// Are the engine addresses this op needs actually resolved for the running
+// build? On KOTOR 1 every one of these is known and this is always true; on
+// KOTOR 2 the unported ones resolve to 0 and calling them would fault outside
+// any SEH frame.
+//
+// Deliberately a lookup rather than a blanket "is this KOTOR 2" test: the ops
+// resolve independently, so as the port progresses each becomes available on
+// its own without this needing to be revisited as a whole. It also covers the
+// KOTOR 1 relink, where an address missing from the rebase table resolves to 0
+// for exactly the same reason.
+bool EngineOpsReady(Kind kind) {
+    using acc::addr::Ok;
+    switch (kind) {
+    case Kind::None:
+        return true;
+    case Kind::MoveCursor:
+        return Ok(kAddrMoveMouseToPosition);
+    case Kind::ClickAt:
+        return Ok(kAddrMoveMouseToPosition) && Ok(kAddrManagerLMouseDown) &&
+               Ok(kAddrManagerLMouseUp);
+    case Kind::EquipSelect:
+        return Ok(kAddrInGameEquipOnEnterSlot) && Ok(kAddrInGameEquipOnSelectSlot);
+    case Kind::EquipCommit:
+        return Ok(kAddrInGameEquipOnItemSelected) && Ok(kAddrInGameEquipOnOKPressed);
+    case Kind::WorkbenchSlotSelect:
+        return Ok(kAddrCSWGuiUpgradeOnEnterSlot) && Ok(kAddrCSWGuiUpgradeOnSlotSelected);
+    case Kind::WorkbenchUpgradeCommit:
+        return Ok(kAddrCSWGuiUpgradeOnUpgradeSelected) && Ok(kAddrCSWGuiUpgradeOnAssemble);
+    case Kind::WorkbenchPickerCancel:
+        return Ok(kAddrCSWGuiUpgradeShowItems);
+    default:
+        // Activate / SliderInput / StoreItemActivate / GalaxyInput / WagerInput
+        // dispatch through the control's own vtable rather than a hardcoded
+        // address, so they carry no build dependency.
+        return true;
+    }
+}
+
 void Drain(void* gm) {
     if (g_op.kind == Kind::None) return;
 
@@ -243,6 +281,27 @@ void Drain(void* gm) {
     // dispatched op.
     PendingOp op = g_op;
     Reset();
+
+    // Every branch below CALLS the engine directly, and an engine address that
+    // is not resolved for the running build hands back 0 — so dispatching would
+    // be a call through a null pointer, outside any __try. That is a crash, not
+    // a degraded feature.
+    //
+    // This is the whole reason the queue exists: these ops fire on activation
+    // (Enter on a menu item), so on KOTOR 2 the very first Enter would take the
+    // process down while everything else appeared to work. Declining the op
+    // instead means activation does nothing and says so in the log, which is a
+    // missing feature and diagnosable.
+    //
+    // Checked per op rather than once, because the ops need different
+    // addresses and they resolve independently — see EngineOpsReady below.
+    if (op.kind != Kind::None && !EngineOpsReady(op.kind)) {
+        acclog::Write("Update",
+                      "pending op kind=%d DECLINED — engine addresses not "
+                      "resolved for this build (KOTOR 2 port in progress)",
+                      static_cast<int>(op.kind));
+        return;
+    }
 
     switch (op.kind) {
     case Kind::None:
