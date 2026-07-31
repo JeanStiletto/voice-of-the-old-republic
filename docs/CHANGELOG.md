@@ -37,7 +37,9 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h3>Keyboard navigation:</h3>
 
-- Three buttons that duplicate something the keyboard already does are gone from arrow navigation. On the map screen, "Previous map note" and "Next map note" — the map cursor sweeps those same notes with W, A, S and D — so Up and Down now step straight to the party-select and return buttons. On the party-selection screen, "Add", because Enter on a companion's portrait already adds or removes them.
+- The inventory and journal screens no longer split their list in half. The action buttons at the bottom of those screens — "Show:" and "Use" in the inventory, "Quest items", "Completed quests" and "Sort by name" in the journal — used to turn up in the middle of the list, with more items after them. Arrow navigation now walks every item or quest first and reaches the buttons at the end, whatever the list length. Press End to jump straight to them.
+- Four buttons that duplicate something the keyboard already does are gone from arrow navigation. On the map screen, "Previous map note" and "Next map note" — the map cursor sweeps those same notes with W, A, S and D — so Up and Down now step straight to the party-select and return buttons. On the party-selection screen, "Add", because Enter on a companion's portrait already adds or removes them. In the inventory, "Use": Enter on the item does the same thing and is safer, because the button acts on whichever row the game still considers current, which is not always the one you are standing on.
+- Cycling the inventory's "Show:" filter now updates the list you navigate. The game rebuilds the item list a frame later, which arrow navigation never noticed, so it kept the old number of rows and read items that the new filter had removed.
 
 <h2>v0.6.4</h2>
 

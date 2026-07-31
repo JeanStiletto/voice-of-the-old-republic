@@ -702,6 +702,17 @@ const uintptr_t kAddrCSWItemGetBaseItem = acc::addr::R(0x005b4790);
 // next Draw won't repopulate again).
 const uintptr_t kAddrJournalPopulateItemListBox = acc::addr::R(0x00645330);
 
+// CSWGuiInGameInventory::PopulateItemListBox @0x006b4810 — the inventory
+// sibling of the journal call above. Rebuilds item_listbox from the equipped
+// slots + the party item repository, keeping only rows CheckFilter accepts,
+// then clears bit_flags bit 0 so the next Draw won't repopulate again. The
+// filter button ("Zeigen: …") only raises that bit, so calling this makes the
+// new list final before we re-bind the chain to it.
+// NOT in the 2004-relink rebase table (no known-good bytes to sigscan for);
+// R() returns 0 there and inventory::ForceRepopulate self-skips via
+// acc::addr::Ok, leaving that build on the pre-existing lazy behaviour.
+const uintptr_t kAddrInventoryPopulateItemListBox = acc::addr::R(0x006b4810);
+
 // CSWGuiJournalItemEntry rows are CSWGuiButton-derived (size 0x1cc) with
 // their own vtable. The journal's OnControlEntered fires on mouse hover
 // over a row and rewrites item_description_label with the full text.

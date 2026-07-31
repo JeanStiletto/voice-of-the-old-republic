@@ -5,6 +5,7 @@
 // linkage changes.
 
 #include <windows.h>
+#include <climits>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -26,6 +27,7 @@
 #include "menus_equipstats.h"
 #include "menus_extract.h"
 #include "menus_internal.h"
+#include "menus_inventory.h"
 #include "menus_modsettings.h"
 #include "menus_pazaakdeck.h"
 #include "menus_store.h"
@@ -379,12 +381,23 @@ void* FindCancelButton(void* panel) {
 
 namespace {
 
-void AppendChainEntry(void* control) {
+// Sentinel for AppendChainEntry's sortCy parameter: sort this entry by its
+// own cy, the normal case for a panel-direct control.
+constexpr int kSortByOwnCy = INT_MIN;
+
+// `sortCy` overrides only the reading-order key, never the real cy the cursor
+// warp uses. Listbox rows pass their listbox's extent top here so the whole
+// listbox stays one contiguous block — see the ChainEntry::sortCy comment.
+void AppendChainEntry(void* control, int sortCy = kSortByOwnCy) {
     if (g_chainCount >= kMaxChainEntries) return;
     if (!IsChainNavigable(control))       return;
     int cx, cy;
     if (!GetControlCenter(control, cx, cy)) return;
-    g_chain[g_chainCount++] = { control, cx, cy, /*textOnly=*/false };
+    g_chain[g_chainCount++] = {
+        control, cx, cy,
+        (sortCy == kSortByOwnCy) ? cy : sortCy,
+        /*textOnly=*/false
+    };
 }
 
 void AppendChainTextOnly(void* control, void* panel) {
@@ -394,7 +407,7 @@ void AppendChainTextOnly(void* control, void* panel) {
     if (!acc::menus::extract::FromControl(control, tmp, sizeof(tmp), panel)) return;
     int cx, cy;
     if (!GetControlCenter(control, cx, cy)) return;
-    g_chain[g_chainCount++] = { control, cx, cy, /*textOnly=*/true };
+    g_chain[g_chainCount++] = { control, cx, cy, cy, /*textOnly=*/true };
 }
 
 // Panel-aware chain filter: in CSWGuiPortraitCharGen we anchor the chain
@@ -580,6 +593,22 @@ bool IsDecorativeControl(void* panel, void* c,
     if (pk == PanelKind::PartySelection && cid == kPartySelectionAddBtnId) {
         return true;
     }
+    // Inventory "Verwenden" (useitem_button). Same redundancy as the
+    // PartySelection Hinzuf. above, plus a correctness problem of its own:
+    // the button is the engine's gamepad-A shortcut, so it dispatches
+    // activate to panel.active_control rather than to our chain focus, and
+    // our cursor warp usually fails to land on an item row (the hit test
+    // returns NULL for them — "mouseOver after=00000000" on every row warp in
+    // patch-20260731-083448.log). Pressing it therefore fires whatever row
+    // the engine still considers active, which can be a different item than
+    // the one the user is standing on. Enter on the row reaches the same
+    // per-item handler (CreateItemEntry AddEvent's OnControlSelected /
+    // CantEquip / NotUseable / FullHealth / … on the row itself), directly
+    // and unambiguously — so the button is pure hazard for keyboard nav.
+    if (pk == PanelKind::InGameInventory &&
+        acc::menus::inventory::IsUseItemButton(panel, c)) {
+        return true;
+    }
     // PartySelection portraits with no currently-selectable
     // companion. The panel renders all 9 roster slots in a fixed
     // 3x3 grid; sighted players see empty / greyed slots, but a
@@ -713,6 +742,23 @@ void AppendListBoxChildren(void* panel, void* c, void* equipPickerLb,
             IdentifyPanel(panel) == PanelKind::InGameJournal &&
             c == reinterpret_cast<unsigned char*>(panel) +
                      kJournalItemsListBoxOffset;
+        // Sort anchor for every row this listbox contributes. Row extents are
+        // listbox-local content coordinates that keep climbing one row-pitch
+        // at a time whether or not the row is inside the viewport, so they are
+        // not comparable with the panel buttons' screen coordinates and must
+        // not go into the y-sort. The listbox itself IS a panel-direct child
+        // with a screen-absolute extent, so its top places the whole block
+        // where the list actually sits — above every control below it, at any
+        // row count. Falls back to per-row cy if the extent is degenerate.
+        int blockSortCy = kSortByOwnCy;
+        {
+            int lbCx, lbCy;
+            if (GetControlCenter(c, lbCx, lbCy)) {
+                blockSortCy = *reinterpret_cast<int*>(
+                    reinterpret_cast<unsigned char*>(c) +
+                    kControlExtentOffset + sizeof(int));   // extent.top
+            }
+        }
         auto* lbList = reinterpret_cast<CExoArrayList*>(
             reinterpret_cast<unsigned char*>(c) + kListBoxControlsOffset);
         if (lbList && lbList->data) {
@@ -727,7 +773,7 @@ void AppendListBoxChildren(void* panel, void* c, void* equipPickerLb,
                               ? kMaxChainEntries
                               : lbList->size;
                 for (int j = 0; j < lbN; ++j) {
-                    AppendChainEntry(lbList->data[j]);
+                    AppendChainEntry(lbList->data[j], blockSortCy);
                 }
             } else if (lbList->size == 1 && modalText) {
                 AppendChainTextOnly(c, panel);
@@ -761,7 +807,7 @@ bool AppendVirtualRow(void* labelControl, int sortCy, void* panel,
     }
     if (!probe(panel, labelControl)) return true;
     g_chain[g_chainCount++] = {
-        labelControl, cx, sortCy, /*textOnly=*/true
+        labelControl, cx, sortCy, sortCy, /*textOnly=*/true
     };
     return true;
 }
@@ -856,7 +902,7 @@ bool OnModSettingsAnchor(void* sentinel, int sortCx, int sortCy,
                          void* /*userData*/) {
     if (g_chainCount >= kMaxChainEntries) return false;
     g_chain[g_chainCount++] = {
-        sentinel, sortCx, sortCy,
+        sentinel, sortCx, sortCy, sortCy,
         /*textOnly=*/false,
         /*virtualKind=*/kVirtualMod_SettingsRoot
     };
@@ -889,12 +935,16 @@ if (IdentifyPanel(panel) == PanelKind::StatusSummary) {
 }
 }
 
-// Insertion sort by cy ascending. Stable; the n^2 is cheap int compares
+// Insertion sort by sortCy ascending. Stable; the n^2 is cheap int compares
 // and runs once per rebind (panel open / content change), not per tick,
 // so it stays well within budget even at a full kMaxChainEntries chain.
-void SortChainByCy() {
+//
+// Stability is load-bearing, not incidental: every row of one listbox shares
+// a single sortCy, so their relative order is decided purely by the order
+// AppendListBoxChildren walked them — i.e. the engine's own row order.
+void SortChainBySortCy() {
 for (int i = 1; i < g_chainCount; ++i) {
-    for (int j = i; j > 0 && g_chain[j].cy < g_chain[j-1].cy; --j) {
+    for (int j = i; j > 0 && g_chain[j].sortCy < g_chain[j-1].sortCy; --j) {
         ChainEntry tmp = g_chain[j];
         g_chain[j]   = g_chain[j-1];
         g_chain[j-1] = tmp;
@@ -1028,8 +1078,16 @@ for (int i = 0; i < g_chainCount; ++i) {
     unsigned int bitFlags =
         *reinterpret_cast<unsigned int*>(
             reinterpret_cast<unsigned char*>(g_chain[i].control) + 0x44);
-    acclog::Write("Menus.Chain", "  [%d] %p (%d,%d)%s %s text=\"%s\" is_active=%u bit_flags=0x%x",
+    // sortCy is only printed when it differs from cy — i.e. for virtual rows
+    // and listbox blocks — so the common case stays as terse as before.
+    char sortNote[32];
+    sortNote[0] = '\0';
+    if (g_chain[i].sortCy != g_chain[i].cy) {
+        snprintf(sortNote, sizeof(sortNote), " sort=%d", g_chain[i].sortCy);
+    }
+    acclog::Write("Menus.Chain", "  [%d] %p (%d,%d)%s%s %s text=\"%s\" is_active=%u bit_flags=0x%x",
                   i, g_chain[i].control, g_chain[i].cx, g_chain[i].cy,
+                  sortNote,
                   g_chain[i].textOnly ? " text-only" : "",
                   src ? src : "?", src ? text : "", isActive, bitFlags);
 }
@@ -1112,7 +1170,7 @@ void RebindChain(void* panel) {
     acc::menus::modsettings::ForEachRootAnchor(panel, OnModSettingsAnchor,
                                                panel);
 
-    SortChainByCy();
+    SortChainBySortCy();
     SquashCycleFlankers(panel);
 
     // Tab-cluster Y offset is computed on demand at warp/click-sim time via

@@ -29,6 +29,7 @@
 #include "menus_chargen_skills.h"   // IsChargenSkillsPanel — chargen sub-screen close
 #include "menus_galaxymap.h"        // DispatchInput for GalaxyInput
 #include "minigame_pazaak.h"                 // DispatchWagerInput for WagerInput
+#include "menus_inventory.h"  // filter post-activate list-rebuild repair
 #include "menus_journal.h"   // Sort/Swap post-activate list-rebuild repair
 #include "menus_listbox.h"   // DisarmWorkbenchUpgradePicker (post-slot-select cleanup)
 #include "menus_powers_levelup.h"   // IsPowersLevelUpPanel — chargen sub-screen close
@@ -477,6 +478,27 @@ void Drain(void* gm) {
                                   "FireActivate post: journal Swap — "
                                   "chain invalidated");
                 }
+            }
+            // Inventory filter repair — the journal-Sort case exactly. The
+            // "Zeigen: …" button dispatches cmd 0x29, which only picks the
+            // next filter and raises the panel's repopulate bit; the list is
+            // rebuilt through CheckFilter LAZILY in Draw() next frame. The row
+            // controls are pooled and reused, so nothing dangles, but the
+            // chain keeps the pre-filter row count and row→item mapping
+            // (verified in patch-20260731-083448.log: count stayed 209 while
+            // the same pointers began speaking different items). Invalidating
+            // alone would race — an engine focus echo can rebind before Draw
+            // and capture the old list again — so force the repopulate first,
+            // which also clears the pending bit so Draw won't rebuild twice.
+            if (panelKindAtDispatch == acc::engine::PanelKind::InGameInventory &&
+                acc::menus::inventory::IsFilterButton(
+                    acc::menus::chain::g_chainPanel, op.a)) {
+                acc::menus::inventory::ForceRepopulate(
+                    acc::menus::chain::g_chainPanel);
+                acc::menus::chain::InvalidateChain();
+                acclog::Write("Update",
+                              "FireActivate post: inventory filter — "
+                              "repopulated + chain invalidated");
             }
 
             // Companion full-panel-pop guard: if the engine cleared the

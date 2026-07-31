@@ -1134,3 +1134,46 @@ constexpr size_t    kJournalQuestItemsButtonOffset         = 0x8a4;
 constexpr size_t    kJournalSwapTextButtonOffset           = 0xa68;
 constexpr size_t    kJournalSortButtonOffset               = 0xc2c;
 constexpr size_t    kJournalExitButtonOffset               = 0xdf0;
+
+// CSWGuiInGameInventory — the "Inventar" sub-screen. Same embedded-button
+// shape as the journal above: every button is constructed in place at
+// panel+offset, so identifying one by offset is locale-independent.
+//
+// Layout (SARIF DATATYPE dump):
+//   0x1a4 item_description_label
+//   0x420 inventory_label       ("Gruppengepäck - <CURRENT filter>")
+//   0x424 credits_value_label   (see menus_credits.cpp)
+//   0x564 item_listbox          (one CSWGuiInGameItemEntry per filtered item)
+//   0x1164 exit_button          (caption strref 1582 — dropped by the
+//                                universal close-button filter)
+//   0x1328 useitem_button       ("Verwenden")
+//   0x14ec questitems_button    — Ghidra's name is wrong for this panel:
+//                                SetNextFilter @0x006b2a80 writes
+//                                "Zeigen: <NEXT filter>" into it, so it is
+//                                the item-filter cycle button.
+//   0x1a38 / 0x1bfc switch_left / switch_right (the filter's cycle arrows,
+//                                dropped by SquashCycleFlankers)
+//
+// Two behaviours matter for chain nav (both decompiled 2026-07-31):
+//
+//  * useitem_button AddEvent's AcceptButtonCallback @0x00624ba0, which is a
+//    thunk to panel->OnAButtonPressed → CSWGuiPanel::HandleInputEvent(0x27).
+//    The inventory's own HandleInputEvent has no case 0x27, so the base panel
+//    dispatches activate to panel.active_control — i.e. the button is just
+//    the gamepad-A "activate what is focused" shortcut, and it fires on
+//    whatever row the engine still considers active rather than on our chain
+//    focus. Enter on the row itself reaches the same handler directly, so the
+//    button is redundant AND less precise; IsDecorativeControl drops it.
+//
+//  * questitems_button dispatches cmd 0x29 → SetNextFilter, which only sets
+//    the new filter and raises bit_flags bit 0. PopulateItemListBox — which
+//    rebuilds item_listbox through CheckFilter — runs LAZILY in Draw() next
+//    frame, exactly like the journal Sort button. The row controls are POOLED
+//    and reused (verified in patch-20260731-083448.log: the same control
+//    pointers spoke different item names after a filter change) so nothing
+//    dangles, but the chain keeps the OLD row count and row→item mapping.
+//    Force the repopulate, then invalidate.
+constexpr size_t    kInventoryItemListBoxOffset            = 0x564;
+constexpr size_t    kInventoryExitButtonOffset             = 0x1164;
+constexpr size_t    kInventoryUseItemButtonOffset          = 0x1328;
+constexpr size_t    kInventoryFilterButtonOffset           = 0x14ec;

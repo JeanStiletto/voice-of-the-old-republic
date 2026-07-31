@@ -22,6 +22,25 @@ struct ChainEntry {
     void* control;
     int   cx;
     int   cy;
+    // The key RebindChain's y-sort orders by. Usually == cy, but the two are
+    // NOT interchangeable: cy is a real screen position (cursor warp,
+    // same-row flanker detection, the chain dump) while sortCy only decides
+    // reading order.
+    //
+    // They diverge in two places:
+    //   * Virtual rows (credits, charsheet stats, equip stats, mod settings)
+    //     use a synthetic value to pin themselves above or below every real
+    //     button.
+    //   * Listbox rows all inherit their listbox's own extent top, so one
+    //     listbox contributes ONE contiguous block to the chain. Row extents
+    //     are listbox-local content coordinates that keep growing past the
+    //     visible viewport (a 206-item Inventory ran to cy 5410 against a
+    //     480px panel), so sorting rows by their own cy interleaved them with
+    //     the panel's buttons — the user got 7 items, then "Zeigen:" and
+    //     "Verwenden", then the remaining 199. Journal did the same from the
+    //     10th quest on. Anchoring the block keeps every item / quest above
+    //     the action buttons at any list length.
+    int   sortCy;
     // True for non-activatable body text — currently the body listbox of a
     // modal popup (MessageBoxModal / TutorialBox / AreaTransition). Arrow
     // keys land on it so the user can re-hear the message; Enter
