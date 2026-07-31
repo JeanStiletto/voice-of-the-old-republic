@@ -329,7 +329,11 @@ bool IsSoundOptionsMovieSlider(void* panel, void* control) {
 // "Maximaler Einsatz: M\nCredits: K". We surface a single top-of-chain row
 // combining the live wager with that max+credits line — the analogue of the
 // inventory credits row.
-const size_t kWagerCurrentValueOffset = acc::off::Todo(0xc94);
+// KOTOR 2: +0xe30, observed in its own CSWGuiWagerPopup::HandleInputEvent
+// (vtable slot 15), which uses it exactly as KOTOR 1's does — hands it to the
+// wager-exit call, decrements it under `if (1 < value)`, and increments it under
+// `if (value < max)` where max is the next field along (0xe34, KOTOR 1 0xc98).
+const size_t kWagerCurrentValueOffset = acc::off::Pick(0xc94, 0xe30);
 constexpr int    kWagerMaxLabelGuiId      = 3;
 
 void* FindWagerMaxLabel(void* panel) {

@@ -21,7 +21,7 @@ hook handler is gated off by `acc::game::HandlerEnabled()`.
         menus_dispatch.cpp menus_internal.h engine_manager.h \
         engine_reads.cpp engine_panels.cpp
 
-115 constants used, 59 resolved, **56 to verify** (was 79).
+115 constants used, 90 resolved, **25 to verify** (was 79).
 
 **Done this session** — all of it offline, no test round spent:
 - Every panel-identity vtable in the codebase (see "Panel identity" below).
@@ -29,25 +29,50 @@ hook handler is gated off by `acc::game::HandlerEnabled()`.
 - The shared control classes whole: `CSWGuiControl` tooltip + parent,
   `CSWGuiListBox` navigation state, `CSWGuiSlider`, `CSWGuiButtonToggle`.
 - `CSWGuiListBox::SetSelectedControl` and `CTlkTable::GetSimpleString`.
+- Panel layouts by .gui tag out of each panel's own constructor: portrait,
+  map, level-up, store, journal, class selection, keymap row, editbox, wager,
+  equip, item-entry row.
+- `MoveMouseToPosition` — previously the doc's open item — plus
+  `CAurGUIStringInternal`'s buffer pointer, previously the one gap in the text
+  chain.
 
-**The next task, and the open question about it.** What remains in this
-subsystem is panel-internal offsets, which are the expensive kind — see "What is
-left in the menu subsystem" below for why, and for the routes that do and do not
-work. Before grinding through them, decide whether to enable the shared-control
-path on KOTOR 2 for one confirming test round first. THE METHOD's rule is about
-never omitting KOTOR 1 *logic*; it does not require every panel to land at once,
-and the shared machinery is now complete with its workarounds intact.
+**The next task.** Finish the last 25. They are listed individually, with the
+route for each, under "The last 25 in the menu subsystem" below — every one now
+has a named starting point rather than being an open search. The pattern is the
+same in each case: identify the KOTOR 2 counterpart of a specific KOTOR 1
+function, then read the offset off the matching statement.
 
-`MoveMouseToPosition` is still unfound and still needs to replace the
-`SetCursorPos` stand-in in `menus_focus_k2.cpp`.
+The user's standing decision (2026-07-31) is to finish the subsystem offline
+rather than take an interim test round: on KOTOR 2 the surrounding machinery is
+what makes a sub-panel reachable at all, so a half-ported subsystem is both hard
+to navigate to and likely to fault on arrival. Spend a test round only when its
+result would settle or change how the remaining investigation is done.
+
+`MoveMouseToPosition` is now resolved and should replace the `SetCursorPos`
+stand-in in `menus_focus_k2.cpp` when the menu path is enabled.
 
 **Do not** repeat the minimal-slice approach — see THE METHOD.
 
 **Tools built for this port** (all in `tools/re-scripts/`, all offline):
 - `rtti_scan.py` — class → vtable map from KOTOR 2's RTTI
 - `vtable_map.py` — KOTOR 1 → KOTOR 2 addresses by vtable slot
+- `vtable_xrefs.py` — the functions that STORE a class's vtable, i.e. its
+  constructor and destructor. This is the one that reaches panel layouts.
 - `find_thiscall_targets.py` — methods called on a known singleton
 - `port_worklist.py` — what a subsystem needs, and what is unresolved
+
+`find_thiscall_targets.py` and `vtable_xrefs.py` both run against KOTOR 1 too,
+given `build/re/imagedump/swkotor-image.bin` from `kdev dump-text` (the Steam
+exe is SteamStub-encrypted, so its bytes are not readable from the file). Doing
+the same scan on both games and diffing the results is what located
+`MoveMouseToPosition`.
+
+**A KOTOR 1 offset is often cheaper to look up than to decompile.** Lane's
+`docs/llm-docs/re/swkotor.exe.h` carries the struct definitions with member
+order and embedded types, and `k1_win_gog_swkotor.exe.xml` carries every
+function and vtable SYMBOL by name. Between them most KOTOR 1 columns can be
+had without a Ghidra run at all, which halves the rounds — decompile the
+KOTOR 2 side only.
 
 Ghidra: project `kotor2`, program `swkotor2.exe`, at `C:\Tools\ghidra-projects`.
 Decompile with
@@ -279,14 +304,14 @@ sources are the one KPatchManager feature with a known bug.
 ## Coverage (2026-07-31, end of second port session)
 
 Struct offsets — `acc::off`:
-- `Todo` (K2 unknown): 459
-- `Same` (verified identical): 11
-- `Pick` (verified different): 30
-- `Kotor1Only` (no K2 counterpart): 10
+- `Todo` (K2 unknown): 422
+- `Same` (verified identical): 15
+- `Pick` (verified different): 60
+- `Kotor1Only` (no K2 counterpart): 13
 
 Addresses — `acc::addr`:
-- `R` (K2 unknown, resolves to 0): 202
-- `Pick` (.text/.rdata known): 62
+- `R` (K2 unknown, resolves to 0): 200
+- `Pick` (.text/.rdata known): 64
 - `PickGlobal` (.data known): 4
 - `TodoGlobal` (.data unknown, resolves to 0): 10
 - `Kotor1Only` (no K2 counterpart): 2
@@ -294,7 +319,7 @@ Addresses — `acc::addr`:
 `grep -c "Todo("` and the `R(` count are the remaining-work counters.
 
 Menu subsystem specifically (the `port_worklist.py` invocation in WHERE TO
-RESUME): 115 constants used, 59 resolved, **56 unresolved** — down from 79.
+RESUME): 115 constants used, 90 resolved, **25 unresolved** — down from 79.
 
 ### The cross-check that makes the seeded database usable
 
@@ -330,40 +355,97 @@ structure — not inferred from a delta or a single witness.
 
 Also identified: `CSWGuiManager::HitCheckMouse` → `0x00411030`.
 
-### What is left in the menu subsystem, and why it is the expensive part
+### Panel-internal offsets: why they are the expensive part, and what cracked them
 
-The 56 that remain are almost entirely **panel-internal** offsets — a named
-child control or a cached handle at a fixed offset inside one huge panel struct
-(KOTOR 1's `CSWGuiInGameEquip` is 0x42bc bytes). These do NOT follow any delta
-rule. Measured witness: `CSWGuiPortraitCharGen::OnPanelAdded` stores the same
+Panel-internal offsets — a named child control or a cached handle at a fixed
+position inside one huge panel struct — follow no delta rule at all. Measured
+witness: `CSWGuiPortraitCharGen::OnPanelAdded` stores the same
 `rand()%300 * 0.01 + 1.0` float at +0x1230 in KOTOR 1 and **+0x1ce8** in
-KOTOR 2 — a shift of 0xAB8 in a single class. Panels embed hundreds of controls
-and every one that grew pushes everything after it, so the accumulated drift is
-large and unique per panel.
+KOTOR 2, a shift of 0xAB8 inside one class. Panels embed hundreds of controls
+and every one that grew pushes everything after it. Worse, the drift is not even
+monotonic: KOTOR 2's map panel drops three controls, so its arrow buttons land
+*lower* than KOTOR 1's. "K2 should be bigger" is not a valid sanity check.
 
-So each of these needs its own witness. The cheap tricks are exhausted here:
-RTTI answers class identity, the vtable-slot map answers virtual methods, and
-neither reaches a field in the middle of a panel.
+**What works: the constructor, matched by .gui tag.**
 
-Two routes, both tried:
+A panel's constructor builds every embedded control in declaration order and
+binds each to its layout tag — `InitControl(panel, &member, "BTN_ARRR")`. The
+tag is the identity; the offset is whatever it is. One decompile per panel
+yields its whole control layout, and no arithmetic is involved.
 
-- **A virtual method that touches the field.** Works and is cheap when one
-  exists — this is what produced all of `CSWGuiControl` / `CSWGuiListBox` /
-  `CSWGuiSlider` / `CSWGuiButtonToggle`. But the panel fields we need are mostly
-  read by non-virtual helpers (`UpdateInventory`, `SetCharacter`), which the
-  slot map cannot name.
-- **The destructor, to recover the whole embedded-member layout at once.**
-  Sound in principle, but vtable slot 0 is the scalar-deleting-destructor
-  *thunk* in both games; the real destructor is one CALL further in and has to
-  be recovered separately. It also only covers members with non-trivial
-  destructors — the embedded labels and buttons, not the plain `ulong` item
-  handles, which are about half of what the equip panel needs.
+Constructors are not virtual, so the slot map does not reach them. Find them
+with `tools/re-scripts/vtable_xrefs.py`, which scans .text for the class's
+vtable address as an immediate: a constructor stores it into `[this]`, and
+apart from the destructor almost nothing else mentions it. Two hits per class,
+constructor first.
 
-There is also a live-observation route, which is how most of these were
-established for KOTOR 1 in the first place (the `PanelProbe` dumps). It is
-accurate and fast per panel, but it spends test rounds, which is the resource
-THE METHOD is written to protect. Worth weighing per panel rather than adopting
-wholesale.
+Signs the reading is right, all of which held: the label stride is 0x140 in
+KOTOR 1 and 0x148 in KOTOR 2, the button stride 0x1c4 and 0x1d0, the listbox
+0x2e0 and 0x2f0 — that last one matching the +0x10 `CSWGuiListBox` growth
+measured independently from `HandleInputEvent`. Consecutive controls should sit
+exactly one stride apart in both games.
+
+**Constructors also settle plain fields**, not just controls, because they
+initialise them — and distinctive initialisers are what pin the alignment.
+`CSWGuiKeyMapButton` fell to a nine-field write sequence containing two -1s;
+`CSWGuiInGameItemEntry` to a 0x7f000000 "empty" sentinel; `CSWGuiInGameEquip`'s
+trailing block to the same sentinel in the same position within six writes.
+
+**Routes tried and found weaker:**
+
+- *The destructor*, to recover the embedded-member layout in one pass. Vtable
+  slot 0 is the scalar-deleting-destructor **thunk** in both games, so the real
+  destructor is one CALL further in, and it only covers members with non-trivial
+  destructors — not the plain `ulong` handles.
+- *Live observation* (`PanelProbe` dumps), which is how most of these were
+  established for KOTOR 1. Accurate and fast per panel, but it spends test
+  rounds, which is the resource THE METHOD exists to protect.
+
+### The last 25 in the menu subsystem, with the route for each
+
+These are the ones where the constructor alone did not finish the job. Each
+needs its KOTOR 2 counterpart function identified first, which is the actual
+remaining work.
+
+- **The nine `kEquipPanel*IdOffset` handles.** The anchor is already found and
+  is unambiguous: both constructors end with six writes whose second value is
+  0x7f000000, at KOTOR 1 0x42a4.. and KOTOR 2 0x50cc.. So KOTOR 2's `field46`
+  is 0x50cc and the id block walks back from there — but KOTOR 2 appears to have
+  one extra field ahead of `selected_slot` (its block starts 3 dwords after
+  BTN_SWAPWEAPONS where KOTOR 1 uses 2), so walking back is exactly the
+  extrapolation this port keeps getting punished for. Get one confirming
+  witness: KOTOR 1's `CSWGuiInGameEquip::UpdateInventory` @0x006b9970 writes all
+  nine, so find its KOTOR 2 twin (start from the equip constructor's slot-label
+  loop, which in KOTOR 1 walks the id array in parallel with `env_slot_labels`).
+- **The four `kPartyPortrait*` fields.** KOTOR 2's `CSWGuiPartySelection`
+  constructor declares `party_data` as an array at +0x84, element size **0x478**,
+  count 12, built by element-constructor 0x0089dac0. Decompile that against
+  KOTOR 1's equivalent. Note KOTOR 1's own `CSWGuiPartySelectionButton` is an
+  empty PlaceHolder in Lane's database, so the KOTOR 1 column here came from
+  live probing, not from the struct DB — treat it as the less certain side.
+  One field is already effectively settled: KOTOR 2's button constructor writes
+  a single field right after the embedded button, at 0x1d0, where KOTOR 1 writes
+  at 0x1c4.
+- **`kAddrManagerLMouseDown` / `LMouseUp`.** Each has exactly ONE caller in
+  KOTOR 1 — `CClientExoAppInternal::PerformLButtonDownAction` / `...UpAction`,
+  called from adjacent sites in `CClientExoAppInternal::HandleInputEvent`. That
+  class is absent from the RTTI slot map, so the forwards-from-callers trick
+  that cracked `MoveMouseToPosition` needs one more hop: find something virtual
+  above `CClientExoAppInternal::HandleInputEvent` (its own callers are
+  `PlayBackInputEvents` and `ProcessInput`). A structural search for "two
+  functions called adjacently, each making one GuiManager-mediated call" was
+  tried and does NOT find them — only ONE of the KOTOR 1 pair reaches the
+  manager through the global.
+- **`kPortraitIdOffset`** — KOTOR 1's `CSWGuiPortraitCharGen::UpdatePortraitButton`
+  @0x006f8ad0 writes it; find the KOTOR 2 twin. Derivation from the OnPanelAdded
+  float anchor (0x1230 -> 0x1ce8, so 0x1238 -> 0x1cf0) is available but unverified.
+- **The five `kUpgrade*` plus `kAddrUpgradeSlotTypeTable`.** The table is
+  .rdata, not a function, so neither RTTI nor the slot map applies; reach it
+  through the code that indexes it. `kUpgradeSlotCustomValueOff` is a
+  `CSWGuiControl` field (+0x58) and almost certainly +0x5c by the same +4 the
+  rest of that region takes, but no direct witness has been read.
+- **`kCGuiInGameReply*` (2)**, **`kItemLocNameOffset`** — different classes
+  (dialog reply list, `CSWSItem`), not reached by any menu-panel constructor.
 
 **`MoveMouseToPosition` is NOT yet found.** Its KOTOR 1 body is four
 statements (store x/y, `CExoInput::SetMousePos`, `HandleMouseMove`), but none
