@@ -33,15 +33,6 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
-<h2>Unreleased</h2>
-
-<h3>Keyboard navigation:</h3>
-
-- The inventory and journal screens no longer split their list in half. The action buttons at the bottom of those screens — "Show:" and "Use" in the inventory, "Quest items", "Completed quests" and "Sort by name" in the journal — used to turn up in the middle of the list, with more items after them. Arrow navigation now walks every item or quest first and reaches the buttons at the end, whatever the list length. Press End to jump straight to them.
-- Four buttons that duplicate something the keyboard already does are gone from arrow navigation. On the map screen, "Previous map note" and "Next map note" — the map cursor sweeps those same notes with W, A, S and D — so Up and Down now step straight to the party-select and return buttons. On the party-selection screen, "Add", because Enter on a companion's portrait already adds or removes them. In the inventory, "Use": Enter on the item does the same thing and is safer, because the button acts on whichever row the game still considers current, which is not always the one you are standing on.
-- Enter on an inventory item now uses that item. It used to use whichever item sat at the top of the list, so pressing Enter on a medpac five rows down would burn a charge off the shield at row one instead. The game's use handler reads the list's own selection rather than the row you activated, and a mouse click sets that selection on the way in where the keyboard never did.
-- Cycling the inventory's "Show:" filter now updates the list you navigate. The game rebuilds the item list a frame later, which arrow navigation never noticed, so it kept the old number of rows and read items that the new filter had removed.
-
 <h2>v0.6.4</h2>
 
 <h3>Polish translation:</h3>
@@ -72,6 +63,11 @@ and add the German in parentheses if it genuinely aids clarity.
 <h3>Keyboard navigation:</h3>
 
 - Home and End jump to the first and last entry on three more screens: the mod's settings menu, its audio glossary, and the feat and force-power grids in character creation and level-up. On the grids the jump crosses the whole screen — Home lands on the first ability, End on the Cancel button — rather than stopping at the ends of the current row, which are at most three cells wide and already reachable with Left and Right.
+- The action buttons on the inventory and journal screens now sit at the end of the list and stay there. "Show:" in the inventory, and "Quest items", "Completed quests" and "Sort by name" in the journal, used to turn up in the middle of the list with more items after them — in the journal only once ten or more quests were active, which is why it looked inconsistent. Arrow navigation now walks every item or quest first, whatever the list length; press End to jump straight to the buttons.
+- Cycling the inventory's "Show:" filter now gives you the filtered list. The game rebuilds the item list a frame later, which arrow navigation never noticed, so it kept the old number of rows and went on reading items the new filter had removed.
+- Enter on an inventory item now uses that item. It used to use whichever item sat at the top of the list, so Enter on a medpac five rows down burned a charge off the shield at row one instead. The game's use handler reads the list's own selection rather than the row you activated, and a mouse click sets that selection on the way in where the keyboard never did.
+- Shift+Down on the journal's quest-items screen now reads the description of the item you are on. It read the first item's description for every row: that screen resolved the description from the game's list selection, which arrow navigation does not move, instead of from the row you had arrowed to.
+- Four buttons that duplicate something the keyboard already does are gone from arrow navigation. On the map screen, "Previous map note" and "Next map note" — the map cursor sweeps those same notes with W, A, S and D — so Up and Down now step straight to the party-select and return buttons. On the party-selection screen, "Add", because Enter on a companion's portrait already adds or removes them. In the inventory, "Use": Enter on the item does the same thing and is safer, because the button acts on whichever row the game still considers current, which is not always the one you are standing on.
 
 <h2>v0.6.3</h2>
 
