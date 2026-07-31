@@ -120,6 +120,74 @@ batch launcher cannot handle the spaces in the Steam path.
 **Testing:** `kdev apply --game k2`, then read
 `<K2 install>\logs\patch-*.log`. The K2 focus path logs under `K2.Focus`.
 
+## THE BATCH PLAN (decided 2026-07-31)
+
+**Frontload everything offline; test only when a whole system exists.** Decided
+after a single cleared gate produced a KOTOR 2 build that navigated correctly
+and spoke nothing — see "The hook gate is not the unit of work" below.
+
+The work is split into batches so a FRESH SESSION can take one without
+re-deriving context. Each batch is cut along dependency lines rather than
+convenience: every batch closes at least one producer→consumer loop, so it is
+independently testable and cannot produce the half-system failure again.
+
+Start any session by running
+
+    python tools/re-scripts/k2_hook_status.py patches/Accessibility
+
+which reports, per hook, whether KOTOR 2 has it installed AND has its
+`HandlerEnabled()` gate cleared. Both halves are needed; either alone is worse
+than neither. At the time of writing: **1 of 25 READY**.
+
+Each batch means the same three things: resolve the constants its handlers'
+call graphs touch (`port_worklist.py`), find its KOTOR 2 hook cut points (one
+`PrintListing` read per hook — KOTOR 2's unoptimised build means NO KOTOR 1 cut
+point, cut length or register source transfers), and clear its gates. Then one
+test that exercises a complete loop.
+
+Before each handler goes live, run
+
+    python tools/re-scripts/handler_chain_audit.py patches/Accessibility <files>
+
+and fix anything it calls UNGUARDED. That is what separates "degrades on
+KOTOR 2" from "crashes on KOTOR 2".
+
+**Batch 1 — GUI spine.** `OnUpdate` (the per-frame tick, and the ONLY thing that
+drains the pending-announce slot), `OnHandleInputEvent` (input dispatch + the
+navigation chain), `OnHandleFocusChange`, `OnListBoxSetActiveControl`. Gates in
+`core_tick.cpp`, `input_pipeline.cpp` (2), `menus_dispatch.cpp` (2). Completes
+the menu system, whose constants are already 110/115 — so this is mostly hook
+cut-points. KOTOR 2 addresses already known: Update 0x004113A0,
+HandleInputEvent 0x00410AA0, HandleFocusChange 0x00418FE0, ListBox
+SetActiveControl 0x0041FEE0 (a forwarder to 0x0041E9A0 — decide which to hook).
+
+**Batch 2 — In-game GUI lifecycle.** `OnSwitchToSWInGameGui`,
+`OnHideSWInGameGui`, `OnSetSWGuiStatus`, `OnAppendToMsgBuffer`; gates in
+`engine_subscreen.cpp` (4) and `msg_router.cpp`. Includes porting the CGuiInGame
+slot table, which is what makes equipment / inventory / journal / map classify
+at all — until then they fall through to vtable identification and read Unknown.
+
+**Batch 3 — World, area, transitions.** `OnSetMoveToModuleString`, `OnDoorOpen`,
+`OnShowObject`; gates in `transitions.cpp`, `door_announce.cpp`,
+`passive_narrate.cpp`. Largest offset surface — `engine_area.h` alone holds ~60.
+
+**Batch 4 — Combat.** The four CombatRound hooks plus `OnSetPauseState`; gates in
+`combat_diag.cpp` (3) and `combat_queue_hooks.cpp`.
+
+**Batch 5 — Audio.** `OnPlayFootstep`, `OnSetListenerPosition`,
+`OnCalculatePitchVarianceFrequency`; gates in `audio_bus.cpp`,
+`audio_pitch.cpp`, `audio_footstep_suppress.cpp`.
+
+**Batch 6 — Minigames and leftovers**, AFTER a triage pass deciding what KOTOR 2
+even has. `OnTurretBulletHit`, `OnPlayerFire`, `OnRulesInit`. Do not spend
+constant work here before triage: several KOTOR 1 modules are story- or
+minigame-specific and may have no KOTOR 2 counterpart at all, the way
+CSWGuiQuestItem and CSWGuiScriptSelect turned out not to.
+
+Scale, stated plainly so no batch is under-estimated: ~400 offsets and ~200
+addresses remain overall, and each of the 24 unhooked handlers needs its own
+KOTOR 2 listing read. The big batches are several sessions each.
+
 ## Target
 
 Steam / GOG KOTOR 2, Aspyr's 2015 rebuild. PE link timestamp
@@ -270,6 +338,38 @@ Corollary: when a KOTOR 1 module contains something whose purpose is unclear,
 **port it anyway**. The cursor warp looked like housekeeping and was
 load-bearing. Assume every line earned its place until proven otherwise, rather
 than the reverse.
+
+### The hook gate is not the unit of work — the SYSTEM is
+
+**Learned 2026-07-31, by shipping a half-system and spending a test round on
+it.** This is the most expensive version of the minimal-slice mistake so far,
+because it survived the whole constant-resolution effort and then reappeared at
+the gate level.
+
+With the menu constants done, one gate was cleared — the focus handler — and
+that was tested. KOTOR 2 navigated correctly and spoke nothing. There was no
+defect: `AnnounceNewFocusedControl` does not speak, it WRITES the pending-announce
+slot, and `DrainPendingAnnounce` speaks it from the per-frame tick
+(`TickGeneralMonitors` ← `acc::tick::Dispatch()` ← the `CSWGuiManager::Update`
+hook). KOTOR 2 had no Update hook and its `OnUpdate` was still gated, so every
+announcement was queued and discarded. Panel titles were audible only because
+`SpeakPanelTitleOnFirstSight` speaks directly.
+
+Half of a well-tested mechanism behaves like a bug. That is worse than the
+feature being fully off, because it invites debugging code that is fine.
+
+**The rule: frontload everything offline; take the first real test only when the
+FULL system exists** — not the full constant set, the full system, meaning every
+hook it needs installed and every gate it needs cleared.
+
+Before proposing any KOTOR 2 test, trace the feature end to end — signal in,
+state written, tick that reads the state, speech out — and confirm every hop has
+BOTH a hook and a cleared gate. That is an offline question with an offline
+answer. Discovering it from silence in game is pure waste.
+
+Specifically for anything announce-shaped, the producer/consumer split is the
+trap: the announce paths are documented as three producers and two dedups, and
+the consumer is always the tick. A hook set without the tick hook cannot speak.
 
 ### The counter-corollary: a KOTOR 2 workaround is a fossil too
 
