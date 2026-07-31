@@ -62,6 +62,12 @@
 // because this call was missing and prism::Speak had nothing to speak through.
 void EnsurePrismInitialized();
 
+// The shared focus handler, defined in menus.cpp and hooked directly on
+// KOTOR 1. KOTOR 2 reaches it through this file instead, because its hook has
+// to do frame arithmetic and the cursor warp first — see OnSetActiveControlK2.
+// Forward-declared per TU the same way EnsurePrismInitialized is.
+extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl);
+
 namespace acc::menus::k2 {
 
 namespace {
@@ -90,11 +96,6 @@ bool CallerIsFocusChange(void* caller) {
     return va >= kAddrControlHandleFocusChange &&
            va < kAddrControlHandleFocusChange + kHandleFocusChangeSize;
 }
-
-// Last caption spoken, so the engine re-firing focus on the same control does
-// not repeat it. Same reason menus.cpp dedups: SetActiveControl fires far more
-// often than focus actually changes.
-char s_lastSpoken[256] = {0};
 
 // Park the engine's cursor on a control, so mouse hover stops fighting the
 // keyboard.
@@ -316,14 +317,30 @@ void AnnounceFocus(void* panel, void* control, void* caller) {
     // are trying to correct. Once the cursor follows the keyboard, that call
     // targets the control already active and SetActiveControl's own
     // `if (active != param_1)` test makes it a no-op — so the doubled event
-    // should disappear on its own, without a caller filter suppressing it.
-    // Whether it does is exactly what this build tests.
+    // disappears on its own, without a caller filter suppressing it.
+    //
+    // This runs BEFORE the shared handler below, and that order matters: the
+    // warp can drive a nested SetActiveControl straight back through this hook,
+    // and the s_inWarp latch at the top of this function is what stops the
+    // nested event being announced as if the user had navigated. Announcing
+    // first would let the nested call arrive mid-announce instead.
     if (!CallerIsFocusChange(caller)) WarpCursorToControl(control);
 
-    if (!text || !text[0]) return;
-    if (strncmp(s_lastSpoken, text, sizeof(s_lastSpoken)) == 0) return;
-    strncpy_s(s_lastSpoken, text, _TRUNCATE);
-    prism::Speak(text, /*interrupt=*/false);
+    // Hand off to the REAL handler — the same one KOTOR 1 runs.
+    //
+    // Everything above this line is KOTOR 2-specific and stays: the frame-based
+    // argument read, the no-op detection (we hook ahead of the engine's own
+    // `active != param_1` test, so we see calls that change nothing), the caller
+    // filter, and the cursor warp. Everything BELOW the announce — panel
+    // classification, first-sight capture, panel titles, the full extractor
+    // ladder — is shared logic that has no business being reimplemented here.
+    //
+    // The minimal caption reader this file used to end with is gone. It existed
+    // because the shared handler's chain was not ported; it is now, so keeping a
+    // second speech path would just be two things to maintain and a double
+    // announce. The text read above survives only to enrich the K2.Focus
+    // diagnostic line.
+    OnSetActiveControl(panel, control);
 }
 
 }  // namespace acc::menus::k2

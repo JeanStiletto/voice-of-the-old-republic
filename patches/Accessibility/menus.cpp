@@ -385,8 +385,30 @@ using acc::engine::IsModalPopupPanel;
 
 
 
+// GATE CLEARED for KOTOR 2 on 2026-07-31 — the first handler to run on both
+// games. Its chain was the thing blocking it, not the handler:
+//
+//   * IsLoadingSaveGame dispatched through an address that resolves to 0 on
+//     KOTOR 2. It now tests acc::addr::Ok() and returns false, which is the
+//     right value to degrade to (burst suppression stays off, exactly as
+//     KOTOR 1 behaves when no load is running).
+//   * IdentifyPanel needs the CGuiInGame slot table, which is one binary's
+//     layout and is NOT ported. That turns out not to block: the slot lookup
+//     simply finds no match on KOTOR 2 and falls through to the structural /
+//     vtable identification, and every vtable it tests now has a verified
+//     KOTOR 2 value. So title screen, options, chargen, level-up, pazaak, store
+//     and workbench classify; the CGuiInGame-slot in-game screens read as
+//     Unknown until that table is ported, which is a missing feature rather
+//     than a fault.
+//   * The extractor ladder below was audited with
+//     tools/re-scripts/handler_chain_audit.py for reads through unresolved
+//     constants that sit outside any __try. Three were found and fixed; what
+//     remains degrades through SEH instead of crashing.
+//
+// KOTOR 2 does not hook this directly — its hook is OnSetActiveControlK2 in
+// menus_focus_k2.cpp, which does the frame arithmetic and the KOTOR 2 cursor
+// warp and then calls this.
 extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
-    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
     EnsurePrismInitialized();
     static int n = 0;
     ++n;
