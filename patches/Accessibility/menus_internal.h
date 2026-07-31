@@ -215,5 +215,13 @@ constexpr int kPartySelectionAddBtnId = 38;  // BTN_NPC
 // the item currently equipped in the selected slot". Used by EquipPickerOnEnter
 // to route Enter on the equipped row to an unequip (commit the row-0
 // 0x7f000000 "empty" entry) instead of a no-op re-equip.
-const size_t kEquipItemEntryFlagsOffset  = acc::off::Todo(0x394);
-const uint32_t kEquipItemEntryEquippedBit = acc::off::Todo(0x2);
+//
+// KOTOR 2 from its own constructor, which builds the same members in the same
+// order — button, then three borders, then a text — and then writes the two
+// trailing fields: the 0x7f000000 "empty" sentinel into the item id at 0x1d0,
+// and three bit-clears (0x1, 0x2, 0x4) into 0x3ac. Arithmetic agrees exactly:
+// KOTOR 2's button is 0x1d0 and its border 0x78, so 0x1d0 + 4 + 3*0x78 + 0x70
+// (text) = 0x3ac. Both the sentinel and the low three flag bits are the same
+// values KOTOR 1 uses, which is what carries the bit index across.
+const size_t kEquipItemEntryFlagsOffset  = acc::off::Pick(0x394, 0x3ac);
+const uint32_t kEquipItemEntryEquippedBit = acc::off::Same(0x2);

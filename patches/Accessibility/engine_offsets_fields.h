@@ -135,12 +135,27 @@ const size_t kButtonTextObjectOffset   = acc::off::Pick(0x1BC, 0x1C8);
 // So only the text object's POSITION inside its owner moved, not its insides.
 const size_t kTextObjectTextOffset     = acc::off::Same(0x18);   // CSWGuiText.text_params.text
 const size_t kTextObjectStrRefOffset   = acc::off::Same(0x20);   // CSWGuiText.text_params.str_ref
-// STILL Todo, and it is the one gap in the text chain: CAurGUIStringInternal is
-// a different class, and it is one of the vtables whose slot count did NOT
-// match (67 vs 32), so its layout is the least safe thing here to assume.
-// ReadGuiString needs it for the *rendered* text; until it is verified, KOTOR 2
-// text extraction has to fall back to the inline CExoString above.
-const size_t kAurGuiStringCStrOffset   = acc::off::Todo(0x14);   // CAurGUIStringInternal.field5
+// Was the one gap in the text chain. CLOSED 2026-07-31, and the answer is that
+// it does not move — verified, not assumed, which matters because this class
+// was the least safe thing here to guess at (its vtable is one of the few whose
+// slot count did NOT match, 67 vs 32).
+//
+// Both constructors do the same four things in the same order: strlen the
+// incoming C string, allocate len+1, store the buffer pointer, copy into it.
+// KOTOR 2 stores it at this+0x14, exactly as KOTOR 1 does. The head of the
+// class agrees too — both zero 0x4/0x8/0xc/0x10 (bounds), both write a -1
+// cursor index immediately followed by alignment=9.
+//
+// KOTOR 2's class HAS grown, just not before this field: its colour vector sits
+// at 0x30 where KOTOR 1 keeps it at 0x1c, because KOTOR 2 embeds a 3-element
+// array at 0x24 that KOTOR 1 has no counterpart for. So this is `Same` on
+// evidence, not on a "shallow class" hunch.
+//
+// Consequence: KOTOR 2 text extraction can read the RENDERED string like
+// KOTOR 1 does, instead of falling back to the inline CExoString — which is the
+// difference between reading and not reading every control whose text_params
+// are empty.
+const size_t kAurGuiStringCStrOffset   = acc::off::Same(0x14);   // CAurGUIStringInternal.field5
 
 // CSWGuiKeyMapButton — the keyboard-mapping screen's row control (vtable
 // 0x007593c8). Each row embeds TWO CSWGuiButtons: action_button at +0 (the
@@ -150,13 +165,21 @@ const size_t kAurGuiStringCStrOffset   = acc::off::Todo(0x14);   // CAurGUIStrin
 // (key_mappings ptr at +0x38c ⇒ sizeof(CSWGuiButton)=0x1c4 ⇒ mapped_key_button
 // at +0x1c8). `unchangeable` (non-zero = fixed binding) is at +0x3a4. The key
 // text reads at mapped_key + button offsets, e.g. gui_string at 0x1c8+0x168.
-const size_t    kKeyMapButtonMappedKeyOffset = acc::off::Todo(0x1c8);
-const size_t    kKeyMapButtonUnchangeableOff = acc::off::Todo(0x3a4);
+//
+// KOTOR 2 from its own constructor, which writes the same nine fields KOTOR 1's
+// does and no others — including both distinctive -1 initialisers (input_index
+// = INPUTDEVICE_NONE, and the trailing field13). Anchors: it stores the
+// key_mappings argument at +0x3a4 and the embedded mapped_key_button's
+// gui_object at +0x20c and parent_control at +0x1ec, which put that button at
+// +0x1d4 by two independent subtractions. Every field after key_mappings then
+// lands one slot on from KOTOR 1's, and each written value matches.
+const size_t    kKeyMapButtonMappedKeyOffset = acc::off::Pick(0x1c8, 0x1d4);
+const size_t    kKeyMapButtonUnchangeableOff = acc::off::Pick(0x3a4, 0x3bc);
 // CSWGuiKeyMapButton.key_code @ +0x39c — the engine InputIndices value of the
 // freshly captured key (KEYBOARD_*; NOT a DIK scancode — set with `updated`=1 on
 // capture, written to swkotor.ini in decimal on Accept). Resolve to a VK via
 // engine_keymap::InputIndexToVk to test the new game bind against mod hotkeys.
-const size_t    kKeyMapButtonKeyCodeOff      = acc::off::Todo(0x39c);
+const size_t    kKeyMapButtonKeyCodeOff      = acc::off::Pick(0x39c, 0x3b4);
 
 // CSWGuiEditbox layout (verified against k1_win_gog_swkotor.exe.xml SYMBOL
 // CSWGuiEditbox_vtable @ 0x0073EAC8 + STRUCTURE size 0x160 + swkotor.exe.h
@@ -184,10 +207,21 @@ const size_t    kKeyMapButtonKeyCodeOff      = acc::off::Todo(0x39c);
 // caret, +0x152 = selection length. The polling monitor logs both values
 // on every diff so we can verify on first run; once confirmed, we strip
 // the diagnostic.
-const size_t    kEditboxShortA             = acc::off::Todo(0x150);
-const size_t    kEditboxShortB             = acc::off::Todo(0x152);
-const size_t    kEditboxStringCStrOffset   = acc::off::Todo(0x158);
-const size_t    kEditboxStringLengthOffset = acc::off::Todo(0x15c);
+//
+// KOTOR 2 shifts the whole editbox tail by +8, from two OBSERVED bases in its
+// own CSWGuiEditbox::Load: it reaches the border vtable at this+0x70 (KOTOR 1:
+// 0x6c) and the edit_text's text vtable at this+0xe8 (KOTOR 1: 0xe0) — +4 then
+// +8, because navigable and border each grew 4.
+//
+// The interior is then unchanged, and that is established rather than assumed:
+// CSWGuiText is 0x70 bytes in BOTH games (KOTOR 1 button 0x1c4 - text at 0x154;
+// KOTOR 2 button 0x1d0 - text at 0x160), and kTextObject* above records that
+// its internals match. So CSWGuiEditText's own members keep their positions and
+// only the +8 of the edit_text base carries through.
+const size_t    kEditboxShortA             = acc::off::Pick(0x150, 0x158);
+const size_t    kEditboxShortB             = acc::off::Pick(0x152, 0x15a);
+const size_t    kEditboxStringCStrOffset   = acc::off::Pick(0x158, 0x160);
+const size_t    kEditboxStringLengthOffset = acc::off::Pick(0x15c, 0x164);
 
 // CSWGuiNameChargen (chargen "Name eingeben" panel — step 5 of Eigener
 // Charakter, also reused in the Standard-Charakter quick flow). Verified
@@ -267,10 +301,17 @@ const size_t    kSaveNameTitleLabelOffset     = acc::off::Todo(0x550);
 // (engine updates it on hover/focus via CSWGuiClassSelection::OnEnterButton
 // @ 0x006dba70). Read its gui_string instead of the icon button's empty
 // inline text or the misleading sibling-label fallback.
-const size_t    kClassSelectionsArrayOffset      = acc::off::Todo(0x6c);
-const size_t    kClassSelCharSize                = acc::off::Todo(0x25c);
-const int       kClassSelectionsCount            = acc::off::Todo(6);
-const size_t    kClassSelectionClassLabelOffset  = acc::off::Todo(0x1254);
+//
+// KOTOR 2 reads its array geometry straight off its own constructor's
+// eh_vector_constructor_iterator_ call, which states base, element size and
+// count as literals: (this+0x70, 0x26c, 6). The panel then constructs four
+// labels and one button, exactly as KOTOR 1's does, so class_label is still the
+// fourth label after the array: 0x70 + 6*0x26c = 0xef8, plus three KOTOR 2
+// labels of 0x148 = 0x12d0.
+const size_t    kClassSelectionsArrayOffset      = acc::off::Pick(0x6c, 0x70);
+const size_t    kClassSelCharSize                = acc::off::Pick(0x25c, 0x26c);
+const int       kClassSelectionsCount            = acc::off::Same(6);
+const size_t    kClassSelectionClassLabelOffset  = acc::off::Pick(0x1254, 0x12d0);
 
 // CSWGuiPortraitCharGen (chargen "Porträtauswahl" panel). Verified against
 // k1_win_gog_swkotor.exe.xml SYMBOL @ 0x00759ea8 + STRUCTURE size 0x1240.
@@ -299,10 +340,22 @@ const size_t    kClassSelectionClassLabelOffset  = acc::off::Todo(0x1254);
 // (0x006f8ad0) writes the new resref there on every cycle. Reading 16
 // bytes at panel.creature + 0xa8 yields a string like "po_pmhc3" which
 // we parse into a localised description (gender + race + variant).
-const size_t    kPortraitCharGenCreatureOffset   = acc::off::Todo(0x64);
-const size_t    kPortraitLabelOffset             = acc::off::Todo(0x2ec);
-const size_t    kPortraitRightArrowOffset        = acc::off::Todo(0xe84);
-const size_t    kPortraitLeftArrowOffset         = acc::off::Todo(0x1048);
+//
+// KOTOR 2 values read out of its own constructor, matched to KOTOR 1's by the
+// .gui TAG each control is bound to — `InitControl(panel, &member, "BTN_ARRR")`
+// in KOTOR 1 against `InitControl(this+0xee4, "BTN_ARRR")` in KOTOR 2. The tag
+// is the identity; the offset is whatever it is. That is what makes this safe
+// on a panel whose members drift by 0xAB8 overall.
+//
+// Internal consistency across the whole panel, which is why these are trusted:
+// the label stride is 0x140 in KOTOR 1 and 0x148 in KOTOR 2, the button stride
+// 0x1c4 and 0x1d0, and every consecutive pair of KOTOR 2 controls is exactly
+// one stride apart. The deltas here are NOT uniform (+0x14, +0x60, +0x6c)
+// precisely because they accumulate over the grown members in between.
+const size_t    kPortraitCharGenCreatureOffset   = acc::off::Pick(0x64, 0x68);
+const size_t    kPortraitLabelOffset             = acc::off::Pick(0x2ec, 0x300);
+const size_t    kPortraitRightArrowOffset        = acc::off::Pick(0xe84, 0xee4);
+const size_t    kPortraitLeftArrowOffset         = acc::off::Pick(0x1048, 0x10b4);
 const size_t    kPortraitIdOffset                = acc::off::Todo(0x1238);
 
 // CSWCObject.portrait at +0xa8 (CSWPortrait, inline 16-byte CResRef) —
@@ -923,11 +976,26 @@ const size_t    kEquipPanelRightWeaponTohitLabelOffset   = acc::off::Todo(0x1f58
 // 0FD03C68): back@0x385C, change_party_1@0x3A20, change_party_2@0x3BE4,
 // character_left@0x3DA8, character_right@0x3F6C. Stride = 0x1c4 =
 // sizeof(CSWGuiButton). Struct order matches swkotor.exe.h:9087-9091.
-const size_t    kEquipPanelBackButtonOffset           = acc::off::Todo(0x385C);
-const size_t    kEquipPanelChangeParty1ButtonOffset   = acc::off::Todo(0x3A20);
-const size_t    kEquipPanelChangeParty2ButtonOffset   = acc::off::Todo(0x3BE4);
-const size_t    kEquipPanelCharacterLeftButtonOffset  = acc::off::Todo(0x3DA8);
-const size_t    kEquipPanelCharacterRightButtonOffset = acc::off::Todo(0x3F6C);
+//
+// KOTOR 2 restructured this run, and its constructor shows exactly how. BTN_BACK
+// is at 0x3edc and LBL_CANTEQUIP at 0x40ac — ADJACENT, one KOTOR 2 button apart.
+// So the four members KOTOR 1 has between back_button and cant_equip_label are
+// simply not there. The two party-portrait buttons are gone outright: KOTOR 2's
+// constructor declares no BTN_CHANGE1 / BTN_CHANGE2 tag anywhere. The two
+// arrows survive as BTN_PREVNPC / BTN_NEXTNPC, relocated to the end of the
+// struct after a block of labels KOTOR 1 does not have.
+//
+// Note the arrow mapping is by ROLE, not by tag: KOTOR 1's character_left/right
+// are runtime-added and carry no .gui tag to match against (that is the id
+// collision the paragraph above describes). KOTOR 2's pair is gui-declared, sits
+// 0x1d0 apart as one button should, and is the same prev/next party-member
+// affordance. Blast radius if that is wrong is small — these offsets only tell
+// IsDecorativeForChain which buttons to drop from navigation.
+const size_t    kEquipPanelBackButtonOffset           = acc::off::Pick(0x385C, 0x3edc);
+const size_t    kEquipPanelChangeParty1ButtonOffset   = acc::off::Kotor1Only(0x3A20);
+const size_t    kEquipPanelChangeParty2ButtonOffset   = acc::off::Kotor1Only(0x3BE4);
+const size_t    kEquipPanelCharacterLeftButtonOffset  = acc::off::Pick(0x3DA8, 0x50f0);
+const size_t    kEquipPanelCharacterRightButtonOffset = acc::off::Pick(0x3F6C, 0x52c0);
 
 // CSWGuiLevelUpPanel "Zurück" (button_back) and "Abbrechen"
 // (button_cancel) — the two trailing CSWGuiButton members before
@@ -944,8 +1012,10 @@ const size_t    kEquipPanelCharacterRightButtonOffset = acc::off::Todo(0x3F6C);
 // Zurück@0x1944 (15E7AD0C). Stride 0x1c4 = sizeof(CSWGuiButton); struct
 // order per swkotor.exe.h CSWGuiLevelUpPanel (…button_back, button_cancel,
 // field9_0x1ccc@0x1ccc).
-const size_t    kLevelUpButtonBackOffset              = acc::off::Todo(0x1944);
-const size_t    kLevelUpButtonCancelOffset            = acc::off::Todo(0x1B08);
+// KOTOR 2 values by .gui tag out of its own constructor (BTN_BACK / BTN_CANCEL),
+// 0x1d0 apart as one KOTOR 2 button should be.
+const size_t    kLevelUpButtonBackOffset              = acc::off::Pick(0x1944, 0x18a8);
+const size_t    kLevelUpButtonCancelOffset            = acc::off::Pick(0x1B08, 0x1a78);
 
 // CSWGuiInGameMap up_button / down_button — the two image-only buttons
 // flanking the map render ("Vorheriger Hinweis" / "Nächster Hinweis" once
@@ -959,8 +1029,15 @@ const size_t    kLevelUpButtonCancelOffset            = acc::off::Todo(0x1B08);
 // Consumed by menus_extract.cpp (TryInGameMapArrow) and menus_chain.cpp
 // (IsDecorativeControl, which drops them from chain navigation — the map
 // cursor covers note reading).
-const size_t    kInGameMapUpButtonOffset              = acc::off::Todo(0xAB0);
-const size_t    kInGameMapDownButtonOffset            = acc::off::Todo(0xC74);
+//
+// KOTOR 2 values by .gui tag out of its own constructor: BTN_UP at 0x610,
+// BTN_DOWN at 0x7e0 (0x1d0 apart — one KOTOR 2 button). They sit LOWER than
+// KOTOR 1's, which is not a mistake: KOTOR 2's map panel drops the compass
+// label, BTN_RETURN and BTN_PRTYSLCT, so the two arrows move up by more than
+// the struct growth pushes them down. A reminder that these offsets cannot be
+// sanity-checked by "K2 should be bigger".
+const size_t    kInGameMapUpButtonOffset              = acc::off::Pick(0xAB0, 0x610);
+const size_t    kInGameMapDownButtonOffset            = acc::off::Pick(0xC74, 0x7e0);
 
 // ----------------------------------------------------------------------------
 // CSWGuiInGameAbilities — the in-game "Fähigkeiten" screen (CGuiInGame slot
@@ -1125,12 +1202,18 @@ const size_t kCGuiInGameReplyTextArrayOffset      = acc::off::Todo(0x118);
 // exactly as the dialog-speaker path does for CGuiInGame +0x170.
 const size_t kBarkBubbleObjectIdOffset            = acc::off::Todo(0x1c0);
 
-const size_t    kStoreShopItemsListBoxOffset           = acc::off::Todo(0x1480);
-const size_t    kStoreInvItemsListBoxOffset            = acc::off::Todo(0x1760);
-const size_t    kStoreDescriptionListBoxOffset         = acc::off::Todo(0x1a40);
-const size_t    kStoreCancelButtonOffset               = acc::off::Todo(0x1d20);
-const size_t    kStoreToggleButtonOffset               = acc::off::Todo(0x1ee4);  // examine_button in struct DB
-const size_t    kStoreAcceptButtonOffset               = acc::off::Todo(0x20a8);
+// KOTOR 2 values by .gui tag out of its own constructor (LB_SHOPITEMS,
+// LB_INVITEMS, LB_DESCRIPTION, BTN_Cancel, BTN_Examine, BTN_Accept), same
+// members in the same order. The strides corroborate the shared-class work
+// above without being part of it: the three listboxes sit 0x2e0 apart in
+// KOTOR 1 and 0x2f0 in KOTOR 2 — the same +0x10 CSWGuiListBox growth that
+// kListBox*Offset was measured at — and the three buttons 0x1c4 vs 0x1d0.
+const size_t    kStoreShopItemsListBoxOffset           = acc::off::Pick(0x1480, 0x1504);
+const size_t    kStoreInvItemsListBoxOffset            = acc::off::Pick(0x1760, 0x17f4);
+const size_t    kStoreDescriptionListBoxOffset         = acc::off::Pick(0x1a40, 0x1ae4);
+const size_t    kStoreCancelButtonOffset               = acc::off::Pick(0x1d20, 0x1dd4);
+const size_t    kStoreToggleButtonOffset               = acc::off::Pick(0x1ee4, 0x1fa4);  // examine_button in struct DB
+const size_t    kStoreAcceptButtonOffset               = acc::off::Pick(0x20a8, 0x2174);
 const size_t    kStoreItemIdOffset                     = acc::off::Todo(0x226c);
 const size_t    kStoreCostValueLabelOffset             = acc::off::Todo(0xbc0);
 const size_t    kStoreStockValueLabelOffset            = acc::off::Todo(0xe40);
@@ -1157,7 +1240,16 @@ const uint32_t  kStoreListBoxVisibleBit                = acc::off::Todo(0x2);
 // this bit only on the row(s) it actually displays — hidden template rows
 // (still reading "<CUSTOM0>" placeholders) leave it clear, with stale float
 // data in the adjacent flag fields (verified via PopupGeom dump 2026-06-03).
-const uint32_t  kControlVisibleBit                     = acc::off::Todo(0x2);
+//
+// KOTOR 2: same bit, and observed rather than assumed. Its
+// CSWGuiInGameEquip::OnPanelAdded shows/hides three buttons by writing
+// `flags & ~2 | 2` (or `& ~2`) at panel+0x4f0c, +0x5138 and +0x5308. Each of
+// those is exactly one of BTN_SWAPWEAPONS / BTN_PREVNPC / BTN_NEXTNPC plus
+// 0x48 — the control bit_flags offset. So this one decompile independently
+// confirms three things: the visible bit is still 0x2, bit_flags is still at
+// +0x48 in KOTOR 2, and the three button offsets derived from that panel's
+// constructor by .gui tag are right.
+const uint32_t  kControlVisibleBit                     = acc::off::Same(0x2);
 
 // CSWGuiStoreItemEntry.obj_id @ +0x1c4 — the client-side game-object
 // handle for the row's CSWSItem. Resolve via ClientToServerObjectId then
@@ -1236,8 +1328,17 @@ const size_t    kBaseItemItemTypeOffset          = acc::off::Todo(0xac);
 // rebuild captures half-built rows (base CSWGuiObject vtable, unreadable text);
 // force PopulateItemListBox first. Swap (0x2a) repopulates synchronously inside
 // the handler — just invalidate the chain so it re-binds to the new list.
-const size_t    kJournalItemsListBoxOffset             = acc::off::Todo(0x5c4);
-const size_t    kJournalQuestItemsButtonOffset         = acc::off::Todo(0x8a4);
+// KOTOR 2: LB_ITEMS at 0x5e8 by tag, out of its own constructor.
+//
+// The quest-items button has NO KOTOR 2 counterpart, and the constructor shows
+// why directly: in KOTOR 1 the member immediately after items_listbox is
+// quest_items_button, with swap_text_button one button further on; in KOTOR 2
+// the member immediately after LB_ITEMS *is* BTN_SWAPTEXT. Exactly one button
+// was dropped from that run. That agrees with the independent finding that
+// KOTOR 2 has no CSWGuiQuestItem class at all — the sub-screen this button
+// opened does not exist there. KOTOR 2's journal offers BTN_MESSAGES instead.
+const size_t    kJournalItemsListBoxOffset             = acc::off::Pick(0x5c4, 0x5e8);
+const size_t    kJournalQuestItemsButtonOffset         = acc::off::Kotor1Only(0x8a4);
 const size_t    kJournalSwapTextButtonOffset           = acc::off::Todo(0xa68);
 const size_t    kJournalSortButtonOffset               = acc::off::Todo(0xc2c);
 const size_t    kJournalExitButtonOffset               = acc::off::Todo(0xdf0);

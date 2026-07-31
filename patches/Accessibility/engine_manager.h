@@ -103,7 +103,22 @@ const size_t kMgrModalStackSizeOffset  = acc::off::Same(0x98);
 // Cursor move + hover refresh in one call. Updates hover only;
 // panel.activeControl lags unless explicitly committed (PanelSetActive-
 // Control, or the click-sim path which runs full press+release).
-const uintptr_t kAddrMoveMouseToPosition = acc::addr::R(0x0040c790);
+//
+// KOTOR 2: 0x00414230. An earlier attempt to find this worked backwards from a
+// HandleMouseMove candidate and failed. Working FORWARDS from the callers
+// settled it, with three independent signals:
+//   * All three KOTOR 1 callers are `OnPanelAdded` — a virtual — so the
+//     vtable-slot map names their KOTOR 2 twins directly. CSWGuiContainer,
+//     CSWGuiSaveNamePanel and CSWGuiStatusSummary each call StoreCurrent-
+//     MousePosition and then this, through the manager singleton, in that
+//     order, in both games. The KOTOR 2 pair is 0x00414150 then 0x00414230.
+//   * Shape: KOTOR 1's body makes exactly two calls (CExoInput::SetMousePos,
+//     CSWGuiManager::HandleMouseMove) and KOTOR 2's makes exactly two.
+//   * Its second callee, 0x00412c00, calls 0x00411030 — which is the
+//     CSWGuiManager::HitCheckMouse this port identified separately, and which
+//     is likewise the first thing KOTOR 1's HandleMouseMove calls. So the
+//     callee really is HandleMouseMove, which is what pins this function.
+const uintptr_t kAddrMoveMouseToPosition = acc::addr::Pick(0x0040c790, 0x00414230);
 typedef void (__thiscall* PFN_MoveMouseToPosition)(void* gm, int x, int y);
 
 // Click-sim primitives.
