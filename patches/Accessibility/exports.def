@@ -4,6 +4,7 @@ EXPORTS
     OnHandleFocusChange
     OnHandleInputEvent
     OnSetActiveControl
+    OnSetActiveControlK2
     OnListBoxSetActiveControl
     OnUpdate
     OnSetMoveToModuleString

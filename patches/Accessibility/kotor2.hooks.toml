@@ -1,33 +1,21 @@
-# KOTOR 2 (Aspyr 2015 rebuild) — DELIBERATELY EMPTY. Do not add hooks here yet.
+# KOTOR 2 (Aspyr 2015 rebuild) — the port's first installed hook.
 #
-# This file exists to declare "we know about KOTOR 2, and we install NOTHING
-# into it". That is a real state the framework understands: KPatchCore includes
-# a hooks file whose target_versions matches, and a matched file contributing
-# zero hooks leaves the patch as DLL-only — the DLL is loaded via LoadLibrary,
-# its DllMain runs, and not one byte of the engine is touched.
+# This file was deliberately EMPTY until 2026-07-31. It is still nearly empty,
+# and that is the design: a hook may only be added here once its handler's whole
+# read/call chain has been verified against the KOTOR 2 binary. Every other
+# handler still default-denies via acc::game::HandlerEnabled(), so adding a hook
+# whose chain is not ready would be a null-pointer call on first fire, not a
+# degraded feature.
 #
-# Without this file the install FAILS outright ("No hooks files found for
-# version ..."), because the two KOTOR 1 hooks files both declare
-# target_versions that exclude these SHAs and KPatchCore treats "a patch with
-# hooks files, none of which match" as an error rather than as DLL-only.
+# Why so few, concretely: OnSetActiveControl's KOTOR 1 body calls
+# IsLoadingSaveGame, which dispatches through CServerExoApp::GetLoadFromSaveGame
+# — an address that resolves to 0 on KOTOR 2 — and IdentifyPanel, which needs
+# the CGuiInGame slot table (a description of one binary's layout, almost
+# certainly reordered in a game with screens KOTOR 1 lacks). So KOTOR 2 does not
+# run that handler at all; it runs OnSetActiveControlK2, a separate minimal path
+# that touches only verified constants. See menus_focus_k2.cpp.
 #
-# WHY IT MUST STAY EMPTY FOR NOW
-#
-# Every engine address in this patch is a KOTOR 1 address. KOTOR 2 is an Aspyr
-# recompile, not a relink, so none of them mean anything there —
-# acc::addr::R() resolves them all to 0 precisely so they fault recognisably
-# instead of jumping into unrelated code. But only ~12 call sites are wrapped
-# in acc::addr::Ok(); the rest would fault. The mechanism that makes KOTOR 2
-# safe is gating engine-touching code on acc::game::IsKotor1(), and that gating
-# does not exist yet.
-#
-# So: adding a hook here before that gating lands turns a harmless no-op
-# install into a crash on launch. See docs/kotor2-port.md, step 5.
-#
-# What this file being installed proves, and it is worth proving on its own:
-# the dinput8 proxy loads in KOTOR 2, KotorPatcher loads our DLL, and
-# acc::game detects the build correctly — visible as the "Game.Identity
-# title=kotor2 build=aspyr-2015" line at DLL attach.
+# See docs/kotor2-port.md.
 
 [metadata]
 target_versions = [
@@ -35,4 +23,52 @@ target_versions = [
     "777BEE235A9E8BDD9863F6741BC3AC54BB6A113B62B1D2E4D12BBE6DB963A914",  # KOTOR 2 GOG (Aspyr)
 ]
 
-# No [[hooks]] entries. See above.
+# ============================================================================
+# Focus signal
+# ============================================================================
+# CSWGuiPanel::SetActiveControl @ 0x0040EC00 — the canonical focus-change
+# signal, fired exactly once per real focus change.
+#
+# The KOTOR 2 address was found by vtable-slot correspondence and is the
+# best-corroborated result of the port: 71 classes inherit this method, all put
+# it in the same slot, and all 71 agree on this target. It was then verified by
+# decompiling both games — identical active-control comparison, identical
+# focus-change virtual fired on old then new, identical gui-sound call.
+#
+# Hooked at 0x0040EC09, six bytes into the function. KOTOR 2's GUI code is
+# compiled UNOPTIMISED, so unlike KOTOR 1 it keeps a real frame pointer and
+# reloads `this` from [EBP-8] at every use:
+#
+#   0040ec00: 55              PUSH EBP
+#   0040ec01: 8b ec           MOV EBP,ESP
+#   0040ec03: 83 ec 08        SUB ESP,0x8
+#   0040ec06: 89 4d f8        MOV [EBP-0x8],ECX     ← `this` stored
+#   0040ec09: 8b 45 f8        MOV EAX,[EBP-0x8]     ← hook here, 6 bytes
+#   0040ec0c: 8b 48 20        MOV ECX,[EAX+0x20]
+#
+# Cutting AFTER the prologue means both arguments are already in the frame when
+# our handler runs: [EBP-8] = this (CSWGuiPanel*), [EBP+8] = the new control.
+# Both cut instructions are frame/register-relative with no absolute operands,
+# so they relocate safely into the trampoline.
+#
+# The single parameter is EBP, and the handler does its own frame arithmetic.
+# That is deliberate: KPatchManager's esp+X parameter source emits LEA rather
+# than MOV and yields addresses instead of values (project_kpatchmanager_lea_bug
+# / docs/upstream-prs.md), so a hook needing frame-relative arguments must read
+# them itself rather than declare them as stack parameters.
+[[hooks]]
+address = 0x0040ec09
+type = "detour"
+function = "OnSetActiveControlK2"
+
+# 8b 45 f8              MOV EAX, [EBP-0x8]
+# 8b 48 20              MOV ECX, [EAX+0x20]
+original_bytes = [0x8b, 0x45, 0xf8, 0x8b, 0x48, 0x20]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+# EBP — the frame pointer, not `this`. See the note above.
+[[hooks.parameters]]
+source = "ebp"
+type = "pointer"
