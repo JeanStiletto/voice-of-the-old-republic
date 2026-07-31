@@ -575,7 +575,12 @@ extern "C" int __cdecl OnClientHandleInputEvent(void* this_ptr,
 
         if (mgr && modalSize > 0) {
             using PFN_MgrHIE = void(__thiscall*)(void*, int, int);
-            const uintptr_t kAddrMgrHIE = acc::addr::R(0x0040c8e0);
+            // CSWGuiManager::HandleInputEvent. KOTOR 2 address verified by
+            // decompiling both: identical `this->field_0x68 = code` write,
+            // identical `value == 0` early-out, and a switch whose case values
+            // and axis-to-direction translations match byte for byte — so the
+            // engine InputIndex codes are the same in both games.
+            const uintptr_t kAddrMgrHIE = acc::addr::Pick(0x0040c8e0, 0x00410AA0);
             auto fn = reinterpret_cast<PFN_MgrHIE>(kAddrMgrHIE);
             __try {
                 fn(mgr, param_1, param_2);

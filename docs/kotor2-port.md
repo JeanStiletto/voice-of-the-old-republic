@@ -153,6 +153,49 @@ The structural predictions held exactly:
 - `CSWSCreature` — uniformly +0x724
 - the whole `.data` globals block — uniformly +0x2A1AA8, i.e. relocated intact
 
+## The GUI hook set — verified by decompiling both games
+
+The three hooks all menu accessibility is built on now have KOTOR 2 addresses,
+each confirmed by decompiling the KOTOR 1 and KOTOR 2 functions and comparing
+structure — not inferred from a delta or a single witness.
+
+- **`CSWGuiPanel::SetActiveControl`** (focus signal) — `0x0040A630` →
+  `0x0040EC00`. Found by vtable slot: 71 classes inherit it, all in the same
+  slot, all agreeing. Both decompiles show the same active-control comparison,
+  the same focus-change virtual fired on old then new, the same gui-sound call.
+- **`CSWGuiManager::HandleInputEvent`** (input dispatcher) — `0x0040C8E0` →
+  `0x00410AA0`. Same `this->field_0x68 = code` write, same `value == 0`
+  early-out, and a switch whose case values and axis-to-direction translations
+  match byte for byte.
+- **`CSWGuiManager::Update`** (per-frame tick) — `0x0040CE70` → `0x004113A0`.
+  Both take a float and both read `panels.size` (+0x8c) as their first action,
+  which is exactly what the KOTOR 1 hook point does.
+
+Also identified: `CSWGuiManager::HitCheckMouse` → `0x00411030`.
+
+**`MoveMouseToPosition` is NOT yet found.** Its KOTOR 1 body is four
+statements (store x/y, `CExoInput::SetMousePos`, `HandleMouseMove`), but none
+of the three KOTOR 2 callers of the apparent `HandleMouseMove` matches its
+shape, so KOTOR 2 reaches the hit-test by a different route. It is needed for
+click-simulation (activation), not for reading and announcing, so it can wait —
+but do not guess it: activation through a wrong address is how the
+`SetActiveControl` crash class happened on KOTOR 1.
+
+### What the decompiles said about layout
+
+Worth more than the addresses themselves, because it constrains everything else:
+
+- **`CSWGuiManager` did not grow.** Its input-code field is at +0x68 in both
+  games, and `HitCheckMouse` reads the panel arrays at +0x88/+0x8c and
+  +0x94/+0x98 — identical to KOTOR 1. So foreground-panel resolution, which the
+  whole navigation chain depends on, carries over unchanged.
+- **`CSWGuiPanel` and `CSWGuiControl` both shift +4** in that region:
+  `active_control` 0x1c→0x20, `manager` 0x18→0x1c, the control's gui-sound byte
+  0x55→0x59.
+- **The engine input codes are identical.** `HandleInputEvent`'s switch uses the
+  same case values and produces the same translated direction codes in both
+  games, so `engine_input.h`'s InputIndex constants should carry over as-is.
+
 ### Values that are derived rather than verified
 
 Flagged in the code, listed here so they are not forgotten:

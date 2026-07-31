@@ -85,10 +85,20 @@ const uintptr_t kAddrGuiManagerPtr = acc::addr::PickGlobal(0x007A39F4, 0x00A1B49
 // PushModalPanel/PopModalPanel/GetPosInModalStack confirm modal_stack
 // is CSWGuiPanel** indexable like CExoArrayList. LogManagerStack
 // validates the offsets at runtime.
-const size_t kMgrPanelsDataOffset      = acc::off::Todo(0x88);
-const size_t kMgrPanelsSizeOffset      = acc::off::Todo(0x8c);
-const size_t kMgrModalStackDataOffset  = acc::off::Todo(0x94);
-const size_t kMgrModalStackSizeOffset  = acc::off::Todo(0x98);
+// Identical in both games — observed, not inferred. KOTOR 2's own
+// CSWGuiManager::HitCheckMouse (FUN_00411030) reads modal_stack size at +0x98,
+// falls back to panels size at +0x8c, and indexes the arrays at +0x94 and
+// +0x88, exactly as KOTOR 1 does.
+//
+// CSWGuiManager appears not to have grown at all: its input-code field is at
+// +0x68 in both games too (seen in HandleInputEvent). That is unlike
+// CSWGuiPanel and CSWGuiControl, which both shift +4 — so the manager is a
+// class where "same name, same layout" genuinely holds, and the panel arrays
+// that foreground resolution depends on carry over unchanged.
+const size_t kMgrPanelsDataOffset      = acc::off::Same(0x88);
+const size_t kMgrPanelsSizeOffset      = acc::off::Same(0x8c);
+const size_t kMgrModalStackDataOffset  = acc::off::Same(0x94);
+const size_t kMgrModalStackSizeOffset  = acc::off::Same(0x98);
 
 // Cursor move + hover refresh in one call. Updates hover only;
 // panel.activeControl lags unless explicitly committed (PanelSetActive-
