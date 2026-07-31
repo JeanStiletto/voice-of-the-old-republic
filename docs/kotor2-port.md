@@ -8,7 +8,36 @@ result especially — but whose cost estimate predates the RTTI finding below.
 
 State as of 2026-08-01: **Batch 1 (GUI spine) is TESTED AND WORKING** — the
 user confirmed menu navigation, Options + sub-panels, listbox rows and speech
-all behave as intended on KOTOR 2. Next up: **Batch 2** (see THE BATCH PLAN).
+all behave as intended on KOTOR 2. **Batch 2 is in progress: every address it
+needs is now identified offline** — the slot table (previous session) and all
+four hook targets with byte-confirmed cut points plus Show/Prev/SetInputClass
+(fourth session; see "The four hook addresses — ALL IDENTIFIED" under Batch 2).
+
+What remains for Batch 2 is now pure implementation, no more archaeology:
+
+1. Write the five `kotor2.hooks.toml` entries (Switch 0x007CA575, Hide
+   0x007CA066, SetSWGuiStatus 0x007C9C46, AppendToMsgBuffer x2 at 0x007BE093
+   and 0x007BE1B3 — cut bytes in the Batch 2 section) and the K2
+   frame-unpacking wrappers next to Batch 1's in `menus_focus_k2.cpp` (or a
+   new `subscreen_k2.cpp`): ECX = this, EBP passed for params, mirroring
+   OnHandleFocusChangeK2.
+2. Move the newly witnessed constants into code: `kAddrSwitchToSWInGameGui`,
+   `kAddrHideSWInGameGui` (+ engine_panels_state's CloseInGameMenuToWorld
+   pair), `kAddrCGuiInGameSetSWGuiStatus` (engine_levelup.cpp),
+   PrevSWInGameGui, SetInputClass 0x007B3050 + input-class field +0x9C
+   (clears `GetInputClass`'s K2 decline), sw_gui_status offset +0x34,
+   slot-table rows InGameMenu 0x8 (Same) and MainInterface 0x98 (Pick).
+3. `port_worklist.py` over `engine_subscreen.cpp` + `msg_router.cpp` again —
+   4 unresolved constants remain, all in `tutorial_popup.cpp` / the
+   combat-pause setter; decide per constant whether Batch 2 or later.
+4. Clear the gates in `engine_subscreen.cpp` (4) and `msg_router.cpp` (1),
+   then `handler_chain_audit.py` over both plus everything their handlers
+   call. Note OnAppendToMsgBuffer's handler calls IsLoadingSaveGame and
+   GetPlayerPosition — both engine-reading, both must resolve or decline
+   cleanly on KOTOR 2 before the gate clears (the Batch 1 lesson).
+5. One test round: open/close/switch sub-screens by hotkey and Esc, then
+   trigger feedback lines (loot pickup, combat hit) and confirm the router
+   speaks them. Log channels: Panels.* and Combat.MsgBuf.
 
 The first test round surfaced two crash classes, both fixed and re-verified:
 
@@ -131,6 +160,10 @@ stand-in in `menus_focus_k2.cpp` when the menu path is enabled.
   constructor and destructor. This is the one that reaches panel layouts.
 - `find_thiscall_targets.py` — methods called on a known singleton
 - `port_worklist.py` — what a subsystem needs, and what is unresolved
+- `k2_caller_trace.py` — call-site census with pre-call context windows,
+  forwarder-shape scan, and accessor-follow method tally. Caller COUNTS are a
+  cross-game fingerprint usable before any decompile round; this is what
+  identified all four Batch 2 hooks.
 
 `find_thiscall_targets.py` and `vtable_xrefs.py` both run against KOTOR 1 too,
 given `build/re/imagedump/swkotor-image.bin` from `kdev dump-text` (the Steam
@@ -385,44 +418,111 @@ the read faults, SEH returns null) — but two did not, and both are now handled
   (unlike its sibling `CloseInGameMenuToWorld`), so it would have faulted into
   its own SEH on every call instead of declining cheaply.
 
-#### The four hook addresses — reconnaissance done, not yet identified
+#### The four hook addresses — ALL IDENTIFIED (2026-08-01, fourth session)
 
-All four (`SwitchToSWInGameGui`, `HideSWInGameGui`, `SetSWGuiStatus`,
-`AppendToMsgBuffer`) are CGuiInGame methods, and CGuiInGame has no RTTI in
-KOTOR 2 — so the vtable-slot map cannot reach them and the route is
-caller-tracing, as it was for `MoveMouseToPosition`.
+Every Batch 2 hook target now has a KOTOR 2 address, each confirmed by
+decompiling the KOTOR 2 candidate and the KOTOR 1 original in parallel Ghidra
+rounds and matching structure landmark by landmark (sound-mode calls, script
+names, the status switch, the ring-shift loop). Offline only — none of this
+has run in game yet.
 
-**The narrowing that worked:** a method of CGuiInGame is, by construction, the
-target of any forwarder shaped `MOV ECX,[this+0x40]; CALL X` — because +0x40
-is where CClientExoAppInternal keeps its CGuiInGame (established above). A scan
-of .text for that shape returns 8 forwarders, 7 of whose targets sit in one
-cluster, which is therefore the CGuiInGame method neighbourhood:
+The route that worked, in order:
 
-    0x007BE4C0  the panel creator (already identified)
-    0x007C7030  0x007CA060  0x007CA6E0  0x007CBB40  0x007CE710  0x007CF960
+1. The `case 0xdf` prediction from last session was right in substance:
+   scanning for `PUSH 7` immediately before a call through the `[this+0x40]`
+   CGuiInGame chain found the Esc path inside one large 5-caller function —
+   `CClientExoAppInternal::HandleInputEvent` = **0x007B12C0** (K1 0x00621210).
+2. Caller-COUNT fingerprints then matched K1 to K2 before any decompile:
+   K1 SwitchToSWInGameGui has 9 sites (1 in HandleInputEvent + 8 per-GUI-id
+   trampolines); exactly one K2 candidate has 9 sites in the same pattern
+   (8 id-wrappers at 0x757A50..0x757BA0 pushing ids 0-7). Same logic paired
+   Show (3 vs 4 sites, two inside the dispatcher in both games).
+3. One Ghidra round per game (11 K2 functions + 6 K1 references, run in
+   parallel) settled every identity. The decompile pairs read like the same
+   source compiled twice.
 
-Two are partly characterised from their forwarders: 0x007CA060 takes one int
-and returns a tested value (query-shaped, so a status GETTER rather than
-SetSWGuiStatus), and 0x007CF960 takes a byte.
+**The four hooks (KOTOR 1 → KOTOR 2), with byte-confirmed cut points.** All
+cuts are frame-relative with no relative operands; at every cut ECX still
+holds `this` and the params sit at [EBP+8]/[EBP+0xC]/[EBP+0x10], so the
+Batch 1 frame-unpacking-wrapper pattern (ECX + EBP sources) applies directly.
 
-**What did NOT work, so it is not retried:** scanning that region for
-`AppendToMsgBuffer`'s KOTOR 1 shape — a 64-slot, 16-byte-stride ring at
-this[+0xF8] with the write index at this[+0x100] — finds nothing, with either a
-`cmp ,0x40` or an `and ,0x3f` bound plus a `shl ,4` stride. KOTOR 2 either
-sizes the ring differently or expresses the indexing another way, so the ring
-is not a usable fingerprint. Match on the CALLERS instead.
+- **SwitchToSWInGameGui** — 0x0062cf10 → **0x007CA550**. Cut at **0x007CA575**,
+  7 bytes `89 4d e0 83 7d 08 00` (`MOV [EBP-0x20],ECX` + `CMP [EBP+8],0`).
+  Stops before the `JL`; the trampoline replays the CMP right before the JL,
+  the same flags-across-handler shape as Batch 1's HandleFocusChange. Like the
+  K1 hook, this fires pre-guard (K1's 0x0062cf2d cut also precedes the range
+  checks). `this`=ECX, GUI_id=[EBP+8].
+- **HideSWInGameGui** — 0x0062cba0 → **0x007CA060**. Cut at **0x007CA066**,
+  6 bytes `89 4d d4 8b 45 d4`. `this`=ECX, param_1=[EBP+8].
+  CORRECTION: last session's forwarder note characterised 0x007CA060 as a
+  "status getter" because its return is tested. It is Hide — the tested
+  return is K1's own `if (HideSWInGameGui(0)) SetInputClass(0,1)` pattern.
+- **SetSWGuiStatus** — 0x0062aa00 → **0x007C9C40**. Cut at **0x007C9C46**,
+  6 bytes `89 4d fc 8b 45 08`. `this`=ECX, status=[EBP+8], p2=[EBP+0xC].
+  The status machine is byte-identical to K1's (cases 1-4, values 1/2/3);
+  **sw_gui_status lives at +0x34 on KOTOR 2.**
+- **AppendToMsgBuffer** — 0x0062b5c0 → a PAIR: **0x007BE090** (67 call sites)
+  and **0x007BE1B0** (23 call sites). KOTOR 2 split KOTOR 1's single message
+  ring (78 callers) into two category rings — same body otherwise: empty-string
+  guard, 0x40-capacity ring, 16-byte stride, shift-down loop, then store of
+  (CExoString msg, dword type at +8, byte color at +0xC) and count++. Same
+  `(CExoString*, ulong, byte)` signature, `ret 0xc`. Ring A: buffer ptr at
+  gui+0x110, count at +0x11C. Ring B: ptr +0x118, count +0x124 (K1: +0xF8 /
+  +0x100 — the +0x20 shift is why the K1-offset fingerprint scan failed).
+  **Hook BOTH with the same handler** to reproduce K1 coverage; the dense
+  sequential caller block at 0x82E000-0x830000 feeding ring A is the K2 twin
+  of K1's 0x653000-0x665400 feedback-builder block. Cut for both at entry+3:
+  **0x007BE093** / **0x007BE1B3**, 6 bytes `83 ec 10 89 4d f0` each.
+  msg=[EBP+8], type=[EBP+0xC], color=[EBP+0x10].
 
-Highest-value next step: `SwitchToSWInGameGui` is called from
-`CClientExoAppInternal::HandleInputEvent`'s `case 0xdf` — the Esc-opens-the-
-pause-menu path this mod already documents on KOTOR 1 (input_pipeline.cpp).
-Finding that switch identifies the function AND its GUI-id argument in one
-read, and the same function's neighbourhood should yield the rest.
+**Identified alongside, needed by the same handlers:**
 
-The nine still-`Todo` slots (InGameMenu, InGameCharacter, GalaxyMap,
-MainInterface, PartySelection, ControllerLossBox, DialogCinematicCopy,
-DialogComputerCamera, the DialogMessages pair) can follow, or wait for their
-subsystem's batch. MainInterface is the one worth doing early — the action bar,
-radial and picker all resolve through it.
+- `ShowSWInGameGui` — 0x0062c9b0 → **0x007C9DF0**. Confirmed by
+  SetSoundMode(4), `"k_sup_guiopen"`, SetSWGuiStatus(3,1), the CanLevelUp
+  default-panel branch — every K1 landmark in order.
+- `PrevSWInGameGui` — 0x0062cdf0 → **0x007CA3C0** (decrements last_gui_panel,
+  wraps -1→7). Its twin **0x007CA230** is NextSWInGameGui (wraps 8→0). Our
+  Switch handler calls Prev; do not swap them.
+- `CClientExoAppInternal::SetInputClass` = **0x007B3050**, and the input-class
+  field is confirmed at **+0x9C** — which unblocks the two guards noted below
+  (`GetInputClass`'s decline, `SetGuiInputGuiClass`'s missing Ok() check).
+- `CClientExoApp::GetInGameGui` = **0x0073F750** (632 call sites — the
+  app-wide accessor; body is exactly the documented `[this+4]` → `[+0x40]`
+  chain). `GetSWGuiManager` = **0x0073FEA0**.
+- `UpdateCreatedInGameGUI` = **0x007D0760** — last session's unexplained
+  "smaller second creator" is this; both Show and Switch call it with
+  (old_id, new_id).
+- CSWGuiManager methods on KOTOR 2: AddPanel **0x00410530**, RemovePanel
+  **0x00410670**, SendPanelToBack **0x00410780**, PanelExists **0x00410800**,
+  PlayGuiSound **0x004122A0**. `CExoSoundInternal::SetSoundMode` =
+  **0x0070BC60** (ExoSound global at 0xA1B494).
+- CGuiInGame KOTOR 2 fields witnessed in the decompiles: in_game_menu +0x8,
+  panel slot table from +0xC (as recovered), last_gui_panel +0x2C, gui-open
+  flag +0x30, sw_gui_status +0x34, manager +0x38, in_game_pause +0x7C,
+  **main_interface +0x98** (a slot the table had open — witnessed by
+  SetSWGuiStatus adding/removing it on status 1), message rings
+  +0x110/+0x118 with counts +0x11C/+0x124, initialized +0x128, and the twins
+  of K1's +0xB38/+0xB3C pause-mode pair at **+0xF18/+0xF1C**.
+  The InGameMenu slot is +0x8 on both games (witnessed by Show/Hide panel
+  adds), closing another open row.
+- Ruled out while searching: 0x007CBB40 is the fade starter (fade panel slot
+  +0x6C, 20 callers), 0x007D0AF0 is a hide-request refcounter at +0xF0
+  (17 callers), 0x007CE740 is a 16-byte item-notification setter at +0x100C.
+
+The dispatcher's identity is triple-witnessed: 5 callers (K1's is called from
+ProcessInput/PlayBackInputEvents), the case-0xdf Esc path with the in-world
+guard and Show(7), and the hotkey triple (same-id → Hide via helper,
+different-id → Switch, in-world → Show) at 0x7B1F70-0x7B2010 matching K1's
+case 0xd1-0xd8 line for line.
+
+The scan tooling from this session is promoted to
+`tools/re-scripts/k2_caller_trace.py` (call-site census + forwarder shapes +
+pre-call context windows for a target list; the census halves are what turned
+caller COUNTS into a fingerprint usable before any decompile).
+
+The seven still-`Todo` slots (InGameCharacter, GalaxyMap, PartySelection,
+ControllerLossBox, DialogCinematicCopy, DialogComputerCamera, the
+DialogMessages pair) can follow, or wait for their subsystem's batch.
 
 **Batch 3 — World, area, transitions.** `OnSetMoveToModuleString`, `OnDoorOpen`,
 `OnShowObject`; gates in `transitions.cpp`, `door_announce.cpp`,
