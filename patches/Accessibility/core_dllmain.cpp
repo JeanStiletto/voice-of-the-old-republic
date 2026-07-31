@@ -13,6 +13,7 @@
 #include "bringup_announce.h"
 #include "focus_guard.h"
 #include "diag_settings.h"
+#include "engine_game.h"
 #include "engine_keymap.h"
 #include "log.h"
 #include "mod_version.h"
@@ -349,6 +350,18 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD reason, LPVOID) {
             strncpy_s(g_versionSha, "(unset)", _TRUNCATE);
         }
         acclog::Write("Init", "DLL_PROCESS_ATTACH sha=%s", g_versionSha);
+        // Which game/build, logged beside the SHA because they answer the same
+        // question from two directions: the SHA is what KotorPatcher matched,
+        // this is what we independently detected from the game's PE header. A
+        // disagreement between the two lines is a real bug and worth spotting.
+        //
+        // Safe under loader lock: detection is a walk of the already-mapped
+        // image, with no file I/O and no allocation (see engine_game.h). It is
+        // deliberately here rather than in the startup snapshot so it appears
+        // even when NO hooks are installed — which is exactly the state the
+        // KOTOR 2 bring-up runs in.
+        acclog::Write("Game.Identity", "title=%s build=%s",
+                      acc::game::TitleName(), acc::game::BuildName());
         // Prism init deferred — loader lock.
     }
     return TRUE;

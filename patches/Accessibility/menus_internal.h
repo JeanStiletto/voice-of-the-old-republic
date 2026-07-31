@@ -46,6 +46,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include "engine_offsets_select.h"
 
 namespace acc::menus::detail {
 
@@ -214,5 +215,5 @@ constexpr int kPartySelectionAddBtnId = 38;  // BTN_NPC
 // the item currently equipped in the selected slot". Used by EquipPickerOnEnter
 // to route Enter on the equipped row to an unequip (commit the row-0
 // 0x7f000000 "empty" entry) instead of a no-op re-equip.
-constexpr size_t kEquipItemEntryFlagsOffset  = 0x394;
-constexpr uint32_t kEquipItemEntryEquippedBit = 0x2;
+const size_t kEquipItemEntryFlagsOffset  = acc::off::Todo(0x394);
+const uint32_t kEquipItemEntryEquippedBit = acc::off::Todo(0x2);

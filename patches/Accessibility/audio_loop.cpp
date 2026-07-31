@@ -9,6 +9,7 @@
 #include "engine_player.h"
 #include "log.h"
 #include "view_mode.h"
+#include "engine_offsets_select.h"
 
 namespace acc::audio {
 
@@ -29,11 +30,11 @@ constexpr size_t kSourceStructSize = 16;
 // (no re-stream). We make the same call with an absolute rate, bypassing the
 // engine's rand()-based variance. Field offsets confirmed in swkotor.exe.h
 // (CExoSoundSourceInternal) and the SetPitchVariance byte dump.
-constexpr size_t   kSoundSourceInternalOffset   = 0x04;  // CExoSoundSource.internal
-constexpr size_t   kInternalBaseFrequencyOffset = 0x48;  // sample natural Hz
-constexpr size_t   kInternalPitchVarFreqOffset  = 0x54;  // applied rate field
-constexpr size_t   kInternalVoice3DOffset       = 0x3c;  // C3DVoice* (null until playing)
-constexpr size_t   kVoiceHandleOffset           = 0x04;  // Miles handle inside the voice
+const size_t   kSoundSourceInternalOffset   = acc::off::Todo(0x04);  // CExoSoundSource.internal
+const size_t   kInternalBaseFrequencyOffset = acc::off::Todo(0x48);  // sample natural Hz
+const size_t   kInternalPitchVarFreqOffset  = acc::off::Todo(0x54);  // applied rate field
+const size_t   kInternalVoice3DOffset       = acc::off::Todo(0x3c);  // C3DVoice* (null until playing)
+const size_t   kVoiceHandleOffset           = acc::off::Todo(0x04);  // Miles handle inside the voice
 // SetPitchVariance reaches the Miles setter via `call dword ptr [0x0073d4e8]`;
 // the slot holds the resolved AIL_set_3D_sample_playback_rate import. Calling
 // through the engine's own IAT slot avoids resolving mss32.dll ourselves.

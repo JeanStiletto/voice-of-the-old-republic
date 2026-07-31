@@ -7,6 +7,7 @@
 #include "engine_reads.h"    // LookupTlk
 #include "log.h"
 #include "strings.h"
+#include "engine_offsets_select.h"
 
 namespace acc::tutorial_hints {
 
@@ -18,7 +19,7 @@ using acc::strings::Id;
 // popup was built from. RE-confirmed: SetTutorialReason writes it, SetNextMessage
 // reads it back as the 2DA row. Survives after the popup is built, so a poll
 // recovers the popup's identity language-independently.
-constexpr size_t kTutorialBoxRowOffset = 0x994;
+const size_t kTutorialBoxRowOffset = acc::off::Todo(0x994);
 
 // Surface 2 map: source strref -> hint Id. Resolved to the current language's
 // text lazily via the engine TLK, then matched against the rendered dialogue

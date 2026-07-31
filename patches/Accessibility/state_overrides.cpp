@@ -9,6 +9,7 @@
 #include "engine_reads.h"  // ReadCExoString
 #include "log.h"
 #include "strings.h"
+#include "engine_offsets_select.h"
 
 namespace acc::state {
 
@@ -64,7 +65,7 @@ constexpr LabelEntry kWallSwitchLabels[] = {
 // guessed boolean 19; the disassembly constant belonged to the script's
 // globals table, not the GetLocalBoolean argument.)
 constexpr uint32_t kLocalBoolUsedMask   = 1u << 2;
-constexpr size_t   kLocalBoolWordOffset = 0x110;
+const size_t   kLocalBoolWordOffset = acc::off::Todo(0x110);
 
 constexpr LabelEntry kCaptiveJediLabels[] = {
     {0, acc::strings::Id::PlaceableStateCaptive},
@@ -78,7 +79,9 @@ constexpr LabelEntry kSfTerminalLabels[] = {
     {0, acc::strings::Id::Count_},
 };
 
-constexpr StateOverride kOverrides[] = {
+// const, not constexpr: the table embeds kLocalBoolWordOffset, which is now
+// resolved per game at load time.
+const StateOverride kOverrides[] = {
     {"wall1", 0x260, kWallSwitchLabels, 0},
     {"wall2", 0x260, kWallSwitchLabels, 0},
     {"wall3", 0x260, kWallSwitchLabels, 0},

@@ -13,6 +13,7 @@
 #include "log.h"
 #include "narrated_target.h"
 #include "engine_rebase.h"
+#include "engine_offsets_select.h"
 
 namespace acc::combat_diag {
 
@@ -21,7 +22,7 @@ namespace {
 // CSWCCreature combat-mode bit (set by CSWCCreature::SetCombatMode @0x00610a10).
 // Bit 0 of field200_0x440 is the chain/overwrite knob DoPersonalAction +
 // DoTargetAction branch on.
-constexpr size_t kCSWCCreatureCombatModeOffset = 0x440;
+const size_t kCSWCCreatureCombatModeOffset = acc::off::Todo(0x440);
 
 // Engine accessors used by DoPersonalAction's chain branch.
 const uintptr_t kAddrCClientExoAppGetAutoPaused = acc::addr::R(0x005edef0);
@@ -30,7 +31,7 @@ const uintptr_t kAddrCClientExoAppGetPauseState = acc::addr::R(0x005ed640);
 // main_interface.field1_0x64 — the engine target handle SetTarget stamps.
 // Resolved through engine_panels' ResolveMainInterface so we can compare
 // per-press.
-constexpr size_t kMainInterfaceTargetHandleOff = 0x64;
+const size_t kMainInterfaceTargetHandleOff = acc::off::Todo(0x64);
 
 typedef unsigned long (__thiscall* PFN_GetAutoPaused)(void* this_);
 typedef unsigned long (__thiscall* PFN_GetPauseState)(void* this_, uint8_t which);

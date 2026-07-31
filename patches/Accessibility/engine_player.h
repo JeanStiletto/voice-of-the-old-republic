@@ -24,6 +24,7 @@
 #include "engine_app.h"
 #include "engine_offsets.h"
 #include "engine_rebase.h"
+#include "engine_offsets_select.h"
 
 namespace acc::engine {
 
@@ -199,14 +200,18 @@ const uintptr_t kAddrGetPlayerCreature = acc::addr::R(0x005ED540);
 const uintptr_t kAddrCSWSObjectGetArea = acc::addr::R(0x004CB120);
 
 // CSWCObject.server_object — same for every client object.
-constexpr size_t kClientObjectServerObjectOffset = 0xf8;
+const size_t kClientObjectServerObjectOffset = acc::off::Todo(0xf8);
 
-constexpr size_t kServerObjectPositionOffset    = 0x90;
-constexpr size_t kServerObjectOrientationOffset = 0x9c;
+// CSWSObject.Position / .Orientation. KOTOR 2 values from the seeded
+// kotor2_steam_aspyr.db. Every CSWSObject field shifts by exactly +4 there
+// (AreaId 0x8c→0x90, Position 0x90→0x94, Orientation 0x9c→0xa0) — one 4-byte
+// field inserted above them, not a reshuffle.
+const size_t kServerObjectPositionOffset    = acc::off::Pick(0x90, 0x94);
+const size_t kServerObjectOrientationOffset = acc::off::Pick(0x9c, 0xa0);
 
 // CClientExoAppInternal.player_control @+0x2a0. The facade → internal hop
 // itself is engine_app.h's GetClientAppInternal().
-constexpr size_t kClientAppPlayerControlOffset = 0x2a0;
+const size_t kClientAppPlayerControlOffset = acc::off::Todo(0x2a0);
 
 const uintptr_t kAddrCSWPlayerControlSetEnabled = acc::addr::R(0x006792E0);
 
@@ -223,10 +228,10 @@ const uintptr_t kAddrCClientExoAppGetPlayerCharacterName = acc::addr::R(0x005EDA
 // (all 1s) for avail/selectable arrays. Internal+0x1b770 matches the
 // per-portrait flag word the engine sets in OnPanelAdded. The facade and
 // internal hops themselves are engine_app.h's GetServerAppInternal().
-constexpr size_t    kServerInternalPartyTableOffset = 0x1b770;
-constexpr size_t    kPartyTableNumMembersOffset    = 0x0;
-constexpr size_t    kPartyTableMemberIdsOffset     = 0x4;
-constexpr size_t    kPartyTableSoloModeOffset      = 0x190;  // pt_solomode ulong
+const size_t    kServerInternalPartyTableOffset = acc::off::Todo(0x1b770);
+const size_t    kPartyTableNumMembersOffset    = acc::off::Todo(0x0);
+const size_t    kPartyTableMemberIdsOffset     = acc::off::Todo(0x4);
+const size_t    kPartyTableSoloModeOffset      = acc::off::Todo(0x190);  // pt_solomode ulong
 constexpr int       kPartyTableMaxMembers          = 11;
 
 // CSWPartyTable thiscalls used by the PartySelection extractor (same

@@ -36,6 +36,7 @@
 #include "menus_modsettings.h"
 #include "strings.h"
 #include "engine_rebase.h"
+#include "engine_offsets_select.h"
 
 using namespace acc::engine;
 
@@ -328,7 +329,7 @@ bool IsSoundOptionsMovieSlider(void* panel, void* control) {
 // "Maximaler Einsatz: M\nCredits: K". We surface a single top-of-chain row
 // combining the live wager with that max+credits line — the analogue of the
 // inventory credits row.
-constexpr size_t kWagerCurrentValueOffset = 0xc94;
+const size_t kWagerCurrentValueOffset = acc::off::Todo(0xc94);
 constexpr int    kWagerMaxLabelGuiId      = 3;
 
 void* FindWagerMaxLabel(void* panel) {
@@ -943,10 +944,10 @@ const char* TryPartyPortrait(void* control, char* outBuf, size_t bufSize,
     // the partyId field at +0x44c is only a snapshot taken once in
     // OnPanelAdded and never updated, so reading it left the spoken
     // status frozen at the panel-open composition.
-    constexpr size_t kPartyPortraitSelectedOffset = 0x1c4;
-    constexpr size_t kPartyPortraitFlagsOffset = 0x448;
-    constexpr size_t kPartyPortraitPartyIdOffset = 0x44c;
-    constexpr size_t kPartyPortraitNpcSlotOffset = 0x450;
+    const size_t kPartyPortraitSelectedOffset = acc::off::Todo(0x1c4);
+    const size_t kPartyPortraitFlagsOffset = acc::off::Todo(0x448);
+    const size_t kPartyPortraitPartyIdOffset = acc::off::Todo(0x44c);
+    const size_t kPartyPortraitNpcSlotOffset = acc::off::Todo(0x450);
     int npcSlot = -1, flags = 0, partyId = -1, selected = 0;
     __try {
         auto* base = reinterpret_cast<unsigned char*>(control);

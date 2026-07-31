@@ -33,6 +33,7 @@
 #include "menus_store.h"
 #include "prism.h"
 #include "strings.h"
+#include "engine_offsets_select.h"
 
 using namespace acc::engine;  // IdentifyPanel, PanelKind, kInput*, etc.
 
@@ -632,8 +633,8 @@ bool IsDecorativeControl(void* panel, void* c,
     if (pk == PanelKind::PartySelection) {
         void** vt = *reinterpret_cast<void***>(c);
         if (reinterpret_cast<uintptr_t>(vt) == acc::addr::R(0x00756BB8)) {
-            constexpr size_t kPartyPortraitPartyIdOffset = 0x44c;
-            constexpr size_t kPartyPortraitNpcSlotOffset = 0x450;
+            const size_t kPartyPortraitPartyIdOffset = acc::off::Todo(0x44c);
+            const size_t kPartyPortraitNpcSlotOffset = acc::off::Todo(0x450);
             int partyId = -1, npcSlot = -1;
             __try {
                 auto* base = reinterpret_cast<unsigned char*>(c);

@@ -14,49 +14,50 @@
                               // GetClientLeader (for Security skill check)
 #include "log.h"
 #include "engine_rebase.h"
+#include "engine_offsets_select.h"
 
 namespace {
 
 // CSWGuiTargetActionMenu lives inside CSWGuiMainInterface at +0xBC. Verified
 // against the C header (swkotor.exe.h:11611 MEMBER OFFSET="0xbc" SIZE="0x1af0").
-constexpr size_t kMainInterfaceTargetActionMenuOffset = 0xBC;
+const size_t kMainInterfaceTargetActionMenuOffset = acc::off::Todo(0xBC);
 
 // CExoArrayList<CSWGuiInterfaceAction> action_lists[3] occupy TAM +0x00
 // through TAM +0x24 (3 * 0x0C). We only need the size field, which lives
 // at +0x04 within each CExoArrayList.
-constexpr size_t kTamActionListsOffset    = 0x00;
-constexpr size_t kActionListSizeOffset    = 0x04;
-constexpr size_t kActionListStride        = 0x0C;
+const size_t kTamActionListsOffset    = acc::off::Todo(0x00);
+const size_t kActionListSizeOffset    = acc::off::Todo(0x04);
+const size_t kActionListStride        = acc::off::Todo(0x0C);
 
 // CSWGuiMainInterfaceAction stride / row offset within TAM. target_actions[3]
 // starts at +0x54 (after action_lists[3] @+0x00 + field1[12] @+0x24).
-constexpr size_t kTamTargetActionsOffset  = 0x54;
-constexpr size_t kTargetActionStride      = 0x71C;
+const size_t kTamTargetActionsOffset  = acc::off::Todo(0x54);
+const size_t kTargetActionStride      = acc::off::Todo(0x71C);
 
 // Within a CSWGuiMainInterfaceAction, action_button is the first member at
 // offset 0. is_action lives at +0x718 (one int before the next stride
 // boundary at 0x71C). Embedded buttons: action_label at +0x1C4
 // (CSWGuiButton size 0x1C4), up_button +0x388, down_button +0x54C, then
 // field4 +0x710, field5 +0x714, is_action +0x718.
-constexpr size_t kRowActionButtonOffset   = 0x000;
-constexpr size_t kRowActionLabelOffset    = 0x1C4;
-constexpr size_t kRowUpButtonOffset       = 0x388;
-constexpr size_t kRowDownButtonOffset     = 0x54C;
-constexpr size_t kRowField4Offset         = 0x710;
-constexpr size_t kRowField5Offset         = 0x714;
-constexpr size_t kRowIsActionOffset       = 0x718;
+const size_t kRowActionButtonOffset   = acc::off::Todo(0x000);
+const size_t kRowActionLabelOffset    = acc::off::Todo(0x1C4);
+const size_t kRowUpButtonOffset       = acc::off::Todo(0x388);
+const size_t kRowDownButtonOffset     = acc::off::Todo(0x54C);
+const size_t kRowField4Offset         = acc::off::Todo(0x710);
+const size_t kRowField5Offset         = acc::off::Todo(0x714);
+const size_t kRowIsActionOffset       = acc::off::Todo(0x718);
 
 // CSWGuiInterfaceAction stride/offsets — same as engine_picker uses on
 // the descriptor read. Re-stated here so the wide-diagnostic peek into
 // action_lists[r].data[0] doesn't depend on the picker module.
-constexpr size_t kIfActionLabelOffset    = 0x00;  // CExoString
-constexpr size_t kIfActionIdOffset       = 0x08;  // ulong
-constexpr size_t kIfActionTargetOffset   = 0x1c;  // ulong
-constexpr size_t kIfActionIconOffset     = 0x20;  // CResRef (16B)
+const size_t kIfActionLabelOffset    = acc::off::Todo(0x00);  // CExoString
+const size_t kIfActionIdOffset       = acc::off::Todo(0x08);  // ulong
+const size_t kIfActionTargetOffset   = acc::off::Todo(0x1c);  // ulong
+const size_t kIfActionIconOffset     = acc::off::Todo(0x20);  // CResRef (16B)
 
 // CSWGuiLabel name_label sits at TAM +0x15CC (relative). Reading via
 // kLabelGuiStringPtrOffset (0xE4) for the rendered c_string.
-constexpr size_t kTamNameLabelOffset      = 0x15CC;
+const size_t kTamNameLabelOffset      = acc::off::Todo(0x15CC);
 
 // field1[12] = 4 target_types × 3 rows; each int is the selected action_id
 // for that combination (-1 = use first item). Used by inner-PopulateMenus
@@ -66,10 +67,10 @@ constexpr size_t kTamNameLabelOffset      = 0x15CC;
 // up after the engine's next paint pass, which is why we sometimes see
 // `gui_string=[] action_button=[]` immediately after PopulateMenus even
 // though the data is fully populated.
-constexpr size_t kTamField1Offset         = 0x24;
-constexpr size_t kTamTargetTypeOffset     = 0x1AEA;
+const size_t kTamField1Offset         = acc::off::Todo(0x24);
+const size_t kTamTargetTypeOffset     = acc::off::Todo(0x1AEA);
 constexpr int    kActionIdNone            = -1;
-constexpr size_t kIfActionStride          = 0x38;
+const size_t kIfActionStride          = acc::off::Todo(0x38);
 
 // Engine entry points (k1_win_gog_swkotor.exe.xml symbol table; GoG bytes
 // match Steam per project_ghidra_gog_steam_bytes_match).
@@ -90,13 +91,13 @@ const uintptr_t kAddrGetCanUseSkill = acc::addr::R(0x006477E0);
 // CreatureStats inline-member sits at +0x00 of CSWCLevelUpStats, so this
 // pointer can be reinterpreted directly as CSWCCreatureStats*. Verified:
 // swkotor.exe.h:5984 (lvl_up_stats), :6332 (creature_stats inline at +0).
-constexpr size_t kCreatureLvlUpStatsOffset = 0x2F8;
+const size_t kCreatureLvlUpStatsOffset = acc::off::Todo(0x2F8);
 
 // CSWSDoor.field_0x2d8 — the second Security gate from CSWCDoor::Get-
 // TargetActions decomp: must be 0 for the Security row to populate.
 // Per the door decomp, the field is read as `*(int *)(server_door + 0x2d8)`
 // and compared `== 0`.
-constexpr size_t kServerDoorSecurityGateOffset = 0x2D8;
+const size_t kServerDoorSecurityGateOffset = acc::off::Todo(0x2D8);
 
 // Skill index for "Security" — door decomp passes literal `6` to
 // GetCanUseSkill. Re-stated as a constant for log readability.
@@ -115,10 +116,10 @@ constexpr int kSkillSecurity = 6;
 //   [10] AsSWCCreature  (+0x28)
 //   [14] AsSWCTrigger   (+0x38)
 //   [18] AsSWCPlaceable (+0x48)
-constexpr size_t kVtableAsSWCDoorOffset      = 0x14;
-constexpr size_t kVtableAsSWCCreatureOffset  = 0x28;
-constexpr size_t kVtableAsSWCTriggerOffset   = 0x38;
-constexpr size_t kVtableAsSWCPlaceableOffset = 0x48;
+const size_t kVtableAsSWCDoorOffset      = acc::off::Todo(0x14);
+const size_t kVtableAsSWCCreatureOffset  = acc::off::Todo(0x28);
+const size_t kVtableAsSWCTriggerOffset   = acc::off::Todo(0x38);
+const size_t kVtableAsSWCPlaceableOffset = acc::off::Todo(0x48);
 
 // CSWCDoor field offsets (swkotor.exe.h:6192 STRUCTURE NAME="CSWCDoor"):
 //   +0x104  cannot_bash       (int) — gates Bash row
@@ -127,11 +128,11 @@ constexpr size_t kVtableAsSWCPlaceableOffset = 0x48;
 //   +0x114  is_hostile        (int)
 //   +0x11c  state             (int) — door open/closed state
 //   +0x138  field17           (int) — additional Bash-row gate
-constexpr size_t kDoorCannotBashOffset     = 0x104;
-constexpr size_t kDoorCanUseActionsOffset  = 0x108;
-constexpr size_t kDoorIsHostileOffset      = 0x114;
-constexpr size_t kDoorStateOffset          = 0x11c;
-constexpr size_t kDoorField17Offset        = 0x138;
+const size_t kDoorCannotBashOffset     = acc::off::Todo(0x104);
+const size_t kDoorCanUseActionsOffset  = acc::off::Todo(0x108);
+const size_t kDoorIsHostileOffset      = acc::off::Todo(0x114);
+const size_t kDoorStateOffset          = acc::off::Todo(0x11c);
+const size_t kDoorField17Offset        = acc::off::Todo(0x138);
 
 typedef void (__thiscall* PFN_RowOp)(void* this_, int row);
 // DoTargetAction shares the (this, int row) shape with Select Next/Prev but does

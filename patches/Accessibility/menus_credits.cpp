@@ -13,6 +13,7 @@
 #include "engine_panels.h"
 #include "engine_reads.h"
 #include "strings.h"
+#include "engine_offsets_select.h"
 
 namespace acc::menus::credits {
 
@@ -22,12 +23,12 @@ namespace {
 // struct DB (swkotor.exe.h): panel (0..0x64) + 3 CSWGuiLabels (each 0x140)
 // = 0x64 + 0x3C0 = 0x424. The four labels in order are item_description_
 // label, inventory_label, credits_label, credits_value_label.
-constexpr size_t kInventoryCreditsValueLabelOffset = 0x424;
+const size_t kInventoryCreditsValueLabelOffset = acc::off::Todo(0x424);
 
 // CSWGuiStore.credits_value_label offset — already documented in
 // engine_offsets.h (kStoreCreditsValueLabelOffset = 0x1200). Re-aliased here
 // so both anchors live in one table.
-constexpr size_t kStoreCreditsValueLabelOffsetLocal =
+const size_t kStoreCreditsValueLabelOffsetLocal =
     kStoreCreditsValueLabelOffset;
 
 struct CreditsAnchorSpec {
@@ -35,7 +36,7 @@ struct CreditsAnchorSpec {
     size_t                 valueOffset;
 };
 
-constexpr CreditsAnchorSpec k_anchors[] = {
+const CreditsAnchorSpec k_anchors[] = {
     { acc::engine::PanelKind::InGameInventory, kInventoryCreditsValueLabelOffset      },
     { acc::engine::PanelKind::Store,           kStoreCreditsValueLabelOffsetLocal     },
 };

@@ -35,6 +35,7 @@
 #include "prism.h"
 #include "strings.h"
 #include "engine_rebase.h"
+#include "engine_offsets_select.h"
 
 namespace acc::pazaak {
 
@@ -58,8 +59,8 @@ const uintptr_t kAddrWagerHandleInput = acc::addr::R(0x0067e150); // CSWGuiWager
 typedef void (__thiscall* PFN_WagerHandleInput)(void* popup, int code, int state);
 
 // ---- Struct offsets ------------------------------------------------------
-constexpr size_t kPanelModelOffset = 0x86d0; // CSWGuiPazaakGame->pazaak (CSWPazaak*)
-constexpr size_t kPanelStateOffset = 0x86d4; // game_state
+const size_t kPanelModelOffset = acc::off::Todo(0x86d0); // CSWGuiPazaakGame->pazaak (CSWPazaak*)
+const size_t kPanelStateOffset = acc::off::Todo(0x86d4); // game_state
 
 // CSWGuiTutorial (CSWGuiPazaakGame.field20 @ +0x7d20) "tutorial active" flag at
 // +0x994. DoGameSequence is only pumped while the board is the topmost panel
@@ -75,26 +76,26 @@ constexpr size_t kTutorialActiveOffset = 0x7d20 + 0x994; // 0x86b4
 // the board): current wager at +0xc94, maximum at +0xc98. The chain labels the
 // less/more buttons but only re-reads on focus change, so we poll the amount
 // and announce it when it changes (pure observation).
-constexpr size_t kWagerCurOffset = 0xc94;
-constexpr size_t kWagerMaxOffset = 0xc98;
+const size_t kWagerCurOffset = acc::off::Todo(0xc94);
+const size_t kWagerMaxOffset = acc::off::Todo(0xc98);
 
 // CPazaakPlayer is 0x70 bytes (hand[4]=0x20 + board[9]=0x48 + stand + score).
 // CSWPazaak.player is at +0x08, so enemy follows at +0x78 (NOT +0x98), and the
 // per-player stand/score sit at +0x68/+0x6c — see swkotor.exe.h structs
 // CPazaakPlayer / CSWPazaak. (Earlier 0x98/0x88/0x8c read dead space + deck
 // cards, so every opponent read came back zero/garbage.)
-constexpr size_t kModelPlayerOffset = 0x08;  // CSWPazaak.player (CPazaakPlayer)
-constexpr size_t kModelEnemyOffset  = 0x78;  // CSWPazaak.enemy
-constexpr size_t kModelRemainOffset = 0x228; // remaining_card_count
+const size_t kModelPlayerOffset = acc::off::Todo(0x08);  // CSWPazaak.player (CPazaakPlayer)
+const size_t kModelEnemyOffset  = acc::off::Todo(0x78);  // CSWPazaak.enemy
+const size_t kModelRemainOffset = acc::off::Todo(0x228); // remaining_card_count
 
-constexpr size_t kPlayerHandOffset  = 0x00;  // CPazaakCard hand_cards[4]
-constexpr size_t kPlayerBoardOffset = 0x20;  // CPazaakCard board_cards[9]
-constexpr size_t kPlayerStandOffset = 0x68;  // int stand
-constexpr size_t kPlayerScoreOffset = 0x6c;  // int score (sets won)
+const size_t kPlayerHandOffset  = acc::off::Todo(0x00);  // CPazaakCard hand_cards[4]
+const size_t kPlayerBoardOffset = acc::off::Todo(0x20);  // CPazaakCard board_cards[9]
+const size_t kPlayerStandOffset = acc::off::Todo(0x68);  // int stand
+const size_t kPlayerScoreOffset = acc::off::Todo(0x6c);  // int score (sets won)
 
-constexpr size_t kCardIndexOffset = 0x00;
-constexpr size_t kCardFlipOffset  = 0x04;
-constexpr size_t kCardStride      = 0x08;
+const size_t kCardIndexOffset = acc::off::Todo(0x00);
+const size_t kCardFlipOffset  = acc::off::Todo(0x04);
+const size_t kCardStride      = acc::off::Todo(0x08);
 
 constexpr int kHandSlots  = 4;
 constexpr int kBoardSlots = 9;

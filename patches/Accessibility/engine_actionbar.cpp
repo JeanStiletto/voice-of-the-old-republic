@@ -7,6 +7,7 @@
 #include "engine_panels.h"   // ResolveGuiInGame, ResolveMainInterface
 #include "log.h"
 #include "engine_rebase.h"
+#include "engine_offsets_select.h"
 
 namespace {
 
@@ -16,20 +17,20 @@ namespace {
 // searches the column's list for the matching action_id (falls back
 // to data[0] on no-match). SelectPrevPersonalAction writes here when
 // the user cycles via mouse-wheel / arrow button.
-constexpr size_t kSelectedActionIdArrayOffset = 0x1bac;
+const size_t kSelectedActionIdArrayOffset = acc::off::Todo(0x1bac);
 
 // CSWGuiMainInterface.field5_0x74[6] — six CExoArrayList<CSWGuiInterfaceAction>.
 // Verified populated 2026-05-05: slot 1 reported size=2 matching the two
 // medikits in inventory.
-constexpr size_t kPersonalListsOffset    = 0x74;
-constexpr size_t kPersonalListStride     = 0x0C;
-constexpr size_t kPersonalListDataOffset = 0x00;  // T** data
-constexpr size_t kPersonalListSizeOffset = 0x04;  // int size
+const size_t kPersonalListsOffset    = acc::off::Todo(0x74);
+const size_t kPersonalListStride     = acc::off::Todo(0x0C);
+const size_t kPersonalListDataOffset = acc::off::Todo(0x00);  // T** data
+const size_t kPersonalListSizeOffset = acc::off::Todo(0x04);  // int size
 
 // CSWGuiInterfaceAction layout — same as engine_radial / engine_picker.
-constexpr size_t kIfActionLabelOffset    = 0x00;  // CExoString
-constexpr size_t kIfActionIdOffset       = 0x08;  // ulong
-constexpr size_t kIfActionStride         = 0x38;
+const size_t kIfActionLabelOffset    = acc::off::Todo(0x00);  // CExoString
+const size_t kIfActionIdOffset       = acc::off::Todo(0x08);  // ulong
+const size_t kIfActionStride         = acc::off::Todo(0x38);
 
 // Engine entry points (verified from k1_win_gog_swkotor.exe.xml +
 // docs/action-menu-investigation.md). GoG bytes match Steam per memory
@@ -166,7 +167,7 @@ void* GetColumnActionButton(void* mi, int slot) {
     // is the first member of CSWGuiMainInterfaceAction so its address
     // equals the array-entry address.
     constexpr size_t kFieldArrayBase = 0x771c;
-    constexpr size_t kColumnStride   = 0x71C;
+    const size_t kColumnStride   = acc::off::Todo(0x71C);
     return reinterpret_cast<unsigned char*>(mi) +
            kFieldArrayBase + static_cast<size_t>(slot) * kColumnStride;
 }

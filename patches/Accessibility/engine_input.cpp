@@ -14,7 +14,7 @@ namespace {
 // Engine global holding the CExoInput facade pointer (the same symbol
 // HideLoadScreen reads before calling SetActive). Verified in Lane's DB:
 // SYMBOL ExoInput @0x007a39e4.
-constexpr uintptr_t kAddrExoInputGlobal = 0x007a39e4;
+const uintptr_t kAddrExoInputGlobal = acc::addr::TodoGlobal(0x007a39e4);
 
 // CExoInput::SetActive(this, int active) @0x005df540. Sets the facade +
 // CExoInputInternal active flags and forwards to

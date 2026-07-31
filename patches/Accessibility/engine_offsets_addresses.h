@@ -13,14 +13,26 @@
 //     a .text address here without R() therefore does not degrade gracefully:
 //     it calls into the middle of an unrelated function.
 //
-//   global pointers (.data) - raw by design. R() covers .text only and .data is
-//     byte-stable across the builds it exists for, so wrapping one would be a
-//     bug rather than a redundancy. They have their own section at the bottom
+//   global pointers (.data) - never through R(): .data is byte-stable across
+//     the KOTOR 1 builds, so it is not rebased, and feeding it to R() would
+//     resolve it to 0 on the relink. They have their own section at the bottom
 //     of this file.
 //
-// Note the declaration forms differ and that is load-bearing: R() is a runtime
-// call, so .text constants are `const uintptr_t` (dynamically initialised),
-// while the .data globals can be `constexpr`.
+// Every constant here is `const uintptr_t`, not `constexpr` - the marker is a
+// runtime call resolved at load time against the detected game.
+//
+// KOTOR 2. Each address is in one of two states, and there is no third: a
+// recompile relocates everything, so a KOTOR 1 address is NEVER also valid in
+// KOTOR 2 (unlike a struct offset, which often is).
+//
+//   .text / .rdata:  R(k1)                 - KOTOR 2 value not yet found -> 0
+//                    Pick(k1, k2)          - known
+//   .data:           TodoGlobal(k1)        - not yet found -> 0
+//                    PickGlobal(k1, k2)    - known
+//
+// A .data pointer must never be left bare `constexpr`: that hands out the
+// KOTOR 1 address on KOTOR 2, which is a plausible-looking pointer into
+// unrelated data rather than an obvious failure.
 
 #pragma once
 
@@ -37,14 +49,14 @@
 // CAurGUIStringInternal_vtable @ 0x00741878). Used to validate that a
 // gui_string pointer actually refers to a CAurGUIStringInternal object
 // before dereferencing it — see ReadGuiString for why this matters.
-const uintptr_t kVtableCAurGUIStringInternal = acc::addr::R(0x00741878);
+const uintptr_t kVtableCAurGUIStringInternal = acc::addr::Pick(0x00741878, 0x0098C0CC);
 
 // Slider class identity by vtable address. Resolved via SARIF xrefs:
 // 0x0073E9D0 is referenced by CSWGuiSlider's constructor (0x41bb0d) and
 // destructor (0x41bb9d) — i.e. it's the slider's vftable. Sliders have no
 // AsSlider downcast accessor in GuiControlMethods, so vtable equality is
 // the only safe identity check.
-const uintptr_t kVtableSlider = acc::addr::R(0x0073E9D0);
+const uintptr_t kVtableSlider = acc::addr::Pick(0x0073E9D0, 0x00987AEC);
 
 // CSWGuiListBox vtable. Same identity-by-vtable pattern as the slider:
 // no AsListBox accessor exists in GuiControlMethods, so we identify by
@@ -54,7 +66,7 @@ const uintptr_t kVtableSlider = acc::addr::R(0x0073E9D0);
 // a listbox's rows when the panel walk encounters one as a child — the
 // recurring `vtable=0073E840 src=none` cases in our log are listbox
 // containers wrapping the actual message text).
-const uintptr_t kVtableListBox = acc::addr::R(0x0073E840);
+const uintptr_t kVtableListBox = acc::addr::Pick(0x0073E840, 0x00987D3C);
 
 // CSWGuiButton vtable. The standard button class — used by SaveLoad's
 // BTN_DELETE / BTN_BACK / BTN_SAVELOAD, the equipment screen's slot
@@ -65,39 +77,39 @@ const uintptr_t kVtableListBox = acc::addr::R(0x0073E840);
 // from a Label/LabelHilight child sharing the same .gui-time ID (the
 // SaveLoad-vs-Workbench-upgrade collision at ID 11 is the canonical
 // case — see IsSaveLoadStructural).
-const uintptr_t kVtableCSWGuiButton = acc::addr::R(0x0073E658);
+const uintptr_t kVtableCSWGuiButton = acc::addr::Pick(0x0073E658, 0x00987A1C);
 
 // CSWGuiKeyMapButton vtable - the keyboard-mapping screen's row control. The
 // row layout it identifies (mapped_key_button, unchangeable, key_code) is
 // documented in engine_offsets_fields.h.
-const uintptr_t kVtableKeyMapButton          = acc::addr::R(0x007593c8);
+const uintptr_t kVtableKeyMapButton          = acc::addr::Pick(0x007593c8, 0x009A9F54);
 
 // CSWGuiEditbox vtable. The field layout shared by both editbox classes is
 // documented in engine_offsets_fields.h.
-const uintptr_t kVtableEditbox             = acc::addr::R(0x0073EAC8);
+const uintptr_t kVtableEditbox             = acc::addr::Pick(0x0073EAC8, 0x00987F14);
 // CSWGuiSaveGameEditBox — subclass embedded in CSWGuiSaveNamePanel. Struct
 // size is identical (0x160) and the whole body is a CSWGuiEditbox; only
 // HandleKeyPress is overridden (engine-side filename-char filter). It carries
 // its own vtable (k1_win_gog_swkotor.exe.xml Address-table symbol
 // CSWGuiSaveGameEditBox @ 0x007575B0), so vtable-identity predicates must
 // accept it alongside kVtableEditbox; the field offsets below apply unchanged.
-const uintptr_t kVtableSaveGameEditbox     = acc::addr::R(0x007575B0);
+const uintptr_t kVtableSaveGameEditbox     = acc::addr::Pick(0x007575B0, 0x009A421C);
 
 // CSWGuiNameChargen vtable (chargen name-entry panel). Member layout is
 // documented in engine_offsets_fields.h.
-const uintptr_t kVtableCSWGuiNameChargen   = acc::addr::R(0x00759F38);
+const uintptr_t kVtableCSWGuiNameChargen   = acc::addr::Pick(0x00759F38, 0x009AAC4C);
 
 // CSWGuiSaveNamePanel vtable (the save-name modal on top of SaveLoad). Member
 // layout is documented in engine_offsets_fields.h.
-const uintptr_t kVtableCSWGuiSaveNamePanel    = acc::addr::R(0x007576D0);
+const uintptr_t kVtableCSWGuiSaveNamePanel    = acc::addr::Pick(0x007576D0, 0x009A42C4);
 
 // CSWGuiClassSelection vtable (chargen class picker). Member layout and the
 // class_selections[] geometry are documented in engine_offsets_fields.h.
-const uintptr_t kVtableCSWGuiClassSelection      = acc::addr::R(0x00758020);
+const uintptr_t kVtableCSWGuiClassSelection      = acc::addr::Pick(0x00758020, 0x009A9B6C);
 
 // CSWGuiPortraitCharGen vtable (chargen portrait picker). Member layout is
 // documented in engine_offsets_fields.h.
-const uintptr_t kVtableCSWGuiPortraitCharGen     = acc::addr::R(0x00759ea8);
+const uintptr_t kVtableCSWGuiPortraitCharGen     = acc::addr::Pick(0x00759ea8, 0x009AABA4);
 
 // CSWCCreature::GetPortraitId — __thiscall, no args, returns the portrait
 // row index into portraits.2da (verified live: returned 24 → 25 across a
@@ -120,7 +132,7 @@ const uintptr_t kAddrCSWCCreatureGetPortrait = acc::addr::R(0x00617030);
 // CSWGuiAbilitiesCharGen vtable (chargen attributes panel). Member layout, and
 // why we mirror chain focus into selected_ability, are documented in
 // engine_offsets_fields.h.
-const uintptr_t kVtableCSWGuiAbilitiesCharGen          = acc::addr::R(0x00759c68);
+const uintptr_t kVtableCSWGuiAbilitiesCharGen          = acc::addr::Pick(0x00759c68, 0x009AA924);
 
 // CSWGuiAbilitiesCharGen::GetAbilityPointCost — engine accessor for the
 // point-buy cost of the next +1 increment on a given ability. Returns
@@ -138,7 +150,7 @@ const uintptr_t kAddrCSWGuiAbilitiesCharGenGetCost = acc::addr::R(0x006f6bb0);
 
 // CSWGuiSkillsCharGen vtable (chargen skills panel). Member layout is
 // documented in engine_offsets_fields.h.
-const uintptr_t kVtableCSWGuiSkillsCharGen           = acc::addr::R(0x00759990);
+const uintptr_t kVtableCSWGuiSkillsCharGen           = acc::addr::Pick(0x00759990, 0x009AA714);
 
 // CSWGuiSkillsCharGen::IsClassSkill — engine predicate for whether the
 // skill at index `param_1` (ushort) is a class skill for the chargen
@@ -184,7 +196,7 @@ const uintptr_t kAddrCSWGuiAbilitiesCharGenOnEnterPointsButton = acc::addr::R(0x
 
 // CSWGuiFeatsCharGen vtable (chargen feats panel). Member layout and the four
 // parallel feat lists are documented in engine_offsets_fields.h.
-const uintptr_t kVtableCSWGuiFeatsCharGen           = acc::addr::R(0x007598b0);
+const uintptr_t kVtableCSWGuiFeatsCharGen           = acc::addr::Pick(0x007598b0, 0x009AA434);
 
 // CSWGuiFeatsCharGen::OnEnterFeat — engine handler that, given a feat
 // ID, runs DetermineFeat (sets the select-button label/colour for the
@@ -249,7 +261,7 @@ const uintptr_t kAddrCSWGuiPowersLevelUpOnPowerPicked = acc::addr::R(0x006f2030)
 // GuiPowersLevelUp_vtable @ 0x00759780 (absoluteAddress 7706496 in Lane's
 // SARIF; GoG bytes match Steam). Sits just below CSWGuiFeatsCharGen_vtable
 // (0x007598b0) in the vtable region, as expected for sibling GUI classes.
-const uintptr_t kVtableCSWGuiPowersLevelUp             = acc::addr::R(0x00759780);
+const uintptr_t kVtableCSWGuiPowersLevelUp             = acc::addr::Pick(0x00759780, 0x009AA34C);
 
 // CSWGuiSkillFlowChart::SetSelectedSkill — sets the chart's render-side
 // selection state by feat ID. Walks rows × cols looking for the matching
@@ -601,15 +613,15 @@ const uintptr_t kAddrCClientExoAppGetObjectName = acc::addr::R(0x005ed350);
 // ClientToServerObjectId before CServerExoApp::GetItemByGameObjectID.
 // CSWSItem.stack_size + bit_flags expose the stock count / infinite-stock
 // flag (bit 2 = infinite, per CSWGuiStore::OnControlEntered).
-const uintptr_t kVtableCSWGuiStore                     = acc::addr::R(0x00756e38);
-const uintptr_t kVtableCSWGuiStoreItemEntry            = acc::addr::R(0x00756850);
+const uintptr_t kVtableCSWGuiStore                     = acc::addr::Pick(0x00756e38, 0x009A79B4);
+const uintptr_t kVtableCSWGuiStoreItemEntry            = acc::addr::Pick(0x00756850, 0x009A785C);
 
 // CSWGuiInGameItemEntry — rows of CSWGuiInGameInventory.item_listbox AND
 // Container's loot listbox. Same shape as CSWGuiStoreItemEntry: button at
 // offset 0, item_game_object_id at +0x1c4. Resolves through
 // ResolveItemFromClientHandle and reads stack_size via the same offsets
 // above.
-const uintptr_t kVtableCSWGuiInGameItemEntry           = acc::addr::R(0x007568f8);
+const uintptr_t kVtableCSWGuiInGameItemEntry           = acc::addr::Pick(0x007568f8, 0x009A76C4);
 
 // CSWGuiStore::GetItemBuyValue / GetItemSellValue — __thiscall returning
 // ulong, single CSWSItem* argument. Both pop 4 bytes (callee).
@@ -686,7 +698,7 @@ const uintptr_t kAddrItemAddMiscellaneousProps = acc::addr::R(0x0055a510);  // -
 // valid empty string the engine builders can append to. (GetPropertyDescription
 // calls this on its accumulator before the Add* sequence.)
 typedef CExoString* (__thiscall* PFN_CExoStringCtor)(CExoString* this_);
-const uintptr_t kAddrCExoStringDefaultCtor = acc::addr::R(0x005b3190);
+const uintptr_t kAddrCExoStringDefaultCtor = acc::addr::Pick(0x005b3190, 0x00733540);
 
 // CSWItem::GetBaseItem — __thiscall(CSWItem* this) -> CSWBaseItem*. The CSWItem
 // subobject is at offset 0 of CSWSItem, so the CSWSItem* we already hold is a
@@ -694,7 +706,7 @@ const uintptr_t kAddrCExoStringDefaultCtor = acc::addr::R(0x005b3190);
 // GetPropertyDescription disassembly, NOT the placeholder struct header):
 //   +0x09 (byte) weapon_type — 0 = not a weapon
 //   +0xac (byte) item_type   — 0x2e crystal, 6 grenade
-const uintptr_t kAddrCSWItemGetBaseItem = acc::addr::R(0x005b4790);
+const uintptr_t kAddrCSWItemGetBaseItem = acc::addr::Pick(0x005b4790, 0x006D6E30);
 
 // CSWGuiInGameJournal::PopulateItemListBox @0x00645330 — clears items_listbox
 // and rebuilds one CSWGuiJournalItemEntry per quest in the current
@@ -716,7 +728,7 @@ const uintptr_t kAddrInventoryPopulateItemListBox = acc::addr::R(0x006b4810);
 // CSWGuiJournalItemEntry rows are CSWGuiButton-derived (size 0x1cc) with
 // their own vtable. The journal's OnControlEntered fires on mouse hover
 // over a row and rewrites item_description_label with the full text.
-const uintptr_t kVtableCSWGuiJournalItemEntry          = acc::addr::R(0x007518c0);
+const uintptr_t kVtableCSWGuiJournalItemEntry          = acc::addr::Pick(0x007518c0, 0x009A2554);
 
 // ---------------------------------------------------------------------------
 // .data global pointers - deliberately NOT passed through acc::addr::R().
@@ -731,8 +743,10 @@ const uintptr_t kVtableCSWGuiJournalItemEntry          = acc::addr::R(0x007518c0
 
 // CSWSRules* - the global rules object. The feat and spell table geometry
 // hanging off it is documented in engine_offsets_fields.h.
-constexpr uintptr_t kAddrRulesGlobal              = 0x007a3a28;
+// KOTOR 2 value from the seeded kotor2_steam_aspyr.db (RULES_PTR).
+const uintptr_t kAddrRulesGlobal              = acc::addr::PickGlobal(0x007a3a28, 0x00A1B4D0);
 
 // CTlkTable* - the live talk table, one indirection. Used as the `this` for
 // kAddrGetSimpleString above.
-constexpr uintptr_t kAddrTlkTablePtr     = 0x007a3a08;
+// KOTOR 2 value from the seeded kotor2_steam_aspyr.db (TLK_TABLE_PTR).
+const uintptr_t kAddrTlkTablePtr     = acc::addr::PickGlobal(0x007a3a08, 0x00A1B4B0);

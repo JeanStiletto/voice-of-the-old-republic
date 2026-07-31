@@ -22,6 +22,7 @@
 
 #include "engine_app.h"     // GetServerApp
 #include "log.h"
+#include "engine_offsets_select.h"
 
 namespace acc::engine {
 
@@ -614,10 +615,10 @@ bool ReadCreatureForcePoints(void* clientCreature, int* outCur, int* outMax) {
     //                                   — the server stats struct is shifted 2
     //                                   bytes from this client one, so reuse of
     //                                   the server offsets here reads garbage.)
-    constexpr size_t kLvlUpStatsOffset = 0x2f8;
-    constexpr size_t kMaxForceOffset   = 0x11e;
-    constexpr size_t kCurForceLoOffset = 0x122;
-    constexpr size_t kCurForceHiOffset = 0x124;
+    const size_t kLvlUpStatsOffset = acc::off::Todo(0x2f8);
+    const size_t kMaxForceOffset   = acc::off::Todo(0x11e);
+    const size_t kCurForceLoOffset = acc::off::Todo(0x122);
+    const size_t kCurForceHiOffset = acc::off::Todo(0x124);
 
     void* lvlUpStats = nullptr;
     __try {

@@ -11,6 +11,7 @@
 #include "mod_settings_store.h"  // persist the cue-volume slider across launches
 #include "view_mode.h"
 #include "engine_rebase.h"
+#include "engine_offsets_select.h"
 
 namespace acc::audio {
 
@@ -100,12 +101,12 @@ uint8_t EffectiveVolumeByte(uint8_t baseVolume) {
 //   CExoSoundInternal  +0x4c -> CPriorityGroup* (heap array)
 //   CPriorityGroup stride 0x18: +0x06 priority(byte) +0x07 volume(byte)
 //                               +0x14 fade_time(ushort)
-constexpr size_t   kSoundInternalOffset      = 0x00;
-constexpr size_t   kPriorityGroupsPtrOff     = 0x4c;
-constexpr size_t   kPriorityGroupStride      = 0x18;
-constexpr size_t   kPriorityGroupPriorityOff = 0x06;
-constexpr size_t   kPriorityGroupVolumeOff   = 0x07;
-constexpr size_t   kPriorityGroupFadeTimeOff = 0x14;
+const size_t   kSoundInternalOffset      = acc::off::Todo(0x00);
+const size_t   kPriorityGroupsPtrOff     = acc::off::Todo(0x4c);
+const size_t   kPriorityGroupStride      = acc::off::Todo(0x18);
+const size_t   kPriorityGroupPriorityOff = acc::off::Todo(0x06);
+const size_t   kPriorityGroupVolumeOff   = acc::off::Todo(0x07);
+const size_t   kPriorityGroupFadeTimeOff = acc::off::Todo(0x14);
 
 // Our installer stamps this value into the FadeTime column of the custom
 // full-volume row it appends to prioritygroups.2da. Vanilla fade times

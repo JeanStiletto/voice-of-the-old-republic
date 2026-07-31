@@ -24,6 +24,7 @@
 #include "engine_reads.h"
 #include "log.h"
 #include "engine_rebase.h"
+#include "engine_offsets_select.h"
 
 namespace acc::engine {
 
@@ -47,7 +48,7 @@ int SetLeaderQueueModeBit(int on) {
     // CSWCCreature.field200_0x440 — same offset combat_diag reads as `cm`,
     // set by CSWCCreature::SetCombatMode @0x00610a10. Bit 0 is the
     // replace-vs-append discriminator both action dispatchers branch on.
-    constexpr size_t kCSWCCreatureCombatModeOffset = 0x440;
+    const size_t kCSWCCreatureCombatModeOffset = acc::off::Todo(0x440);
     void* leader = GetClientLeader();
     if (!leader) return -1;
     __try {
@@ -73,8 +74,8 @@ bool IsAnyPartyMemberInCombat() {
     // OR that bit across the whole party for the true encounter state. Stays
     // client-side on the same field/namespace as the global we already poll,
     // so there is no client/server timing skew between the two.
-    constexpr size_t    kInternalPartyOffset          = 0x270;     // CClientExoAppInternal.party
-    constexpr size_t    kCSWCCreatureCombatModeOffset = 0x440;     // field200_0x440 bit 0
+    const size_t    kInternalPartyOffset          = acc::off::Todo(0x270);     // CClientExoAppInternal.party
+    const size_t    kCSWCCreatureCombatModeOffset = acc::off::Todo(0x440);     // field200_0x440 bit 0
     const uintptr_t kAddrCSWPartyGetCharacter = acc::addr::R(0x006346C0); // __thiscall(int) -> CSWCCreature*
     constexpr int       kPartyScanCap                 = 8;          // KOTOR party <=3; generous cap
     typedef void* (__thiscall* PFN_GetCharacter)(void* this_, int index);

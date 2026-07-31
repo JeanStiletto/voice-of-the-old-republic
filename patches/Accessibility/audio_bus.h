@@ -117,7 +117,7 @@ void FillResRef(CResRef& out, const char* tag);
 // For a KOTOR 2 port this is one of the values the upstream address
 // database already carries by name — see the EXO_RESOURCE_MANAGER_PTR /
 // APP_MANAGER_PTR cluster in KPatchManager's AddressDatabases.
-constexpr uintptr_t kAddrCExoSoundPtr = 0x007A39EC;
+const uintptr_t kAddrCExoSoundPtr = acc::addr::TodoGlobal(0x007A39EC);
 
 // CExoSound::PlayOneShotSound  — __thiscall, RET 0x18 (6 × 4-byte args).
 const uintptr_t kAddrCExoSoundPlayOneShotSound = acc::addr::R(0x005D5E00);

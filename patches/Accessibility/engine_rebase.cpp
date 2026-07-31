@@ -1,6 +1,6 @@
 #include "engine_rebase.h"
 
-#include <windows.h>
+#include "engine_game.h"
 
 namespace acc::addr {
 
@@ -72,64 +72,36 @@ constexpr Entry kXrefTable[] = {
 
 constexpr size_t kXrefCount = sizeof(kXrefTable) / sizeof(kXrefTable[0]);
 
-// PE link timestamps identify the build. The reference (Steam/GoG 1.0.3) is
-// 2004-02-12 18:15:53Z; the relink is 2004-03-05 00:43:51Z. Reading the
-// timestamp costs one header walk of our own image and, unlike hashing the
-// file, needs no I/O — so it is safe from a static initialiser.
-//
-// The relink timestamp is deliberately matched rather than either
-// distribution's hash: Allard's Russian 1.72 and the official Polish LEM
-// edition are the same binary here (.text, .data and .rsrc byte-identical; the
-// only difference is 16 bytes of .rdata string data), so one identity covers
-// both and a third distribution on the same build would work for free.
-constexpr uint32_t kTimestampReference = 0x402BC2D9;  // 1076609753, 2004-02-12 18:15:53Z
-constexpr uint32_t kTimestampRelink2004 = 0x4047CD47;  // 1078447431, 2004-03-05 00:43:51Z
-
-enum class Build { Reference, Relink2004, Unknown };
-
-uint32_t ReadOwnLinkTimestamp() {
-    // GetModuleHandle(nullptr) is the exe, not this DLL — the addresses we
-    // rebase are the game's, so the game's image is what must be identified.
-    auto base = reinterpret_cast<const uint8_t*>(GetModuleHandleW(nullptr));
-    if (!base) return 0;
-
-    // Deliberately defensive: this runs before anything else has validated the
-    // image, and a bad read here would fault during static init, which is
-    // painful to diagnose.
-    if (base[0] != 'M' || base[1] != 'Z') return 0;
-    int32_t lfanew = *reinterpret_cast<const int32_t*>(base + 0x3C);
-    if (lfanew <= 0 || lfanew > 0x1000) return 0;
-    const uint8_t* pe = base + lfanew;
-    if (pe[0] != 'P' || pe[1] != 'E' || pe[2] != 0 || pe[3] != 0) return 0;
-    return *reinterpret_cast<const uint32_t*>(pe + 8);
-}
-
-Build DetectBuild() {
-    switch (ReadOwnLinkTimestamp()) {
-        case kTimestampReference: return Build::Reference;
-        case kTimestampRelink2004: return Build::Relink2004;
-        default:                  return Build::Unknown;
-    }
-}
-
-// Function-local static: initialised on first use, thread-safe under the C++11
-// magic-statics rule, and with no dependency on any other global's
-// initialisation order. That last part is the point — the constants that call
-// R() are themselves dynamically initialised at load time, in unspecified
-// order across translation units.
-Build CurrentBuild() {
-    static const Build b = DetectBuild();
-    return b;
-}
-
 }  // namespace
 
 uintptr_t R(uintptr_t referenceVa) {
-    if (CurrentBuild() != Build::Relink2004) {
-        // Reference build, or a build we do not know. An unknown build cannot
-        // be rebased, and the version gate should have refused it long before
-        // this point, so pass the value through unchanged.
-        return referenceVa;
+    switch (acc::game::CurrentBuild()) {
+        case acc::game::Build::Kotor1Relink2004:
+            break;  // the one build this function maps; fall through to lookup
+
+        case acc::game::Build::Kotor2Aspyr2015:
+            // A DIFFERENT GAME. Every address in this codebase is a KOTOR 1
+            // address, and KOTOR 2 is an Aspyr recompile, not a relink — the
+            // functions were re-emitted, not moved, so no reference value is
+            // meaningful here and no table maps them yet. Returning
+            // `referenceVa` (what an unrecognised build gets) would hand out
+            // K1 addresses pointing into unrelated K2 code: a silent jump into
+            // the middle of some other function.
+            //
+            // 0 instead. It faults recognisably at address 0, and the ~12 call
+            // sites already wrapped in acc::addr::Ok() degrade gracefully
+            // without changes. Everything else must be gated on
+            // acc::game::IsKotor1() before it runs — that gating, not this
+            // return, is what makes KOTOR 2 safe.
+            return 0;
+
+        case acc::game::Build::Kotor1Reference:
+        case acc::game::Build::Unknown:
+        default:
+            // The reference build maps to itself. An unknown build cannot be
+            // rebased and the version gate should have refused it long before
+            // this point, so it keeps the pre-existing pass-through.
+            return referenceVa;
     }
 
     size_t lo = 0;
@@ -168,14 +140,35 @@ uintptr_t R(uintptr_t referenceVa) {
     return 0;
 }
 
-bool IsRebased() { return CurrentBuild() == Build::Relink2004; }
+uintptr_t Pick(uintptr_t referenceVa, uintptr_t kotor2Va) {
+    if (acc::game::IsKotor2()) return kotor2Va;
+    return R(referenceVa);
+}
 
-const char* ActiveBuildName() {
-    switch (CurrentBuild()) {
-        case Build::Reference: return "reference";
-        case Build::Relink2004: return "relink-2004-03-05";
-        default:               return "unknown";
+uintptr_t PickGlobal(uintptr_t kotor1Va, uintptr_t kotor2Va) {
+    // Deliberately not R(): .data is byte-stable across the KOTOR 1 builds and
+    // is not in R()'s table, so routing it there would zero it on the relink.
+    return acc::game::IsKotor2() ? kotor2Va : kotor1Va;
+}
+
+uintptr_t TodoGlobal(uintptr_t kotor1Va) {
+    return acc::game::IsKotor2() ? 0 : kotor1Va;
+}
+
+// "R() is not the identity function" — true for the relink (which remaps) and
+// for KOTOR 2 (which resolves everything to 0). Both mean a raw reference
+// address is not safe to use without checking. The reference build and an
+// unrecognised build both pass values through, so both are false.
+bool IsRebased() {
+    switch (acc::game::CurrentBuild()) {
+        case acc::game::Build::Kotor1Relink2004:
+        case acc::game::Build::Kotor2Aspyr2015:
+            return true;
+        default:
+            return false;
     }
 }
+
+const char* ActiveBuildName() { return acc::game::BuildName(); }
 
 }  // namespace acc::addr

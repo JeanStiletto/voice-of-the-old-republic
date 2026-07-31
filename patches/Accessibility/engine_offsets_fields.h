@@ -15,11 +15,34 @@
 //     kFlowSkillStructEmptyFeatId).
 // Constants that stand alone - vtable slot indices, TLK strrefs, enum bytes,
 // panel input codes - are in engine_offsets_values.h instead.
+//
+// Per-game values (KOTOR 2 port)
+// ------------------------------
+// Every declaration here goes through one of the acc::off markers, so the file
+// carries both games' layouts rather than only KOTOR 1's. See
+// engine_offsets_select.h for how to choose between them:
+//
+//   Same(x)      - verified identical in both games
+//   Pick(k1, k2) - verified different
+//   Todo(k1)     - KOTOR 2 value not yet established; poisons on KOTOR 2
+//
+// They are `const` rather than `constexpr` because Pick/Todo resolve at load
+// time against the detected game. Nothing here needs to be a compile-time
+// constant - that was checked across the whole codebase before the conversion
+// (no array bounds, no static_assert, no case labels, no template arguments).
+// If you add one that does, it cannot use these markers.
+//
+// Everything is currently Todo(): the conversion was made deliberately as a
+// pure structural change with the KOTOR 1 values untouched, so that KOTOR 1
+// behaviour is provably identical and the reverse-engineering can then land
+// one constant at a time. `grep -c "Todo("` is the remaining-work counter.
 
 #pragma once
 
 #include <cstddef>
 #include <cstdint>
+
+#include "engine_offsets_select.h"
 
 // CSWGuiButton / CSWGuiLabel field offsets (verified against the SARIF
 // datatypes):
@@ -31,10 +54,10 @@
 //                        → text at 0xd0, text_params at +0x18 → CExoString at 0xe8
 //                        → str_ref at +0x08 within text_params → 0xf0
 //   CSWGuiLabelHilight:  embeds CSWGuiLabel at offset 0; offsets unchanged.
-constexpr size_t kButtonTextOffset    = 0x16c;
-constexpr size_t kButtonStrRefOffset  = 0x174;
-constexpr size_t kLabelTextOffset     = 0xe8;
-constexpr size_t kLabelStrRefOffset   = 0xf0;
+const size_t kButtonTextOffset    = acc::off::Todo(0x16c);
+const size_t kButtonStrRefOffset  = acc::off::Todo(0x174);
+const size_t kLabelTextOffset     = acc::off::Todo(0xe8);
+const size_t kLabelStrRefOffset   = acc::off::Todo(0xf0);
 
 // Element-state field offsets (verified via Ghidra decomp of Draw /
 // SetSelected / HandleInputEvent for each class):
@@ -47,9 +70,9 @@ constexpr size_t kLabelStrRefOffset   = 0xf0;
 //   CSWGuiSlider.cur_value (Lane-named) at +0x74 — uint32, current slider value.
 //                                                  HandleInputEvent calls
 //                                                  SetCurValue on inc/dec keys.
-constexpr size_t kButtonToggleStateOffset = 0x1c8;
-constexpr size_t kSliderMaxValueOffset    = 0x70;
-constexpr size_t kSliderCurValueOffset    = 0x74;
+const size_t kButtonToggleStateOffset = acc::off::Todo(0x1c8);
+const size_t kSliderMaxValueOffset    = acc::off::Todo(0x70);
+const size_t kSliderCurValueOffset    = acc::off::Todo(0x74);
 
 // CSWGuiText layout (from swkotor.exe.h + decompiled CSWGuiText::Initialize
 // at 0x00417310 confirmed via headless Ghidra against Lane's gzf):
@@ -84,13 +107,13 @@ constexpr size_t kSliderCurValueOffset    = 0x74;
 // 8 icon labels at vtable=0x0073E8E8 are the canonical case — verified via
 // 584 speculative-read miss events in patch-20260502-190936.log on the
 // previous build), gui_string still holds the rendered c_string.
-constexpr size_t kLabelGuiStringPtrOffset  = 0xE4;
-constexpr size_t kLabelTextObjectOffset    = 0x138;
-constexpr size_t kButtonGuiStringPtrOffset = 0x168;
-constexpr size_t kButtonTextObjectOffset   = 0x1BC;
-constexpr size_t kTextObjectTextOffset     = 0x18;   // CSWGuiText.text_params.text
-constexpr size_t kTextObjectStrRefOffset   = 0x20;   // CSWGuiText.text_params.str_ref
-constexpr size_t kAurGuiStringCStrOffset   = 0x14;   // CAurGUIStringInternal.field5
+const size_t kLabelGuiStringPtrOffset  = acc::off::Todo(0xE4);
+const size_t kLabelTextObjectOffset    = acc::off::Todo(0x138);
+const size_t kButtonGuiStringPtrOffset = acc::off::Todo(0x168);
+const size_t kButtonTextObjectOffset   = acc::off::Todo(0x1BC);
+const size_t kTextObjectTextOffset     = acc::off::Todo(0x18);   // CSWGuiText.text_params.text
+const size_t kTextObjectStrRefOffset   = acc::off::Todo(0x20);   // CSWGuiText.text_params.str_ref
+const size_t kAurGuiStringCStrOffset   = acc::off::Todo(0x14);   // CAurGUIStringInternal.field5
 
 // CSWGuiKeyMapButton — the keyboard-mapping screen's row control (vtable
 // 0x007593c8). Each row embeds TWO CSWGuiButtons: action_button at +0 (the
@@ -100,13 +123,13 @@ constexpr size_t kAurGuiStringCStrOffset   = 0x14;   // CAurGUIStringInternal.fi
 // (key_mappings ptr at +0x38c ⇒ sizeof(CSWGuiButton)=0x1c4 ⇒ mapped_key_button
 // at +0x1c8). `unchangeable` (non-zero = fixed binding) is at +0x3a4. The key
 // text reads at mapped_key + button offsets, e.g. gui_string at 0x1c8+0x168.
-constexpr size_t    kKeyMapButtonMappedKeyOffset = 0x1c8;
-constexpr size_t    kKeyMapButtonUnchangeableOff = 0x3a4;
+const size_t    kKeyMapButtonMappedKeyOffset = acc::off::Todo(0x1c8);
+const size_t    kKeyMapButtonUnchangeableOff = acc::off::Todo(0x3a4);
 // CSWGuiKeyMapButton.key_code @ +0x39c — the engine InputIndices value of the
 // freshly captured key (KEYBOARD_*; NOT a DIK scancode — set with `updated`=1 on
 // capture, written to swkotor.ini in decimal on Accept). Resolve to a VK via
 // engine_keymap::InputIndexToVk to test the new game bind against mod hotkeys.
-constexpr size_t    kKeyMapButtonKeyCodeOff      = 0x39c;
+const size_t    kKeyMapButtonKeyCodeOff      = acc::off::Todo(0x39c);
 
 // CSWGuiEditbox layout (verified against k1_win_gog_swkotor.exe.xml SYMBOL
 // CSWGuiEditbox_vtable @ 0x0073EAC8 + STRUCTURE size 0x160 + swkotor.exe.h
@@ -134,10 +157,10 @@ constexpr size_t    kKeyMapButtonKeyCodeOff      = 0x39c;
 // caret, +0x152 = selection length. The polling monitor logs both values
 // on every diff so we can verify on first run; once confirmed, we strip
 // the diagnostic.
-constexpr size_t    kEditboxShortA             = 0x150;
-constexpr size_t    kEditboxShortB             = 0x152;
-constexpr size_t    kEditboxStringCStrOffset   = 0x158;
-constexpr size_t    kEditboxStringLengthOffset = 0x15c;
+const size_t    kEditboxShortA             = acc::off::Todo(0x150);
+const size_t    kEditboxShortB             = acc::off::Todo(0x152);
+const size_t    kEditboxStringCStrOffset   = acc::off::Todo(0x158);
+const size_t    kEditboxStringLengthOffset = acc::off::Todo(0x15c);
 
 // CSWGuiNameChargen (chargen "Name eingeben" panel — step 5 of Eigener
 // Charakter, also reused in the Standard-Charakter quick flow). Verified
@@ -158,8 +181,8 @@ constexpr size_t    kEditboxStringLengthOffset = 0x15c;
 // `name_editbox` is at a fixed offset within the panel struct (not just in
 // panel.controls[]), so the spec's findEditbox callback can index directly
 // rather than walking children for the unique vtable.
-constexpr size_t    kNameChargenEditboxOffset  = 0x230;
-constexpr size_t    kNameChargenEndButtonOffset = 0x6c;
+const size_t    kNameChargenEditboxOffset  = acc::off::Todo(0x230);
+const size_t    kNameChargenEndButtonOffset = acc::off::Todo(0x6c);
 
 // CSWGuiNameChargen carries a `main_title_label` ("CHARAKTERAUSWAHL") and a
 // `subtitle_label` ("Name") at distinct fixed offsets. The first one is the
@@ -169,7 +192,7 @@ constexpr size_t    kNameChargenEndButtonOffset = 0x6c;
 // main_title_label first — wrong for any user trying to know which step
 // they're on. The editbox spec's titleOverride reads subtitle_label
 // directly via this offset to substitute the correct title speech.
-constexpr size_t    kNameChargenSubtitleLabelOffset = 0x4d0;
+const size_t    kNameChargenSubtitleLabelOffset = acc::off::Todo(0x4d0);
 
 // CSWGuiSaveNamePanel (the "Enter name for saved game" modal popup that opens
 // on top of the SaveLoad screen when committing a save). Verified against
@@ -190,9 +213,9 @@ constexpr size_t    kNameChargenSubtitleLabelOffset = 0x4d0;
 // unchanged. Unlike CSWGuiNameChargen, title_label is the screen-specific
 // title (no stale parent header), so the spec's titleOverride reads it
 // directly.
-constexpr size_t    kSaveNameEditboxOffset        = 0x3f0;
-constexpr size_t    kSaveNameOkButtonOffset       = 0x68;
-constexpr size_t    kSaveNameTitleLabelOffset     = 0x550;
+const size_t    kSaveNameEditboxOffset        = acc::off::Todo(0x3f0);
+const size_t    kSaveNameOkButtonOffset       = acc::off::Todo(0x68);
+const size_t    kSaveNameTitleLabelOffset     = acc::off::Todo(0x550);
 
 // CSWGuiClassSelection (chargen "Klassenauswahl" panel — also backs the
 // second-level "Standard- vs. Eigener Charakter" prompt). Verified against
@@ -217,10 +240,10 @@ constexpr size_t    kSaveNameTitleLabelOffset     = 0x550;
 // (engine updates it on hover/focus via CSWGuiClassSelection::OnEnterButton
 // @ 0x006dba70). Read its gui_string instead of the icon button's empty
 // inline text or the misleading sibling-label fallback.
-constexpr size_t    kClassSelectionsArrayOffset      = 0x6c;
-constexpr size_t    kClassSelCharSize                = 0x25c;
-constexpr int       kClassSelectionsCount            = 6;
-constexpr size_t    kClassSelectionClassLabelOffset  = 0x1254;
+const size_t    kClassSelectionsArrayOffset      = acc::off::Todo(0x6c);
+const size_t    kClassSelCharSize                = acc::off::Todo(0x25c);
+const int       kClassSelectionsCount            = acc::off::Todo(6);
+const size_t    kClassSelectionClassLabelOffset  = acc::off::Todo(0x1254);
 
 // CSWGuiPortraitCharGen (chargen "Porträtauswahl" panel). Verified against
 // k1_win_gog_swkotor.exe.xml SYMBOL @ 0x00759ea8 + STRUCTURE size 0x1240.
@@ -249,19 +272,25 @@ constexpr size_t    kClassSelectionClassLabelOffset  = 0x1254;
 // (0x006f8ad0) writes the new resref there on every cycle. Reading 16
 // bytes at panel.creature + 0xa8 yields a string like "po_pmhc3" which
 // we parse into a localised description (gender + race + variant).
-constexpr size_t    kPortraitCharGenCreatureOffset   = 0x64;
-constexpr size_t    kPortraitLabelOffset             = 0x2ec;
-constexpr size_t    kPortraitRightArrowOffset        = 0xe84;
-constexpr size_t    kPortraitLeftArrowOffset         = 0x1048;
-constexpr size_t    kPortraitIdOffset                = 0x1238;
+const size_t    kPortraitCharGenCreatureOffset   = acc::off::Todo(0x64);
+const size_t    kPortraitLabelOffset             = acc::off::Todo(0x2ec);
+const size_t    kPortraitRightArrowOffset        = acc::off::Todo(0xe84);
+const size_t    kPortraitLeftArrowOffset         = acc::off::Todo(0x1048);
+const size_t    kPortraitIdOffset                = acc::off::Todo(0x1238);
 
 // CSWCObject.portrait at +0xa8 (CSWPortrait, inline 16-byte CResRef) —
 // reserved kept for the resref direct-read path even though the chargen
 // flow (verified 2026-05-09 in patch-20260509-053256.log) leaves this
 // field zero throughout cycling. The live cycle index is only reachable
 // via the engine accessor below.
-constexpr size_t    kCreaturePortraitResRefOffset    = 0xa8;
-constexpr size_t    kResRefSize                      = 16;
+const size_t    kCreaturePortraitResRefOffset    = acc::off::Todo(0xa8);
+// MUST stay constexpr: sizes real arrays (`char liveResref[kResRefSize + 1]`
+// in menus_extract), so it has to be a compile-time constant and cannot go
+// through the acc::off markers. If KOTOR 2 ever needs a different value, the
+// array must be sized to the larger of the two and the *used* length carried
+// separately at run time — do not simply widen this to a runtime value.
+// A ResRef is a fixed 16-byte engine-wide primitive, so divergence is unlikely.
+constexpr size_t kResRefSize                     = 16;
 
 // CSWGuiAbilitiesCharGen (chargen "Attribute" panel — step 2 of Eigener
 // Charakter). Verified against k1_win_gog_swkotor.exe.xml SYMBOL @
@@ -291,12 +320,12 @@ constexpr size_t    kResRefSize                      = 16;
 // tab cluster). With selected_ability stuck at 0, every Left/Right press
 // modifies STR. We mirror chain focus into the field on every chain
 // rebind / step so +/- targets the focused row.
-constexpr size_t    kAbilitiesCharGenLabelsArrayOffset     = 0x110c;
-constexpr size_t    kAbilitiesCharGenButtonsArrayOffset    = 0x188c;
-constexpr size_t    kAbilitiesCharGenSelectedAbilityOffset = 0x3dec;
-constexpr int       kAbilitiesCharGenAbilityCount          = 6;
-constexpr size_t    kCSWGuiLabelSize                       = 0x140;
-constexpr size_t    kCSWGuiButtonSize                      = 0x1c4;
+const size_t    kAbilitiesCharGenLabelsArrayOffset     = acc::off::Todo(0x110c);
+const size_t    kAbilitiesCharGenButtonsArrayOffset    = acc::off::Todo(0x188c);
+const size_t    kAbilitiesCharGenSelectedAbilityOffset = acc::off::Todo(0x3dec);
+const int       kAbilitiesCharGenAbilityCount          = acc::off::Todo(6);
+const size_t    kCSWGuiLabelSize                       = acc::off::Todo(0x140);
+const size_t    kCSWGuiButtonSize                      = acc::off::Todo(0x1c4);
 
 // CSWGuiSkillsCharGen (chargen "Fähigkeiten" panel — step 3 of Eigener
 // Charakter). Same shape as CSWGuiAbilitiesCharGen — three info-pair
@@ -318,15 +347,15 @@ constexpr size_t    kCSWGuiButtonSize                      = 0x1c4;
 // Skill order matches struct order matches visual top-to-bottom (no
 // swap as on the Attribute panel): Computer, Demolitions, Stealth,
 // Awareness, Persuade, Repair, Security, Treat Injury.
-constexpr size_t    kSkillsCharGenLabelsArrayOffset      = 0xfcc;
-constexpr size_t    kSkillsCharGenButtonsArrayOffset     = 0x19cc;
-constexpr size_t    kSkillsCharGenSelectedSkillOffset    = 0x49bc;
-constexpr int       kSkillsCharGenSkillCount             = 8;
-constexpr size_t    kSkillsCharGenRemainingValueOffset   = 0x70c;
-constexpr size_t    kSkillsCharGenCostValueOffset        = 0xc0c;
+const size_t    kSkillsCharGenLabelsArrayOffset      = acc::off::Todo(0xfcc);
+const size_t    kSkillsCharGenButtonsArrayOffset     = acc::off::Todo(0x19cc);
+const size_t    kSkillsCharGenSelectedSkillOffset    = acc::off::Todo(0x49bc);
+const int       kSkillsCharGenSkillCount             = acc::off::Todo(8);
+const size_t    kSkillsCharGenRemainingValueOffset   = acc::off::Todo(0x70c);
+const size_t    kSkillsCharGenCostValueOffset        = acc::off::Todo(0xc0c);
 
 // description_list_box offset within CSWGuiSkillsCharGen (per SARIF).
-constexpr size_t    kSkillsCharGenDescriptionListBoxOffset      = 0x6c;
+const size_t    kSkillsCharGenDescriptionListBoxOffset      = acc::off::Todo(0x6c);
 
 // Three info-pair labels on this panel that aren't in the chain (they're
 // CSWGuiLabels, not buttons) but carry per-row state the user needs:
@@ -343,13 +372,13 @@ constexpr size_t    kSkillsCharGenDescriptionListBoxOffset      = 0x6c;
 //   +0xE8C  modifier VALUE          ("0", "-1", "+4"). D&D modifier of
 //           the focused ability at its current value. Engine pre-formats
 //           the sign so we pass through unmodified.
-constexpr size_t    kAbilitiesCharGenRemainingValueOffset = 0x70c;
-constexpr size_t    kAbilitiesCharGenCostValueOffset      = 0xc0c;
-constexpr size_t    kAbilitiesCharGenModifierValueOffset  = 0xe8c;
+const size_t    kAbilitiesCharGenRemainingValueOffset = acc::off::Todo(0x70c);
+const size_t    kAbilitiesCharGenCostValueOffset      = acc::off::Todo(0xc0c);
+const size_t    kAbilitiesCharGenModifierValueOffset  = acc::off::Todo(0xe8c);
 
 // description_listbox offset within CSWGuiAbilitiesCharGen (per SARIF) —
 // same +0x6c as the Skills panel.
-constexpr size_t    kAbilitiesCharGenDescriptionListBoxOffset      = 0x6c;
+const size_t    kAbilitiesCharGenDescriptionListBoxOffset      = acc::off::Todo(0x6c);
 
 // CSWGuiFeatsCharGen (chargen "Talente" panel — step 5 of Eigener Charakter,
 // also reused at level-up). Verified against k1_win_gog_swkotor.exe.xml
@@ -375,10 +404,10 @@ constexpr size_t    kAbilitiesCharGenDescriptionListBoxOffset      = 0x6c;
 // rendered on top, with its own listbox of granted feats. The main panel
 // stays underneath; its description_listbox.controls[0] mirrors the picker
 // selection so reading from there gives the focused-feat description.
-constexpr size_t    kFeatsCharGenNameLabelOffset        = 0xbac;
-constexpr size_t    kFeatsCharGenSelectButtonOffset     = 0x1238;
-constexpr size_t    kFeatsCharGenFeatsListBoxOffset     = 0x13fc;
-constexpr size_t    kFeatsCharGenDescriptionListBoxOffset = 0x16dc;
+const size_t    kFeatsCharGenNameLabelOffset        = acc::off::Todo(0xbac);
+const size_t    kFeatsCharGenSelectButtonOffset     = acc::off::Todo(0x1238);
+const size_t    kFeatsCharGenFeatsListBoxOffset     = acc::off::Todo(0x13fc);
+const size_t    kFeatsCharGenDescriptionListBoxOffset = acc::off::Todo(0x16dc);
 
 // Four parallel feat lists tracked on the panel — each a
 // CExoArrayList<ushort> { ushort* data, int size, int capacity }
@@ -389,14 +418,14 @@ constexpr size_t    kFeatsCharGenDescriptionListBoxOffset = 0x16dc;
 //   field20 @ +0x19c8  data; @ +0x19cc size  — granted   (auto-given this level)
 //   field23 @ +0x19d4  data; @ +0x19d8 size  — available (BuildAvailableList output)
 //   field26 @ +0x19e0  data; @ +0x19e4 size  — chosen    (picked this session)
-constexpr size_t    kFeatsCharGenExistingListDataOffset    = 0x19bc;
-constexpr size_t    kFeatsCharGenExistingListSizeOffset    = 0x19c0;
-constexpr size_t    kFeatsCharGenGrantedListDataOffset     = 0x19c8;
-constexpr size_t    kFeatsCharGenGrantedListSizeOffset     = 0x19cc;
-constexpr size_t    kFeatsCharGenAvailableListDataOffset   = 0x19d4;
-constexpr size_t    kFeatsCharGenAvailableListSizeOffset   = 0x19d8;
-constexpr size_t    kFeatsCharGenChosenListDataOffset      = 0x19e0;
-constexpr size_t    kFeatsCharGenChosenListSizeOffset      = 0x19e4;
+const size_t    kFeatsCharGenExistingListDataOffset    = acc::off::Todo(0x19bc);
+const size_t    kFeatsCharGenExistingListSizeOffset    = acc::off::Todo(0x19c0);
+const size_t    kFeatsCharGenGrantedListDataOffset     = acc::off::Todo(0x19c8);
+const size_t    kFeatsCharGenGrantedListSizeOffset     = acc::off::Todo(0x19cc);
+const size_t    kFeatsCharGenAvailableListDataOffset   = acc::off::Todo(0x19d4);
+const size_t    kFeatsCharGenAvailableListSizeOffset   = acc::off::Todo(0x19d8);
+const size_t    kFeatsCharGenChosenListDataOffset      = acc::off::Todo(0x19e0);
+const size_t    kFeatsCharGenChosenListSizeOffset      = acc::off::Todo(0x19e4);
 
 // CSWGuiSkillFlowChart embedded at +0x1a08 (struct size 0x10). It's the
 // 2D scrollable feat-tree grid: a CExoArrayList-shaped header + a
@@ -407,18 +436,23 @@ constexpr size_t    kFeatsCharGenChosenListSizeOffset      = 0x19e4;
 //   chart +0x08  int               rows_capacity
 //   chart +0x0c  byte              selected_col   (0..2 in BuildButtons)
 //   chart +0x0d  byte              selected_row
-constexpr size_t    kFeatsCharGenChartOffset               = 0x1a08;
-constexpr size_t    kSkillFlowChartRowsDataOffset          = 0x0;
-constexpr size_t    kSkillFlowChartRowsSizeOffset          = 0x4;
-constexpr size_t    kSkillFlowChartSelectedColOffset       = 0xc;
-constexpr size_t    kSkillFlowChartSelectedRowOffset       = 0xd;
+const size_t    kFeatsCharGenChartOffset               = acc::off::Todo(0x1a08);
+const size_t    kSkillFlowChartRowsDataOffset          = acc::off::Todo(0x0);
+const size_t    kSkillFlowChartRowsSizeOffset          = acc::off::Todo(0x4);
+const size_t    kSkillFlowChartSelectedColOffset       = acc::off::Todo(0xc);
+const size_t    kSkillFlowChartSelectedRowOffset       = acc::off::Todo(0xd);
 
 // CSWGuiSkillFlow row (1148 bytes). Three CSWGuiFlowSkillStruct columns
 // at +0x5c, +0x184, +0x2ac (stride 0x128) plus 2 connector-line images
 // at +0x3d4 / +0x428 the renderer uses to draw progression arrows.
-constexpr size_t    kSkillFlowFirstColumnOffset            = 0x5c;
-constexpr size_t    kSkillFlowColumnStride                 = 0x128;
-constexpr int       kSkillFlowColumnsPerRow                = 3;
+const size_t    kSkillFlowFirstColumnOffset            = acc::off::Todo(0x5c);
+const size_t    kSkillFlowColumnStride                 = acc::off::Todo(0x128);
+// MUST stay constexpr: sizes real arrays (`unsigned short featId[...]` in
+// menus_chargen_feats and menus_powers_levelup), so it has to be a compile-time
+// constant and cannot go through the acc::off markers. If KOTOR 2's skill-flow
+// chart has a different column count, size the arrays to the larger value and
+// carry the real count at run time rather than making this dynamic.
+constexpr int   kSkillFlowColumnsPerRow          = 3;
 
 // Within a CSWGuiFlowSkillStruct (a single chart cell, 0x128 bytes):
 //   +0x11c  ulong  feat ID  (or 0xffffffff for an empty cell)
@@ -426,9 +460,9 @@ constexpr int       kSkillFlowColumnsPerRow                = 3;
 //                            3 existing, 4 locked — same enum DetermineFeat
 //                            returns)
 //   +0x124  ulong  selection bits (bit 0 = currently selected)
-constexpr size_t    kFlowSkillStructFeatIdOffset           = 0x11c;
-constexpr size_t    kFlowSkillStructStatusOffset           = 0x120;
-constexpr unsigned  kFlowSkillStructEmptyFeatId            = 0xffffffff;
+const size_t    kFlowSkillStructFeatIdOffset           = acc::off::Todo(0x11c);
+const size_t    kFlowSkillStructStatusOffset           = acc::off::Todo(0x120);
+const unsigned  kFlowSkillStructEmptyFeatId            = acc::off::Todo(0xffffffff);
 
 // CSWRules / CSWSRules — the global rules object holds the feats array.
 // Global slot at 0x007a3a28 holds a CSWSRules* (which is a thin wrapper
@@ -442,17 +476,17 @@ constexpr unsigned  kFlowSkillStructEmptyFeatId            = 0xffffffff;
 //   +0x08   ulong   name_strref (the TLK strref the engine writes onto a
 //                                SkillEntry row's text_params)
 // (kAddrRulesGlobal itself is in engine_offsets_addresses.h, data-globals.)
-constexpr size_t    kRulesFeatsArrayOffset        = 0x90;
-constexpr size_t    kRulesFeatCountOffset         = 0xa4;
-constexpr size_t    kFeatStructSize               = 0x48;
-constexpr size_t    kFeatNameStrRefOffset         = 0x08;
+const size_t    kRulesFeatsArrayOffset        = acc::off::Todo(0x90);
+const size_t    kRulesFeatCountOffset         = acc::off::Todo(0xa4);
+const size_t    kFeatStructSize               = acc::off::Todo(0x48);
+const size_t    kFeatNameStrRefOffset         = acc::off::Todo(0x08);
 
 // Offset of the embedded CSWGuiSkillFlowChart inside CSWGuiPowersLevelUp.
 // Matches struct field33_0x19fc (swkotor.exe.h:16637). We call
 // CSWGuiSkillFlowChart::SetSelectedSkill on this offset to keep the chart's
 // render-side highlight in sync with our keyboard focus (same pattern as
 // chargen_feats — see kFeatsCharGenChartOffset).
-constexpr size_t    kPowersLevelUpChartOffset              = 0x19fc;
+const size_t    kPowersLevelUpChartOffset              = acc::off::Todo(0x19fc);
 
 // Container offsets verified against Lane's SARIF (DATATYPE entries for
 // CSWGuiPanel and CSWGuiListBox). CExoArrayList layout:
@@ -468,20 +502,20 @@ constexpr size_t    kPowersLevelUpChartOffset              = 0x19fc;
 //   +0x2c4  short    items_per_page
 //   +0x2c6  short    selection_index   ← which row is "current"
 //   +0x2c8  short    top_visible_index ← scroll offset
-constexpr size_t kPanelActiveControlOffset      = 0x1c;
-constexpr size_t kPanelControlsOffset           = 0x20;
-constexpr size_t kListBoxControlsOffset         = 0x29c;
-constexpr size_t kListBoxBitFlagsOffset         = 0x2bc;
-constexpr size_t kListBoxItemsPerPageOffset     = 0x2c4;
-constexpr size_t kListBoxSelectionIndexOffset   = 0x2c6;
-constexpr size_t kListBoxTopVisibleIndexOffset  = 0x2c8;
+const size_t kPanelActiveControlOffset      = acc::off::Todo(0x1c);
+const size_t kPanelControlsOffset           = acc::off::Todo(0x20);
+const size_t kListBoxControlsOffset         = acc::off::Todo(0x29c);
+const size_t kListBoxBitFlagsOffset         = acc::off::Todo(0x2bc);
+const size_t kListBoxItemsPerPageOffset     = acc::off::Todo(0x2c4);
+const size_t kListBoxSelectionIndexOffset   = acc::off::Todo(0x2c6);
+const size_t kListBoxTopVisibleIndexOffset  = acc::off::Todo(0x2c8);
 
 // CSWGuiControl.extent is an inline CSWGuiExtent (16 bytes) at +0x4:
 //   +0x0  left    int
 //   +0x4  top     int
 //   +0x8  width   int
 //   +0xC  height  int
-constexpr size_t kControlExtentOffset = 0x4;
+const size_t kControlExtentOffset = acc::off::Todo(0x4);
 
 // CSWGuiControl tooltip fields (verified against the
 // CSWGuiControl::DisplayToolTip @ 0x418a90 decompile + struct definition in
@@ -492,14 +526,14 @@ constexpr size_t kControlExtentOffset = 0x4;
 //   * Else no tooltip
 // (An optional " : KeyName" suffix gated on field6_0x30 / keybind action id —
 // we skip this in keyboard nav; the user already knows which key they pressed.)
-constexpr size_t kControlParentOffset       = 0x14;  // CSWGuiControl* parent
-constexpr size_t kControlTooltipStrRefOffset = 0x24; // uint32 strref (0 = none)
-constexpr size_t kControlTooltipStringOffset = 0x28; // CExoString literal
+const size_t kControlParentOffset       = acc::off::Todo(0x14);  // CSWGuiControl* parent
+const size_t kControlTooltipStrRefOffset = acc::off::Todo(0x24); // uint32 strref (0 = none)
+const size_t kControlTooltipStringOffset = acc::off::Todo(0x28); // CExoString literal
 
 // CSWGuiControl.id is the .gui-time numeric ID assigned by the layout file.
 // Stable across localizations and panel.controls reordering, so this is the
 // canonical way to address a known child of a known panel kind.
-constexpr size_t kControlIdOffset = 0x50;  // int id
+const size_t kControlIdOffset = acc::off::Todo(0x50);  // int id
 
 // CSWGuiSaveLoadEntry layout (from swkotor.exe.h:16673). Each row in the
 // CSWGuiSaveLoad.games_listbox is a CSWGuiSaveLoadEntry that embeds a
@@ -521,33 +555,33 @@ constexpr size_t kControlIdOffset = 0x50;  // int id
 //   +0x1e0  CExoString  save_file_name
 //   +0x1e8  CExoString  areaname         (e.g. "Kommandomodul")
 //   +0x1f0  CExoString  lastmodule       (e.g. "Endar Spire")
-constexpr size_t kSaveLoadEntrySaveNumberOffset    = 0x1c8;
-constexpr size_t kSaveLoadEntrySaveGameNameOffset  = 0x1d8;
-constexpr size_t kSaveLoadEntryAreaNameOffset      = 0x1e8;
-constexpr size_t kSaveLoadEntryLastModuleOffset    = 0x1f0;
+const size_t kSaveLoadEntrySaveNumberOffset    = acc::off::Todo(0x1c8);
+const size_t kSaveLoadEntrySaveGameNameOffset  = acc::off::Todo(0x1d8);
+const size_t kSaveLoadEntryAreaNameOffset      = acc::off::Todo(0x1e8);
+const size_t kSaveLoadEntryLastModuleOffset    = acc::off::Todo(0x1f0);
 
 // CSWGuiControl.is_active @ +0x4c - the gate every engine On*Slot /
 // OnControlEntered handler tests before doing anything. Keyboard-driven callers
 // must raise it first and restore it after; the handlers themselves are
 // documented in engine_offsets_addresses.h.
-constexpr size_t    kControlIsActiveOffset       = 0x4c;
+const size_t    kControlIsActiveOffset       = acc::off::Todo(0x4c);
 
 // CSWGuiUpgrade.field9 - the description label CSWGuiUpgrade::OnControlEntered
 // writes its built string into (see engine_offsets_addresses.h); we read the
 // result back from here.
-constexpr size_t    kUpgradeDescLabelOffset            = 0x1f60;  // panel.field9 (CSWGuiLabel)
+const size_t    kUpgradeDescLabelOffset            = acc::off::Todo(0x1f60);  // panel.field9 (CSWGuiLabel)
 
 // CSWGuiUpgrade.field24_0x2f48 — bit 0 is the "picker open" state (set by
 // OnSlotSelected, cleared by OnUpgradeSelected's close tail). Clear it on cancel.
-constexpr size_t    kUpgradePickerOpenFlagOff = 0x2f48;  // panel.field24
+const size_t    kUpgradePickerOpenFlagOff = acc::off::Todo(0x2f48);  // panel.field24
 
 // CSWGuiUpgrade slot-type table geometry, plus the two panel/button fields that
 // index it. The table base is kAddrUpgradeSlotTypeTable in
 // engine_offsets_addresses.h, where the per-entry layout is documented.
-constexpr size_t    kUpgradeSlotTypeStride    = 12;
-constexpr size_t    kUpgradeSlotTypeStrRefOff = 8;
-constexpr size_t    kUpgradePanelCategoryOff  = 0x2f4c;  // panel.field25
-constexpr size_t    kUpgradeSlotCustomValueOff = 0x58;   // slot_btn.custom_value
+const size_t    kUpgradeSlotTypeStride    = acc::off::Todo(12);
+const size_t    kUpgradeSlotTypeStrRefOff = acc::off::Todo(8);
+const size_t    kUpgradePanelCategoryOff  = acc::off::Todo(0x2f4c);  // panel.field25
+const size_t    kUpgradeSlotCustomValueOff = acc::off::Todo(0x58);   // slot_btn.custom_value
 
 // CSWGuiUpgrade.field35_0x2f74 — array of installed-mod CSWSItem* indexed by
 // the slot button's custom_value. Non-null = slot occupied (the engine
@@ -556,20 +590,20 @@ constexpr size_t    kUpgradeSlotCustomValueOff = 0x58;   // slot_btn.custom_valu
 // OnPanelAdded @0x006c4d70); null = empty. Both OnEnterSlot @0x006c3c30 (saber
 // branch) and OnSlotSelected @0x006c6500 (install/remove branch) index this
 // array by custom_value, so it is the authoritative per-slot occupancy field.
-constexpr size_t    kUpgradeSlotInstalledItemsOff = 0x2f74;  // panel.field35
+const size_t    kUpgradeSlotInstalledItemsOff = acc::off::Todo(0x2f74);  // panel.field35
 
 // CSWGuiUpgrade.field27_0x2f54 — the CSWSItem* currently being upgraded (the
 // weapon/armor/saber). OnEnterSlot / OnControlEntered pass it to
 // GetKeyedPropertyString to render a slot's keyed bonus line.
-constexpr size_t    kUpgradeBaseItemOff   = 0x2f54;  // panel.field27 (CSWSItem*)
+const size_t    kUpgradeBaseItemOff   = acc::off::Todo(0x2f54);  // panel.field27 (CSWSItem*)
 // CSWGuiUpgrade.field71_0x2fa4 — per-slot property-key byte array, indexed by
 // the slot button's custom_value. OnUpgradeSelected writes the installed mod's
 // key here; GetKeyedPropertyString(base, field71[cv]) yields that slot's bonus.
-constexpr size_t    kUpgradeSlotKeyArrayOff = 0x2fa4;  // panel.field71 (byte[])
+const size_t    kUpgradeSlotKeyArrayOff = acc::off::Todo(0x2fa4);  // panel.field71 (byte[])
 // CSWGuiUpgrade.field74_0x2fb0 — the slot button whose mod-picker is currently
 // open (set by OnSlotSelected, read as `field74+0x58` for custom_value by
 // OnUpgradeSelected). Lets us recover the active slot while the picker is up.
-constexpr size_t    kUpgradeActiveSlotOff = 0x2fb0;  // panel.field74 (slot btn*)
+const size_t    kUpgradeActiveSlotOff = acc::off::Todo(0x2fb0);  // panel.field74 (slot btn*)
 
 // Combat system — engine surfaces (per docs/combat-system.md, all
 // "suspected" / "known (DB)" until live-validated).
@@ -619,9 +653,9 @@ constexpr size_t    kUpgradeActiveSlotOff = 0x2fb0;  // panel.field74 (slot btn*
 // combat_queue.cpp uses a best-effort guess matching the order the engine's
 // AddX adders are declared in (CSWSCombatRound::Add* @0x4d3660+).
 
-constexpr size_t kCreatureCombatRoundOffset           = 0x9c8;
-constexpr size_t kObjectHitPointsOffset               = 0xe0;
-constexpr size_t kObjectEffectsOffset                 = 0x124;
+const size_t kCreatureCombatRoundOffset           = acc::off::Todo(0x9c8);
+const size_t kObjectHitPointsOffset               = acc::off::Todo(0xe0);
+const size_t kObjectEffectsOffset                 = acc::off::Todo(0x124);
 
 // AI action queue — CSWSObject.action_nodes @+0xfc, a
 // CExoLinkedList<CSWSObjectActionNode>. The list holds the player's
@@ -638,16 +672,16 @@ constexpr size_t kObjectEffectsOffset                 = 0x124;
 // the two never overlap.
 // CExoLinkedList = { CExoLinkedListInternal* internal } (+0x0); the
 // internal is { head(+0x0), tail(+0x4), int count(+0x8) }.
-constexpr size_t kObjectActionNodesOffset             = 0xfc;
-constexpr size_t kExoLinkedListInternalCountOffset    = 0x8;
+const size_t kObjectActionNodesOffset             = acc::off::Todo(0xfc);
+const size_t kExoLinkedListInternalCountOffset    = acc::off::Todo(0x8);
 
-constexpr size_t kCombatRoundAttacksListOffset        = 0x4;
-constexpr size_t kCombatRoundTimerOffset              = 0x944;
-constexpr size_t kCombatRoundLengthOffset             = 0x94c;
-constexpr size_t kCombatRoundCurrentAttackOffset      = 0x96c;
-constexpr size_t kCombatRoundActionsOffset            = 0x9b0;
-constexpr size_t kCombatRoundEngagedOffset            = 0x9b8;
-constexpr size_t kCombatRoundCurrentActionOffset      = 0x9d0;
+const size_t kCombatRoundAttacksListOffset        = acc::off::Todo(0x4);
+const size_t kCombatRoundTimerOffset              = acc::off::Todo(0x944);
+const size_t kCombatRoundLengthOffset             = acc::off::Todo(0x94c);
+const size_t kCombatRoundCurrentAttackOffset      = acc::off::Todo(0x96c);
+const size_t kCombatRoundActionsOffset            = acc::off::Todo(0x9b0);
+const size_t kCombatRoundEngagedOffset            = acc::off::Todo(0x9b8);
+const size_t kCombatRoundCurrentActionOffset      = acc::off::Todo(0x9d0);
 
 // CExoLinkedList layout — verified against SARIF DATATYPE export
 // 2026-05-28. THREE distinct structs need correct offsets:
@@ -670,19 +704,19 @@ constexpr size_t kCombatRoundCurrentActionOffset      = 0x9d0;
 //
 // Correct walk: combat_round.actions → +0 = internal* → +0 = head
 // node* → walk via Node.next at +4 until null.
-constexpr size_t kListInternalOffset       = 0x0;  // CExoLinkedList<T>     +0 -> internal*
-constexpr size_t kListInternalHeadOffset   = 0x0;  // CExoLinkedListInternal+0 -> head node*
-constexpr size_t kListInternalCountOffset  = 0x8;  // CExoLinkedListInternal+8 -> count (engine authoritative)
-constexpr size_t kLinkedListNodeNextOff    = 0x4;  // CExoLinkedListNode    +4 -> next
-constexpr size_t kLinkedListNodeDataOff    = 0x8;  // CExoLinkedListNode    +8 -> data
+const size_t kListInternalOffset       = acc::off::Todo(0x0);  // CExoLinkedList<T>     +0 -> internal*
+const size_t kListInternalHeadOffset   = acc::off::Todo(0x0);  // CExoLinkedListInternal+0 -> head node*
+const size_t kListInternalCountOffset  = acc::off::Todo(0x8);  // CExoLinkedListInternal+8 -> count (engine authoritative)
+const size_t kLinkedListNodeNextOff    = acc::off::Todo(0x4);  // CExoLinkedListNode    +4 -> next
+const size_t kLinkedListNodeDataOff    = acc::off::Todo(0x8);  // CExoLinkedListNode    +8 -> data
 
 
-constexpr size_t kCombatRoundActionTypeOffset       = 0x10;
-constexpr size_t kCombatRoundActionTargetOffset     = 0x14;
-constexpr size_t kCombatRoundActionRetargetOffset   = 0x18;
-constexpr size_t kCombatRoundActionMoveToPosOffset  = 0x38;
-constexpr size_t kCombatRoundActionResultOffset     = 0x7c;
-constexpr size_t kCombatRoundActionDamageOffset     = 0x80;
+const size_t kCombatRoundActionTypeOffset       = acc::off::Todo(0x10);
+const size_t kCombatRoundActionTargetOffset     = acc::off::Todo(0x14);
+const size_t kCombatRoundActionRetargetOffset   = acc::off::Todo(0x18);
+const size_t kCombatRoundActionMoveToPosOffset  = acc::off::Todo(0x38);
+const size_t kCombatRoundActionResultOffset     = acc::off::Todo(0x7c);
+const size_t kCombatRoundActionDamageOffset     = acc::off::Todo(0x80);
 
 // CSWSCreatureStats inline attribute-total bytes (post-mod totals). Read
 // these directly to avoid relying on the GetXStat dispatch table (some of
@@ -690,7 +724,7 @@ constexpr size_t kCombatRoundActionDamageOffset     = 0x80;
 // SARIF confirmation). Field offsets per swkotor.exe.h (CSWCCreatureStats
 // has the same layout as CSWSCreatureStats at the byte level for these
 // fields per `accessibility-investigation.md`).
-constexpr size_t kStatsAttrTotalsOffset               = 0x34;  // 6 bytes: STR/DEX/CON/INT/WIS/CHA
+const size_t kStatsAttrTotalsOffset               = acc::off::Todo(0x34);  // 6 bytes: STR/DEX/CON/INT/WIS/CHA
 
 // CSWSCreatureStats.faction_id @+0x78 (ushort) — the creature's standard
 // faction. Per swkotor.exe.h `standardFactions` enum: HOSTILE_1=1,
@@ -700,18 +734,18 @@ constexpr size_t kStatsAttrTotalsOffset               = 0x34;  // 6 bytes: STR/D
 // INVALID_FACTION=0xFFFF. The player + party share PLAYER (commonly
 // faction id 0, not in the enum). Direct field read — no engine call,
 // safe for auto-firing paths.
-constexpr size_t kStatsFactionIdOffset                = 0x78;
+const size_t kStatsFactionIdOffset                = acc::off::Todo(0x78);
 
 // CSWRules.spells — the spells array. CSWSpellArray* at offset 0x8c
 // (140 bytes) per SARIF layout dump. The array exposes GetSpell(id) ->
 // CSWSpell*. Used by combat::queue to decode action_type=9 (Cast Force
 // Power) queue entries to their specific spell name.
-constexpr size_t    kRulesSpellsOffset                = 0x8c;
+const size_t    kRulesSpellsOffset                = acc::off::Todo(0x8c);
 
 // CSWSpell.spell_description — int (TLK strref) at +0x0c per SARIF
 // DATATYPE dump. CSWSpell has no GetSpellDescriptionText accessor, so
 // callers read the strref and route through LookupTlk themselves.
-constexpr size_t    kSpellDescriptionStrRefOffset     = 0x0c;
+const size_t    kSpellDescriptionStrRefOffset     = acc::off::Todo(0x0c);
 
 // CSWSCombatRoundAction additional offsets (decoded from GetActionIcon
 // @0x686fb0 — case 0xb/0xc switch). The action_type byte at +0x10
@@ -719,9 +753,9 @@ constexpr size_t    kSpellDescriptionStrRefOffset     = 0x0c;
 //   action_type=9  → spell_id at +0x24    (CSWSpellArray::GetSpell)
 //   action_type=10 → item_handle at +0x64 (CServerExoApp::GetItemByGameObjectID)
 //   action_type=11 → feat_id at +0x5c     (CSWRules::GetFeat)
-constexpr size_t    kCombatRoundActionSpellIdOffset   = 0x24;
-constexpr size_t    kCombatRoundActionItemHandleOff   = 0x64;
-constexpr size_t    kCombatRoundActionFeatIdOffset    = 0x5c;
+const size_t    kCombatRoundActionSpellIdOffset   = acc::off::Todo(0x24);
+const size_t    kCombatRoundActionItemHandleOff   = acc::off::Todo(0x64);
+const size_t    kCombatRoundActionFeatIdOffset    = acc::off::Todo(0x5c);
 
 // CGameEffect layout — what's stored in CSWSObject.effects.
 // `effects` is CExoArrayList<CGameEffect*> at +0x124 (already known).
@@ -734,7 +768,7 @@ constexpr size_t    kCombatRoundActionFeatIdOffset    = 0x5c;
 //   +0xc float     duration
 //   ...
 // CSWSObject.effects → walk to get CGameEffect*, then read +0x8 for type.
-constexpr size_t    kGameEffectTypeOffset             = 0x8;
+const size_t    kGameEffectTypeOffset             = acc::off::Todo(0x8);
 
 // CSWSCreature.effect_icons — CExoArrayList<CEffectIconObject*> with data
 // ptr at +0x8f4 and size at +0x8f8. This is the sighted buff/debuff icon
@@ -743,14 +777,18 @@ constexpr size_t    kGameEffectTypeOffset             = 0x8;
 // and OnRemoveEffectIcon walks the same raw offsets — both decompile-
 // verified 2026-07-17. Each CEffectIconObject (0x20 bytes): +0x0 ushort
 // effecticon.2da row id, +0x2 CResRef icon resref, +0x18 ushort priority.
-constexpr size_t    kCreatureEffectIconsDataOffset    = 0x8f4;
-constexpr size_t    kCreatureEffectIconsSizeOffset    = 0x8f8;
-constexpr size_t    kEffectIconObjectIdOffset         = 0x0;
+const size_t    kCreatureEffectIconsDataOffset    = acc::off::Todo(0x8f4);
+const size_t    kCreatureEffectIconsSizeOffset    = acc::off::Todo(0x8f8);
+const size_t    kEffectIconObjectIdOffset         = acc::off::Todo(0x0);
 
 // CSWSCreature.inventory @+0xa2c → CSWInventory*. Server-side equipment
 // container. Combined with CSWInventory::GetItemInSlot below this gives
 // us "what is the creature wielding right now".
-constexpr size_t    kCreatureInventoryOffset          = 0xa2c;
+// KOTOR 2 value from the seeded kotor2_steam_aspyr.db. CSWSCreature's fields
+// shift by a large constant there (+0x724 for both this and creature_stats) —
+// Obsidian added a substantial block above them, so unlike CSWSObject's +4 this
+// is not a small insertion. Do not extrapolate it to other classes.
+const size_t    kCreatureInventoryOffset          = acc::off::Pick(0xa2c, 0x1150);
 
 // CSWInventory equipped-slot field layout (validated via Lane's symbol
 // table 12715: STRUCTURE CSWInventory SIZE=0x4c). Each slot is a ulong
@@ -759,15 +797,15 @@ constexpr size_t    kCreatureInventoryOffset          = 0xa2c;
 // CSWInventory::GetItemInSlot which returns a small CSWItem* wrapper
 // (size 0x10) — the wrong shape for the localized_name @+0x280 chain;
 // reading the handle directly bypasses that confusion.
-constexpr size_t    kInventoryRightWeaponHandleOffset = 0x14;  // main hand
-constexpr size_t    kInventoryLeftWeaponHandleOffset  = 0x18;  // off hand
-constexpr size_t    kInventoryHeadHandleOffset        = 0x4;
-constexpr size_t    kInventoryTorsoHandleOffset       = 0x8;
-constexpr size_t    kInventoryHandsHandleOffset       = 0x10;
-constexpr size_t    kInventoryLeftArmHandleOffset     = 0x20;
-constexpr size_t    kInventoryRightArmHandleOffset    = 0x24;
-constexpr size_t    kInventoryImplantHandleOffset     = 0x28;
-constexpr size_t    kInventoryBeltHandleOffset        = 0x2c;
+const size_t    kInventoryRightWeaponHandleOffset = acc::off::Todo(0x14);  // main hand
+const size_t    kInventoryLeftWeaponHandleOffset  = acc::off::Todo(0x18);  // off hand
+const size_t    kInventoryHeadHandleOffset        = acc::off::Todo(0x4);
+const size_t    kInventoryTorsoHandleOffset       = acc::off::Todo(0x8);
+const size_t    kInventoryHandsHandleOffset       = acc::off::Todo(0x10);
+const size_t    kInventoryLeftArmHandleOffset     = acc::off::Todo(0x20);
+const size_t    kInventoryRightArmHandleOffset    = acc::off::Todo(0x24);
+const size_t    kInventoryImplantHandleOffset     = acc::off::Todo(0x28);
+const size_t    kInventoryBeltHandleOffset        = acc::off::Todo(0x2c);
 
 // CSWGuiInGameEquip — cached per-slot item handles and stat-value labels.
 // The panel mirrors the displayed character's CSWInventory into local
@@ -777,16 +815,16 @@ constexpr size_t    kInventoryBeltHandleOffset        = 0x2c;
 // universal accessor routes both client and server handles), so
 // GetObjectDisplayNameByHandle resolves them without translation.
 // Offsets verified against Lane's CSWGuiInGameEquip struct (SIZE=0x42bc).
-constexpr size_t    kEquipPanelPlayerCreatureOffset    = 0x0064;
-constexpr size_t    kEquipPanelHeadIdOffset            = 0x4284;
-constexpr size_t    kEquipPanelImplantIdOffset         = 0x4298;
-constexpr size_t    kEquipPanelArmorIdOffset           = 0x4290;  // body
-constexpr size_t    kEquipPanelLeftArmbandIdOffset     = 0x4288;
-constexpr size_t    kEquipPanelRightArmbandIdOffset    = 0x428c;
-constexpr size_t    kEquipPanelLeftWeaponIdOffset      = 0x427c;
-constexpr size_t    kEquipPanelRightWeaponIdOffset     = 0x4280;
-constexpr size_t    kEquipPanelGlovesIdOffset          = 0x4294;  // hands
-constexpr size_t    kEquipPanelBeltIdOffset            = 0x429c;
+const size_t    kEquipPanelPlayerCreatureOffset    = acc::off::Todo(0x0064);
+const size_t    kEquipPanelHeadIdOffset            = acc::off::Todo(0x4284);
+const size_t    kEquipPanelImplantIdOffset         = acc::off::Todo(0x4298);
+const size_t    kEquipPanelArmorIdOffset           = acc::off::Todo(0x4290);  // body
+const size_t    kEquipPanelLeftArmbandIdOffset     = acc::off::Todo(0x4288);
+const size_t    kEquipPanelRightArmbandIdOffset    = acc::off::Todo(0x428c);
+const size_t    kEquipPanelLeftWeaponIdOffset      = acc::off::Todo(0x427c);
+const size_t    kEquipPanelRightWeaponIdOffset     = acc::off::Todo(0x4280);
+const size_t    kEquipPanelGlovesIdOffset          = acc::off::Todo(0x4294);  // hands
+const size_t    kEquipPanelBeltIdOffset            = acc::off::Todo(0x429c);
 
 // Stat-value labels inline in the panel struct. Each is a CSWGuiLabel
 // (SIZE=0x140). UpdateInventory @0x006b9970 writes the rendered value
@@ -804,12 +842,12 @@ constexpr size_t    kEquipPanelBeltIdOffset            = 0x429c;
 //                       "Schaden".
 // Single-weapon mode: only the RIGHT-hand pair carries values; LEFT pair
 // is blanked to "". Dual-wield: both pairs carry per-hand values.
-constexpr size_t    kEquipPanelDefenseLabelOffset            = 0x2098;
-constexpr size_t    kEquipPanelHpLabelOffset                 = 0x21d8;
-constexpr size_t    kEquipPanelLeftWeaponDamageLabelOffset   = 0x1b98;  // Lane: left_weapon_attack_label
-constexpr size_t    kEquipPanelLeftWeaponTohitLabelOffset    = 0x1cd8;
-constexpr size_t    kEquipPanelRightWeaponDamageLabelOffset  = 0x1e18;  // Lane: right_weapon_attack_label
-constexpr size_t    kEquipPanelRightWeaponTohitLabelOffset   = 0x1f58;
+const size_t    kEquipPanelDefenseLabelOffset            = acc::off::Todo(0x2098);
+const size_t    kEquipPanelHpLabelOffset                 = acc::off::Todo(0x21d8);
+const size_t    kEquipPanelLeftWeaponDamageLabelOffset   = acc::off::Todo(0x1b98);  // Lane: left_weapon_attack_label
+const size_t    kEquipPanelLeftWeaponTohitLabelOffset    = acc::off::Todo(0x1cd8);
+const size_t    kEquipPanelRightWeaponDamageLabelOffset  = acc::off::Todo(0x1e18);  // Lane: right_weapon_attack_label
+const size_t    kEquipPanelRightWeaponTohitLabelOffset   = acc::off::Todo(0x1f58);
 
 // Bottom-row party-cycle buttons inline in CSWGuiInGameEquip — mirrors the
 // 4-button strip on InGameCharacter. All four (change_party_1/2 portraits
@@ -824,11 +862,11 @@ constexpr size_t    kEquipPanelRightWeaponTohitLabelOffset   = 0x1f58;
 // 0FD03C68): back@0x385C, change_party_1@0x3A20, change_party_2@0x3BE4,
 // character_left@0x3DA8, character_right@0x3F6C. Stride = 0x1c4 =
 // sizeof(CSWGuiButton). Struct order matches swkotor.exe.h:9087-9091.
-constexpr size_t    kEquipPanelBackButtonOffset           = 0x385C;
-constexpr size_t    kEquipPanelChangeParty1ButtonOffset   = 0x3A20;
-constexpr size_t    kEquipPanelChangeParty2ButtonOffset   = 0x3BE4;
-constexpr size_t    kEquipPanelCharacterLeftButtonOffset  = 0x3DA8;
-constexpr size_t    kEquipPanelCharacterRightButtonOffset = 0x3F6C;
+const size_t    kEquipPanelBackButtonOffset           = acc::off::Todo(0x385C);
+const size_t    kEquipPanelChangeParty1ButtonOffset   = acc::off::Todo(0x3A20);
+const size_t    kEquipPanelChangeParty2ButtonOffset   = acc::off::Todo(0x3BE4);
+const size_t    kEquipPanelCharacterLeftButtonOffset  = acc::off::Todo(0x3DA8);
+const size_t    kEquipPanelCharacterRightButtonOffset = acc::off::Todo(0x3F6C);
 
 // CSWGuiLevelUpPanel "Zurück" (button_back) and "Abbrechen"
 // (button_cancel) — the two trailing CSWGuiButton members before
@@ -845,8 +883,8 @@ constexpr size_t    kEquipPanelCharacterRightButtonOffset = 0x3F6C;
 // Zurück@0x1944 (15E7AD0C). Stride 0x1c4 = sizeof(CSWGuiButton); struct
 // order per swkotor.exe.h CSWGuiLevelUpPanel (…button_back, button_cancel,
 // field9_0x1ccc@0x1ccc).
-constexpr size_t    kLevelUpButtonBackOffset              = 0x1944;
-constexpr size_t    kLevelUpButtonCancelOffset            = 0x1B08;
+const size_t    kLevelUpButtonBackOffset              = acc::off::Todo(0x1944);
+const size_t    kLevelUpButtonCancelOffset            = acc::off::Todo(0x1B08);
 
 // CSWGuiInGameMap up_button / down_button — the two image-only buttons
 // flanking the map render ("Vorheriger Hinweis" / "Nächster Hinweis" once
@@ -860,8 +898,8 @@ constexpr size_t    kLevelUpButtonCancelOffset            = 0x1B08;
 // Consumed by menus_extract.cpp (TryInGameMapArrow) and menus_chain.cpp
 // (IsDecorativeControl, which drops them from chain navigation — the map
 // cursor covers note reading).
-constexpr size_t    kInGameMapUpButtonOffset              = 0xAB0;
-constexpr size_t    kInGameMapDownButtonOffset            = 0xC74;
+const size_t    kInGameMapUpButtonOffset              = acc::off::Todo(0xAB0);
+const size_t    kInGameMapDownButtonOffset            = acc::off::Todo(0xC74);
 
 // ----------------------------------------------------------------------------
 // CSWGuiInGameAbilities — the in-game "Fähigkeiten" screen (CGuiInGame slot
@@ -875,18 +913,18 @@ constexpr size_t    kInGameMapDownButtonOffset            = 0xC74;
 // Member offsets verified from Lane's RE database (docs/llm-docs/re/
 // k1_win_gog_swkotor.exe.sarif, struct CSWGuiInGameAbilities). Decimal
 // offsets from the SARIF in parentheses.
-constexpr size_t    kAbilitiesSkillRankLabelOffset   = 0x2190;  // (8592)  "Fähigkeitenrang"
-constexpr size_t    kAbilitiesRankValueLabelOffset   = 0x22D0;  // (8912)  e.g. "8"
-constexpr size_t    kAbilitiesBonusLabelOffset       = 0x2410;  // (9232)  "Bonus"
-constexpr size_t    kAbilitiesBonusValueLabelOffset  = 0x2550;  // (9552)  e.g. "+3"
-constexpr size_t    kAbilitiesTotalLabelOffset       = 0x2690;  // (9872)  "Gesamtrang"
-constexpr size_t    kAbilitiesTotalValueLabelOffset  = 0x27D0;  // (10192) e.g. "11"
-constexpr size_t    kAbilitiesNameLabelOffset        = 0x2910;  // (10512) selected entry name
-constexpr size_t    kAbilitiesFeatsButtonOffset      = 0x2B90;  // (11152) BTN_FEATS  (Talente)
-constexpr size_t    kAbilitiesPowersButtonOffset     = 0x2D54;  // (11604) BTN_POWERS (Kräfte)
-constexpr size_t    kAbilitiesSkillsButtonOffset     = 0x2F18;  // (12056) BTN_SKILLS (Fähigkeiten)
-constexpr size_t    kAbilitiesListBoxOffset          = 0x30DC;  // (12508) LB_ABILITY (main list)
-constexpr size_t    kAbilitiesDescListBoxOffset      = 0x33BC;  // (13244) LB_DESC (description)
+const size_t    kAbilitiesSkillRankLabelOffset   = acc::off::Todo(0x2190);  // (8592)  "Fähigkeitenrang"
+const size_t    kAbilitiesRankValueLabelOffset   = acc::off::Todo(0x22D0);  // (8912)  e.g. "8"
+const size_t    kAbilitiesBonusLabelOffset       = acc::off::Todo(0x2410);  // (9232)  "Bonus"
+const size_t    kAbilitiesBonusValueLabelOffset  = acc::off::Todo(0x2550);  // (9552)  e.g. "+3"
+const size_t    kAbilitiesTotalLabelOffset       = acc::off::Todo(0x2690);  // (9872)  "Gesamtrang"
+const size_t    kAbilitiesTotalValueLabelOffset  = acc::off::Todo(0x27D0);  // (10192) e.g. "11"
+const size_t    kAbilitiesNameLabelOffset        = acc::off::Todo(0x2910);  // (10512) selected entry name
+const size_t    kAbilitiesFeatsButtonOffset      = acc::off::Todo(0x2B90);  // (11152) BTN_FEATS  (Talente)
+const size_t    kAbilitiesPowersButtonOffset     = acc::off::Todo(0x2D54);  // (11604) BTN_POWERS (Kräfte)
+const size_t    kAbilitiesSkillsButtonOffset     = acc::off::Todo(0x2F18);  // (12056) BTN_SKILLS (Fähigkeiten)
+const size_t    kAbilitiesListBoxOffset          = acc::off::Todo(0x30DC);  // (12508) LB_ABILITY (main list)
+const size_t    kAbilitiesDescListBoxOffset      = acc::off::Todo(0x33BC);  // (13244) LB_DESC (description)
 
 // The two CSWGuiSkillFlowChart members on the panel (field30/field31). Their
 // internals are the SAME CSWGuiSkillFlowChart layout the chargen/level-up
@@ -895,18 +933,18 @@ constexpr size_t    kAbilitiesDescListBoxOffset      = 0x33BC;  // (13244) LB_DE
 // re-declaring panel-local aliases for them. We read row vs row-count to clamp
 // the engine's chart nav, which otherwise WRAPS top<->bottom (unlike the skills
 // listbox, which clamps).
-constexpr size_t    kAbilitiesPowersChartOffset       = 0x3f78;  // field30 (Powers)
-constexpr size_t    kAbilitiesFeatsChartOffset        = 0x3f88;  // field31 (Feats)
+const size_t    kAbilitiesPowersChartOffset       = acc::off::Todo(0x3f78);  // field30 (Powers)
+const size_t    kAbilitiesFeatsChartOffset        = acc::off::Todo(0x3f88);  // field31 (Feats)
 
 // CGuiInGame.field139_0xbc0 — the active abilities tab: 0 = Skills,
 // 1 = Powers, 2 = Feats. Read to route per-tab input + announce the tab.
-constexpr size_t    kGuiInGameAbilitiesTabOffset      = 0xbc0;
+const size_t    kGuiInGameAbilitiesTabOffset      = acc::off::Todo(0xbc0);
 
 // CSWSCreatureStats.feats @+0x0 — CExoArrayList<ushort>. Count lives
 // at +0x4 (size field of the list). Static feat list (granted at level-
 // up + class); doesn't drift mid-combat. Used by the Ö examine view to communicate
 // "this creature has N feats" without enumerating them.
-constexpr size_t    kStatsFeatsListOffset             = 0x0;
+const size_t    kStatsFeatsListOffset             = acc::off::Todo(0x0);
 
 // CSWGuiExamine.message_box.listbox_message lives at panel +0x67c. Kept
 // for the kExamineSpec ListBoxPanelSpec entry — if the engine itself ever
@@ -914,8 +952,8 @@ constexpr size_t    kStatsFeatsListOffset             = 0x0;
 // confirmation popups), the spec handles row navigation. We just don't
 // open it ourselves for creature examine — that would land on an empty
 // TLK-lookup result.
-constexpr size_t    kExaminePanelListBoxOffset        = 0x67c;
-constexpr size_t    kExaminePanelHandleOffset         = 0x984;
+const size_t    kExaminePanelListBoxOffset        = acc::off::Todo(0x67c);
+const size_t    kExaminePanelHandleOffset         = acc::off::Todo(0x984);
 
 // CSWGuiInGameMessages — combat log + dialog history panel.
 //   panel        @+0x0
@@ -923,18 +961,18 @@ constexpr size_t    kExaminePanelHandleOffset         = 0x984;
 //   dialog_lb    @+0x344   (dialog history)
 //   show_button  @+0x76c   (toggles between feedback / dialog view)
 //   exit_button  @+0x930
-constexpr size_t kInGameMessagesMessagesListBoxOffset = 0x64;
-constexpr size_t kInGameMessagesDialogListBoxOffset   = 0x344;
-constexpr size_t kInGameMessagesShowButtonOffset      = 0x76c;
-constexpr size_t kInGameMessagesExitButtonOffset      = 0x930;
+const size_t kInGameMessagesMessagesListBoxOffset = acc::off::Todo(0x64);
+const size_t kInGameMessagesDialogListBoxOffset   = acc::off::Todo(0x344);
+const size_t kInGameMessagesShowButtonOffset      = acc::off::Todo(0x76c);
+const size_t kInGameMessagesExitButtonOffset      = acc::off::Todo(0x930);
 
 // CSWGuiDialog (and Cinematic / ComputerCamera variants which share base
 // layout):
 //   panel             @+0x0
 //   replies_listbox   @+0x19c4
 //   message_label     @+0x1ca4
-constexpr size_t kDialogRepliesListBoxOffset          = 0x19c4;
-constexpr size_t kDialogMessageLabelOffset            = 0x1ca4;
+const size_t kDialogRepliesListBoxOffset          = acc::off::Todo(0x19c4);
+const size_t kDialogMessageLabelOffset            = acc::off::Todo(0x1ca4);
 
 // Conversation partner — on every server-side game object (CSWSObject)
 // the engine maintains a `dialog_owner: CSWSObject*` at +0x54 pointing
@@ -947,7 +985,7 @@ constexpr size_t kDialogMessageLabelOffset            = 0x1ca4;
 // multi-party cutscenes the speaker can be a third creature; the partner
 // pointer is still useful as a "human-ish dialog?" heuristic but not
 // authoritative. For 1-on-1 dialog and barks it's exactly the speaker.
-constexpr size_t kServerObjectDialogOwnerOffset       = 0x54;
+const size_t kServerObjectDialogOwnerOffset       = acc::off::Todo(0x54);
 
 // CSWSCreature inline appearance cache at +0xa4c per Lane's struct, but
 // VERIFIED LIVE 2026-05-30 to read 0 even for fully-initialised speakers
@@ -955,29 +993,35 @@ constexpr size_t kServerObjectDialogOwnerOffset       = 0x54;
 // CSWSCreatureStats.appearance_type at stats+0x186 instead (real value).
 // Kept here as a constant for future re-investigation, NOT used by
 // dialog_speech.
-constexpr size_t kCreatureAppearanceTypeOffset        = 0xa4c;
+const size_t kCreatureAppearanceTypeOffset        = acc::off::Todo(0xa4c);
 
 // CSWSCreature.creature_stats — pointer to CSWSCreatureStats.
-constexpr size_t kCreatureStatsPointerOffset          = 0xa74;
+// KOTOR 2 value from the seeded kotor2_steam_aspyr.db (+0x724, same shift as
+// kCreatureInventoryOffset above).
+//
+// NOTE: engine_area.h declares kCreatureStatsPtrOffset for this SAME field.
+// Two names, two files, one engine fact — they must be changed together until
+// one of them is retired.
+const size_t kCreatureStatsPointerOffset          = acc::off::Pick(0xa74, 0x1198);
 
 // CSWSCreatureStats.race (ushort; enum RACE values: DROID=5, HUMAN=6).
 // Diagnostic-only — the enum collapses every humanoid species (Twi'lek,
 // Cathar, Echani, Mandalorian) to HUMAN, so we discriminate by
 // appearance_type, not by race. Race is logged so future overrides can be
 // designed on observed (race, appearance_type) pairs from the diagnostic.
-constexpr size_t kCreatureStatsRaceOffset             = 0xdc;
+const size_t kCreatureStatsRaceOffset             = acc::off::Todo(0xdc);
 
 // CSWSCreatureStats.appearance_type (ushort, indexes appearance.2da).
 // Verified from Lane's exported header @0x186 (line 15707 in swkotor.exe.h).
 // THIS is the authoritative species discriminator — the CSWSCreature inline
 // cache at +0xa4c is unreliable.
-constexpr size_t kCreatureStatsAppearanceTypeOffset   = 0x186;
+const size_t kCreatureStatsAppearanceTypeOffset   = acc::off::Todo(0x186);
 
 // CSWGuiDialogComputer adds a terminal-output listbox above the embedded
 // replies listbox.
 //   message_listbox  @+0x2cfc   (terminal output text)
 //   obscure_label    @+0x34dc
-constexpr size_t kDialogComputerMessageListBoxOffset  = 0x2cfc;
+const size_t kDialogComputerMessageListBoxOffset  = acc::off::Todo(0x2cfc);
 
 // CGuiInGame.current_dialog_speaker (field93_0x170) — the CLIENT-side object
 // id of the creature speaking the current dialog entry. Written by
@@ -989,7 +1033,7 @@ constexpr size_t kDialogComputerMessageListBoxOffset  = 0x2cfc;
 // NPC-to-NPC scenes where the player's dialog_owner (+0x54) is null. Sentinel
 // 0x7f000000 means "no participant". Sibling slots: +0x174 listener,
 // +0x178 previous speaker, +0x184 third participant.
-constexpr size_t kCGuiInGameDialogSpeakerOffset       = 0x170;
+const size_t kCGuiInGameDialogSpeakerOffset       = acc::off::Todo(0x170);
 
 // CGuiInGame reply-text model — the engine's authoritative, render-independent
 // store of the CURRENT entry's selectable reply strings. Populated by
@@ -1007,8 +1051,8 @@ constexpr size_t kCGuiInGameDialogSpeakerOffset       = 0x170;
 // CExoString array here always carries every active reply's resolved text.
 //   field69_0x114  reply array capacity/count (SetReplyData bounds-guards on it)
 //   field70_0x118  pointer to the CExoString[] array
-constexpr size_t kCGuiInGameReplyCountOffset          = 0x114;
-constexpr size_t kCGuiInGameReplyTextArrayOffset      = 0x118;
+const size_t kCGuiInGameReplyCountOffset          = acc::off::Todo(0x114);
+const size_t kCGuiInGameReplyTextArrayOffset      = acc::off::Todo(0x118);
 
 // CSWGuiBarkBubble.object_id @+0x1c0 — the bark speaker's CLIENT object id,
 // written by CSWGuiBarkBubble::SetBark @0x006a9920 (this->object_id = param_1)
@@ -1018,18 +1062,18 @@ constexpr size_t kCGuiInGameReplyTextArrayOffset      = 0x118;
 // zone messages, area feedback). Resolve a real id through
 // ClientToServerObjectId → ResolveServerObjectHandle to classify the speaker,
 // exactly as the dialog-speaker path does for CGuiInGame +0x170.
-constexpr size_t kBarkBubbleObjectIdOffset            = 0x1c0;
+const size_t kBarkBubbleObjectIdOffset            = acc::off::Todo(0x1c0);
 
-constexpr size_t    kStoreShopItemsListBoxOffset           = 0x1480;
-constexpr size_t    kStoreInvItemsListBoxOffset            = 0x1760;
-constexpr size_t    kStoreDescriptionListBoxOffset         = 0x1a40;
-constexpr size_t    kStoreCancelButtonOffset               = 0x1d20;
-constexpr size_t    kStoreToggleButtonOffset               = 0x1ee4;  // examine_button in struct DB
-constexpr size_t    kStoreAcceptButtonOffset               = 0x20a8;
-constexpr size_t    kStoreItemIdOffset                     = 0x226c;
-constexpr size_t    kStoreCostValueLabelOffset             = 0xbc0;
-constexpr size_t    kStoreStockValueLabelOffset            = 0xe40;
-constexpr size_t    kStoreCreditsValueLabelOffset          = 0x1200;
+const size_t    kStoreShopItemsListBoxOffset           = acc::off::Todo(0x1480);
+const size_t    kStoreInvItemsListBoxOffset            = acc::off::Todo(0x1760);
+const size_t    kStoreDescriptionListBoxOffset         = acc::off::Todo(0x1a40);
+const size_t    kStoreCancelButtonOffset               = acc::off::Todo(0x1d20);
+const size_t    kStoreToggleButtonOffset               = acc::off::Todo(0x1ee4);  // examine_button in struct DB
+const size_t    kStoreAcceptButtonOffset               = acc::off::Todo(0x20a8);
+const size_t    kStoreItemIdOffset                     = acc::off::Todo(0x226c);
+const size_t    kStoreCostValueLabelOffset             = acc::off::Todo(0xbc0);
+const size_t    kStoreStockValueLabelOffset            = acc::off::Todo(0xe40);
+const size_t    kStoreCreditsValueLabelOffset          = acc::off::Todo(0x1200);
 
 // CSWGuiStore.field31_0x2270 — int — the player's gold cached on the
 // store struct. Written by PopulateStore via CSWSCreature::GetGold,
@@ -1038,24 +1082,24 @@ constexpr size_t    kStoreCreditsValueLabelOffset          = 0x1200;
 //   if (field31_0x2270 < GetItemBuyValue(item)) ShowExamineBox(strref 0xa3de)
 // We use it for the same gate, but speak our own "not enough credits"
 // line instead of letting the engine pop its examine box.
-constexpr size_t    kStorePlayerGoldOffset                 = 0x2270;
+const size_t    kStorePlayerGoldOffset                 = acc::off::Todo(0x2270);
 
 // Bit 1 (0x02) of the listbox's CSWGuiControl.bit_flags is set on the
 // "visible" listbox by ShowBuyGUI / ShowSellGUI. Same offset (+0x44)
 // every other CSWGuiControl uses.
-constexpr size_t    kControlBitFlagsOffset                 = 0x44;
-constexpr uint32_t  kStoreListBoxVisibleBit                = 0x2;
+const size_t    kControlBitFlagsOffset                 = acc::off::Todo(0x44);
+const uint32_t  kStoreListBoxVisibleBit                = acc::off::Todo(0x2);
 // The same bit_flags 0x02 is the general CSWGuiControl "shown" bit. The
 // StatusSummary popup lays out one label per notification type and sets
 // this bit only on the row(s) it actually displays — hidden template rows
 // (still reading "<CUSTOM0>" placeholders) leave it clear, with stale float
 // data in the adjacent flag fields (verified via PopupGeom dump 2026-06-03).
-constexpr uint32_t  kControlVisibleBit                     = 0x2;
+const uint32_t  kControlVisibleBit                     = acc::off::Todo(0x2);
 
 // CSWGuiStoreItemEntry.obj_id @ +0x1c4 — the client-side game-object
 // handle for the row's CSWSItem. Resolve via ClientToServerObjectId then
 // GetItemByGameObjectID.
-constexpr size_t    kStoreItemEntryObjIdOffset             = 0x1c4;
+const size_t    kStoreItemEntryObjIdOffset             = acc::off::Todo(0x1c4);
 
 // CSWSItem.bit_flags @ +0x288 (ulong), CSWSItem.stack_size @ +0x28c (ushort).
 // Verified two ways: (1) Ghidra struct DB names them at these offsets;
@@ -1074,9 +1118,9 @@ constexpr size_t    kStoreItemEntryObjIdOffset             = 0x1c4;
 //
 // Note: the prior values (0xfc / 0x108) read random data inside CSWSObject
 // and made every stock count appear as 1. Fixed 2026-05-22.
-constexpr size_t    kSwsItemStackSizeOffset                = 0x28c;
-constexpr size_t    kSwsItemBitFlagsOffset                 = 0x288;
-constexpr uint32_t  kSwsItemInfiniteStockBit               = 0x4;
+const size_t    kSwsItemStackSizeOffset                = acc::off::Todo(0x28c);
+const size_t    kSwsItemBitFlagsOffset                 = acc::off::Todo(0x288);
+const uint32_t  kSwsItemInfiniteStockBit               = acc::off::Todo(0x4);
 
 // CSWSItem.charges @ +0x258 (ulong), CSWSItem.max_charges @ +0x25c (ulong).
 // Both from the Ghidra struct DB (re/swkotor.exe.h CSWSItem body). Layout
@@ -1088,8 +1132,8 @@ constexpr uint32_t  kSwsItemInfiniteStockBit               = 0x4;
 // can't stack — e.g. some droid/usable items) has max_charges > 0; regular
 // gear and stackables leave both at 0, so this never collides with the
 // stack_size suffix.
-constexpr size_t    kSwsItemChargesOffset                  = 0x258;
-constexpr size_t    kSwsItemMaxChargesOffset               = 0x25c;
+const size_t    kSwsItemChargesOffset                  = acc::off::Todo(0x258);
+const size_t    kSwsItemMaxChargesOffset               = acc::off::Todo(0x25c);
 
 // CSWSItem.description_indentified is a CExoLocString. GetPropertyDescription
 // appends its text via CExoLocString::GetString, which returns the INLINE
@@ -1099,13 +1143,13 @@ constexpr size_t    kSwsItemMaxChargesOffset               = 0x25c;
 // description block we resolve the strref directly through the TLK
 // (LookupTlk), bypassing the bad inline copy. CExoLocString = { internal @0,
 // strref @0x4 } (decompile-verified at CExoLocString::GetString 005ea130).
-constexpr size_t    kItemDescriptionLocStringOffset = 0x270;
-constexpr size_t    kExoLocStringStrRefOffset       = 0x4;
+const size_t    kItemDescriptionLocStringOffset = acc::off::Todo(0x270);
+const size_t    kExoLocStringStrRefOffset       = acc::off::Todo(0x4);
 
 // CSWBaseItem fields, read off the pointer CSWItem::GetBaseItem returns (see
 // engine_offsets_addresses.h, where the CMP-verified derivation is recorded).
-constexpr size_t    kBaseItemWeaponTypeOffset        = 0x09;
-constexpr size_t    kBaseItemItemTypeOffset          = 0xac;
+const size_t    kBaseItemWeaponTypeOffset        = acc::off::Todo(0x09);
+const size_t    kBaseItemItemTypeOffset          = acc::off::Todo(0xac);
 
 // CSWGuiInGameJournal — quest journal panel (the "Aufträge" sub-screen).
 //
@@ -1129,11 +1173,11 @@ constexpr size_t    kBaseItemItemTypeOffset          = 0xac;
 // rebuild captures half-built rows (base CSWGuiObject vtable, unreadable text);
 // force PopulateItemListBox first. Swap (0x2a) repopulates synchronously inside
 // the handler — just invalidate the chain so it re-binds to the new list.
-constexpr size_t    kJournalItemsListBoxOffset             = 0x5c4;
-constexpr size_t    kJournalQuestItemsButtonOffset         = 0x8a4;
-constexpr size_t    kJournalSwapTextButtonOffset           = 0xa68;
-constexpr size_t    kJournalSortButtonOffset               = 0xc2c;
-constexpr size_t    kJournalExitButtonOffset               = 0xdf0;
+const size_t    kJournalItemsListBoxOffset             = acc::off::Todo(0x5c4);
+const size_t    kJournalQuestItemsButtonOffset         = acc::off::Todo(0x8a4);
+const size_t    kJournalSwapTextButtonOffset           = acc::off::Todo(0xa68);
+const size_t    kJournalSortButtonOffset               = acc::off::Todo(0xc2c);
+const size_t    kJournalExitButtonOffset               = acc::off::Todo(0xdf0);
 
 // CSWGuiInGameInventory — the "Inventar" sub-screen. Same embedded-button
 // shape as the journal above: every button is constructed in place at
@@ -1173,7 +1217,7 @@ constexpr size_t    kJournalExitButtonOffset               = 0xdf0;
 //    pointers spoke different item names after a filter change) so nothing
 //    dangles, but the chain keeps the OLD row count and row→item mapping.
 //    Force the repopulate, then invalidate.
-constexpr size_t    kInventoryItemListBoxOffset            = 0x564;
-constexpr size_t    kInventoryExitButtonOffset             = 0x1164;
-constexpr size_t    kInventoryUseItemButtonOffset          = 0x1328;
-constexpr size_t    kInventoryFilterButtonOffset           = 0x14ec;
+const size_t    kInventoryItemListBoxOffset            = acc::off::Todo(0x564);
+const size_t    kInventoryExitButtonOffset             = acc::off::Todo(0x1164);
+const size_t    kInventoryUseItemButtonOffset          = acc::off::Todo(0x1328);
+const size_t    kInventoryFilterButtonOffset           = acc::off::Todo(0x14ec);

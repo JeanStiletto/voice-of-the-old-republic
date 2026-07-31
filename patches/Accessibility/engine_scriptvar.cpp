@@ -1,7 +1,11 @@
 // Promoted from the throwaway scriptvar_poc — the in-save named-variable
-// primitive (player creature's CSWSScriptVarTable at +0x110). See the header
+// primitive (player creature's CSWSScriptVarTable at +0x100). See the header
 // and docs/llm-docs/persistence-scriptvartable.md for the model and the
 // end-to-end save/reload proof.
+//
+// (This line said +0x110 until 2026-07-31. That is precisely the Ghidra
+// mislabelling the block above kScriptVarTableOffset exists to warn about, so
+// the file was documenting the trap and repeating it in the same breath.)
 
 #include "engine_scriptvar.h"
 
@@ -13,6 +17,7 @@
 #include "engine_reads.h"    // ReadCExoString
 #include "log.h"
 #include "engine_rebase.h"
+#include "engine_offsets_select.h"
 
 namespace acc::engine {
 namespace {
@@ -23,7 +28,7 @@ const uintptr_t kAddrSetString = acc::addr::R(0x0059a8e0);  // __thiscall(table,
 const uintptr_t kAddrGetString = acc::addr::R(0x0059a590);  // __thiscall(table, out, name) -> out
 const uintptr_t kAddrSetInt = acc::addr::R(0x0059a6f0);  // __thiscall(table, name, value, journalArg)
 const uintptr_t kAddrGetInt = acc::addr::R(0x0059a530);  // __thiscall(table, name) -> int
-const uintptr_t kAddrExoCtorCStr = acc::addr::R(0x005e5a90);  // CExoString::CExoString(char*)
+const uintptr_t kAddrExoCtorCStr = acc::addr::Pick(0x005e5a90, 0x00733570);  // CExoString::CExoString(char*)
 const uintptr_t kAddrExoDtor = acc::addr::R(0x005e5c20);  // CExoString::~CExoString()
 
 // Named, string-capable CSWSScriptVarTable embedded in CSWSObject at +0x100.
@@ -34,7 +39,12 @@ const uintptr_t kAddrExoDtor = acc::addr::R(0x005e5c20);  // CExoString::~CExoSt
 // CSWSScriptVarTable::Save/LoadVarTable on &this->field54_0x100 and
 // CSWVarTable::Save/LoadVarTable on &this->script_var_table_2. Writing through
 // +0x110 with the string accessors derefs a bogus array pointer and faults.)
-constexpr uintptr_t kScriptVarTableOffset = 0x100;
+// A CSWSObject FIELD offset, despite the uintptr_t typing — so it takes an
+// acc::off marker, not an address one. KOTOR 2 value unknown: CSWSObject's
+// shallow fields shift +4 there, but +0x100 is far enough down the class that
+// the shift cannot be assumed to be the same. Verify before trusting saved
+// mod state on KOTOR 2.
+const size_t kScriptVarTableOffset = acc::off::Todo(0x100);
 
 typedef void  (__thiscall* PFN_SetString)(void*, void*, void*);
 // GetString returns CExoString by value → the hidden out-buffer pointer is the

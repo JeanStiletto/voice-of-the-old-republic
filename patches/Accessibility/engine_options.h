@@ -16,6 +16,8 @@
 
 #pragma once
 
+#include "engine_offsets_select.h"
+
 namespace acc::engine {
 
 // False on chain failure or SEH; out untouched.
@@ -41,11 +43,11 @@ bool ToggleMouseLook(bool& outNew);
 
 }  // namespace acc::engine
 
-constexpr unsigned int kClientAppOptionsOffset      = 0x4;
-constexpr unsigned int kClientOptionsBitFieldOffset = 0x8;
+const unsigned int kClientAppOptionsOffset      = acc::off::Todo(0x4);
+const unsigned int kClientOptionsBitFieldOffset = acc::off::Todo(0x8);
 constexpr unsigned int kClientOptionsMouseLookMask  = 0x2;
 
 // AutoPause options bitfield (CClientOptions::bit_flags_2). Action-menu pause
 // is bit 0xf; siblings live at 0xb..0x10 (see action-menu-and-combat.md).
-constexpr unsigned int kClientOptionsAutoPauseFlagsOffset    = 0x14;
+const unsigned int kClientOptionsAutoPauseFlagsOffset    = acc::off::Todo(0x14);
 constexpr unsigned int kClientOptionsActionMenuAutoPauseMask = 0x8000;

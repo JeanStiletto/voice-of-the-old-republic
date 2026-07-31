@@ -201,7 +201,7 @@ struct PanelPeekInfo {
     void                 (*refresh)(void* panel, void* focused);  // optional
 };
 
-constexpr PanelPeekInfo kPanels[] = {
+const PanelPeekInfo kPanels[] = {
     { acc::engine::PanelKind::InGameInventory,  0x0844, RefreshInventory  },  // CSWGuiInGameInventory.description_listbox
     { acc::engine::PanelKind::InGameJournal,    0x01a4, RefreshJournal    },  // CSWGuiInGameJournal.item_description_label (a CSWGuiListBox)
     { acc::engine::PanelKind::InGameAbilities,  kAbilitiesDescListBoxOffset, RefreshAbilities },  // LB_DESC (0x33bc); refresh repaints it for the focused entry
@@ -283,7 +283,7 @@ struct EquipSlotPeekInfo {
     size_t itemIdOffset;
 };
 
-constexpr EquipSlotPeekInfo kEquipSlotPeek[] = {
+const EquipSlotPeekInfo kEquipSlotPeek[] = {
     { kEquipBtnHeadId,    kEquipPanelHeadIdOffset         },
     { kEquipBtnImplantId, kEquipPanelImplantIdOffset      },
     { kEquipBtnBodyId,    kEquipPanelArmorIdOffset        },

@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "engine_offsets.h"
+#include "engine_offsets_select.h"
 
 namespace acc::guidance {
 
@@ -56,11 +57,11 @@ bool ComputePath(void* area,
 }  // namespace acc::guidance
 
 // CSWSArea nav graph offsets (memory: project_kotor_nav_graph_layout).
-constexpr size_t kAreaPathPointsCountOffset      = 0x238;
-constexpr size_t kAreaPathPointsPtrOffset        = 0x23c;
-constexpr size_t kAreaPathConnectionsCountOffset = 0x240;
-constexpr size_t kAreaPathConnectionsPtrOffset   = 0x244;
+const size_t kAreaPathPointsCountOffset      = acc::off::Todo(0x238);
+const size_t kAreaPathPointsPtrOffset        = acc::off::Todo(0x23c);
+const size_t kAreaPathConnectionsCountOffset = acc::off::Todo(0x240);
+const size_t kAreaPathConnectionsPtrOffset   = acc::off::Todo(0x244);
 
-constexpr size_t kPathPointStride                = 0x10;
-constexpr size_t kPathPointPositionOffset        = 0x00;  // Vector
-constexpr size_t kPathPointCsrOffset             = 0x0c;  // uint32
+const size_t kPathPointStride                = acc::off::Todo(0x10);
+const size_t kPathPointPositionOffset        = acc::off::Todo(0x00);  // Vector
+const size_t kPathPointCsrOffset             = acc::off::Todo(0x0c);  // uint32

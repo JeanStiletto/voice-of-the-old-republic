@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <cstdint>
 #include "engine_rebase.h"
+#include "engine_offsets_select.h"
 
 namespace acc::engine {
 
@@ -74,7 +75,9 @@ void LogManagerStack(void* mgr, const char* tag);
 }  // namespace acc::engine
 
 // *kAddrGuiManagerPtr; nullptr before engine creates it (early attach).
-constexpr uintptr_t kAddrGuiManagerPtr = 0x007A39F4;
+// KOTOR 2 value from the seeded kotor2_steam_aspyr.db (GUI_MANAGER_PTR); its
+// KOTOR 1 value matches this one exactly.
+const uintptr_t kAddrGuiManagerPtr = acc::addr::PickGlobal(0x007A39F4, 0x00A1B49C);
 
 // CSWGuiManager layout (Lane's SARIF):
 //   panels       @+0x88 — CExoArrayList<CSWGuiPanel*> (data 0x88, size 0x8c, cap 0x90)
@@ -82,10 +85,10 @@ constexpr uintptr_t kAddrGuiManagerPtr = 0x007A39F4;
 // PushModalPanel/PopModalPanel/GetPosInModalStack confirm modal_stack
 // is CSWGuiPanel** indexable like CExoArrayList. LogManagerStack
 // validates the offsets at runtime.
-constexpr size_t kMgrPanelsDataOffset      = 0x88;
-constexpr size_t kMgrPanelsSizeOffset      = 0x8c;
-constexpr size_t kMgrModalStackDataOffset  = 0x94;
-constexpr size_t kMgrModalStackSizeOffset  = 0x98;
+const size_t kMgrPanelsDataOffset      = acc::off::Todo(0x88);
+const size_t kMgrPanelsSizeOffset      = acc::off::Todo(0x8c);
+const size_t kMgrModalStackDataOffset  = acc::off::Todo(0x94);
+const size_t kMgrModalStackSizeOffset  = acc::off::Todo(0x98);
 
 // Cursor move + hover refresh in one call. Updates hover only;
 // panel.activeControl lags unless explicitly committed (PanelSetActive-

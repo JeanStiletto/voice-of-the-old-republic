@@ -14,6 +14,7 @@
 #include "menus_pending.h"    // QueueGalaxyInput
 #include "prism.h"
 #include "strings.h"
+#include "engine_offsets_select.h"
 
 using namespace acc::engine;
 
@@ -22,8 +23,8 @@ namespace acc::menus::galaxymap {
 namespace {
 
 // CSWGuiInGameGalaxyMap field offsets (Lane's gzf struct, SIZE 0x2550).
-constexpr size_t kPlanetNameLabelOffset  = 0x1ca4;  // LBL_PLANETNAME (CSWGuiLabel)
-constexpr size_t kDescriptionLabelOffset = 0x1de4;  // LBL_DESC       (CSWGuiLabel)
+const size_t kPlanetNameLabelOffset  = acc::off::Todo(0x1ca4);  // LBL_PLANETNAME (CSWGuiLabel)
+const size_t kDescriptionLabelOffset = acc::off::Todo(0x1de4);  // LBL_DESC       (CSWGuiLabel)
 
 // CSWGuiInGameGalaxyMap::HandleInputEvent @0x00695980. Its switch maps:
 //   0x27 / 0x2d → accept (run k_sup_galaxymap, HideGalaxyMapGui)  [travel]

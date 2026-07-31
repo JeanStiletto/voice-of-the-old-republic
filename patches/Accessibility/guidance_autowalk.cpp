@@ -17,6 +17,7 @@
                       // don't kill an in-flight autowalk silently.
 #include "log.h"
 #include "engine_rebase.h"
+#include "engine_offsets_select.h"
 
 namespace acc::guidance {
 
@@ -85,7 +86,9 @@ float HorizontalDistance(const Vector& a, const Vector& b) {
 }
 
 // CSWSObject.area_id — passed as objectId1 to AddMoveToPointAction.
-constexpr size_t kServerObjectAreaIdOffset = 0x8c;
+// KOTOR 2 value from the seeded kotor2_steam_aspyr.db; the whole CSWSObject
+// block shifts +4 there (see kServerObjectPositionOffset in engine_player.h).
+const size_t kServerObjectAreaIdOffset = acc::off::Pick(0x8c, 0x90);
 
 // CSWSCreature::ActionManager @0x004f8770 — primes the creature's action
 // subsystem for the kind of action about to be queued (mode 8 = move/walk,

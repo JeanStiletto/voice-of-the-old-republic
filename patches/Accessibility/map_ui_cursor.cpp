@@ -31,6 +31,7 @@
 #include "prism.h"
 #include "transitions.h"
 #include "room_topology.h"            // nav-graph region lookup — same source
+#include "engine_offsets_select.h"
                                       // the in-world walking adapter speaks
                                       // from, so cursor + walking agree
 
@@ -88,11 +89,11 @@ constexpr uint8_t kEdgeCuePauseExemptGroup = 0x0b;
 // (shared with the map-context cycle filter); the transform-field
 // offsets stay local because the inverse projection is unique to the
 // cursor.
-constexpr size_t kAreaMapOrientationOffset      = 0x10;
-constexpr size_t kAreaMapWorldUnitsPerXPxOffset = 0x18;
-constexpr size_t kAreaMapWorldUnitsPerYPxOffset = 0x1c;
-constexpr size_t kAreaMapWorldOriginXOffset     = 0x20;
-constexpr size_t kAreaMapWorldOriginYOffset     = 0x24;
+const size_t kAreaMapOrientationOffset      = acc::off::Todo(0x10);
+const size_t kAreaMapWorldUnitsPerXPxOffset = acc::off::Todo(0x18);
+const size_t kAreaMapWorldUnitsPerYPxOffset = acc::off::Todo(0x1c);
+const size_t kAreaMapWorldOriginXOffset     = acc::off::Todo(0x20);
+const size_t kAreaMapWorldOriginYOffset     = acc::off::Todo(0x24);
 
 // CSWGuiInGameMap.map_hider field offset. Derived from the struct layout
 // in swkotor.exe.h (CSWGuiInGameMap line 8548): after panel (CSWGuiPanel)
@@ -103,8 +104,8 @@ constexpr size_t kAreaMapWorldOriginYOffset     = 0x24;
 //   down_button       @ +0xc74  (size 0x1c4 → ends 0xe38)
 //   map_hider         @ +0xe38  (CSWGuiMapHider, size 0x248)
 // Then field11_0x238 inside map_hider holds the waypoint linked list.
-constexpr size_t kInGameMapHiderOffset                = 0xe38;
-constexpr size_t kMapHiderWaypointListOffset          = 0x238;  // CExoLinkedList
+const size_t kInGameMapHiderOffset                = acc::off::Todo(0xe38);
+const size_t kMapHiderWaypointListOffset          = acc::off::Todo(0x238);  // CExoLinkedList
 
 // CExoLinkedList layout (visible in engine_area / from Ghidra): the
 // list holds an internal pointer; the internal exposes head/tail and
@@ -116,7 +117,13 @@ constexpr size_t kMapHiderWaypointListOffset          = 0x238;  // CExoLinkedLis
 
 // CSWSWaypoint layout offsets (already used elsewhere — re-stated here
 // so the cursor code is self-documenting).
-constexpr size_t kWaypointPositionOffset = 0x90;
+// DERIVED, not database-verified: this is CSWSObject.Position read on a
+// waypoint (CSWSWaypoint derives from CSWSObject, and the value is identical to
+// kServerObjectPositionOffset), so it inherits that field's +4 KOTOR 2 shift.
+// The seeded database lists CSWSObject.Position but says nothing about
+// waypoints specifically. Confirm against a real K2 waypoint read before
+// trusting map-cursor output there.
+const size_t kWaypointPositionOffset = acc::off::Pick(0x90, 0x94);
 
 // GetAreaMap / IsWorldPointExplored entry points moved to engine_area.
 // engine_area.h carries the shared constants (kAddrCServerExoAppGetModule,

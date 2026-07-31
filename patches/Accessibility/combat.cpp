@@ -17,6 +17,7 @@
 #include "prism.h"
 #include "transitions.h"      // IsModuleLoadPending — gate during cutscene-load
 #include "unified_action_menu.h" // ForceDisarm — auto-close the queueing menu
+#include "engine_offsets_select.h"
                                  // when combat ends (experimental)
                               // transient (engine LYT loader use-after-free)
 
@@ -190,7 +191,7 @@ namespace {
 // screen isn't mounted. The earlier panels[]-walk only found this panel
 // when the user had the Messages screen open, missing every live
 // combat-log row in the process.
-constexpr size_t kCGuiInGameInGameMessagesOffset = 0x1c;
+const size_t kCGuiInGameInGameMessagesOffset = acc::off::Todo(0x1c);
 
 // Resolve the persistent combat-log panel via the CGuiInGame singleton.
 // nullptr until CGuiInGame is constructed (DLL attach / title screen).

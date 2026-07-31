@@ -22,6 +22,7 @@
                                 // are self-explanatory.
 #include "log.h"
 #include "engine_rebase.h"
+#include "engine_offsets_select.h"
 
 namespace {
 
@@ -44,20 +45,20 @@ namespace {
 //                                                        ClickInWorld)
 //   +0x4cc  int                   descriptor_count     (gate: must be
 //                                                        > 0 to dispatch)
-constexpr size_t kInternalLastTargetOffset          = 0x2b4;
-constexpr size_t kInternalLastClickedOnTargetOffset = 0x2b8;
-constexpr size_t kInternalHoverTargetOffset         = 0x4a4;
-constexpr size_t kInternalDescriptorArrayOffset     = 0x4c8;
-constexpr size_t kInternalDescriptorCountOffset     = 0x4cc;
+const size_t kInternalLastTargetOffset          = acc::off::Todo(0x2b4);
+const size_t kInternalLastClickedOnTargetOffset = acc::off::Todo(0x2b8);
+const size_t kInternalHoverTargetOffset         = acc::off::Todo(0x4a4);
+const size_t kInternalDescriptorArrayOffset     = acc::off::Todo(0x4c8);
+const size_t kInternalDescriptorCountOffset     = acc::off::Todo(0x4cc);
 
 // CSWGuiInterfaceAction layout (decompile of GetDefaultActions writes,
 // + struct in swkotor.exe.h line 5437). Stride 0x38 between entries.
-constexpr size_t kInterfaceActionLabelOffset    = 0x00;  // CExoString
-constexpr size_t kInterfaceActionIdOffset       = 0x08;  // ulong
-constexpr size_t kInterfaceActionFnOffset       = 0x0c;  // void*
-constexpr size_t kInterfaceActionTargetOffset   = 0x1c;  // ulong
-constexpr size_t kInterfaceActionIconOffset     = 0x20;  // CResRef (16B)
-constexpr size_t kInterfaceActionStride         = 0x38;
+const size_t kInterfaceActionLabelOffset    = acc::off::Todo(0x00);  // CExoString
+const size_t kInterfaceActionIdOffset       = acc::off::Todo(0x08);  // ulong
+const size_t kInterfaceActionFnOffset       = acc::off::Todo(0x0c);  // void*
+const size_t kInterfaceActionTargetOffset   = acc::off::Todo(0x1c);  // ulong
+const size_t kInterfaceActionIconOffset     = acc::off::Todo(0x20);  // CResRef (16B)
+const size_t kInterfaceActionStride         = acc::off::Todo(0x38);
 constexpr size_t kResRefMaxLen                  = 16;
 
 // Engine entry points. Addresses confirmed from XML symbol table

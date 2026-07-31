@@ -13,6 +13,7 @@
 #include "engine_player.h"    // GetPartyMembers, GetCameraPosition
 #include "log.h"
 #include "transitions.h"      // IsModuleLoadPending — gate during cutscene-load
+#include "engine_offsets_select.h"
                               // transient (engine LYT loader use-after-free)
 
 namespace acc::combat::special_watch {
@@ -58,7 +59,7 @@ constexpr DWORD kRepeatPeriodMs = 6000;
 //   target        @+0x14  ulong
 //   attack_feat?  @+0x84  ulong  (feat ID for Power Attack / Flurry /
 //                                 Critical Strike; 0 for raw attacks)
-constexpr size_t kActionAttackFeatOffset = 0x84;
+const size_t kActionAttackFeatOffset = acc::off::Todo(0x84);
 
 // Read CSWSCreature.combat_round @+0x9c8. SEH-guarded.
 void* ReadCombatRound(void* serverCreature) {

@@ -7,6 +7,7 @@
 #include "engine_panels.h"   // ResolveGuiInGame, IdentifyPanel, PanelKind
 #include "log.h"
 #include "engine_rebase.h"
+#include "engine_offsets_select.h"
 
 namespace acc::tutorial_popup {
 
@@ -34,11 +35,11 @@ using PFN_SetTutorialReason = void(__thiscall*)(void* box, int reason);
 const uintptr_t kAddrSetTutorialReason = acc::addr::R(0x006aa900);
 
 // CGuiInGame member: tutorial_box pointer @+0xa0.
-constexpr size_t kGuiTutorialBoxOffset = 0xa0;
+const size_t kGuiTutorialBoxOffset = acc::off::Todo(0xa0);
 // CSWGuiTutorialBox source-row byte @+0x994 (we set it to our reason so the
 // fingerprint's row lookup lands on an unmapped row; the synthetic flag wins
 // regardless, but keeps things tidy).
-constexpr size_t kTutorialBoxRowOffset = 0x994;
+const size_t kTutorialBoxRowOffset = acc::off::Todo(0x994);
 // Tutorial once-shown bitfield: byte at CGuiInGame + 0xba8 + (reason>>3),
 // bit (reason & 7). Clear before mounting so it fires every time.
 constexpr size_t kShownBitsBase = 0xba8;
@@ -56,7 +57,7 @@ using PFN_SetPauseState =
 const uintptr_t kAddrSetPauseState = acc::addr::R(0x004ae9a0);
 using PFN_SetSoundMode = void(__thiscall*)(void* self, int mode);
 const uintptr_t kAddrSetSoundMode = acc::addr::R(0x005d5e80);
-constexpr uintptr_t kAddrExoSoundPtr    = 0x007a39ec;
+const uintptr_t kAddrExoSoundPtr    = acc::addr::TodoGlobal(0x007a39ec);
 constexpr unsigned char kPauseBitMenu   = 0x02;
 
 // ---- State ----

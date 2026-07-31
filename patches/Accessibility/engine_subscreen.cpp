@@ -52,7 +52,7 @@ using PFN_SetSoundMode = void(__thiscall *)(void* self, int mode);
 
 // ExoSound global @ 0x007a39ec. Pointer to the CExoSoundInternal
 // singleton. Dereference to get the `this` for SetSoundMode.
-constexpr uintptr_t kAddrExoSoundPtr = 0x007a39ec;
+const uintptr_t kAddrExoSoundPtr = acc::addr::TodoGlobal(0x007a39ec);
 
 // SetPauseState's first arg is the bit MASK itself (engine does
 // `byte | mask` / `byte & ~mask`), NOT a bit index. Bit 0x02 is the

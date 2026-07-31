@@ -17,6 +17,7 @@
 #include "strings.h"
 #include "prism.h"
 #include "transitions.h"      // IsModuleLoadPending — gate during cutscene-load
+#include "engine_offsets_select.h"
                               // transient (engine LYT loader use-after-free)
 
 namespace acc::combat::query {
@@ -49,9 +50,9 @@ typedef int (__thiscall* PFN_GetIntThiscall)(void* this_);
 // 0x004ed310 with param_1=1) gates internally on stats[+0x6c] (is_pc)
 // and returns garbage for any non-PC creature, which is why Tab to
 // Carth used to read "60" (random obj.e0 base) instead of "50/66".
-constexpr size_t kClientCreatureLvlUpStatsOffset = 0x2f8;
-constexpr size_t kClientStatsCurrentHpOffset     = 0x4c;  // pregame_current_hp
-constexpr size_t kClientStatsMaxHpOffset         = 0x4e;  // max_hit_points
+const size_t kClientCreatureLvlUpStatsOffset = acc::off::Todo(0x2f8);
+const size_t kClientStatsCurrentHpOffset     = acc::off::Todo(0x4c);  // pregame_current_hp
+const size_t kClientStatsMaxHpOffset         = acc::off::Todo(0x4e);  // max_hit_points
 
 int ReadCurrentHpFromClient(void* clientLeader) {
     if (!clientLeader) return -1;

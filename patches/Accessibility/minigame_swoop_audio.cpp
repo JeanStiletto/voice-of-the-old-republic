@@ -28,6 +28,7 @@
 #include "minigame_aim.h"     // shared offset read/write + magnetism (the
                               //     turret aim-assist port — lateral steering)
 #include "log.h"
+#include "engine_offsets_select.h"
 
 namespace acc::swoop_race {
 
@@ -50,8 +51,8 @@ using acc::minigame::ReadFollowerPosition;
 
 // CSWMGObstacle (line ~17456 in re/swkotor.exe.h) — AurObject pointer
 // at +0x60, then world position via the AurObject's Gob at +0x78.
-constexpr size_t kObstacleAurObjectOffset       = 0x60;
-constexpr size_t kAurObjectPositionOffset       = 0x78;
+const size_t kObstacleAurObjectOffset       = acc::off::Todo(0x60);
+const size_t kAurObjectPositionOffset       = acc::off::Todo(0x78);
 
 // ----- Global minigame-object-array layout (Ghidra-confirmed 2026-05-24).
 //
@@ -80,7 +81,7 @@ constexpr size_t kAurObjectPositionOffset       = 0x78;
 // non-null slot, keep the non-null returns. We make two such passes
 // per tick — one for obstacles (rocks/debris), one for enemies
 // (accelerator pads).
-constexpr size_t kMgoArrayObjectsOffset         = 0x4;
+const size_t kMgoArrayObjectsOffset         = acc::off::Todo(0x4);
 constexpr int    kMgoArraySlotCount             = 255;
 constexpr size_t kVtableSlotAsObstacle          = 0x20;
 constexpr size_t kVtableSlotAsEnemy             = 0x1c;
@@ -175,8 +176,8 @@ constexpr float       kAccelpadCueRangeM        = 300.0f;
 // at player.sphere_radius + pad.sphere_radius (swoop-accelpad-hit-model.md), so
 // we read BOTH live and sum them for the CROSS scoring rather than hard-coding a
 // per-track literal. speed gates the steering magnet off during the start hold.
-constexpr size_t kFollowerSphereRadiusOffset    = 0x84;  // float
-constexpr size_t kFollowerSpeedOffset           = 0x98;  // float
+const size_t kFollowerSphereRadiusOffset    = acc::off::Todo(0x84);  // float
+const size_t kFollowerSpeedOffset           = acc::off::Todo(0x98);  // float
 
 // ----- Lateral-pan diagnostic (added 2026-06-20) -----
 //
@@ -196,8 +197,8 @@ constexpr size_t kFollowerSpeedOffset           = 0x98;  // float
 // Manaan 5.0) in world units; world-X tracks tunnel-X 1:1 (lane ±20).
 // CSWMiniGame.player at +0x24; CSWMiniPlayer.offset (tunnel lane coord,
 // x = lateral) at +0x1c4.
-constexpr size_t kMiniGamePlayerOffset          = 0x24;
-constexpr size_t kMiniPlayerOffsetVectorOffset  = 0x1c4;
+const size_t kMiniGamePlayerOffset          = acc::off::Todo(0x24);
+const size_t kMiniPlayerOffsetVectorOffset  = acc::off::Todo(0x1c4);
 constexpr float  kRadToDeg                       = 57.2957795f;
 
 // ============================================================================

@@ -11,6 +11,7 @@
 #include "log.h"            // seam-filter telemetry
 #include "strings.h"        // door state suffix lookup (DoorOpen/DoorLocked)
 #include "engine_rebase.h"
+#include "engine_offsets_select.h"
 
 namespace acc::engine {
 
@@ -773,12 +774,12 @@ bool IsDoorStatic(void* serverDoor) {
 // SEH-guarded. Offsets: gui_in_game +0x40, fade +0x6c, panel.alpha +0x4c,
 // input_class +0x9c, area_not_ready +0x288.
 bool MaybeDrivePassiveSelection() {
-    constexpr size_t kClientInternalOffset = 0x4;    // CClientExoApp -> internal
-    constexpr size_t kGuiInGameOffset      = 0x40;   // internal.gui_in_game
-    constexpr size_t kFadeOffset           = 0x6c;   // CGuiInGame.fade
-    constexpr size_t kFadeAlphaOffset      = 0x4c;   // CSWGuiFade.panel.alpha
-    constexpr size_t kInputClassOffset     = 0x9c;   // internal.input_class
-    constexpr size_t kAreaNotReadyOffset   = 0x288;  // internal.area_not_ready
+    const size_t kClientInternalOffset = acc::off::Todo(0x4);    // CClientExoApp -> internal
+    const size_t kGuiInGameOffset      = acc::off::Todo(0x40);   // internal.gui_in_game
+    const size_t kFadeOffset           = acc::off::Todo(0x6c);   // CGuiInGame.fade
+    const size_t kFadeAlphaOffset      = acc::off::Todo(0x4c);   // CSWGuiFade.panel.alpha
+    const size_t kInputClassOffset     = acc::off::Todo(0x9c);   // internal.input_class
+    const size_t kAreaNotReadyOffset   = acc::off::Todo(0x288);  // internal.area_not_ready
     // These two R() lookups re-run every tick and A12 flagged them as
     // recomputed work. Measured and deliberately LEFT AS IS: R() is a binary
     // search over a 223-entry sorted table, so this is ~16 comparisons a

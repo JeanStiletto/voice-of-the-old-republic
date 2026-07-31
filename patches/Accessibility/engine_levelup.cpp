@@ -10,6 +10,7 @@
                               // the action menu, WITHOUT opening a sub-screen
 #include "log.h"
 #include "engine_rebase.h"
+#include "engine_offsets_select.h"
 
 namespace acc::engine_levelup {
 
@@ -62,7 +63,7 @@ typedef uint32_t (__thiscall* PFN_CanLevelUp)(void* this_);
 
 // CGuiInGame.in_game_character — slot @+0x14 per swkotor.exe.h:10225,
 // matching the panel-kind classifier in engine_panels.cpp.
-constexpr size_t kCGuiInGameCharacterSlotOffset = 0x14;
+const size_t kCGuiInGameCharacterSlotOffset = acc::off::Todo(0x14);
 
 typedef uint32_t (__thiscall* PFN_ShowLevelUpGUI)(void* this_, int param_1);
 typedef void     (__thiscall* PFN_SetLevelUpMode)(void* this_, int mode);

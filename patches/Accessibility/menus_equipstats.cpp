@@ -44,7 +44,7 @@ struct EquipStatRowSpec {
     int              sortCy;
 };
 
-constexpr EquipStatRowSpec k_specs[] = {
+const EquipStatRowSpec k_specs[] = {
     { kEquipPanelHpLabelOffset,
       acc::strings::Id::FmtEquipVitality, acc::strings::Id::Count_,
       0,                                              10000 },

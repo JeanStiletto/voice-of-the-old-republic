@@ -36,6 +36,7 @@
 #include "prism.h"
 #include "engine_player.h"   // GetPlayerPosition — world-live check
 #include "transitions.h"     // NotifyExternalLoadStarting — load-latch arm
+#include "engine_offsets_select.h"
 
 using namespace acc::engine;  // IdentifyPanel, PanelKind, kInput*, etc.
 
@@ -1226,7 +1227,7 @@ constexpr int kScriptSelectBtnWaehlen    = 4;
 // fills it from aiscripts.2da, one 8-byte entry per row indexed by the row's
 // control id: +0 = DESCRIPTION_STRREF, +4 = AISTATE. (Decompiled
 // CSWGuiScriptSelect ctor @0x006ea000 / OnScriptSelected @0x006e9e70.)
-constexpr size_t kScriptSelectOptionTableOffset = 0x64;
+const size_t kScriptSelectOptionTableOffset = acc::off::Todo(0x64);
 constexpr size_t kScriptSelectOptionStride      = 8;
 constexpr size_t kScriptSelectOptionDescOffset  = 0;
 }  // namespace

@@ -13,6 +13,7 @@
 #include "engine_offsets.h"
 #include "engine_reads.h"
 #include "strings.h"
+#include "engine_offsets_select.h"
 
 namespace acc::menus::charsheet {
 
@@ -84,7 +85,7 @@ constexpr size_t kCharSheetSldAlign    = 0x55c4;
 // creature pointer; the +0x59e4 region holds party_count / selected index,
 // and SetStats re-fetches the creature fresh each call). lbl_force_stat lives
 // at panel + kCharSheetLblFp; bit_flags at +kControlBitFlagsOffset (0x44).
-constexpr uint32_t kControlShownBit = 0x2;
+const uint32_t kControlShownBit = acc::off::Todo(0x2);
 
 // True iff the character currently shown on this sheet is a Force user.
 // Reads the engine's own decision: lbl_force_stat's "shown" bit (0x02 of

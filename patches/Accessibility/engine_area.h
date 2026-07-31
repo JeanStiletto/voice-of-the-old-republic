@@ -34,6 +34,7 @@
 
 #include "engine_offsets.h"  // Vector
 #include "engine_rebase.h"
+#include "engine_offsets_select.h"
 
 namespace acc::engine {
 
@@ -370,8 +371,8 @@ const uintptr_t kAddrCSWSAreaGetRoom = acc::addr::R(0x004BB600);
 
 // Handle-resolution chain (server-side master object table). The
 // AppManager → CServerExoApp hop itself is engine_app.h's GetServerApp().
-const uintptr_t kAddrCServerExoAppGetObjectArray = acc::addr::R(0x004AED70);
-const uintptr_t kAddrCGameObjectArrayGetGameObject = acc::addr::R(0x004D8230);
+const uintptr_t kAddrCServerExoAppGetObjectArray = acc::addr::Pick(0x004AED70, 0x0051C080);
+const uintptr_t kAddrCGameObjectArrayGetGameObject = acc::addr::Pick(0x004D8230, 0x0053DFB0);
 
 // Client-side resolver: CClientExoApp::GetGameObject(ulong) -> CSWCObject*.
 // Direct one-call wrapper around the client-side game object array (the
@@ -383,7 +384,7 @@ const uintptr_t kAddrCClientExoAppGetGameObject = acc::addr::R(0x005ED580);
 
 // Map + fog-of-war chain.
 const uintptr_t kAddrCServerExoAppGetModule = acc::addr::R(0x004AE6B0);
-constexpr size_t    kModuleAreaMapOffset                 = 0x218;
+const size_t    kModuleAreaMapOffset                 = acc::off::Todo(0x218);
 const uintptr_t kAddrCSWSAreaMapIsWorldPointExplored = acc::addr::R(0x00579210);
 // __thiscall(this, Vector by value). Returns float10 via ST(0).
 // BYTES_PURGED=12 (callee pops 3-float Vector).
@@ -393,10 +394,10 @@ const uintptr_t kAddrCSWSAreaMapGetMapRotateCCW = acc::addr::R(0x00578ED0);
 // truncated; world-units-per-map-pixel from the .are Map calibration.
 // map_ui_cursor keeps a local copy of the transform fields (+0x18..+0x24)
 // for its cursor projection.
-constexpr size_t kAreaMapResXOffset        = 0x8;
-constexpr size_t kAreaMapResYOffset        = 0xc;
-constexpr size_t kAreaMapWorldPerPxXOffset = 0x18;
-constexpr size_t kAreaMapWorldPerPxYOffset = 0x1c;
+const size_t kAreaMapResXOffset        = acc::off::Todo(0x8);
+const size_t kAreaMapResYOffset        = acc::off::Todo(0xc);
+const size_t kAreaMapWorldPerPxXOffset = acc::off::Todo(0x18);
+const size_t kAreaMapWorldPerPxYOffset = acc::off::Todo(0x1c);
 
 // CSWCMapPin allocation chain. operator_new at 0x43e1b0 is matched to
 // the _free that CExoString::operator= and ~CSWCMapPin invoke.
@@ -407,56 +408,67 @@ const uintptr_t kAddrCSWCAreaAddMapPin = acc::addr::R(0x00606D90);  // __thiscal
 
 // Server→client back-pointer (CSWSArea ends at +0x2d0 preceded by
 // CPathfindInformation* at +0x2cc).
-constexpr size_t kAreaClientAreaBackOffset = 0x2d0;
+const size_t kAreaClientAreaBackOffset = acc::off::Todo(0x2d0);
 
 // CSWCArea.map_pins (pointer array; 4-byte stride confirmed via
 // AddMapPin / ClearAllMapPins / GetMapPin decomps).
-constexpr size_t kClientAreaMapPinsOffset       = 0x1c4;
-constexpr size_t kClientAreaMapPinsCountOffset  = 0x1c8;
-constexpr size_t kClientAreaMapPinsCapOffset    = 0x1cc;
+const size_t kClientAreaMapPinsOffset       = acc::off::Todo(0x1c4);
+const size_t kClientAreaMapPinsCountOffset  = acc::off::Todo(0x1c8);
+const size_t kClientAreaMapPinsCapOffset    = acc::off::Todo(0x1cc);
 
-constexpr size_t kMapPinPositionOffset = 0x24;   // Vector (CGameObject base)
-constexpr size_t kMapPinEnabledOffset  = 0xfc;   // int
-constexpr size_t kMapPinNoteTextOffset = 0x100;  // CExoString
+const size_t kMapPinPositionOffset = acc::off::Todo(0x24);   // Vector (CGameObject base)
+const size_t kMapPinEnabledOffset  = acc::off::Todo(0xfc);   // int
+const size_t kMapPinNoteTextOffset = acc::off::Todo(0x100);  // CExoString
 // Literal (kCExoStringStride is forward-declared below) — every
 // CExoString in this header pairs strref at +0x4.
-constexpr size_t kMapPinNoteStrrefOffset = kMapPinNoteTextOffset + 0x4;
-constexpr size_t kMapPinFlagsOffset    = 0x108;  // uint32 reference-number / quest bitfield
-constexpr size_t kMapPinSubtypeOffset  = 0x10c;  // int (1 = user-placed note pin)
+// const, not constexpr: derived from kMapPinNoteTextOffset, which is now
+// resolved per game at load time. The +0x4 is the strref's position INSIDE the
+// CExoString, so it rides along with whatever the text offset turns out to be
+// and needs no marker of its own.
+const size_t kMapPinNoteStrrefOffset = kMapPinNoteTextOffset + 0x4;
+const size_t kMapPinFlagsOffset    = acc::off::Todo(0x108);  // uint32 reference-number / quest bitfield
+const size_t kMapPinSubtypeOffset  = acc::off::Todo(0x10c);  // int (1 = user-placed note pin)
 
 // CSWSArea offsets. Lane's SARIF (CSWSArea SIZE=0x2d4).
-constexpr size_t kAreaGameObjectsOffset      = 0x190;
-constexpr size_t kAreaGameObjectCountOffset  = 0x194;
-constexpr size_t kAreaRoomsOffset            = 0x230;  // CSWSRoom* (deref first)
-constexpr size_t kAreaNameLocOffset          = 0x150;  // CExoLocString
-constexpr size_t kAreaTagOffset              = 0x158;  // CExoString fallback
-constexpr size_t kAreaRoomNamesOffset        = 0x25c;  // CExoString*
-constexpr size_t kAreaRoomCountOffset        = 0x268;  // ulong
-constexpr size_t kCExoStringStride           = 0x8;
+const size_t kAreaGameObjectsOffset      = acc::off::Todo(0x190);
+const size_t kAreaGameObjectCountOffset  = acc::off::Todo(0x194);
+const size_t kAreaRoomsOffset            = acc::off::Todo(0x230);  // CSWSRoom* (deref first)
+const size_t kAreaNameLocOffset          = acc::off::Todo(0x150);  // CExoLocString
+const size_t kAreaTagOffset              = acc::off::Todo(0x158);  // CExoString fallback
+const size_t kAreaRoomNamesOffset        = acc::off::Todo(0x25c);  // CExoString*
+const size_t kAreaRoomCountOffset        = acc::off::Todo(0x268);  // ulong
+const size_t kCExoStringStride           = acc::off::Todo(0x8);
 
-constexpr size_t kRoomStride = 0x4c;
+const size_t kRoomStride = acc::off::Todo(0x4c);
 
 // CSWSObject base. kServerObjectPositionOffset (0x90) lives in engine_player.h.
-constexpr size_t kObjectKindOffset = 0x8;   // uint8 GAME_OBJECT_TYPES
-constexpr size_t kObjectTagOffset  = 0x18;  // CExoString fallback id
+// CGameObject.ObjectType — identical in both games (seeded
+// kotor2_steam_aspyr.db); CGameObject is the shallow root that KOTOR 2 did not
+// grow. Still a uint8 read, not a wider one — see the kind-enum note.
+const size_t kObjectKindOffset = acc::off::Same(0x8);   // uint8 GAME_OBJECT_TYPES
+const size_t kObjectTagOffset  = acc::off::Todo(0x18);  // CExoString fallback id
 
 // Per-subclass localized-name offsets (CExoLocString unless noted).
-constexpr size_t kDoorLocNameOffset            = 0x39c;
-constexpr size_t kDoorGenericTypeOffset        = 0x2a1;  // byte → genericdoors.2da row
-constexpr size_t kDoorLockedOffset             = 0x2c4;  // undefined4 (bool)
-constexpr size_t kDoorOpenStateOffset          = 0x2cc;  // byte
-constexpr size_t kDoorDescriptionOffset        = 0x3a4;
-constexpr size_t kDoorStaticOffset             = 0x3c0;  // undefined4 (UTD Static flag)
-constexpr size_t kDoorTransitionDestOffset     = 0x3c8;
-constexpr size_t kCreatureStatsPtrOffset       = 0xa74;  // CSWSCreatureStats*
-constexpr size_t kCreatureStatsFirstNameOffset = 0x14;
-constexpr size_t kPlaceableLocNameOffset       = 0x228;
-constexpr size_t kItemLocNameOffset            = 0x280;
-constexpr size_t kWaypointLocNameOffset        = 0x238;
-constexpr size_t kTriggerLocNameOffset         = 0x228;
+const size_t kDoorLocNameOffset            = acc::off::Todo(0x39c);
+const size_t kDoorGenericTypeOffset        = acc::off::Todo(0x2a1);  // byte → genericdoors.2da row
+const size_t kDoorLockedOffset             = acc::off::Todo(0x2c4);  // undefined4 (bool)
+const size_t kDoorOpenStateOffset          = acc::off::Todo(0x2cc);  // byte
+const size_t kDoorDescriptionOffset        = acc::off::Todo(0x3a4);
+const size_t kDoorStaticOffset             = acc::off::Todo(0x3c0);  // undefined4 (UTD Static flag)
+const size_t kDoorTransitionDestOffset     = acc::off::Todo(0x3c8);
+// DUPLICATE of kCreatureStatsPointerOffset in engine_offsets_fields.h — same
+// CSWSCreature.creature_stats field under a second name. Kept in sync by hand;
+// worth collapsing to one declaration. KOTOR 2 value from the seeded
+// kotor2_steam_aspyr.db.
+const size_t kCreatureStatsPtrOffset       = acc::off::Pick(0xa74, 0x1198);  // CSWSCreatureStats*
+const size_t kCreatureStatsFirstNameOffset = acc::off::Todo(0x14);
+const size_t kPlaceableLocNameOffset       = acc::off::Todo(0x228);
+const size_t kItemLocNameOffset            = acc::off::Todo(0x280);
+const size_t kWaypointLocNameOffset        = acc::off::Todo(0x238);
+const size_t kTriggerLocNameOffset         = acc::off::Todo(0x228);
 
 // Pillar 4 sub-state.
-constexpr size_t kPlaceableUsableOffset        = 0x328;  // "Useable" GFF flag
+const size_t kPlaceableUsableOffset        = acc::off::Todo(0x328);  // "Useable" GFF flag
 // "HasInventory" GFF flag. Decompiling CSWSPlaceable::LoadPlaceable shows
 // ReadFieldBYTE("HasInventory") is stored to +0x324 (the Ghidra struct
 // mislabels +0x334 as has_inventory — that field is something else and
@@ -464,27 +476,27 @@ constexpr size_t kPlaceableUsableOffset        = 0x328;  // "Useable" GFF flag
 // gates the container-GUI open on this same +0x324 != 0, then derefs
 // item_repository, confirming it as the authoritative "is a lootable
 // container" flag.
-constexpr size_t kPlaceableHasInventoryOffset  = 0x324;
+const size_t kPlaceableHasInventoryOffset  = acc::off::Todo(0x324);
 // CSWSPlaceable.item_repository @+0x36c → CItemRepository. The repo's
 // live item count sits at +0x10 (items_list @+0xc). Confirmed by
 // decompiling CItemRepository::GetItemInRepository / ItemListGetItem /
 // CalculateContentsWeight — all loop `i < this->item_count` over
 // `items_list[i]`. Reading the count is a single dword load, so the
 // emptiness test is O(1) (no list walk, no per-item handle resolve).
-constexpr size_t kPlaceableItemRepositoryOffset = 0x36c;
-constexpr size_t kItemRepositoryItemCountOffset = 0x10;
-constexpr size_t kWaypointHasMapNoteOffset     = 0x228;
+const size_t kPlaceableItemRepositoryOffset = acc::off::Todo(0x36c);
+const size_t kItemRepositoryItemCountOffset = acc::off::Todo(0x10);
+const size_t kWaypointHasMapNoteOffset     = acc::off::Todo(0x228);
 // CSWSTrigger.transition_destination — a CExoLocString holding the
 // human-readable "to X" exit label (e.g. "Zur Oberstadt"). Read as a
 // LocString by GetObjectName's Trigger case. IsTransitionTrigger tests
 // presence structurally: inline text pointer at +0 (with length at +4),
 // else the +4 slot is the TLK strref, where the GFF sentinel 0xFFFFFFFF
 // means "no destination" (trap / banter / script trigger).
-constexpr size_t kTriggerTransitionDestOffset  = 0x30c;  // CExoLocString
+const size_t kTriggerTransitionDestOffset  = acc::off::Todo(0x30c);  // CExoLocString
 
 // BioWare-authored map-note labels (CSWSWaypoint SIZE=0x240).
-constexpr size_t kWaypointMapNoteEnabledOffset = 0x22c;
-constexpr size_t kWaypointMapNoteLocOffset     = 0x230;
+const size_t kWaypointMapNoteEnabledOffset = acc::off::Todo(0x22c);
+const size_t kWaypointMapNoteLocOffset     = acc::off::Todo(0x230);
 
 // Trap ("mine") detected-by bookkeeping — engine model in
 // docs/llm-docs/mine-trap-model.md. Each trappable kind carries a
@@ -492,21 +504,21 @@ constexpr size_t kWaypointMapNoteLocOffset     = 0x230;
 // (party detection adds every party member at once). Layout at the given
 // offset: data pointer at +0, count at +4. Offsets verified against the
 // CSWSCreature::UpdateMineCheck decompile (the engine's own consumer).
-constexpr size_t kTriggerTrapDetectedListOffset   = 0x2a8;
-constexpr size_t kTriggerIsTrapOffset             = 0x2bc;  // undefined4, != 0 on mines
+const size_t kTriggerTrapDetectedListOffset   = acc::off::Todo(0x2a8);
+const size_t kTriggerIsTrapOffset             = acc::off::Todo(0x2bc);  // undefined4, != 0 on mines
 
 // CSWSTrigger footprint polygon (world-space Vector array). Offsets from
 // the Ghidra CSWSTrigger struct, anchored by the verified neighbours
 // localized_name @+0x228 and the trap fields @+0x2a8/0x2bc above.
-constexpr size_t kTriggerGeometryCountOffset      = 0x284;  // int
-constexpr size_t kTriggerGeometryOffset           = 0x288;  // Vector*
+const size_t kTriggerGeometryCountOffset      = acc::off::Todo(0x284);  // int
+const size_t kTriggerGeometryOffset           = acc::off::Todo(0x288);  // Vector*
 
 // Fixed NWScript local-variable table (CSWVarTable: ulong[3] boolean bits
 // + byte[8] numbers) embedded at CSWSObject+0x110. This is the mislabeled
 // `script_var_table_2` — see persistence-scriptvartable.md.
-constexpr size_t kObjectVarTableOffset            = 0x110;
-constexpr size_t kDoorTrapDetectedListOffset      = 0x2dc;
-constexpr size_t kPlaceableTrapDetectedListOffset = 0x318;
+const size_t kObjectVarTableOffset            = acc::off::Todo(0x110);
+const size_t kDoorTrapDetectedListOffset      = acc::off::Todo(0x2dc);
+const size_t kPlaceableTrapDetectedListOffset = acc::off::Todo(0x318);
 
 // Walkmesh wall-edge extraction. Pillar 1 foundation.
 //
@@ -527,14 +539,14 @@ constexpr size_t kPlaceableTrapDetectedListOffset = 0x318;
 // CSWCollisionMesh::LocalToWorld @0x596aa0 __thiscall(this, out, local).
 // BYTES_PURGED=8. Short-circuits when world_coords != 0; we always call.
 
-constexpr size_t kRoomSurfaceMeshOffset            = 0x3c;
-constexpr size_t kCollisionMeshVerticesOffset      = 0x54;
-constexpr size_t kCollisionMeshFaceCountOffset     = 0x58;
-constexpr size_t kCollisionMeshFacesOffset         = 0x60;
-constexpr size_t kCollisionMeshMaterialsOffset     = 0x64;
-constexpr size_t kSurfaceMeshAdjacenciesOffset     = 0x88;
+const size_t kRoomSurfaceMeshOffset            = acc::off::Todo(0x3c);
+const size_t kCollisionMeshVerticesOffset      = acc::off::Todo(0x54);
+const size_t kCollisionMeshFaceCountOffset     = acc::off::Todo(0x58);
+const size_t kCollisionMeshFacesOffset         = acc::off::Todo(0x60);
+const size_t kCollisionMeshMaterialsOffset     = acc::off::Todo(0x64);
+const size_t kSurfaceMeshAdjacenciesOffset     = acc::off::Todo(0x88);
 
-constexpr size_t kWalkmeshFaceStride               = 0xc;   // 3 × ulong
+const size_t kWalkmeshFaceStride               = acc::off::Todo(0xc);   // 3 × ulong
 
 const uintptr_t kAddrCollisionMeshLocalToWorld = acc::addr::R(0x00596aa0);
 

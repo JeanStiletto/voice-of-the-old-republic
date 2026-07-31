@@ -30,6 +30,7 @@
 #include <cstdint>
 
 #include "engine_offsets.h"  // Vector
+#include "engine_offsets_select.h"
 
 namespace acc::minigame {
 
@@ -51,7 +52,7 @@ bool     SafeReadVector(void* base, size_t off, Vector& out);
 // CClientExoAppInternal holds the minigame object array (obstacles, accelerator
 // pads, track followers) at offset 0. Resolution walks
 // AppManager -> CClientExoApp -> internal -> array.
-constexpr size_t kClientInternalMgoArrayOffset = 0x0;
+const size_t kClientInternalMgoArrayOffset = acc::off::Todo(0x0);
 
 // Returns the minigame object array, or nullptr if any link of the chain is
 // null or faults (i.e. no minigame is live).
@@ -68,7 +69,7 @@ void* CallAsCast(void* obj, size_t vtableSlotOffset);
 // caller-supplied Vector. Reading the follower's own transform is not
 // equivalent — the model is what the engine actually renders and what the
 // spatial cues must track.
-constexpr size_t kTrackFollowerModelsDataOffset = 0x68;
+const size_t kTrackFollowerModelsDataOffset = acc::off::Todo(0x68);
 constexpr size_t kModelVtableSlotGetPosition    = 0x64;
 
 // World position of `follower`'s first model. False (out untouched) if the
@@ -77,7 +78,7 @@ bool ReadFollowerPosition(void* follower, Vector& out);
 
 // CSWMiniPlayer.offset — the per-tick-integrated aim/lane field. See the file
 // header for the per-game interpretation of its components.
-constexpr size_t kMiniPlayerOffsetVectorOffset = 0x1c4;
+const size_t kMiniPlayerOffsetVectorOffset = acc::off::Todo(0x1c4);
 
 // Read / write the whole offset Vector on a CSWMiniPlayer `player` pointer.
 // Read returns false (and leaves `out` untouched) on a null/faulting player;

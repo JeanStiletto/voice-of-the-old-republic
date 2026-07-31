@@ -10,6 +10,8 @@
                              // GetPlayerPosition + chain constants
 #include "hotkeys.h"         // IsForegroundGame — guard only when focused
 #include "log.h"
+#include "engine_offsets_select.h"
+#include "engine_rebase.h"
 
 #pragma comment(lib, "user32.lib")
 
@@ -20,10 +22,10 @@ namespace {
 constexpr float kRadToDeg = 57.29577951308232f;
 
 // Engine globals (decompiled, see UpdateCamera @0x5f5e10).
-constexpr uintptr_t kAddrScreenFramePercent   = 0x007A2444;  // float
-constexpr uintptr_t kAddrRightClickHeld       = 0x008338F0;  // int
-constexpr size_t    kGuiMouseXOffset          = 0x00;        // ulong
-constexpr size_t    kGuiViewportWidthOffset   = 0x6C;        // int16
+const uintptr_t kAddrScreenFramePercent   = acc::addr::TodoGlobal(0x007A2444);  // float
+const uintptr_t kAddrRightClickHeld       = acc::addr::TodoGlobal(0x008338F0);  // int
+const size_t    kGuiMouseXOffset          = acc::off::Todo(0x00);        // ulong
+const size_t    kGuiViewportWidthOffset   = acc::off::Todo(0x6C);        // int16
 
 // Cursor-edge guard (Option A): after a load the cursor parks frozen at the
 // screen border (mouse_x=0) and the post-load input pipeline ignores

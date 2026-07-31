@@ -12,13 +12,14 @@
 #include "engine_player.h"
 #include "hotkeys.h"
 #include "log.h"
+#include "engine_offsets_select.h"
 
 namespace acc::probe_camera_state {
 
 namespace {
 
-constexpr size_t kCSWCModuleCameraYawOffset       = 0x98;
-constexpr size_t kCSWPlayerControlCameraOffset    = 0x08;  // CAurCamera*
+const size_t kCSWCModuleCameraYawOffset       = acc::off::Todo(0x98);
+const size_t kCSWPlayerControlCameraOffset    = acc::off::Todo(0x08);  // CAurCamera*
 // Candidate offsets inside the camera object (CSWCameraOnAStick is the
 // gameplay orbital camera; field32_0x90 was referenced in
 // Control_UpdateCameraDesiredOrientation as a yaw offset).

@@ -32,6 +32,7 @@
                               //     FmtSwoopRaceGear
 #include "minigame_swoop_audio.h"  // TickSpatialAudio + ResetSpatialAudio
 #include "engine_rebase.h"
+#include "engine_offsets_select.h"
 
 namespace acc::swoop_race {
 
@@ -52,19 +53,19 @@ using acc::minigame::CallAsCast;
 // ============================================================================
 //
 // CSWCArea.mini_game (verified line 8726, after rooms@+0x260):
-constexpr size_t kClientAreaMiniGameOffset      = 0x264;
+const size_t kClientAreaMiniGameOffset      = acc::off::Todo(0x264);
 
 // CSWMiniGame (line 9309). type/counts confirmed by name; obstacle data
 // pointer at +0x44 + count at +0x48 confirmed from the patch-
 // 20260524-163552.log first-fire byte dump (obstacles_ptr=0x1721AA08,
 // count=22, the resref "m03mg" sits at the +0x0c CResRef as expected).
-constexpr size_t kMiniGameVtableOffset          = 0x00;  // pointer
-constexpr size_t kMiniGameResrefOffset          = 0x0c;  // CResRef[16]
-constexpr size_t kMiniGamePlayerOffset          = 0x24;
-constexpr size_t kMiniGameEnemyCountOffset      = 0x30;
-constexpr size_t kMiniGameObstacleDataOffset    = 0x44;  // CSWMiniGameObject** (verified live)
-constexpr size_t kMiniGameObstacleCountOffset   = 0x48;
-constexpr size_t kMiniGameTypeOffset            = 0x80;  // 1=swoop, 2=turret
+const size_t kMiniGameVtableOffset          = acc::off::Todo(0x00);  // pointer
+const size_t kMiniGameResrefOffset          = acc::off::Todo(0x0c);  // CResRef[16]
+const size_t kMiniGamePlayerOffset          = acc::off::Todo(0x24);
+const size_t kMiniGameEnemyCountOffset      = acc::off::Todo(0x30);
+const size_t kMiniGameObstacleDataOffset    = acc::off::Todo(0x44);  // CSWMiniGameObject** (verified live)
+const size_t kMiniGameObstacleCountOffset   = acc::off::Todo(0x48);
+const size_t kMiniGameTypeOffset            = acc::off::Todo(0x80);  // 1=swoop, 2=turret
                                                         // (CSWMiniGame::Load sets
                                                         // type ONLY to 1 or 2; was
                                                         // mis-read at +0x84=axis_x,
@@ -78,14 +79,14 @@ constexpr uint32_t kMiniGameTypeSwoop           = 1;
 //   +0x68..0x73  CExoArrayList models
 //   +0x80        looping
 //   +0x98        speed (float)
-constexpr size_t kFollowerSpeedOffset           = 0x98;
+const size_t kFollowerSpeedOffset           = acc::off::Todo(0x98);
 
 // CSWMiniPlayer (line 15382, extends CSWTrackFollower size 0x1a4).
 // Tunnel-frame offset (X=lane, Y=forward, Z=vertical) and the speed
 // envelope.
-constexpr size_t kMiniPlayerOffsetVectorOffset  = 0x1c4;
-constexpr size_t kMiniPlayerMinSpeedOffset      = 0x1d8;
-constexpr size_t kMiniPlayerMaxSpeedOffset      = 0x1dc;
+const size_t kMiniPlayerOffsetVectorOffset  = acc::off::Todo(0x1c4);
+const size_t kMiniPlayerMinSpeedOffset      = acc::off::Todo(0x1d8);
+const size_t kMiniPlayerMaxSpeedOffset      = acc::off::Todo(0x1dc);
 
 // CSWMGObstacle / CSWMiniEnemy position-resolution offsets, vtable
 // downcast slots, and the global CSWMiniGameObjectArray layout were
@@ -303,7 +304,7 @@ const uintptr_t kAddrCServerExoAppGetWorldTimer = acc::addr::R(0x004aede0);
 const uintptr_t kAddrCWorldTimerGetWorldTime = acc::addr::R(0x004ade40);
 const uintptr_t kAddrCServerExoAppGetGlobalVarTable = acc::addr::R(0x004aee60);
 const uintptr_t kAddrGlobalVarTableGetValueNumber = acc::addr::R(0x00529240);
-constexpr size_t    kWorldTimerMinutesPerHourOffset     = 0x38;  // byte
+const size_t    kWorldTimerMinutesPerHourOffset     = acc::off::Todo(0x38);  // byte
 
 typedef void* (__thiscall* PFN_GetWorldTimer)(void* server);
 typedef void  (__thiscall* PFN_GetWorldTime)(void* timer, uint32_t* outDay,

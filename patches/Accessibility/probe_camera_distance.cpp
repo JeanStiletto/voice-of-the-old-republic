@@ -12,6 +12,7 @@
 #include "log.h"
 #include "prism.h"
 #include "engine_rebase.h"
+#include "engine_offsets_select.h"
 
 namespace acc::probe_camera_distance {
 
@@ -22,18 +23,18 @@ namespace {
 // Camera::vtable index for GetBehavior(tag). vtable[0x80/4 = 32]. Called
 // with 0xFFFFFFFF to fetch the currently-active behavior. Matches
 // AcclTurnCamera's pattern.
-constexpr size_t kCameraVtblGetBehaviorOffset = 0x80;
+const size_t kCameraVtblGetBehaviorOffset = acc::off::Todo(0x80);
 
 // CAurBehavior::vtable index for "as state struct" — vtable[0x1c/4 = 7].
 // Returns the inner state struct AcclTurnCamera writes yaw into at +0x40.
-constexpr size_t kBehaviorVtblAsStateOffset = 0x1c;
+const size_t kBehaviorVtblAsStateOffset = acc::off::Todo(0x1c);
 
 // CSWCameraOnAStick fields verified via Ghidra decomp of
 // Control_ComputeDesiredPosition + Control. field46_0x110 is the target
 // orbit radius; field29_0x84 enables the per-frame auto-fit recompute.
-constexpr size_t kBehAutoFitFlagOffset = 0x84;
-constexpr size_t kBehTargetDistOffset  = 0x110;
-constexpr size_t kBehZOffsetOffset     = 0x120;
+const size_t kBehAutoFitFlagOffset = acc::off::Todo(0x84);
+const size_t kBehTargetDistOffset  = acc::off::Todo(0x110);
+const size_t kBehZOffsetOffset     = acc::off::Todo(0x120);
 
 // Engine primitives.
 const uintptr_t kAddrCameraGetDist = acc::addr::R(0x0045C1D0);
@@ -56,10 +57,10 @@ const uintptr_t kAddrZoomCamera = acc::addr::R(0x006401D0);
 //                          than snapping.
 //   cameraFreeStyle      — non-zero short-circuits Control to
 //                          CameraFreeStyleControl (debug/screenshot mode).
-constexpr uintptr_t kAddrCameraPersonalSpace = 0x007A241C;
-constexpr uintptr_t kAddrCameraInterpAmt1    = 0x007A2430;
-constexpr uintptr_t kAddrCameraInterpDistAmt = 0x007A243C;
-constexpr uintptr_t kAddrCameraFreeStyle     = 0x00833938;
+const uintptr_t kAddrCameraPersonalSpace = acc::addr::TodoGlobal(0x007A241C);
+const uintptr_t kAddrCameraInterpAmt1    = acc::addr::TodoGlobal(0x007A2430);
+const uintptr_t kAddrCameraInterpDistAmt = acc::addr::TodoGlobal(0x007A243C);
+const uintptr_t kAddrCameraFreeStyle     = acc::addr::TodoGlobal(0x00833938);
 
 typedef float (__thiscall* PFN_CameraGetFloat)(void* this_);
 typedef void (__thiscall* PFN_ZoomCamera)(void* this_, float delta);

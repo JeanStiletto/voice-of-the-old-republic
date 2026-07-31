@@ -12,6 +12,7 @@
 #include <windows.h>
 #include <cmath>
 #include <cstdint>
+#include "engine_offsets_select.h"
 
 namespace acc::engine {
 
@@ -86,7 +87,7 @@ void* GetPlayerArea() {
 }
 
 bool GetCameraPosition(Vector& out) {
-    constexpr size_t kCameraGobPositionOffset    = 0x7c;  // Camera+0x04 + Gob+0x78
+    const size_t kCameraGobPositionOffset    = acc::off::Todo(0x7c);  // Camera+0x04 + Gob+0x78
     void* camera = GetCamera();
     if (!camera) return false;
     __try {
@@ -100,7 +101,7 @@ bool GetCameraPosition(Vector& out) {
 }
 
 bool GetCameraYawRadians(float& outRad) {
-    constexpr size_t kCameraOrientationOffset    = 0x88;  // Camera+0x04 + Gob+0x84
+    const size_t kCameraOrientationOffset    = acc::off::Todo(0x88);  // Camera+0x04 + Gob+0x84
     void* camera = GetCamera();
     if (!camera) return false;
     __try {

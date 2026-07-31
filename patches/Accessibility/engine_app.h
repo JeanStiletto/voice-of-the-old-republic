@@ -35,27 +35,36 @@
 
 #include <cstddef>
 #include <cstdint>
+#include "engine_offsets_select.h"
+#include "engine_rebase.h"
 
-// CAppManager* — .data global, deliberately NOT passed through acc::addr::R().
-// R() covers .text only and .data is byte-stable across the builds it exists
-// for (engine_rebase.h, and the .data section note in
-// engine_offsets_addresses.h).
-constexpr uintptr_t kAddrAppManagerPtr = 0x007A39FC;
+// CAppManager* — a .data global, so PickGlobal rather than R(): .data is
+// byte-stable across the KOTOR 1 builds and is never rebased (engine_rebase.h,
+// and the .data section note in engine_offsets_addresses.h).
+//
+// KOTOR 2 value from KPatchManager's seeded kotor2_steam_aspyr.db
+// (APP_MANAGER_PTR), whose KOTOR 1 value matches this one exactly. The engine's
+// whole globals block relocated as a unit — every pointer the two databases
+// share moved by the same 0x2A1AA8.
+const uintptr_t kAddrAppManagerPtr = acc::addr::PickGlobal(0x007A39FC, 0x00A1B4A4);
 
 // CAppManager.client @+0x4 → CClientExoApp*, .server @+0x8 → CServerExoApp*.
-constexpr size_t kAppManagerClientAppOffset = 0x4;
-constexpr size_t kAppManagerServerAppOffset = 0x8;
+// Identical in both games — from the same seeded database, whose KOTOR 1
+// values also match ours exactly. That agreement between two independent
+// reverse-engineering efforts is what makes its KOTOR 2 column trustworthy.
+const size_t kAppManagerClientAppOffset = acc::off::Same(0x4);
+const size_t kAppManagerServerAppOffset = acc::off::Same(0x8);
 
 // Both facades are 8 bytes (vtable@0, internal@4) and the *Internal carries
 // the state. Server side verified via CServerExoApp::GetPartyTable @0x004aee70
 // (MOV EAX,[ECX+4]; ADD EAX,...); the client split is the same shape.
-constexpr size_t kClientExoAppInternalOffset = 0x4;
-constexpr size_t kServerExoAppInternalOffset = 0x4;
+const size_t kClientExoAppInternalOffset = acc::off::Todo(0x4);
+const size_t kServerExoAppInternalOffset = acc::off::Todo(0x4);
 
 // The client side continues into the world view:
 //   CClientExoAppInternal → +0x18 CSWCModule → +0x40 Camera.
-constexpr size_t kClientInternalModuleOffset = 0x18;
-constexpr size_t kCSWCModuleCameraOffset     = 0x40;
+const size_t kClientInternalModuleOffset = acc::off::Todo(0x18);
+const size_t kCSWCModuleCameraOffset     = acc::off::Todo(0x40);
 
 namespace acc::engine {
 

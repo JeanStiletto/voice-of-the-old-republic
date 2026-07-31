@@ -25,6 +25,7 @@
 #include "prism.h"
 #include "strings.h"
 #include "engine_rebase.h"
+#include "engine_offsets_select.h"
 
 using acc::menus::detail::DriveListBoxSelectionEngine;
 using acc::menus::detail::ListBoxNavOp;
@@ -41,7 +42,7 @@ const uintptr_t kAddrOnFilterGame = acc::addr::R(0x006ed3e0);  // (panel) → GA
 const uintptr_t kAddrOnFilterMini = acc::addr::R(0x006ed430);  // (panel) → MINIGAME
 
 // CSWGuiInGameOptKeyMappings: field11_0xf2c == 1 while a capture is armed.
-constexpr size_t kCaptureActiveOff = 0xf2c;
+const size_t kCaptureActiveOff = acc::off::Todo(0xf2c);
 
 // Stable .gui control IDs (optkeymapping.gui; locale-independent like the
 // equip-slot IDs). Verified in the PanelProbe dump.

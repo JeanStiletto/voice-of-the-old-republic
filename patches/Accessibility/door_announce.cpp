@@ -6,6 +6,7 @@
 #include "camera_announce.h"
 #include "engine_player.h"  // GetPlayerServerCreature
 #include "log.h"
+#include "engine_offsets_select.h"
 
 namespace acc::door_announce {
 
@@ -17,7 +18,10 @@ namespace {
 constexpr unsigned int kDedupMs = 1000;
 
 // CGameObject layout: vtable @0x0, id @0x4, object_type @0x8.
-constexpr size_t kGameObjectIdOffset = 0x4;
+// Identical in both games (seeded kotor2_steam_aspyr.db) — CGameObject is the
+// shallow root, and the KOTOR 2 insertions all happen further down the
+// hierarchy, in CSWSObject and below.
+const size_t kGameObjectIdOffset = acc::off::Same(0x4);
 
 // One pending slot; the OpenDoor detour records into it, Tick drains it the
 // same frame. Last-writer-wins if two doors open in one frame (negligible).

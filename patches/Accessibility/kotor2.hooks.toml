@@ -1,0 +1,38 @@
+# KOTOR 2 (Aspyr 2015 rebuild) — DELIBERATELY EMPTY. Do not add hooks here yet.
+#
+# This file exists to declare "we know about KOTOR 2, and we install NOTHING
+# into it". That is a real state the framework understands: KPatchCore includes
+# a hooks file whose target_versions matches, and a matched file contributing
+# zero hooks leaves the patch as DLL-only — the DLL is loaded via LoadLibrary,
+# its DllMain runs, and not one byte of the engine is touched.
+#
+# Without this file the install FAILS outright ("No hooks files found for
+# version ..."), because the two KOTOR 1 hooks files both declare
+# target_versions that exclude these SHAs and KPatchCore treats "a patch with
+# hooks files, none of which match" as an error rather than as DLL-only.
+#
+# WHY IT MUST STAY EMPTY FOR NOW
+#
+# Every engine address in this patch is a KOTOR 1 address. KOTOR 2 is an Aspyr
+# recompile, not a relink, so none of them mean anything there —
+# acc::addr::R() resolves them all to 0 precisely so they fault recognisably
+# instead of jumping into unrelated code. But only ~12 call sites are wrapped
+# in acc::addr::Ok(); the rest would fault. The mechanism that makes KOTOR 2
+# safe is gating engine-touching code on acc::game::IsKotor1(), and that gating
+# does not exist yet.
+#
+# So: adding a hook here before that gating lands turns a harmless no-op
+# install into a crash on launch. See docs/kotor2-port.md, step 5.
+#
+# What this file being installed proves, and it is worth proving on its own:
+# the dinput8 proxy loads in KOTOR 2, KotorPatcher loads our DLL, and
+# acc::game detects the build correctly — visible as the "Game.Identity
+# title=kotor2 build=aspyr-2015" line at DLL attach.
+
+[metadata]
+target_versions = [
+    "6A522E71631DCEE93467BD2010F3B23D9145326E1E2E89305F13AB104DBBFFEF",  # KOTOR 2 Steam (Aspyr)
+    "777BEE235A9E8BDD9863F6741BC3AC54BB6A113B62B1D2E4D12BBE6DB963A914",  # KOTOR 2 GOG (Aspyr)
+]
+
+# No [[hooks]] entries. See above.

@@ -11,6 +11,7 @@
 #include "log.h"
 #include "narrated_target.h"
 #include "prism.h"
+#include "engine_offsets_select.h"
 
 namespace acc::stealth_watch {
 
@@ -20,7 +21,7 @@ namespace {
 // +0x4d0. Both are Lane-named fields in the RE database (the NWScript
 // ACTION_MODE_STEALTH / ACTION_MODE_DETECT toggles), confirmed against
 // k1_win_gog_swkotor.exe.xml. Non-zero once the leader engages Stealth mode.
-constexpr size_t kCreatureStealthModeOffset = 0x4d1;
+const size_t kCreatureStealthModeOffset = acc::off::Todo(0x4d1);
 
 // Announce once the metre reading has moved this far. 1 m (not 2) because
 // stealth movement is slow — closing 2 m takes several seconds, which reads as

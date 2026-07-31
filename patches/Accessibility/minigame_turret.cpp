@@ -53,6 +53,7 @@
                               //              typed-character cancel (the
                               //              player is holding fire keys)
 #include "strings.h"          // Get(TurretGameStarted/Controls/Ended)
+#include "engine_offsets_select.h"
 
 namespace acc::turret_game {
 
@@ -121,10 +122,10 @@ constexpr size_t kVtableSlotAsEnemy            = 0x1c;
 //                   hit this tick, the ground truth for the actual hit cone.
 //   invulnerability — i-frame timer; nonzero means hits won't register.
 constexpr size_t kFollowerSphereRadiusOffset = 0x84;  // float
-constexpr size_t kFollowerHpOffset           = 0x8c;  // int
-constexpr size_t kFollowerMaxHpOffset        = 0x90;  // int
+const size_t kFollowerHpOffset           = acc::off::Kotor1Only(0x8c);  // int
+const size_t kFollowerMaxHpOffset        = acc::off::Kotor1Only(0x90);  // int
 constexpr size_t kFollowerSpeedOffset        = 0x98;  // float (engine speed)
-constexpr size_t kFollowerInvulnOffset       = 0x9c;  // float
+const size_t kFollowerInvulnOffset       = acc::off::Kotor1Only(0x9c);  // float
 
 // NOTE (RE + measured 2026-06-04): sphere_radius is the value OUR cue subtends
 // against, but it is NOT the engine's hit primitive. The bullet-hit path is
@@ -147,9 +148,9 @@ constexpr size_t kFollowerInvulnOffset       = 0x9c;  // float
 // vtable[0x14] returns the victim CSWTrackFollower (the object whose HP it then
 // adjusts). |impact - followerCentre| is therefore the distance from centre at
 // which the shot actually connected — the real hit radius.
-constexpr size_t kHitEventImpactXOffset      = 0x54;  // float (world)
-constexpr size_t kHitEventImpactYOffset      = 0x58;  // float (world)
-constexpr size_t kHitEventImpactZOffset      = 0x5c;  // float (world)
+const size_t kHitEventImpactXOffset      = acc::off::Kotor1Only(0x54);  // float (world)
+const size_t kHitEventImpactYOffset      = acc::off::Kotor1Only(0x58);  // float (world)
+const size_t kHitEventImpactZOffset      = acc::off::Kotor1Only(0x5c);  // float (world)
 constexpr size_t kVtableSlotGetVictimFollower = 0x14; // OnHitBullet's vtable[0x14]
 
 // Census / selection range. Live distance survey (enemy-sound diagnostic,
@@ -657,10 +658,10 @@ void StopAllLoops() {
 // ============================================================================
 
 // Gun-walk offsets (CSWTrackFollower is the base of CSWMiniPlayer at +0).
-constexpr size_t kFollowerGunBanksOffset   = 0x74;  // CSWMGGunBank** array base
-constexpr size_t kFollowerGunBankCountOff  = 0x78;  // int
-constexpr size_t kGunBankGunsDataOffset    = 0x34;  // CExoArrayList data ptr (CAurObject*[])
-constexpr size_t kGunBankGunCountOffset    = 0x38;  // int
+const size_t kFollowerGunBanksOffset   = acc::off::Kotor1Only(0x74);  // CSWMGGunBank** array base
+const size_t kFollowerGunBankCountOff  = acc::off::Kotor1Only(0x78);  // int
+const size_t kGunBankGunsDataOffset    = acc::off::Kotor1Only(0x34);  // CExoArrayList data ptr (CAurObject*[])
+const size_t kGunBankGunCountOffset    = acc::off::Kotor1Only(0x38);  // int
 constexpr size_t kGobVtableGetPartXform    = 0x98;  // gob.vtable slot: GetPartTransform
 
 // gob.vtable+0x98: int __thiscall(this, const char* partName, Vector* outPos,

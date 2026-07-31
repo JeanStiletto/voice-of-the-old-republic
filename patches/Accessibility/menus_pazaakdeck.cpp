@@ -22,6 +22,7 @@
 #include "prism.h"
 #include "strings.h"
 #include "engine_rebase.h"
+#include "engine_offsets_select.h"
 
 namespace acc::menus::pazaakdeck {
 
@@ -31,11 +32,11 @@ const uintptr_t kVtablePazaakStart = acc::addr::R(0x007532e8);  // CSWGuiPazaakS
 const uintptr_t kVtablePazaakCard  = acc::addr::R(0x007531c0);  // CSWGuiPazaakCard
 const uintptr_t kVtableCSWGuiLabel = acc::addr::R(0x0073e5b8);  // CSWGuiLabel (overlay text)
 
-constexpr size_t kAllCardsOff    = 0x1A4;   // all_cards[18]   (stride 0x31C)
-constexpr size_t kSidedeckGuiOff = 0x501C;  // sidedeck_gui[10] (stride 0x31C)
-constexpr size_t kCardCountsOff  = 0x755C;  // int card_counts[18]
-constexpr size_t kSidedeckOff    = 0x75A4;  // CPazaakCard sidedeck[10]
-constexpr size_t kCardStride     = 0x31C;
+const size_t kAllCardsOff    = acc::off::Todo(0x1A4);   // all_cards[18]   (stride 0x31C)
+const size_t kSidedeckGuiOff = acc::off::Todo(0x501C);  // sidedeck_gui[10] (stride 0x31C)
+const size_t kCardCountsOff  = acc::off::Todo(0x755C);  // int card_counts[18]
+const size_t kSidedeckOff    = acc::off::Todo(0x75A4);  // CPazaakCard sidedeck[10]
+const size_t kCardStride     = acc::off::Todo(0x31C);
 constexpr int    kNumTypes = 18;
 constexpr int    kNumSlots = 10;
 
