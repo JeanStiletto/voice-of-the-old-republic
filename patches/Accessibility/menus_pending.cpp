@@ -29,7 +29,7 @@
 #include "menus_chargen_skills.h"   // IsChargenSkillsPanel — chargen sub-screen close
 #include "menus_galaxymap.h"        // DispatchInput for GalaxyInput
 #include "minigame_pazaak.h"                 // DispatchWagerInput for WagerInput
-#include "menus_inventory.h"  // filter post-activate list-rebuild repair
+#include "menus_inventory.h"  // filter list-rebuild repair + item-row selection sync
 #include "menus_journal.h"   // Sort/Swap post-activate list-rebuild repair
 #include "menus_listbox.h"   // DisarmWorkbenchUpgradePicker (post-slot-select cleanup)
 #include "menus_powers_levelup.h"   // IsPowersLevelUpPanel — chargen sub-screen close
@@ -380,6 +380,18 @@ void Drain(void* gm) {
                         }
                     }
                 }
+            }
+
+            // Inventory item rows: point the listbox selection at the row we
+            // are about to activate. Its handler reads the selection instead
+            // of the control it was passed, so without this every Enter uses
+            // row 0's item — see inventory::SyncListBoxSelection. Done here
+            // rather than at queue time so nothing can move the selection in
+            // the window before dispatch.
+            if (panelKindAtDispatch == acc::engine::PanelKind::InGameInventory &&
+                acc::engine::IsInventoryItemRow(op.a)) {
+                acc::menus::inventory::SyncListBoxSelection(
+                    acc::menus::chain::g_chainPanel, op.a);
             }
 
             uint32_t prevIsActive = RaiseIsActiveIfZero(op.a);

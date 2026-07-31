@@ -36,6 +36,52 @@ bool IsFilterButton(void* panel, void* control) {
     return IsButtonAtOffset(panel, control, kInventoryFilterButtonOffset);
 }
 
+void SyncListBoxSelection(void* panel, void* row) {
+    if (!panel || !row) return;
+    if (!acc::addr::Ok(kAddrCSWGuiListBoxSetSelectedControl)) {
+        acclog::Write("Menus.Inventory",
+                      "SyncListBoxSelection skipped (unresolved on build %s)",
+                      acc::addr::ActiveBuildName());
+        return;
+    }
+    __try {
+        void* lb = reinterpret_cast<unsigned char*>(panel) +
+                   kInventoryItemListBoxOffset;
+        auto* lbList = reinterpret_cast<CExoArrayList*>(
+            reinterpret_cast<unsigned char*>(lb) + kListBoxControlsOffset);
+        if (!lbList || !lbList->data) return;
+
+        int idx = -1;
+        for (int i = 0; i < lbList->size; ++i) {
+            if (lbList->data[i] == row) { idx = i; break; }
+        }
+        if (idx < 0) {
+            // Row is not in item_listbox — chain focus is on something else
+            // (or the list was rebuilt since the rebind). Leave the engine's
+            // selection alone rather than guessing.
+            acclog::Write("Menus.Inventory",
+                          "SyncListBoxSelection: row=%p not in item_listbox "
+                          "(size=%d) — selection untouched", row, lbList->size);
+            return;
+        }
+
+        auto* selPtr = reinterpret_cast<short*>(
+            reinterpret_cast<unsigned char*>(lb) + kListBoxSelectionIndexOffset);
+        short before = *selPtr;
+        auto setSel = reinterpret_cast<PFN_CSWGuiListBoxSetSelectedControl>(
+            kAddrCSWGuiListBoxSetSelectedControl);
+        // playSound=0: the row name was already announced on the chain step,
+        // and the activate about to follow plays its own item sound.
+        setSel(lb, idx, 0);
+        acclog::Write("Menus.Inventory",
+                      "SyncListBoxSelection: row=%p idx=%d sel %d->%d",
+                      row, idx, (int)before, (int)*selPtr);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("Menus.Inventory",
+                      "SyncListBoxSelection SEH (panel=%p row=%p)", panel, row);
+    }
+}
+
 void ForceRepopulate(void* panel) {
     if (!panel) return;
     if (!acc::addr::Ok(kAddrInventoryPopulateItemListBox)) {

@@ -28,6 +28,24 @@ bool IsUseItemButton(void* panel, void* control);
 // fires.
 bool IsFilterButton(void* panel, void* control);
 
+// Point item_listbox.selection_index at `row` before its activate is
+// dispatched. MANDATORY for inventory item rows, because the handler
+// CreateItemEntry wires to them —
+// CSWGuiInGameInventory::OnControlSelected @0x006b25e0 — ignores the control
+// that fired it and calls GetSelectedControl(&this->item_listbox) instead. A
+// mouse click sets that selection on the way in; our keyboard activate never
+// did, so every Enter used whichever row PopulateItemListBox last selected
+// (index 0 after a filter change). Verified in patch-20260731-094302.log:
+// Enter on "Geschickl.-Enhancer" and on "Hyper-Verfassungsenh." both burned a
+// charge off the Mandalorian melee shield sitting at row 0.
+//
+// Drives the engine's CSWGuiListBox::SetSelectedControl rather than writing
+// selection_index raw, so the row highlight, the scroll-follow bit and
+// OrganizeControls all run as they would for a real click. SEH-guarded;
+// no-ops on a null panel/row, an unresolved address, or a row that is not in
+// this listbox.
+void SyncListBoxSelection(void* panel, void* row);
+
 // Force a synchronous rebuild of the item list by calling the engine's
 // CSWGuiInGameInventory::PopulateItemListBox. SEH-guarded, and a no-op when
 // the address is unresolved on the running build. Used after a filter
