@@ -86,6 +86,27 @@ enum class MoveAxis { Forward = 0, Backward = 1, TurnLeft = 2, TurnRight = 3 };
 // Returns the count written. Auto-loads the config on first use.
 int MoveAxisVks(MoveAxis axis, int* out, int cap);
 
+// The single VK a consumer should treat as "the" key for this direction, when
+// reacting to every bound key would be wrong.
+//
+// MoveAxisVks above returns the whole union, which includes KOTOR's arrow-key
+// alternates (Action285/286) — the game binds Up/Down/Left/Right to movement
+// as a second set alongside W/S and the strafe pair. That is correct for
+// "is the player moving?", but a screen where the arrows have their own job
+// must not have them swallowed: on the in-game map, one Down press both panned
+// the virtual cursor south (this union, polled) and stepped the menu chain
+// (the engine's nav code, dispatched) — two actions from one key.
+//
+// Primary = the walk axes, Action280 (move forward/back) and Action281
+// (strafe left/right), falling back to the WASD default when the ini has no
+// bind. Strafe rather than camera-rotate because panning a map IS a strafe,
+// and because it lands on the ergonomic cluster the installer writes
+// (strafe -> A/D, camera rotate -> Z/C; see docs/controls-and-input.md). On a
+// vanilla binding set the same rule yields W/S + Z/C — still the player's own
+// movement cluster, which is the promise this whole API exists to keep.
+// Never returns the arrow alternates. Auto-loads the config on first use.
+int MoveAxisPrimaryVk(MoveAxis axis);
+
 // DIK scancode to synthesise (via SendInput KEYEVENTF_SCANCODE) to drive the
 // engine's camera-turn axis in the given direction — resolved from the
 // player's configured primary turn bind (Action283/284), so it follows a

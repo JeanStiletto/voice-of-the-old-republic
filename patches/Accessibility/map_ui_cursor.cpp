@@ -626,17 +626,22 @@ bool KeyDown(int vk) {
     return (GetAsyncKeyState(vk) & 0x8000) != 0;
 }
 
-// True if any key bound to the given movement/turn direction is held. Drives
-// the map cursor with the SAME keys the player uses to move/turn in the world
-// (forward→up, back→down, turn-left→left, turn-right→right) so it follows a
-// rebind; the WASD defaults are always in the bucket, so it never regresses.
+// True if the key bound to the given movement direction is held. Drives the
+// map cursor with the SAME keys the player uses to walk in the world
+// (forward→up, back→down, strafe-left→left, strafe-right→right) so it follows
+// a rebind; the WASD defaults are the fallback, so it never regresses.
+//
+// PRIMARY bind, not the full MoveAxisVks union: that union also holds KOTOR's
+// arrow-key movement alternates (Action285/286), and the arrows have their own
+// job on this screen. Chain navigation runs on the map panel — menus_dispatch
+// hands Up/Down to HandleNavStep with no InGameMap gate — and it reaches the
+// chain through the engine's dispatched nav code, while this reads Win32 async
+// state. Two independent paths, one keypress: Down used to pan the cursor
+// south AND step the chain in the same press. Taking the alternates out here
+// leaves the arrows to the menu and W/S/A/D to the cursor.
 bool AxisDown(acc::engine_keymap::MoveAxis axis) {
-    int vks[8];
-    int n = acc::engine_keymap::MoveAxisVks(axis, vks, 8);
-    for (int i = 0; i < n; ++i) {
-        if (KeyDown(vks[i])) return true;
-    }
-    return false;
+    int vk = acc::engine_keymap::MoveAxisPrimaryVk(axis);
+    return vk != 0 && KeyDown(vk);
 }
 
 }  // namespace

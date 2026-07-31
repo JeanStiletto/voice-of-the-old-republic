@@ -88,6 +88,20 @@ constexpr AxisContrib kAxisContribs[] = {
     {3, 283, 'B'}, {3, 284, 'B'}, {3, 286, 'B'},   // TurnRight: D / Right
 };
 
+// The ONE bind per axis, for consumers that must not swallow the arrow
+// alternates in kAxisContribs — see MoveAxisPrimaryVk in the header for why
+// the in-game map needs this. Action280 = move forward/back, Action281 =
+// strafe left/right (the installer's ergonomic cluster puts strafe on A/D and
+// camera rotate on Z/C). Note 281 appears in NO kAxisContribs row: the union
+// tracks turn, this tracks walk, and they are deliberately different questions.
+constexpr AxisContrib kAxisPrimary[] = {
+    {0, 280, 'A'},   // Forward  : W
+    {1, 280, 'B'},   // Backward : S
+    {2, 281, 'A'},   // Left     : A (mod layout) / Z (vanilla)
+    {3, 281, 'B'},   // Right    : D (mod layout) / C (vanilla)
+};
+int s_axisPrimaryVk[kMoveAxisCount] = {0, 0, 0, 0};
+
 bool IsDownVk(int vk) {
     return vk != 0 && (GetAsyncKeyState(vk) & 0x8000) != 0;
 }
@@ -280,6 +294,10 @@ void ReloadGameConfig() {
     for (int a = 0; a < kMoveAxisCount; ++a) {
         s_axisVkCount[a] = 0;
         AddAxisVk(a, kAxisDefaultVk[a]);
+        // Same fallback contract for the single-bind view: seeded with the
+        // WASD default, overwritten below if the ini binds that axis's walk
+        // action. Never holds an arrow alternate.
+        s_axisPrimaryVk[a] = kAxisDefaultVk[a];
     }
     s_turnScan[0] = 0;
     s_turnScan[1] = 0;
@@ -334,6 +352,14 @@ void ReloadGameConfig() {
             s_actionVks[s_actionVkCount].vk       = vk;
             ++s_actionVkCount;
         }
+        if (slot != 0 && vk != 0) {
+            for (const AxisContrib& c : kAxisPrimary) {
+                if (c.actionId == actionId && c.slot == slot) {
+                    s_axisPrimaryVk[c.axis] = vk;
+                    break;
+                }
+            }
+        }
         if (slot != 0) {
             for (const AxisContrib& c : kAxisContribs) {
                 if (c.actionId != actionId || c.slot != slot) continue;
@@ -357,11 +383,14 @@ void ReloadGameConfig() {
     fclose(f);
     acclog::Write("EngineKeymap",
                   "loaded %d configurable game bind VK(s) from swkotor.ini "
-                  "(axis fwd=%d back=%d left=%d right=%d; turnScan L=0x%02x "
-                  "R=0x%02x)",
+                  "(axis fwd=%d back=%d left=%d right=%d; primary "
+                  "fwd=0x%02x back=0x%02x left=0x%02x right=0x%02x; "
+                  "turnScan L=0x%02x R=0x%02x)",
                   s_gameVkCount, s_axisVkCount[0], s_axisVkCount[1],
-                  s_axisVkCount[2], s_axisVkCount[3], s_turnScan[0],
-                  s_turnScan[1]);
+                  s_axisVkCount[2], s_axisVkCount[3],
+                  s_axisPrimaryVk[0], s_axisPrimaryVk[1],
+                  s_axisPrimaryVk[2], s_axisPrimaryVk[3],
+                  s_turnScan[0], s_turnScan[1]);
 }
 
 bool IsKeyUsedByGame(int vk) {
@@ -429,6 +458,13 @@ int MoveAxisVks(MoveAxis axis, int* out, int cap) {
         out[n++] = s_axisVks[a][i];
     }
     return n;
+}
+
+int MoveAxisPrimaryVk(MoveAxis axis) {
+    if (!s_gameLoaded) ReloadGameConfig();  // populates the primary binds
+    int a = static_cast<int>(axis);
+    if (a < 0 || a >= kMoveAxisCount) return 0;
+    return s_axisPrimaryVk[a];
 }
 
 int TurnScancode(bool left) {
