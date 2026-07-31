@@ -10,6 +10,13 @@ public sealed record KdevConfig(
     string ProjectRoot,
     string GameInstall,
     string GameExe,
+    // KOTOR 2 install, for the port (docs/kotor2-port.md). Optional: null when
+    // kdev.toml has no game.install_k2, which is the normal state for anyone
+    // working on KOTOR 1 only. Commands that can target it take `--game k2`
+    // and fail with a clear message when this is unset, rather than silently
+    // operating on the KOTOR 1 install.
+    string? GameInstallK2,
+    string? GameExeK2,
     string PatchManagerRelease,
     string UpstreamClone,
     string AccessibilitySource,
@@ -30,6 +37,45 @@ public sealed record KdevConfig(
     public string LogsDir => Path.Combine(ProjectRoot, "logs");
 
     public const string FileName = "kdev.toml";
+
+    /// <summary>Which game a command is acting on.</summary>
+    /// <param name="Install">Install root.</param>
+    /// <param name="Exe">Full path to the game executable.</param>
+    /// <param name="ProcessName">Process name without extension, for Process.GetProcessesByName.</param>
+    /// <param name="Label">Short name for console output.</param>
+    public sealed record GameTarget(string Install, string Exe, string ProcessName, string Label);
+
+    /// <summary>
+    /// Resolve a `--game` selection ("k1" / "k2") to its paths.
+    /// Returns null and prints the reason when the selection is unusable —
+    /// either an unknown name, or "k2" with no game.install_k2 configured.
+    /// Callers should exit non-zero on null rather than falling back to k1:
+    /// silently applying a KOTOR 2 build into the KOTOR 1 install would be
+    /// both wrong and hard to notice.
+    /// </summary>
+    public GameTarget? ResolveTarget(string which)
+    {
+        switch (which.ToLowerInvariant())
+        {
+            case "k1":
+                return new GameTarget(GameInstall, GameExe, "swkotor", "KOTOR 1");
+
+            case "k2":
+                if (GameInstallK2 is null || GameExeK2 is null)
+                {
+                    Console.Error.WriteLine(
+                        "ERROR: --game k2 requires 'install_k2' under [game] in kdev.toml.");
+                    Console.Error.WriteLine(
+                        "  Example: install_k2 = 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Knights of the Old Republic II'");
+                    return null;
+                }
+                return new GameTarget(GameInstallK2, GameExeK2, "swkotor2", "KOTOR 2");
+
+            default:
+                Console.Error.WriteLine($"ERROR: unknown --game value '{which}'. Expected 'k1' or 'k2'.");
+                return null;
+        }
+    }
 
     /// <summary>
     /// Walks upward from the current directory looking for kdev.toml.
@@ -72,6 +118,15 @@ public sealed record KdevConfig(
 
         var gameInstall = ResolvePath(projectRoot, RequireString(table, "game.install"));
         var gameExe = Path.Combine(gameInstall, "swkotor.exe");
+
+        // Optional second target for the KOTOR 2 port.
+        var gameInstallK2Raw = OptionalString(table, "game.install_k2");
+        var gameInstallK2 = gameInstallK2Raw is null
+            ? null
+            : ResolvePath(projectRoot, gameInstallK2Raw);
+        var gameExeK2 = gameInstallK2 is null
+            ? null
+            : Path.Combine(gameInstallK2, "swkotor2.exe");
         var release = ResolvePath(projectRoot, RequireString(table, "patch_manager.release"));
         var clone = ResolvePath(projectRoot, RequireString(table, "upstream.clone"));
         var source = ResolvePath(projectRoot, RequireString(table, "accessibility.source"));
@@ -96,6 +151,8 @@ public sealed record KdevConfig(
             ProjectRoot: projectRoot,
             GameInstall: gameInstall,
             GameExe: gameExe,
+            GameInstallK2: gameInstallK2,
+            GameExeK2: gameExeK2,
             PatchManagerRelease: release,
             UpstreamClone: clone,
             AccessibilitySource: source,

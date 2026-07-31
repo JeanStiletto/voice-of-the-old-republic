@@ -7,6 +7,12 @@
 # KOTOR 1 install root. The 'swkotor.exe' inside this directory is the build target.
 install = 'C:\Program Files (x86)\Steam\steamapps\common\swkotor'
 
+# KOTOR 2 install root, holding 'swkotor2.exe'. OPTIONAL — only needed for the
+# port (docs/kotor2-port.md). Commands that can act on either game take
+# '--game k2'; without this key that flag fails with a clear message rather
+# than silently operating on the KOTOR 1 install.
+install_k2 = 'C:\Program Files (x86)\Steam\steamapps\common\Knights of the Old Republic II'
+
 [patch_manager]
 # Runtime release layout for LaneDibello/Kotor-Patch-Manager.
 # kdev consumes <release>/bin/KotorPatcher.dll (the injected runtime) and

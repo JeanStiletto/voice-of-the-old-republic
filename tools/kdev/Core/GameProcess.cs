@@ -18,12 +18,18 @@ public static class GameProcess
     }
 
     /// <summary>
-    /// Terminates every running swkotor.exe and waits for them to exit.
-    /// Logs each PID as it is killed. Returns a summary; caller decides how to report.
+    /// Terminates every running instance of the given game and waits for them
+    /// to exit. Logs each PID as it is killed. Returns a summary; caller
+    /// decides how to report.
     /// </summary>
-    public static KillSummary KillAll()
+    /// <param name="processName">
+    /// Process name without extension. Defaults to KOTOR 1. Note that
+    /// GetProcessesByName matches exactly, so "swkotor" does NOT also find
+    /// "swkotor2" — the KOTOR 2 target must pass its own name.
+    /// </param>
+    public static KillSummary KillAll(string processName = ProcessName)
     {
-        var procs = Process.GetProcessesByName(ProcessName);
+        var procs = Process.GetProcessesByName(processName);
         if (procs.Length == 0)
         {
             return new KillSummary(0, 0, 0);

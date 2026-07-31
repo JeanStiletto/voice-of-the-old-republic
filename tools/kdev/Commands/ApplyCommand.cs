@@ -10,14 +10,24 @@ public static class ApplyCommand
     public static Command Build()
     {
         var cmd = new Command("apply", "Install the built .kpatch into the game via KPatchCore.");
-        cmd.SetHandler((InvocationContext context) => context.ExitCode = Run());
+        var gameOption = new Option<string>(
+            name: "--game",
+            description: "Which game to install into: 'k1' (default) or 'k2'. " +
+                         "'k2' requires game.install_k2 in kdev.toml.",
+            getDefaultValue: () => "k1");
+        cmd.AddOption(gameOption);
+        cmd.SetHandler((InvocationContext context) =>
+            context.ExitCode = Run(context.ParseResult.GetValueForOption(gameOption)!));
         return cmd;
     }
 
-    internal static int Run()
+    internal static int Run(string game = "k1")
     {
         var config = KdevConfig.LoadOrPrintErrors(out var exitCode);
         if (config is null) return exitCode;
+
+        var target = config.ResolveTarget(game);
+        if (target is null) return 2;
 
         var kpatchPath = Path.Combine(config.BuildOutput, "Accessibility.kpatch");
         if (!File.Exists(kpatchPath))
@@ -37,7 +47,7 @@ public static class ApplyCommand
         // The applicator updates files inside the game directory; if the game is running
         // it will fight us for file handles. Stop it first.
         Console.WriteLine("Stopping any running game...");
-        var killSummary = GameProcess.KillAll();
+        var killSummary = GameProcess.KillAll(target.ProcessName);
         if (killSummary.NothingToKill)
         {
             Console.WriteLine("  No running game.");
@@ -110,11 +120,11 @@ public static class ApplyCommand
         Console.WriteLine();
         Console.WriteLine(
             $"Installing {idsToInstall.Count} patch(es) [{string.Join(", ", idsToInstall)}] " +
-            $"to {config.GameExe}...");
+            $"to {target.Exe}...");
         var applicator = new PatchApplicator(repository);
         var result = applicator.InstallPatches(new PatchApplicator.InstallOptions
         {
-            GameExePath = config.GameExe,
+            GameExePath = target.Exe,
             PatchIds = idsToInstall,
             PatcherDllPath = patcherDll,
             CreateBackup = true,
@@ -143,19 +153,20 @@ public static class ApplyCommand
         // bridge DLLs (orca, speech_dispatcher) do LoadLibrary with bare
         // names; prism.cpp points SetDllDirectory at this dir so they
         // resolve against bundled neighbours instead of WindowsApps.
-        var copyExit = CopyPrismRuntimeDll(config);
+        var copyExit = CopyPrismRuntimeDll(config, target);
         if (copyExit != 0) return copyExit;
 
-        // Drop the dinput8.dll proxy next to swkotor.exe. Without it the
+        // Drop the dinput8.dll proxy next to the game exe. Without it the
         // OS never loads KotorPatcher on launch — every detour hook stays
         // unapplied and `kdev launch` would silently run an unmodded game.
-        var loaderExit = CopyLoaderDll(config);
+        // KOTOR 2 imports dinput8.dll too, so the same proxy works there.
+        var loaderExit = CopyLoaderDll(config, target);
         if (loaderExit != 0) return loaderExit;
 
         return 0;
     }
 
-    private static int CopyLoaderDll(KdevConfig config)
+    private static int CopyLoaderDll(KdevConfig config, KdevConfig.GameTarget target)
     {
         var srcDll = Path.Combine(config.ProjectRoot, "loader", "dinput8.dll");
         if (!File.Exists(srcDll))
@@ -167,13 +178,13 @@ public static class ApplyCommand
 
         Console.WriteLine();
         Console.WriteLine("Copying dinput8.dll proxy loader...");
-        var dst = Path.Combine(config.GameInstall, "dinput8.dll");
+        var dst = Path.Combine(target.Install, "dinput8.dll");
         File.Copy(srcDll, dst, overwrite: true);
         Console.WriteLine("  ✓ dinput8.dll");
         return 0;
     }
 
-    private static int CopyPrismRuntimeDll(KdevConfig config)
+    private static int CopyPrismRuntimeDll(KdevConfig config, KdevConfig.GameTarget target)
     {
         var prismSrcDir = Path.Combine(config.ProjectRoot, "third_party", "prism-dist", "x86");
         if (!Directory.Exists(prismSrcDir))
@@ -190,7 +201,7 @@ public static class ApplyCommand
             return 5;
         }
 
-        var destDir = Path.Combine(config.GameInstall, "patches");
+        var destDir = Path.Combine(target.Install, "patches");
         Directory.CreateDirectory(destDir);
 
         Console.WriteLine();

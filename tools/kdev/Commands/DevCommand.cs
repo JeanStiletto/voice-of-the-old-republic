@@ -22,7 +22,9 @@ public static class DevCommand
         {
             ("clean", CleanCommand.Run),
             ("build", BuildCommand.Run),
-            ("apply", ApplyCommand.Run),
+            // `kdev dev` is the KOTOR 1 inner loop; the K2 target is reached
+            // with an explicit `kdev apply --game k2`.
+            ("apply", () => ApplyCommand.Run()),
             ("launch (monitored)", () => LaunchCommand.Run(monitor: true)),
         };
 
