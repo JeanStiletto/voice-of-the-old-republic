@@ -356,7 +356,16 @@ const size_t    kPortraitCharGenCreatureOffset   = acc::off::Pick(0x64, 0x68);
 const size_t    kPortraitLabelOffset             = acc::off::Pick(0x2ec, 0x300);
 const size_t    kPortraitRightArrowOffset        = acc::off::Pick(0xe84, 0xee4);
 const size_t    kPortraitLeftArrowOffset         = acc::off::Pick(0x1048, 0x10b4);
-const size_t    kPortraitIdOffset                = acc::off::Todo(0x1238);
+// KOTOR 2 +0x1cf0. Four fields of this class pair up across the two games with
+// a delta of exactly 0xAB8, three of them in UpdatePortraitButton alone — the
+// two lookup arrays it indexes (0x120c -> 0x1cc4, 0x1218 -> 0x1cd0) and the
+// index it uses (0x1234 -> 0x1cec) — plus the float that OnPanelAdded and the
+// constructor both write (0x1230 -> 0x1ce8). portrait_id sits 4 bytes above a
+// confirmed anchor, so this is bracketed rather than extrapolated.
+//
+// Do not shortcut this to "UpdatePortraitButton's index field": that function
+// indexes with field23_0x1234, which is NOT portrait_id and lands one slot low.
+const size_t    kPortraitIdOffset                = acc::off::Pick(0x1238, 0x1cf0);
 
 // CSWCObject.portrait at +0xa8 (CSWPortrait, inline 16-byte CResRef) —
 // reserved kept for the resref direct-read path even though the chargen
@@ -929,16 +938,31 @@ const size_t    kInventoryBeltHandleOffset        = acc::off::Todo(0x2c);
 // universal accessor routes both client and server handles), so
 // GetObjectDisplayNameByHandle resolves them without translation.
 // Offsets verified against Lane's CSWGuiInGameEquip struct (SIZE=0x42bc).
+//
+// KOTOR 2 base is 0x509c, read DIRECTLY out of its own UpdateInventory rather
+// than derived. These nine are not really nine fields: both games treat them as
+// one array indexed by the equipment-slot enum, KOTOR 1 as
+// `(&this->left_weapon_id)[slot]` and KOTOR 2 as `*(in_ECX + 0x509c + slot*4)`,
+// and both guard the same `!= 0x7f000000` sentinel around it. So the slot ORDER
+// is the engine's, identical by construction, and only the base had to be found.
+//
+// Worth recording that the base is NOT where walking back from the surrounding
+// anchors predicted. The constructor's 0x7f000000 write fixes `last_selected_id`
+// at KOTOR 2 0x50d0 against KOTOR 1 0x42a8, and reading the ids off that would
+// have put them 4 bytes high: KOTOR 2 carries one FEWER field ahead of
+// selected_slot and three MORE between belt_id and field46 than KOTOR 1 does.
+// The two errors do not cancel. This is the case the port keeps re-learning —
+// find the instruction that touches the field, do not walk to it.
 const size_t    kEquipPanelPlayerCreatureOffset    = acc::off::Todo(0x0064);
-const size_t    kEquipPanelHeadIdOffset            = acc::off::Todo(0x4284);
-const size_t    kEquipPanelImplantIdOffset         = acc::off::Todo(0x4298);
-const size_t    kEquipPanelArmorIdOffset           = acc::off::Todo(0x4290);  // body
-const size_t    kEquipPanelLeftArmbandIdOffset     = acc::off::Todo(0x4288);
-const size_t    kEquipPanelRightArmbandIdOffset    = acc::off::Todo(0x428c);
-const size_t    kEquipPanelLeftWeaponIdOffset      = acc::off::Todo(0x427c);
-const size_t    kEquipPanelRightWeaponIdOffset     = acc::off::Todo(0x4280);
-const size_t    kEquipPanelGlovesIdOffset          = acc::off::Todo(0x4294);  // hands
-const size_t    kEquipPanelBeltIdOffset            = acc::off::Todo(0x429c);
+const size_t    kEquipPanelHeadIdOffset            = acc::off::Pick(0x4284, 0x50a4);
+const size_t    kEquipPanelImplantIdOffset         = acc::off::Pick(0x4298, 0x50b8);
+const size_t    kEquipPanelArmorIdOffset           = acc::off::Pick(0x4290, 0x50b0);  // body
+const size_t    kEquipPanelLeftArmbandIdOffset     = acc::off::Pick(0x4288, 0x50a8);
+const size_t    kEquipPanelRightArmbandIdOffset    = acc::off::Pick(0x428c, 0x50ac);
+const size_t    kEquipPanelLeftWeaponIdOffset      = acc::off::Pick(0x427c, 0x509c);
+const size_t    kEquipPanelRightWeaponIdOffset     = acc::off::Pick(0x4280, 0x50a0);
+const size_t    kEquipPanelGlovesIdOffset          = acc::off::Pick(0x4294, 0x50b4);  // hands
+const size_t    kEquipPanelBeltIdOffset            = acc::off::Pick(0x429c, 0x50bc);
 
 // Stat-value labels inline in the panel struct. Each is a CSWGuiLabel
 // (SIZE=0x140). UpdateInventory @0x006b9970 writes the rendered value

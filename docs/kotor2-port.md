@@ -67,16 +67,38 @@ exe is SteamStub-encrypted, so its bytes are not readable from the file). Doing
 the same scan on both games and diffing the results is what located
 `MoveMouseToPosition`.
 
-**A KOTOR 1 offset is often cheaper to look up than to decompile.** Lane's
-`docs/llm-docs/re/swkotor.exe.h` carries the struct definitions with member
-order and embedded types, and `k1_win_gog_swkotor.exe.xml` carries every
-function and vtable SYMBOL by name. Between them most KOTOR 1 columns can be
-had without a Ghidra run at all, which halves the rounds — decompile the
-KOTOR 2 side only.
+**A KOTOR 1 offset is almost always cheaper to look up than to decompile.**
+Three sources, in order of usefulness:
+
+- `third_party/Kotor-Patch-Manager/AddressDatabases/kotor1_0_3.db` — a SQLite
+  database with **4720 offsets keyed class + member name** and 9710 named
+  functions. This is the best KOTOR 1 reference we have and it was found late;
+  prefer it over decompiling. `select member_name, offset from offsets where
+  class_name='CSWGuiInGameEquip' order by offset` prints a whole panel's layout
+  instantly. It independently confirmed every portrait and equip value derived
+  from constructors this session, and the `CSWGuiControl` fields (parent 0x14,
+  tooltip_string 0x28, gui_object 0x34) read out of the KOTOR 1 decompiles.
+- `docs/llm-docs/re/swkotor.exe.h` — struct definitions with member ORDER and
+  embedded types. Complements the database: the database gives offsets, the
+  header gives the sequence, and the sequence is what pairs against a KOTOR 2
+  constructor's construction order.
+- `k1_win_gog_swkotor.exe.xml` — every function and vtable SYMBOL by name, which
+  is what turns a KOTOR 1 address into a class name.
+
+The matching `kotor2_steam_aspyr.db` holds only 48 functions, 21 offsets and 14
+globals, all of them creature/VM/inventory level — it was checked against the
+menu worklist and contributes nothing there. Do not re-check it for GUI work.
 
 Ghidra: project `kotor2`, program `swkotor2.exe`, at `C:\Tools\ghidra-projects`.
 Decompile with
 `KDEV_GHIDRA_PROJ=kotor2 KDEV_GHIDRA_PROGRAM=swkotor2.exe tools/ghidra-scripts/decomp.sh 0xADDR`.
+
+**Two `decomp.sh` runs against the SAME project cannot overlap** — the second
+dies on the project lock with `DECOMP_ERROR: no output produced`. Pass several
+addresses to one invocation instead; the ~30-60s startup dominates, so extra
+addresses are nearly free while a second concurrent run is a wasted round. A
+`kotor1` run and a `kotor2` run in parallel are fine, and that pairing is the
+right way to work: one round per game, compared afterwards.
 Function catalogue (11,652 entries) at `docs/llm-docs/re/k2/k2-functions.csv`.
 A space-free copy of the exe lives at `C:\Tools\k2re\swkotor2.exe` — the Ghidra
 batch launcher cannot handle the spaces in the Steam path.

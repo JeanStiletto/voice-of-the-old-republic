@@ -948,9 +948,29 @@ const char* TryPartyPortrait(void* control, char* outBuf, size_t bufSize,
     // the partyId field at +0x44c is only a snapshot taken once in
     // OnPanelAdded and never updated, so reading it left the spoken
     // status frozen at the panel-open composition.
-    const size_t kPartyPortraitSelectedOffset = acc::off::Todo(0x1c4);
-    const size_t kPartyPortraitFlagsOffset = acc::off::Todo(0x448);
-    const size_t kPartyPortraitPartyIdOffset = acc::off::Todo(0x44c);
+    // KOTOR 2 values from its own CSWGuiPartySelection::OnPanelAdded, whose
+    // per-slot loop strides 0x478 (its CSWGuiPartySelectionData) from an array
+    // at panel+0x84 and performs the identical operations on the identical
+    // fields: `flags & ~1 | 2` then `| 1` then `& ~2`, and partyId set to -1
+    // when GetIsMember fails or to GetIndex's result when it succeeds.
+    //   flags   0x448 -> 0x468
+    //   partyId 0x44c -> 0x46c
+    // `selected` is the field directly after the embedded button in both, and
+    // the button sizes are independently established (0x1c4 / 0x1d0): KOTOR 1's
+    // SetSelected writes this+0x1c4, and KOTOR 2's button constructor zeroes
+    // this+0x1d0.
+    //
+    // npcSlot is STILL Todo, deliberately. KOTOR 2's element has FOUR trailing
+    // dwords where KOTOR 1 has three, so which of 0x470 / 0x474 is the roster
+    // index cannot be settled by position, and neither game's OnPanelAdded
+    // writes it — it comes from somewhere else that has not been traced. It is
+    // also not worth tracing yet: the only consumer is
+    // GetPartyNpcNameForSlot, which resolves through kCompanionNamesBySlot —
+    // a table of KOTOR 1 story characters that KOTOR 2 shares none of. That
+    // path needs a KOTOR 2 name source before this offset buys anything.
+    const size_t kPartyPortraitSelectedOffset = acc::off::Pick(0x1c4, 0x1d0);
+    const size_t kPartyPortraitFlagsOffset = acc::off::Pick(0x448, 0x468);
+    const size_t kPartyPortraitPartyIdOffset = acc::off::Pick(0x44c, 0x46c);
     const size_t kPartyPortraitNpcSlotOffset = acc::off::Todo(0x450);
     int npcSlot = -1, flags = 0, partyId = -1, selected = 0;
     __try {

@@ -241,4 +241,17 @@ const uintptr_t kAddrCSWPartyTableGetNPCSelectability = acc::addr::R(0x005637C0)
 const uintptr_t kAddrCSWPartyTableGetNPCObject = acc::addr::R(0x00564700);
 
 // PartySelection renders 9 portraits in a 3x3 grid.
+//
+// KOTOR 2 HAS 12, NOT 9 — read off its CSWGuiPartySelection constructor, which
+// builds party_data as 12 elements of 0x478 where KOTOR 1 builds 9 of 0x454.
+// This one deliberately stays `constexpr` and stays 9, because it is one of the
+// handful of constants C++ will not let go runtime: it sizes the real array
+// `kCompanionNamesBySlot[]` in engine_player_party.cpp. Widening it to 12 there
+// would leave three null names, and making it runtime does not compile.
+//
+// So KOTOR 2 needs its own roster table rather than a wider shared one — which
+// it needs anyway, since kCompanionNamesBySlot holds KOTOR 1 story characters
+// and none of them are in KOTOR 2. Until that exists, the bound is correct for
+// KOTOR 1 and merely truncating on KOTOR 2 (slots 9..11 read as unavailable),
+// which is the safe direction to be wrong in: no out-of-range name lookup.
 constexpr int kPartyRosterSlotCount = 9;
