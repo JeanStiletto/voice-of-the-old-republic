@@ -54,6 +54,8 @@ and add the German in parentheses if it genuinely aids clarity.
 <h3>Bug fixes:</h3>
 
 - French, Italian and Spanish games now speak the Endar Spire warning that the Republic soldiers cannot be saved and the way to the bridge is blocked. The line existed only in English, German and Russian, so on those three languages that moment passed in silence — leaving a blind player with no idea why walking toward the fight kept failing.
+- Komad Fortuna's lines are read out in the Dune Sea. The Twi'lek hunter speaks an untranslated alien tongue, so his subtitles are your only channel, and the mod already knew to read him in Anchorhead and on Kashyyyk — but the krayt-dragon hunt itself is a third appearance that the game names differently again, so out in the dunes he fell silent. He is now on the read-aloud list there too.
+- Griff Vao no longer has his lines read over his voice. Mission's brother is a Twi'lek, and an alien character model normally means "read the subtitle" — but like his sister he speaks fully voiced Basic, so the reading doubled his voice track. He joins the always-suppress list in both places he turns up in Anchorhead.
 
 <h3>Character screen:</h3>
 

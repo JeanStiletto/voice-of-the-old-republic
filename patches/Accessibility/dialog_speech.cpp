@@ -138,6 +138,11 @@ struct SpeakerInfo {
 //     Same appearance 445, same alien-Twi'leki voice, but a different tag, so
 //     the Tatooine exemption above doesn't catch him. (Reported in-game
 //     2026-06-17.)
+//   - "tat18_11komad_01": Komad Fortuna a THIRD time, out in the Dune Sea
+//     (module tat18) for the krayt-dragon hunt itself. Same appearance 445 and
+//     the same alien-Twi'leki voice; the game gives each placement its own tag,
+//     so neither exemption above reached this one. Tag taken from
+//     tat_m18ac.rim + tat_m18ac_s.rim. (Reported in-game 2026-07-31.)
 //   - "kor35_tariga": Tariga, the Sith archaeologist at the Valley of the
 //     Dark Lords entrance (Korriban, module kor35). Wears Sith_Fem_Asian_02
 //     (appearance 495), a genuinely human model with race == HUMAN — but she
@@ -158,6 +163,7 @@ constexpr const char* kNeverSuppressTags[] = {
     "vek",
     "tat17_03komad_01",
     "kas22_xkomad_01",
+    "tat18_11komad_01",
     "kor35_tariga",
     "kor35_adrenas",
 };
@@ -193,10 +199,20 @@ bool IsNeverSuppressTag(const char* tag) {
 //     (Unique_Yuthura_Ban, appearance 280), which classifies non-human — but
 //     like the party's Twi'leks she speaks Basic with full VO, so her subtitle
 //     is redundant and clashed with the voice. (Reported in-game 2026-07-15.)
+//   - "tat17_griff_01" / "tat17_griff_02": Griff Vao, Mission's brother, in his
+//     two Anchorhead placements (modules tat_m17ag and tat_m17ab — the game
+//     spawns a separate creature per placement, each with its own tag, the same
+//     way Komad has one per module). He is a Twi'lek and classifies non-human by
+//     appearance, but like his sister he speaks Basic with full VO, so the
+//     subtitle is redundant and clashed with the voice. Same case as Yuthura.
+//     Tags read from each module's spawn/lookup scripts (tat_m17ag_s.rim,
+//     tat_m17ab_s.rim). (Reported in-game 2026-07-31.)
 constexpr const char* kAlwaysSuppressTags[] = {
     "man26_casandra",
     "man28_merc",
     "kor35_yuthura",
+    "tat17_griff_01",
+    "tat17_griff_02",
 };
 
 bool IsAlwaysSuppressTag(const char* tag) {
