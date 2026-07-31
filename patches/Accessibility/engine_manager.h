@@ -118,6 +118,15 @@ const size_t kMgrModalStackSizeOffset  = acc::off::Same(0x98);
 //     CSWGuiManager::HitCheckMouse this port identified separately, and which
 //     is likewise the first thing KOTOR 1's HandleMouseMove calls. So the
 //     callee really is HandleMouseMove, which is what pins this function.
+//
+// **The KOTOR 2 address is correct but does NOT do what KOTOR 1's does.**
+// Tested in game 2026-07-31: calling it in place of the OS-level cursor warp
+// regressed KOTOR 2 menu navigation straight back to the original bug (focus
+// dragged to one button after every keypress). KOTOR 2's CExoInput::SetMousePos
+// writes only the engine's own copy of the cursor, which the engine overwrites
+// from the true mouse on the next frame; KOTOR 1's moves the real pointer. So on
+// KOTOR 2 this is useful for the hit-test/hover half only, and the cursor has to
+// be moved with SetCursorPos — see WarpCursorToControl in menus_focus_k2.cpp.
 const uintptr_t kAddrMoveMouseToPosition = acc::addr::Pick(0x0040c790, 0x00414230);
 typedef void (__thiscall* PFN_MoveMouseToPosition)(void* gm, int x, int y);
 

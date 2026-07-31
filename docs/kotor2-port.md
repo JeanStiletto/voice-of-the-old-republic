@@ -271,6 +271,37 @@ Corollary: when a KOTOR 1 module contains something whose purpose is unclear,
 load-bearing. Assume every line earned its place until proven otherwise, rather
 than the reverse.
 
+### The counter-corollary: a KOTOR 2 workaround is a fossil too
+
+**Learned the hard way 2026-07-31, by regressing working behaviour.**
+
+KOTOR 2's cursor warp was written as an OS-level `SetCursorPos` because
+`MoveMouseToPosition` had no KOTOR 2 address yet. When that address was found,
+it looked obvious to swap the engine call back in — THE METHOD says prefer
+KOTOR 1's known-good line over a reimplementation. That reasoning was wrong and
+the swap regressed menu navigation to the exact bug the function exists to fix.
+
+The address was right. The assumption was that the two functions do the same
+thing, and they do not: **KOTOR 2's `CExoInput::SetMousePos` does not move the
+OS cursor**, it writes only the engine's own copy, which the engine overwrites
+from the true mouse on the next frame. KOTOR 1's moves the real pointer.
+
+So the rule cuts both ways. A KOTOR 2 divergence that exists because someone
+MEASURED a behavioural difference is itself a fossilised bug fix, and the fact
+that the KOTOR 1 address later becomes available is not evidence that the
+divergence is obsolete. Before replacing KOTOR 2-specific code with the KOTOR 1
+line, ask what measurement produced it — and if the answer is in the comments,
+believe them.
+
+Practical test for telling the two cases apart:
+- KOTOR 2 code written because an address was MISSING → replace it once the
+  address exists.
+- KOTOR 2 code written because a behaviour was MEASURED → the address changes
+  nothing; leave it alone.
+
+The cursor warp reads like the first and is the second. Its comments said so;
+they were read as "temporary" when they were describing a KOTOR 2 fact.
+
 One diagnostic note still worth keeping:
 
 - **Identical failures mean the cause is untouched.** Three fixes failed in

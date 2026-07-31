@@ -109,20 +109,17 @@ char s_lastSpoken[256] = {0};
 // exactly why its navigation chain calls MoveMouseToPosition to keep the
 // engine's own cursor on the focused control.
 //
-// UPDATED 2026-07-31: MoveMouseToPosition now HAS a KOTOR 2 address, so
-// WarpCursorToControl below calls the engine exactly as KOTOR 1 does, and the
-// hand-rolled version is only a fallback. The paragraphs below describe that
-// fallback and are kept because they record why it was built and what was
-// measured — the "engine re-derives the cursor from the real mouse every frame"
-// finding is a KOTOR 2 fact worth keeping regardless of which path runs.
+// This started as a stand-in for MoveMouseToPosition, whose KOTOR 2 address was
+// unknown at the time. That address is known now (0x00414230) and swapping it in
+// was TRIED AND REVERTED on 2026-07-31 — see the note inside
+// WarpCursorToControl. The OS-level warp is the KOTOR 2 answer, not a
+// placeholder for it.
 //
-// It was originally done with writes rather than by calling the engine, because
-// MoveMouseToPosition had no KOTOR 2 address and guessing one would have been
-// reckless: it is the activation path, where a wrong address crashes rather
-// than misbehaves. The writes are safe and well-founded — KOTOR 1's
-// MoveMouseToPosition begins with exactly `this->mouse_x = x; this->mouse_y = y`
-// and KOTOR 2's hover hit-test reads exactly those two fields (manager+0,
-// manager+4), so this sets the same state the engine sets itself.
+// The original reasoning still holds for why the writes alone are well-founded:
+// KOTOR 1's MoveMouseToPosition begins with exactly
+// `this->mouse_x = x; this->mouse_y = y` and KOTOR 2's hover hit-test reads
+// exactly those two fields (manager+0, manager+4), so this sets the same state
+// the engine sets itself. What KOTOR 2 adds is that setting it is not enough.
 //
 // Both offsets used here are verified: the control extent is Same(0x4),
 // observed in KOTOR 2's own panel hit-test.
@@ -169,44 +166,43 @@ void WarpCursorToControl(void* control) {
             int cx = extent[0] + extent[2] / 2;   // left + width/2
             int cy = extent[1] + extent[3] / 2;   // top  + height/2
 
-            // PREFERRED: the engine's own MoveMouseToPosition, which is exactly
-            // what KOTOR 1's navigation chain calls. It has a KOTOR 2 address
-            // now (0x00414230, see kAddrMoveMouseToPosition), established three
-            // ways rather than guessed — the KOTOR 2 twins of all three KOTOR 1
-            // callers call it in the same position, its body makes the same two
-            // calls, and the second of those reaches the HitCheckMouse this port
-            // identified separately. It does the coordinate store, the mouse-
-            // position set and the hover hit-test in one, so it subsumes all
-            // three steps of the stand-in below.
+            // DO NOT replace this with the engine's MoveMouseToPosition.
             //
-            // This is THE METHOD applied to a workaround: KOTOR 1's line is
-            // known-good, so once its KOTOR 2 address exists, prefer it over a
-            // reimplementation.
-            if (acc::addr::Ok(kAddrMoveMouseToPosition)) {
-                reinterpret_cast<PFN_MoveMouseToPosition>(
-                    kAddrMoveMouseToPosition)(mgr, cx, cy);
-            } else {
-                // FALLBACK, kept because it is measured-good and this path is
-                // what shipped first. Writing manager+0/+4 alone is useless: the
-                // engine re-reads the true mouse position every frame and puts
-                // it straight back — the field held 1440,899 across every event
-                // no matter what was stored. That is why three earlier attempts
-                // failed identically, and why this moves the OS cursor.
-                //
-                // Extents are window-client coordinates, so map to screen first
-                // — a no-op in exclusive fullscreen, correct in windowed.
-                POINT pt = { cx, cy };
-                HWND hwnd = GetActiveWindow();
-                if (hwnd) ClientToScreen(hwnd, &pt);
-                SetCursorPos(pt.x, pt.y);
+            // That was tried on 2026-07-31, once its KOTOR 2 address
+            // (0x00414230) was established, on the reasoning that KOTOR 1's
+            // navigation chain calls exactly that and a known-good engine line
+            // should beat a reimplementation. **It regressed immediately**:
+            // focus was dragged back to "Spiel laden" after every keypress —
+            // precisely the bug this function exists to fix.
+            //
+            // The address is not wrong; the assumption was. KOTOR 2's
+            // CExoInput::SetMousePos does NOT move the OS cursor the way
+            // KOTOR 1's does. It only writes the engine's own copy, which the
+            // engine then overwrites from the true mouse on the very next frame
+            // — the same measured behaviour recorded below, now confirmed a
+            // second time from the other direction.
+            //
+            // So the OS-level warp is not a stand-in for a missing address. It
+            // is the KOTOR 2 answer, and the missing address was never why it
+            // was written this way.
+            //
+            // Writing manager+0/+4 alone is useless for the same reason: the
+            // field held 1440,899 across every event no matter what was stored.
+            // That is why three earlier attempts failed identically.
+            //
+            // Extents are window-client coordinates, so map to screen first —
+            // a no-op in exclusive fullscreen, correct in windowed.
+            POINT pt = { cx, cy };
+            HWND hwnd = GetActiveWindow();
+            if (hwnd) ClientToScreen(hwnd, &pt);
+            SetCursorPos(pt.x, pt.y);
 
-                // Keep the manager's copy consistent, then re-hit-test so
-                // hovered (manager+8) follows immediately, not a frame later.
-                int* cursor = reinterpret_cast<int*>(mgr);
-                cursor[0] = cx;
-                cursor[1] = cy;
-                reinterpret_cast<PFN_Rehover>(kAddrK2ManagerRehover)(mgr);
-            }
+            // Keep the manager's copy consistent, then re-hit-test so hovered
+            // (manager+8) follows immediately rather than a frame later.
+            int* cursor = reinterpret_cast<int*>(mgr);
+            cursor[0] = cx;
+            cursor[1] = cy;
+            reinterpret_cast<PFN_Rehover>(kAddrK2ManagerRehover)(mgr);
         }
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         // Nothing to recover; a failed warp just means hover keeps fighting.
