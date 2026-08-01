@@ -79,8 +79,11 @@ const uintptr_t kAddrSelectPrevAction = acc::addr::R(0x00686680);
 const uintptr_t kAddrDoTargetAction = acc::addr::R(0x00689610);
 
 // CClientExoApp::GetGameObject @ 0x005ED580 — same address engine_area /
-// engine_picker use. (this, handle) -> CGameObject*.
-const uintptr_t kAddrCClientGetGameObject = acc::addr::R(0x005ED580);
+// engine_picker use. (this, handle) -> CGameObject*. K2 twin 0x0073F4D0
+// (see kAddrCClientExoAppGetGameObject in engine_area.h for the witness);
+// kept as Pick here purely for consistency — this module stays K1-gated
+// until the Batch 6 triage.
+const uintptr_t kAddrCClientGetGameObject = acc::addr::Pick(0x005ED580, 0x0073F4D0);
 
 // CSWCCreatureStats::GetCanUseSkill @ 0x006477e0 — bool __thiscall
 // (CSWCCreatureStats*, ushort skill_idx). Used by CSWCDoor::GetTargetActions

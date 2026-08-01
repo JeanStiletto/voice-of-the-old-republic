@@ -380,7 +380,13 @@ const uintptr_t kAddrCGameObjectArrayGetGameObject = acc::addr::Pick(0x004D8230,
 // instance; we never need to touch it directly because GetGameObject
 // hides the array layer). Verified live 2026-05-04 — see
 // ResolveClientObjectHandle's docs.
-const uintptr_t kAddrCClientExoAppGetGameObject = acc::addr::R(0x005ED580);
+//
+// K2 facade found by facade-cluster alignment (K1 order GetPlayerCreature
+// +4 slots → GetGameObject) and confirmed by body: 0x0073F4D0 unwraps the
+// handle and calls the ALREADY-BANKED CGameObjectArray::GetGameObject
+// (0x0053DFB0, below) on the array at [internal+0x14]. Same thiscall
+// object*(id) signature as KOTOR 1's thunk.
+const uintptr_t kAddrCClientExoAppGetGameObject = acc::addr::Pick(0x005ED580, 0x0073F4D0);
 
 // Map + fog-of-war chain.
 const uintptr_t kAddrCServerExoAppGetModule = acc::addr::Pick(0x004AE6B0, 0x0051bd90);
@@ -585,7 +591,12 @@ const size_t kSurfaceMeshAdjacenciesOffset     = acc::off::Same(0x88);
 
 const size_t kWalkmeshFaceStride               = acc::off::Same(0xc);   // 3 × ulong
 
-const uintptr_t kAddrCollisionMeshLocalToWorld = acc::addr::R(0x00596aa0);
+// K2 twin 0x005EE7B0, found via KOTOR 2 ShowObject's renderDEV door path
+// (the same 18-call LocalToWorld pattern as K1's 0x005f9c60) and verified by
+// body: identity-copy when world_coords [this+4] is set, else Vector::op+
+// with this->position (+0x2c) and quaternion rotate with this->orientation
+// (+0x38). Same __thiscall (this, Vector* out, Vector* in) signature.
+const uintptr_t kAddrCollisionMeshLocalToWorld = acc::addr::Pick(0x00596aa0, 0x005EE7B0);
 
 namespace acc::engine {
 

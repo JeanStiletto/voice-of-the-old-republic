@@ -1161,8 +1161,13 @@ const size_t kInGameMessagesExitButtonOffset      = acc::off::Todo(0x930);
 //   panel             @+0x0
 //   replies_listbox   @+0x19c4
 //   message_label     @+0x1ca4
-const size_t kDialogRepliesListBoxOffset          = acc::off::Todo(0x19c4);
-const size_t kDialogMessageLabelOffset            = acc::off::Todo(0x1ca4);
+// K2 values from the CSWGuiDialogCinematic constructor (0x008BBA80,
+// Batch 3b): "LB_REPLIES" wired as the EMBEDDED control at panel+0x2760
+// (dword slot 0x9d8; the ctor then makes a virtual call through the embedded
+// control's own vtable, confirming embed-not-pointer, same shape as K1) and
+// "LBL_MESSAGE" embedded at panel+0x2A50.
+const size_t kDialogRepliesListBoxOffset          = acc::off::Pick(0x19c4, 0x2760);
+const size_t kDialogMessageLabelOffset            = acc::off::Pick(0x1ca4, 0x2a50);
 
 // Conversation partner — on every server-side game object (CSWSObject)
 // the engine maintains a `dialog_owner: CSWSObject*` at +0x54 pointing
@@ -1175,7 +1180,12 @@ const size_t kDialogMessageLabelOffset            = acc::off::Todo(0x1ca4);
 // multi-party cutscenes the speaker can be a third creature; the partner
 // pointer is still useful as a "human-ish dialog?" heuristic but not
 // authoritative. For 1-on-1 dialog and barks it's exactly the speaker.
-const size_t kServerObjectDialogOwnerOffset       = acc::off::Todo(0x54);
+// Verified IDENTICAL on KOTOR 2 (Batch 3b): the K2 SetDialogOwner twin
+// (0x00546DB0, called 3× from the server dialog cluster at 0x006C5xxx) is
+// the same one-line `MOV [this+0x54], arg` setter as K1's 0x004CB7A0. So
+// the CSWSObject field insertion that moved area_id (0x8c→0x90) sits ABOVE
+// +0x54.
+const size_t kServerObjectDialogOwnerOffset       = acc::off::Same(0x54);
 
 // CSWSCreature inline appearance cache at +0xa4c per Lane's struct, but
 // VERIFIED LIVE 2026-05-30 to read 0 even for fully-initialised speakers
@@ -1199,19 +1209,28 @@ const size_t kCreatureStatsPointerOffset          = acc::off::Pick(0xa74, 0x1198
 // Cathar, Echani, Mandalorian) to HUMAN, so we discriminate by
 // appearance_type, not by race. Race is logged so future overrides can be
 // designed on observed (race, appearance_type) pairs from the diagnostic.
-const size_t kCreatureStatsRaceOffset             = acc::off::Todo(0xdc);
+// K2 0xe0 — witnessed twice (2026-08-01, Batch 3b): CSWSCreatureStats' GFF
+// loader (0x006AFED0) reads [stats+0xe0] as the "Race" default and the saver
+// (0x006B3D10) writes it back under the same label.
+const size_t kCreatureStatsRaceOffset             = acc::off::Pick(0xdc, 0xe0);
 
 // CSWSCreatureStats.appearance_type (ushort, indexes appearance.2da).
 // Verified from Lane's exported header @0x186 (line 15707 in swkotor.exe.h).
 // THIS is the authoritative species discriminator — the CSWSCreature inline
 // cache at +0xa4c is unreliable.
-const size_t kCreatureStatsAppearanceTypeOffset   = acc::off::Todo(0x186);
+// K2 0x194 (word) — same double witness as Race: "Appearance_Type" loader
+// store at 0x006B123B and saver read at 0x006B4AFD, both [stats+0x194].
+const size_t kCreatureStatsAppearanceTypeOffset   = acc::off::Pick(0x186, 0x194);
 
 // CSWGuiDialogComputer adds a terminal-output listbox above the embedded
 // replies listbox.
 //   message_listbox  @+0x2cfc   (terminal output text)
 //   obscure_label    @+0x34dc
-const size_t kDialogComputerMessageListBoxOffset  = acc::off::Todo(0x2cfc);
+// K2 0x35FC from the CSWGuiDialogComputer constructor (0x008BC620):
+// "LB_MESSAGE" embedded at dword slot 0xd7f. The same ctor wires
+// "LB_REPLIES" at 0x2760 — identical to DialogCinematic's, confirming the
+// shared CSWGuiDialog base layout holds on KOTOR 2 too.
+const size_t kDialogComputerMessageListBoxOffset  = acc::off::Pick(0x2cfc, 0x35fc);
 
 // CGuiInGame.current_dialog_speaker (field93_0x170) — the CLIENT-side object
 // id of the creature speaking the current dialog entry. Written by
@@ -1223,7 +1242,13 @@ const size_t kDialogComputerMessageListBoxOffset  = acc::off::Todo(0x2cfc);
 // NPC-to-NPC scenes where the player's dialog_owner (+0x54) is null. Sentinel
 // 0x7f000000 means "no participant". Sibling slots: +0x174 listener,
 // +0x178 previous speaker, +0x184 third participant.
-const size_t kCGuiInGameDialogSpeakerOffset       = acc::off::Todo(0x170);
+// K2 0x190 — the whole speaker block shifted +0x20, witnessed in K2's
+// HandleDialogEntry (0x007CBF60, identity confirmed by the fade latch, the
+// SetReplyData-loop, the TLK gender dance and the camera dispatch): the K1
+// update logic appears verbatim over +0x190/+0x194/+0x198/+0x19C with the
+// first-speaker latch at +0x1A4. Sibling slots shift with it (listener
+// +0x194, previous speaker +0x198, third participant +0x1A4).
+const size_t kCGuiInGameDialogSpeakerOffset       = acc::off::Pick(0x170, 0x190);
 
 // CGuiInGame reply-text model — the engine's authoritative, render-independent
 // store of the CURRENT entry's selectable reply strings. Populated by
@@ -1241,8 +1266,15 @@ const size_t kCGuiInGameDialogSpeakerOffset       = acc::off::Todo(0x170);
 // CExoString array here always carries every active reply's resolved text.
 //   field69_0x114  reply array capacity/count (SetReplyData bounds-guards on it)
 //   field70_0x118  pointer to the CExoString[] array
-const size_t kCGuiInGameReplyCountOffset          = acc::off::Todo(0x114);
-const size_t kCGuiInGameReplyTextArrayOffset      = acc::off::Todo(0x118);
+//
+// K2: the whole reply block shifted +0x20 — count 0x134, text array 0x138 —
+// witnessed in K2's SetReplyData (0x007C0C70, found by its unique 19-param
+// ret 0x4C signature; the body is K1's sixteen parallel arrays with the same
+// types in the same order, +0x13C..+0x17C). This settles the Batch 3b trap:
+// K1's +0x114/+0x118 land inside K2's MESSAGE RINGS (+0x110/+0x118), so the
+// old Todo values would have silently read ring pointers as reply data.
+const size_t kCGuiInGameReplyCountOffset          = acc::off::Pick(0x114, 0x134);
+const size_t kCGuiInGameReplyTextArrayOffset      = acc::off::Pick(0x118, 0x138);
 
 // CSWGuiBarkBubble.object_id @+0x1c0 — the bark speaker's CLIENT object id,
 // written by CSWGuiBarkBubble::SetBark @0x006a9920 (this->object_id = param_1)
@@ -1252,7 +1284,12 @@ const size_t kCGuiInGameReplyTextArrayOffset      = acc::off::Todo(0x118);
 // zone messages, area feedback). Resolve a real id through
 // ClientToServerObjectId → ResolveServerObjectHandle to classify the speaker,
 // exactly as the dialog-speaker path does for CGuiInGame +0x170.
-const size_t kBarkBubbleObjectIdOffset            = acc::off::Todo(0x1c0);
+// K2 0x1CC from CSWGuiBarkBubble::Draw (0x008BE740, vtable-slot-paired with
+// K1's 0x006A9CE0): the guard `[this+0x1CC] != 0x7f000000` feeds the id into
+// the client GetGameObject facade (0x0073F4D0 — the Batch 3 find, mutually
+// confirming) and the result into the `< 36.0` six-metre-squared cull test,
+// K1's exact Draw shape.
+const size_t kBarkBubbleObjectIdOffset            = acc::off::Pick(0x1c0, 0x1cc);
 
 // KOTOR 2 values by .gui tag out of its own constructor (LB_SHOPITEMS,
 // LB_INVITEMS, LB_DESCRIPTION, BTN_Cancel, BTN_Examine, BTN_Accept), same

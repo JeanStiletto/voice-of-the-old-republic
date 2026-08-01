@@ -97,7 +97,11 @@ void* GetPlayerArea() {
 }
 
 bool GetCameraPosition(Vector& out) {
-    const size_t kCameraGobPositionOffset    = acc::off::Todo(0x7c);  // Camera+0x04 + Gob+0x78
+    // K1: Camera+0x04 embedded Gob + Gob position +0x78. K2 moved the Gob
+    // position to +0xa4 (witnessed in Gob::GetPosition 0x00459710, which
+    // returns this+0xa4; Camera::GetPosition 0x0047EF10 reads camera+0xa8,
+    // confirming the Gob still sits at Camera+0x4).
+    const size_t kCameraGobPositionOffset    = acc::off::Pick(0x7c, 0xa8);
     void* camera = GetCamera();
     if (!camera) return false;
     __try {
@@ -111,7 +115,11 @@ bool GetCameraPosition(Vector& out) {
 }
 
 bool GetCameraYawRadians(float& outRad) {
-    const size_t kCameraOrientationOffset    = acc::off::Todo(0x88);  // Camera+0x04 + Gob+0x84
+    // K1: Camera+0x04 + Gob orientation +0x84. K2: Gob quaternion moved to
+    // +0xb0 (Gob::GetOrientation 0x00459740 copies 16 bytes from this+0xb0;
+    // Camera::GetOrientation 0x0047EF40 reads camera+0xb4). Same base-engine
+    // Quaternion struct on both games, so the w,x,y,z layout below carries.
+    const size_t kCameraOrientationOffset    = acc::off::Pick(0x88, 0xb4);
     void* camera = GetCamera();
     if (!camera) return false;
     __try {

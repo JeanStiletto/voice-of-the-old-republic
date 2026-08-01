@@ -202,7 +202,11 @@ bool GetPartyNpcNameForSlot(int npcSlot, char* outBuf, size_t bufSize);
 // the dispatcher's free-look case reading the same +0x138 guard field off its
 // result that KOTOR 1's case 0xd0 does.
 const uintptr_t kAddrGetPlayerCreature = acc::addr::Pick(0x005ED540, 0x0073F450);
-const uintptr_t kAddrCSWSObjectGetArea = acc::addr::R(0x004CB120);
+// K2 twin found by callee fingerprint (calls the banked GetObjectArray facade
+// 0x0051C080 then CGameObjectArray::GetGameObject 0x0053DFB0 on [this+0x90],
+// then the +0x28 AsArea vtable slot — K1's body line for line) and by source
+// order (sits immediately before GetGender 0x00545460, as K1's does).
+const uintptr_t kAddrCSWSObjectGetArea = acc::addr::Pick(0x004CB120, 0x005453C0);
 
 // CSWCObject.server_object — same for every client object. KOTOR 1 reads the
 // field directly; KOTOR 2's value is unestablished, so there the code calls
@@ -256,9 +260,21 @@ constexpr int       kPartyTableMaxMembers          = 11;
 
 // CSWPartyTable thiscalls used by the PartySelection extractor (same
 // accessors CSWGuiPartySelection::OnPanelAdded uses to build portraits).
-const uintptr_t kAddrCSWPartyTableGetIsNPCAvailable = acc::addr::R(0x005636B0);
+//
+// K2 twins (2026-08-01, Batch 3, decompile-confirmed): GetNPCObject
+// 0x005FAAF0 reproduces K1's body exactly — avail check, cached id at
+// table+0x1c+slot*4 vs 0x7f000000, template-load with CSWSCreature
+// (0x7f000000,0), the +0x9c dead-check + resurrection branch, cache stamp.
+// Bounds are <0xc (K2's 12-NPC roster). Its sibling 0x005FAD70 is the
+// K2-only PUPPET variant (array at +0x14c, 3 slots) — do not confuse them.
+// GetIsNPCAvailable 0x005FA960 reads the avail array at table+0x4c.
+// GetNPCSelectability has NO confirmed K2 twin yet — the shape-adjacent
+// 0x005FA9C0 (array at +0x11c) lacks K1's avail gate and 0xff default and
+// may be K2's influence accessor, so it stays R(); PartyTableIsNPCSelectable
+// declines under its SEH on KOTOR 2.
+const uintptr_t kAddrCSWPartyTableGetIsNPCAvailable = acc::addr::Pick(0x005636B0, 0x005FA960);
 const uintptr_t kAddrCSWPartyTableGetNPCSelectability = acc::addr::R(0x005637C0);
-const uintptr_t kAddrCSWPartyTableGetNPCObject = acc::addr::R(0x00564700);
+const uintptr_t kAddrCSWPartyTableGetNPCObject = acc::addr::Pick(0x00564700, 0x005FAAF0);
 
 // PartySelection renders 9 portraits in a 3x3 grid.
 //

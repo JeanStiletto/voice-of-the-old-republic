@@ -433,11 +433,19 @@ static const PanelKindOffset kPanelKindOffsets[] = {
     { acc::off::Same(0x20), PanelKind::InGameJournal,       "InGameJournal" },
     { acc::off::Same(0x24), PanelKind::InGameMap,           "InGameMap" },
     { acc::off::Same(0x28), PanelKind::InGameOptions,       "InGameOptions" },
-    { acc::off::Todo(0x3c), PanelKind::DialogCinematicCopy, "DialogCinematicCopy" },
+    // 0x3c is the ACTIVE-dialog-panel pointer (aliases 0x40 or 0x44), not a
+    // creator-built slot — Same on K2, witnessed by the K2 helper 0x007CB750
+    // (`[gui+0x3c] && [gui+0x3c]==[gui+0x40]`), which is K1's inline
+    // dialog_cinematic_copy_==dialog_cinematic check factored out.
+    { acc::off::Same(0x3c), PanelKind::DialogCinematicCopy, "DialogCinematicCopy" },
     { acc::off::Same(0x40), PanelKind::DialogCinematic,     "DialogCinematic" },
     { acc::off::Same(0x44), PanelKind::DialogComputer,      "DialogComputer" },
-    // 0x48 holds CSWGuiBlackenedLabel on KOTOR 2.
-    { acc::off::Todo(0x48), PanelKind::DialogComputerCamera, "DialogComputerCamera" },
+    // Same(0x48) witnessed directly: the panel creator stores the
+    // CSWGuiDialogComputerCamera ctor result (0x008BD910) via
+    // `MOV [gui+0x48],ECX` at 0x007BE9D4. Batch 2's note that
+    // CSWGuiBlackenedLabel sits here was the slot-table tool misattributing
+    // the immediately-following BlackenedLabel allocation.
+    { acc::off::Same(0x48), PanelKind::DialogComputerCamera, "DialogComputerCamera" },
     { acc::off::Same(0x4c), PanelKind::BarkBubble,          "BarkBubble" },
     { acc::off::Same(0x50), PanelKind::Examine,             "Examine" },
     { acc::off::Same(0x54), PanelKind::Container,           "Container" },

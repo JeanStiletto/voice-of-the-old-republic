@@ -11,6 +11,7 @@ EXPORTS
     OnListBoxSetActiveControl
     OnUpdate
     OnSetMoveToModuleString
+    OnSetMoveToModuleStringK2
     OnPlayFootstep
     OnSetListenerPosition
     OnCalculatePitchVarianceFrequency
@@ -25,6 +26,7 @@ EXPORTS
     OnAppendToMsgBuffer
     OnAppendToMsgBufferK2
     OnShowObject
+    OnShowObjectK2
     OnCombatRoundAddAction
     OnCombatRoundRemoveAllActions
     OnCombatRoundSetCurrentAction
@@ -33,3 +35,4 @@ EXPORTS
     OnTurretBulletHit
     OnPlayerFire
     OnDoorOpen
+    OnDoorOpenK2

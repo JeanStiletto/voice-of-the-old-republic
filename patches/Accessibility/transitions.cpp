@@ -1471,7 +1471,9 @@ void AnnouncePreLoadDestination(void* exoStringPtr) {
 // order matches the hooks.toml declaration.
 extern "C" void __cdecl OnSetMoveToModuleString(void* /*serverApp*/,
                                                 void* arg_addr) {
-    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
+    // Gate cleared for KOTOR 2 in Batch 3 — but only the KOTOR 1 hook routes
+    // here (with the LEA'd slot address); KOTOR 2 arrives through
+    // OnSetMoveToModuleStringK2 below with the CExoString* value directly.
     EnsurePrismInitialized();
 
     void* exoStringPtr = nullptr;
@@ -1483,5 +1485,27 @@ extern "C" void __cdecl OnSetMoveToModuleString(void* /*serverApp*/,
         return;
     }
 
+    acc::transitions::AnnouncePreLoadDestination(exoStringPtr);
+}
+
+// CServerExoApp::SetMoveToModuleString @0x0051BFD0 on KOTOR 2, hooked at
+// 0x0051BFD9 (after the prologue stored `this`). Identity decompile-confirmed:
+// the body assigns the destination CExoString at internal([this+4])+0x1008C.
+// Unoptimised frame, so the destination is a clean frame param at [EBP+8] —
+// the value itself, NOT the K1 LEA'd slot address; no double-deref here.
+extern "C" __declspec(dllexport)
+void __cdecl OnSetMoveToModuleStringK2(void* ebp) {
+    if (!acc::game::IsKotor2()) return;
+    if (!ebp) return;
+
+    void* exoStringPtr = nullptr;
+    __try {
+        exoStringPtr = *reinterpret_cast<void**>(static_cast<char*>(ebp) + 8);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return;
+    }
+    if (!exoStringPtr) return;
+
+    EnsurePrismInitialized();
     acc::transitions::AnnouncePreLoadDestination(exoStringPtr);
 }

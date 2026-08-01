@@ -625,7 +625,11 @@ const uintptr_t kAddrCGuiInGameHideExamineBox = acc::addr::R(0x0062d440);
 // engine_area::GetObjectName when working from a handle (queue targets,
 // LastTarget) — the latter falls back to the modder-assigned tag for
 // generic enemies whose `first_name` strref is empty.
-const uintptr_t kAddrCClientExoAppGetObjectName = acc::addr::R(0x005ed350);
+// K2 facade 0x0073F0E0, by facade-cluster alignment 19 functions before
+// GetPlayerCreature (0x0073F450) — every intermediate facade's body matched
+// its K1 role during the walk (timer fields +0x24..+0x34, the ImeUI pair,
+// the capture trio), and the body forwards (handle, CExoString*) with ret 8.
+const uintptr_t kAddrCClientExoAppGetObjectName = acc::addr::Pick(0x005ed350, 0x0073F0E0);
 
 // CSWGuiStore — merchant/trading panel (PanelKind::Store, slot 0x84 in
 // CGuiInGame). Two listboxes plus a description listbox; the mode-toggle

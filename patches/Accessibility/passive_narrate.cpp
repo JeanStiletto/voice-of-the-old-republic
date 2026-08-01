@@ -397,10 +397,12 @@ void Tick() {
 
         // CClientExoAppInternal::HandleInputEvent @ 0x00621210.
         // __thiscall(int param_1, int param_2) — same signature the
-        // input-pipeline detour observes. dir 204=E / 205=Q.
+        // input-pipeline detour observes. dir 204=E / 205=Q. K2 twin is the
+        // Batch 2 dispatcher find (0x007B12C0, triple-witnessed: 5 callers,
+        // the case-0xdf Esc path, the hotkey triple).
         using PFN_HIE = void(__thiscall*)(void*, int, int);
         const uintptr_t kAddrCClientExoAppInternalHandleInputEvent =
-            acc::addr::R(0x00621210);
+            acc::addr::Pick(0x00621210, 0x007B12C0);
         auto fn = reinterpret_cast<PFN_HIE>(
             kAddrCClientExoAppInternalHandleInputEvent);
 
@@ -450,6 +452,35 @@ void Tick() {
 // Thin trampoline for the ShowObject detour (hooks.toml @ 0x005f9c8e).
 extern "C" __declspec(dllexport)
 void __cdecl OnShowObject(void* /*clientObject*/, int handle) {
-    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
+    // Gate cleared for KOTOR 2 in Batch 3 — only the KOTOR 1 hook routes here
+    // (its cut point has the computed handle in EAX); KOTOR 2 arrives through
+    // OnShowObjectK2 below, which computes the handle itself.
     acc::passive_narrate::OnEngineShowObject(static_cast<uint32_t>(handle));
+}
+
+// CClientExoAppInternal::ShowObject @0x00798D70 on KOTOR 2 (identity confirmed
+// by decompile: SetMainInterfaceTarget head call, the null-path GetCharacter(0)
+// → LookAt(0x7f000000, 10.0), the combat hostile-hilite array — K1's structure
+// throughout). Hooked at 0x00798D98, the `this` store right after SEH
+// registration; the K1 mid-function cut had the handle precomputed in EAX, so
+// here we reproduce it: obj = [EBP+8], handle = obj ? obj->id : 0x7f000000.
+// The id at obj+0x4 is byte-witnessed in K2's own head wrapper (0x00796B50
+// reads [obj+4] before calling SetMainInterfaceTarget).
+extern "C" __declspec(dllexport)
+void __cdecl OnShowObjectK2(void* ebp) {
+    if (!acc::game::IsKotor2()) return;
+    if (!ebp) return;
+
+    uint32_t handle = 0x7F000000u;
+    __try {
+        void* obj = *reinterpret_cast<void**>(static_cast<char*>(ebp) + 8);
+        if (obj) {
+            handle = *reinterpret_cast<uint32_t*>(
+                static_cast<char*>(obj) + 4);
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return;
+    }
+
+    acc::passive_narrate::OnEngineShowObject(handle);
 }

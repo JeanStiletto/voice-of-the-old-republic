@@ -97,6 +97,10 @@ def main():
         "OnHideSWInGameGui": "OnHideSWInGameGuiK2",
         "OnSetSWGuiStatus": "OnSetSWGuiStatusK2",
         "OnAppendToMsgBuffer": "OnAppendToMsgBufferK2",
+        # Batch 3 — world / area / transitions
+        "OnSetMoveToModuleString": "OnSetMoveToModuleStringK2",
+        "OnDoorOpen": "OnDoorOpenK2",
+        "OnShowObject": "OnShowObjectK2",
     }
 
     print(f"{'handler':38s} {'K1 addr':12s} {'K2 hook':9s} {'K2 gate':9s} verdict")

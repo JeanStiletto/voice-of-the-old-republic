@@ -382,3 +382,90 @@ type = "pointer"
 [[hooks.parameters]]
 source = "ebp"
 type = "pointer"
+
+# ============================================================================
+# Batch 3 — world / area / transitions
+# ============================================================================
+
+# CServerExoApp::SetMoveToModuleString @0x0051BFD0 (K1 0x004AECD0). Identity
+# decompile-confirmed: the body assigns the destination-module CExoString at
+# internal([this+4])+0x1008C. 7 callers incl. the door-transition EventHandler.
+#
+# Hooked after the prologue at 0x0051BFD9, on the SEH-scope-index init:
+#   0051bfd0: 55 8b ec 83 ec 0c     prologue (PUSH EBP; MOV EBP,ESP; SUB ESP,0xC)
+#   0051bfd6: 89 4d f4              MOV [EBP-0xC],ECX     ; this stored
+#   0051bfd9: c7 45 fc 00 00 00 00  MOV [EBP-0x4],0       ← hook here, 7 bytes
+#   0051bfe0: 8b 45 f4              MOV EAX,[EBP-0xC]     ; resume point
+#
+# The destination CExoString* is a clean frame param at [EBP+8] — the VALUE,
+# unlike K1's esp+4 LEA'd slot address, so the K2 wrapper reads it directly.
+[[hooks]]
+address = 0x0051bfd9
+type = "detour"
+function = "OnSetMoveToModuleStringK2"
+
+# c7 45 fc 00 00 00 00  MOV [EBP-0x4], 0
+original_bytes = [0xc7, 0x45, 0xfc, 0x00, 0x00, 0x00, 0x00]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ebp"
+type = "pointer"
+
+# CSWSDoor::OpenDoor @0x00619D00 (K1 0x00589CEB mid-function). Identity
+# decompile-confirmed: stamps the opener id at [this+0x36C] and dot-tests the
+# opener's position (+0x94) against the door's orientation to pick the open
+# direction — the K1 body recompiled.
+#
+# Hooked at 0x00619DAA, immediately before the opener stamp:
+#   00619daa: 8b 45 c4              MOV EAX,[EBP-0x3C]    ← hook here, 6 bytes
+#   00619dad: 8b 4d 08              MOV ECX,[EBP+8]       ; (cut continues)
+#   00619db0: 89 88 6c 03 00 00     MOV [EAX+0x36C],ECX   ; resume point
+#
+# Both cut instructions are frame-relative. Door this = [EBP-0x3C],
+# opener's server object id = [EBP+8].
+[[hooks]]
+address = 0x00619daa
+type = "detour"
+function = "OnDoorOpenK2"
+
+# 8b 45 c4              MOV EAX, [EBP-0x3C]
+# 8b 4d 08              MOV ECX, [EBP+8]
+original_bytes = [0x8b, 0x45, 0xc4, 0x8b, 0x4d, 0x08]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ebp"
+type = "pointer"
+
+# CClientExoAppInternal::ShowObject @0x00798D70 (K1 0x005F9C60). Identity
+# decompile-confirmed: head calls the SetMainInterfaceTarget wrapper
+# (0x00796B50), null path is GetCharacter(0) → LookAt(0x7F000000, 10.0),
+# combat path maintains the hostile-hilite array — K1's structure throughout.
+#
+# Hooked at 0x00798D98, the `this` store right after SEH registration:
+#   00798d92: 64 a3 00 00 00 00     MOV FS:[0],EAX        ; SEH registered
+#   00798d98: 89 8d 10 fc ff ff     MOV [EBP-0x3F0],ECX   ← hook here, 6 bytes
+#   00798d9e: 6a 00                 PUSH 0                ; resume point
+#
+# K1 hooks mid-function with the computed handle already in EAX; here the
+# wrapper computes it from obj = [EBP+8] (id at obj+0x4, byte-witnessed in
+# 0x00796B50's own head).
+[[hooks]]
+address = 0x00798d98
+type = "detour"
+function = "OnShowObjectK2"
+
+# 89 8d 10 fc ff ff     MOV [EBP-0x3F0], ECX
+original_bytes = [0x89, 0x8d, 0x10, 0xfc, 0xff, 0xff]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ebp"
+type = "pointer"

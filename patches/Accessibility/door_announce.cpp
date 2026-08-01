@@ -78,6 +78,27 @@ void Tick() {
 // comparable to the leader's. We only record; the facing readout + player
 // filter + dedup run on the next tick.
 extern "C" void __cdecl OnDoorOpen(void* /*serverDoor*/, uint32_t openerServerId) {
-    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
+    // Gate cleared for KOTOR 2 in Batch 3. Whole chain K2-verified: the tick
+    // reads the leader via GetPlayerServerObject (K2 branch calls the engine's
+    // GetServerCreature) and the facing readout's camera fields are Pick'd.
     acc::door_announce::NoteDoorOpened(openerServerId);
+}
+
+// CSWSDoor::OpenDoor @0x00619D00 on KOTOR 2, hooked at 0x00619DAA — right
+// before the opener stamp `MOV [EAX+0x36C],ECX` (identity decompile-confirmed:
+// stamp plus the open-direction dot test against the opener's position).
+// Unoptimised frame: door `this` = [EBP-0x3C], opener id = [EBP+8].
+extern "C" __declspec(dllexport)
+void __cdecl OnDoorOpenK2(void* ebp) {
+    if (!acc::game::IsKotor2()) return;
+    if (!ebp) return;
+
+    uint32_t openerId = 0;
+    __try {
+        openerId = *reinterpret_cast<uint32_t*>(static_cast<char*>(ebp) + 8);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return;
+    }
+
+    acc::door_announce::NoteDoorOpened(openerId);
 }

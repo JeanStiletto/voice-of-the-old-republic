@@ -66,15 +66,26 @@ const size_t kAppManagerServerAppOffset = acc::off::Same(0x8);
 // the slot table out of). Both hops carry KOTOR 1's values, and the second is
 // kClientExoAppGuiInGameOff — so one listing settles the whole chain.
 //
-// The SERVER side has no such witness yet, and "the client matched" is not
-// evidence for it: these are different classes that merely share a shape.
+// The SERVER side is now witnessed too (2026-08-01, Batch 3): KOTOR 2's
+// CServerExoApp::SetMoveToModuleString (0x0051BFD0, identity confirmed by its
+// decompile writing the module-transition CExoString at internal+0x1008C)
+// reads the internal from [this+4], and the whole 0x0051Bxxx facade cluster
+// repeats the same hop — including GetLoadFromSaveGame (0x0051CDE0), whose
+// identity Batch 2 established independently.
 const size_t kClientExoAppInternalOffset = acc::off::Same(0x4);
-const size_t kServerExoAppInternalOffset = acc::off::Todo(0x4);
+const size_t kServerExoAppInternalOffset = acc::off::Same(0x4);
 
 // The client side continues into the world view:
 //   CClientExoAppInternal → +0x18 CSWCModule → +0x40 Camera.
-const size_t kClientInternalModuleOffset = acc::off::Todo(0x18);
-const size_t kCSWCModuleCameraOffset     = acc::off::Todo(0x40);
+//
+// Both hops verified identical on KOTOR 2 (2026-08-01, Batch 3): the K2
+// GetModule facade (0x0073F430, facade-cluster alignment anchored on
+// GetPlayerCreature/GetInGameGui) forwards to an internal (0x00726F80) that
+// reads [internal+0x18], and the K2 GetModuleCamera facade's internal
+// (0x00781810) calls that same GetModule internal then reads [module+0x40].
+// The two witnesses reproduce KOTOR 1's exact chain shape end to end.
+const size_t kClientInternalModuleOffset = acc::off::Same(0x18);
+const size_t kCSWCModuleCameraOffset     = acc::off::Same(0x40);
 
 // CClientExoAppInternal.input_class. 0/4 = in-world routing, 2 = a menu or
 // sub-screen owns input. Same on KOTOR 2, by two independent witnesses

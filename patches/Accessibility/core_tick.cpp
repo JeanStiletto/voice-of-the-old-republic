@@ -328,45 +328,65 @@ void Dispatch() {
 
         // Diagnostic: log player action-queue depth changes (delta only).
         PHASE("engine.actionQueueDiag", acc::engine::TickActionQueueDiag());
+    }
 
-        // Drain deferred Q/E reannounce.
-        PHASE("passive_narrate", acc::passive_narrate::Tick());
+    // ----- Batch 3 (KOTOR 2 port): world / area / transitions -----
+    // These five run on BOTH games. Their whole read/call chains were
+    // resolved for KOTOR 2 offline (camera pos/yaw Pick'd, LocalToWorld /
+    // GetArea / client GetGameObject / GetNPCObject / GetObjectName all
+    // Pick'd) — see docs/kotor2-port.md Batch 3.
 
+    // Drain deferred Q/E reannounce.
+    PHASE("passive_narrate", acc::passive_narrate::Tick());
+
+    if (k1) {
         // Tab speaks the new leader's name.
         PHASE("party_leader_announce", acc::party_leader_announce::Tick());
+    }
 
-        // ----- ORDER LOAD-BEARING -----
-        // camera_announce → camera_orient → spatial::change_detector →
-        // transitions → view_mode.
-        //   camera_announce derives camera yaw from positions.
-        //   camera_orient reads it for closed-loop arrival (same frame).
-        //   spatial::change_detector reads camera yaw + rebuilds wall cache.
-        //   transitions builds room_topology that depends on the wall cache —
-        //     must run AFTER change_detector or the first tick of an area
-        //     change uses stale walls from the previous area.
-        //   view_mode reads camera yaw + walls + region/landmark caches.
-        PHASE("camera_announce", acc::camera_announce::Tick());
-        // Door-open facing readout — after camera_announce so its same-sector
-        // dedup sees this frame's last-spoken direction. Cheap when idle.
-        PHASE("door_announce", acc::door_announce::Tick());
+    // ----- ORDER LOAD-BEARING -----
+    // camera_announce → camera_orient → spatial::change_detector →
+    // transitions → view_mode.
+    //   camera_announce derives camera yaw from positions.
+    //   camera_orient reads it for closed-loop arrival (same frame).
+    //   spatial::change_detector reads camera yaw + rebuilds wall cache.
+    //   transitions builds room_topology that depends on the wall cache —
+    //     must run AFTER change_detector or the first tick of an area
+    //     change uses stale walls from the previous area.
+    //   view_mode reads camera yaw + walls + region/landmark caches.
+    PHASE("camera_announce", acc::camera_announce::Tick());
+    // Door-open facing readout — after camera_announce so its same-sector
+    // dedup sees this frame's last-spoken direction. Cheap when idle.
+    PHASE("door_announce", acc::door_announce::Tick());
+
+    if (k1) {
         // Story-locked-object bark replay — flushes a queued explanation the
         // frame after the router spoke the generic "locked" line, so ordering
         // holds.
         PHASE("locked_recall", acc::locked_recall::Tick());
+        // camera_orient (active camera turning) and its spin guard stay
+        // KOTOR-1-gated: the guard is a workaround for the ACTIVE edge-turn
+        // driver, which is not ported yet — the passive yaw readout above
+        // never triggers the guarded behaviour. Port them together.
         PHASE("camera_orient", acc::camera_orient::Tick());
         PHASE("camera_spin_diag", acc::camera_spin_guard::Tick());
-        PHASE("spatial.change_detector", acc::spatial::change_detector::Tick());
+    }
 
+    PHASE("spatial.change_detector", acc::spatial::change_detector::Tick());
+
+    if (k1) {
         // Swoop race entry/exit cues. Gated to CSWMiniGame.type==0.
         PHASE("swoop_race", acc::swoop_race::Tick());
 
         // Turret / space-combat gunner minigame — shares CSWMiniGame with the
         // swoop race but reports type==3. Entry/exit announce + reticle diag.
         PHASE("turret_game", acc::turret_game::Tick());
+    }
 
-        // Area + room transition announces.
-        PHASE("transitions", acc::transitions::Tick());
+    // Area + room transition announces.
+    PHASE("transitions", acc::transitions::Tick());
 
+    if (k1) {
         // Discovery-tier deferred load (runs after transitions has set the
         // area).
         PHASE("discovery", acc::discovery::Tick());
@@ -422,10 +442,15 @@ void Dispatch() {
         // distance every ~2 m. Inert otherwise (no stealth / no hostile
         // focus).
         PHASE("stealth_watch", acc::stealth_watch::Tick());
+    }
 
-        // Dialog screen + bark bubble narration.
-        PHASE("dialog_speech", acc::dialog_speech::Tick());
+    // Dialog screen + bark bubble narration. Both games since Batch 3b —
+    // its whole constant closure is resolved for KOTOR 2 (12/12; the reply
+    // block re-derived past the message-ring collision) and its panels come
+    // through the ported GUI spine.
+    PHASE("dialog_speech", acc::dialog_speech::Tick());
 
+    if (k1) {
         // Enter (interact) — engine click pipeline with localised pre-roll.
         PHASE("interact", acc::input_poll::PollHotkey());
 

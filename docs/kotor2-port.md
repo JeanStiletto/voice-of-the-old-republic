@@ -6,13 +6,31 @@ result especially — but whose cost estimate predates the RTTI finding below.
 
 ## WHERE TO RESUME (read this first)
 
-**State as of 2026-08-01 (fifth session): Batch 1 + Batch 2 tested and working;
-Batch 3's OFFSET FOUNDATION is landed but its GATES ARE NOT CLEARED — see the
-"Batch 3" section under THE BATCH PLAN for what it resolved (17→80 of 137
-constants) and the exact address round + hook-write that remains before it can
-be tested.** Next session: pin the camera pos/yaw fields, `LocalToWorld` /
-`GetArea` / client `GetGameObject`, and `CSWPartyTable::GetNPCObject`; write the
-three byte-confirmed hook cuts into `kotor2.hooks.toml`; clear the gates; test.
+**State as of 2026-08-01 (sixth session): Batch 3 is IMPLEMENTED — address
+round complete, hooks written, gates cleared, `k2_hook_status.py` reports
+12 of 25 READY. Built clean, NOT tested in game, NOT committed.** The whole
+address round ran offline (two parallel Ghidra rounds + capstone scans, zero
+test rounds spent). See "Batch 3" under THE BATCH PLAN for everything that
+resolved this session and the test round it will eventually need.
+
+**USER DECISION (2026-08-01): the Batch 3 test round is DEFERRED.** Too much
+of the in-game loop is still silent for testing to be meaningful, so two new
+batches were scoped and come first: **Batch 3b — Dialog** and **Batch 3c —
+Interaction** (walk-to-target, Enter-interact, action surfaces; 37 unresolved
+constants, several sessions). The risk this accepts: more untested code
+stacks up before the first combined test round — mitigated by keeping every
+batch's offline verification at the Batch 3 bar (worklist to zero on live
+paths, chain audit clean, byte-confirmed cuts). Do not let a KOTOR 1
+regression run slip much further — Dispatch has now been restructured THREE
+times without one.
+
+**Batch 3b — Dialog is IMPLEMENTED (2026-08-01, same session): 12/12
+constants resolved, slot rows closed, dialog_speech phase live on both
+games, built clean. NOT tested, NOT committed.** See its section under THE
+BATCH PLAN for every witness. Next session: **Batch 3c — Interaction** (its
+scoping is in its section; start from the engine_picker descriptor table and
+the action-queue primitives, whose K1 reference addresses are all in
+engine_picker.cpp / guidance_autowalk.h).
 
 Batch 1 (GUI spine) is TESTED AND WORKING — the user confirmed menu navigation,
 Options + sub-panels, listbox rows and speech on KOTOR 2. Batch 2 (in-game GUI
@@ -672,27 +690,104 @@ load/save offsets on K2's unoptimised build) and `call_sites.py` (caller-side
 offsets fell out). The three hook cut points are byte-confirmed off the exe
 (see below) but NOT yet written to `kotor2.hooks.toml`.
 
-**WHAT REMAINS before Batch 3 is testable** — a focused address round, because
-each surviving handler chain calls at least one K2 address still `R()`/`Todo`:
+**THE ADDRESS ROUND IS DONE (2026-08-01, sixth session).** Every blocker from
+the three tiers below resolved offline, each with an independent witness:
 
-1. **Camera tier** (`camera_announce` → `door_announce` facing): the manager
-   reads camera pos/yaw at a raw `camera+0x7c`/`+0x88`. K2's Aurora `Camera`
-   vtable (0x0098C45C, ctor 0x0047ecd0) puts SetPosition at slot 6 storing to
-   `+0xa8` and the pitch/yaw block near `+0x204..0x224` — so the direct field
-   reads must be re-derived for K2's `CSWCameraOnAStick` (reached via
-   `module+0x40`, that hop is `Same`). Until then `GetCameraYawRadians` faults
-   or returns garbage — do NOT clear `door_announce`.
-2. **Walls / map tier** (`room_topology` walls, `map_ui_cursor`):
-   `CSWCollisionMesh::LocalToWorld` (K1 0x00596aa0), `CSWSObject::GetArea`
-   (0x004CB120), client `GetGameObject` (0x005ED580), and the map-pin /
-   fog-of-war accessors are still `R()`. The mesh *offsets* are resolved, but
-   `walls.cpp` calls `LocalToWorld` per face — with `R()=0` that is a call to 0.
-   Confirm it is `acc::addr::Ok()`-guarded (or resolve the address) before
-   `transitions::Tick`'s room-shape tier runs.
-3. **Party-roster tier** (`passive_narrate` → `IsActivePartyMember` →
-   `GetPartyMembers`): calls `CSWPartyTable::GetNPCObject` (0x00564700, still
-   `R()`). Resolve it (candidate cluster 0x005f7f30..0x005ff3b0) or the first
-   Q/E on K2 calls a null pointer.
+1. **Camera tier — RESOLVED.** The vtable slot map (`k2-vtable-slots.csv`)
+   pairs `Gob::GetPosition`/`GetOrientation` and `Camera::GetPosition`/
+   `GetOrientation` across the games; disassembling the K2 accessors read the
+   fields straight off: Gob position `+0xa4`, quaternion `+0xb0` (K1 `+0x78`/
+   `+0x84`), Gob still embedded at `Camera+0x4`. `kCameraGobPositionOffset` =
+   Pick(0x7c, 0xa8), `kCameraOrientationOffset` = Pick(0x88, 0xb4). The
+   chain roots got witnesses too: `kClientInternalModuleOffset` Same(0x18)
+   (K2 GetModule facade internal 0x00726F80), `kCSWCModuleCameraOffset`
+   Same(0x40) (GetModuleCamera internal 0x00781810), and
+   `kServerExoAppInternalOffset` Same(0x4) (SetMoveToModuleString reads
+   [this+4]). The pitch/yaw block near `+0x204` from last session's note was
+   a red herring — the quaternion is the yaw source, as on KOTOR 1.
+2. **Walls / map tier — RESOLVED where reachable.**
+   `CSWCollisionMesh::LocalToWorld` → **0x005EE7B0** (found via K2
+   ShowObject's renderDEV door path making K1's exact 18-call pattern;
+   body verified: world_coords identity head, position +0x2c, quaternion
+   +0x38). `CSWSObject::GetArea` → **0x005453C0** (calls the two
+   already-banked K2 twins — GetObjectArray facade 0x0051C080 +
+   CGameObjectArray::GetGameObject 0x0053DFB0 on [this+0x90] — and sits
+   before GetGender exactly as K1's does). Client `GetGameObject` →
+   **0x0073F4D0** (facade-cluster alignment, confirmed by its body calling
+   the banked 0x0053DFB0 on [internal+0x14]). `GetObjectName` →
+   **0x0073F0E0** (19-facade walk-back, every intermediate body matching its
+   K1 role). Map-pin / fog accessors stay `R()` — map_ui_cursor remains
+   K1-gated (its own offsets are still Todo), and every touch point is
+   SEH-guarded.
+3. **Party-roster tier — RESOLVED.** `CSWPartyTable::GetNPCObject` →
+   **0x005FAAF0**, decompile-matched line for line (avail check, cached id
+   at table+0x1c+slot*4, template-load with CSWSCreature(0x7f000000,0), the
+   +0x9c dead-check + resurrection, <0xc bounds for K2's 12-NPC roster).
+   CAUTION: its sibling **0x005FAD70 is the K2-only PUPPET variant** (cache
+   at +0x14c, 3 slots) — same shape, do not confuse them.
+   `GetIsNPCAvailable` → **0x005FA960** (avail array table+0x4c).
+   `GetNPCSelectability` has NO confirmed twin — 0x005FA9C0 (array +0x11c)
+   lacks K1's avail gate / 0xff default and may be K2's influence accessor;
+   it stays `R()` and PartyTableIsNPCSelectable declines under SEH.
+   Bonus: `kAddrCClientExoAppInternalHandleInputEvent` became
+   Pick(0x00621210, 0x007B12C0) — the Batch 2 dispatcher — so the Q/E
+   synthetic-retry path is live.
+
+**What landed in code (sixth session):**
+
+- `kotor2.hooks.toml`: three new entries — SetMoveToModuleString @0x0051BFD9
+  (7-byte cut), DoorOpen @0x00619DAA (6 bytes), ShowObject @**0x00798D98**
+  (6 bytes; ShowObject pinned to **0x00798D70** this session by decompile:
+  SetMainInterfaceTarget head, LookAt null path, hostile-hilite array). All
+  three cuts byte-verified off the exe; all frame-relative, EBP-only params.
+- K2 wrappers `OnSetMoveToModuleStringK2` (transitions.cpp),
+  `OnDoorOpenK2` (door_announce.cpp), `OnShowObjectK2` (passive_narrate.cpp)
+  — EBP frame-unpacking, exported. The ShowObject wrapper computes the
+  handle itself (obj at [EBP+8], id at obj+0x4 — byte-witnessed in
+  0x00796B50); K1's cut had it precomputed in EAX. SetMoveToModuleString's
+  K2 param is a clean frame VALUE — the K1 LEA-double-deref does not apply.
+- Gates cleared: the three handlers lost `HandlerEnabled()`, and Dispatch()
+  now runs `passive_narrate`, `camera_announce`, `door_announce`,
+  `spatial.change_detector`, `transitions` on BOTH games (order preserved;
+  camera_orient + camera_spin_guard stay K1 — the spin guard belongs to the
+  ACTIVE edge-turn driver, unported; locked_recall / discovery / view_mode /
+  map_ui_cursor / trap_watch stay K1).
+- `handler_chain_audit.py` over the whole Batch 3 closure: 3 flagged lines,
+  all the TrapDetectedByAnyOf offset ASSIGNMENTS whose reads are SEH-guarded
+  two lines later — the degrade-by-design path, no action.
+- `port_worklist.py` over the five now-live tick TUs: **0 unresolved**.
+- `k2_hook_status.py`: **12 of 25 READY** (+ its shim table now knows the
+  three Batch 3 wrapper names).
+
+**Deliberately NOT resolved, with reasons:** GetNPCSelectability (identity
+unproven, party-select screen only); the map-pin/fog cluster (map_ui_cursor
+stays gated); `MaybeDrivePassiveSelection`'s IsGlobalFading /
+DoPassiveSelection (K1-story fade workaround; its own local Todo chain
+poisons first, so it declines safely on K2). Suspected but unbanked: K2
+DoPassiveSelection ≈ 0x0079A4C0 and SelectNearestObject ≈ 0x0079B700 — the
+only two functions calling K2 ShowObject (7 and 2 sites), matching K1's
+caller pair by size and role; confirm before use.
+
+**The Batch 3 test round (KOTOR 2):**
+
+1. `kdev apply --game k2`, launch, load into the world.
+2. Module transition: walk through an area-transition door. Expect the
+   pre-load destination announce (`Transition` channel, the
+   OnSetMoveToModuleStringK2 first fire) and the post-load area announce
+   from transitions::Tick.
+3. Room topology: walk between rooms; expect room announces (wall cache +
+   GetRoom + path-graph offsets all landed last session; LocalToWorld now
+   live for the wall scan).
+4. Door facing: open a door as the leader; expect the facing readout
+   (`DoorAnnounce` channel — proves OnDoorOpenK2 + camera yaw).
+5. Q/E targeting: cycle targets in and out of combat; expect spoken target
+   names (proves OnShowObjectK2 + GetNPCObject + GetObjectName + the
+   party-roster filter).
+6. Watch the log for `probe faulted` / SEH-decline lines naming anything
+   still unported that got reached.
+7. KOTOR 1 regression pass afterwards (Dispatch restructured, four shared
+   constants became Pick, three handlers ungated): menus, one in-world
+   area with room/door announces, Q/E, one module transition.
 
 **Byte-confirmed K2 hook cut points (design record; write these when the gates
 above are cleared):**
@@ -723,6 +818,95 @@ The offset conversions are safe on both games (`Pick` returns the K1 value on
 KOTOR 1, identical to the prior `Todo(k1)`; KOTOR 2 handlers stay gated), so this
 session's build changes nothing observable — it is pure offline groundwork that
 turns Batch 3's remaining cost into one address round plus the gate-clear.
+
+**Batch 3b — Dialog (ADDED 2026-08-01; user decision: this and 3c come BEFORE
+the Batch 3 test round, since in-game testing is not meaningful while
+conversations and interaction are silent).** The original plan cut batches
+along HOOK lines and dialog/interaction are poll-driven, so they never got a
+number — that was a planning gap, not a judgment that they come later.
+
+*IMPLEMENTED 2026-08-01 (same session, one offline round — two parallel
+Ghidra rounds + capstone/scan work, no test rounds). All 12 constants in the
+dialog_speech closure resolved, each with an engine witness:*
+
+- **Panel layouts from K2 constructors** (vtable_xrefs.py → ctor → tag
+  wiring): DialogCinematic ctor 0x008BBA80 wires "LB_REPLIES" EMBEDDED at
+  panel+**0x2760** and "LBL_MESSAGE" at +**0x2A50** (K1 0x19c4/0x1ca4;
+  embed-not-pointer confirmed by the ctor's virtual call through the
+  embedded control's own vtable). DialogComputer ctor 0x008BC620 wires
+  "LB_MESSAGE" at +**0x35FC** (K1 0x2cfc) and repeats LB_REPLIES at 0x2760,
+  confirming the shared CSWGuiDialog base layout on K2.
+- **Reply block: the collision trap confirmed and resolved.** K2 SetReplyData
+  = **0x007C0C70**, found by its unique 19-param `ret 0x4C` signature (one
+  hit in the whole GUI range); body is K1's sixteen parallel arrays, types
+  and order identical, all +0x20: count **gui+0x134**, text array
+  **gui+0x138** (K1 +0x114/+0x118 — which on K2 are message-ring fields, as
+  predicted).
+- **Speaker block +0x20 too**: K2 HandleDialogEntry = **0x007CBF60** (unique
+  `ret 0x5C`; identity by fade latch → fade starter 0x007CBB40, the
+  SetReplyData loop, TLK gender dance, camera dispatch — which uses behavior
+  id 0x106D where K1 uses 0x106A, noted for the camera batch). Speaker
+  **+0x190**, listener +0x194, previous +0x198/+0x19C, latch +0x1A4.
+- **CSWSObject.dialog_owner = Same(0x54)** — K2 setter twin 0x00546DB0 is
+  K1's one-line store, called 3× from the K2 server dialog cluster
+  (0x006C5xxx, located via the "EndConverAbort" GFF label). So the
+  CSWSObject insertion sits ABOVE +0x54.
+- **CreatureStats: Race 0xdc→0xe0, Appearance_Type 0x186→0x194**, each
+  double-witnessed in the K2 stats GFF loader (0x006AFED0) and saver
+  (0x006B3D10) via string_xref_stores.
+- **BarkBubble object id 0x1c0→0x1CC** — K2 Draw (0x008BE740, vtable-slot
+  paired) guards it against 0x7f000000, resolves through the client
+  GetGameObject facade 0x0073F4D0 (Batch 3's find, mutually confirming) and
+  runs the `< 36.0` six-metre-squared cull, K1's exact shape.
+- **Slot rows closed**: DialogCinematicCopy = **Same(0x3c)** (it is the
+  ACTIVE-dialog-panel pointer, not creator-built; witnessed by helper
+  0x007CB750). DialogComputerCamera = **Same(0x48)** — the creator stores
+  the 0x008BD910 ctor result at [gui+0x48]; **Batch 2's "0x48 is
+  BlackenedLabel" note was a slot-table-tool misattribution** (the
+  BlackenedLabel allocation follows immediately). The DialogMessagesAux/
+  DialogMessages rows (K1 0xf8/0xfc) stay Todo deliberately: no consumer
+  logic exists, and unresolved rows fall through to the vtable detector.
+- Gates: no per-file declines existed; Dispatch's dialog_speech phase now
+  runs on both games. One poison-pointer conversion applied along the way
+  (the chargen-feats description-listbox finder in menus_listbox.cpp formed
+  a raw base+Todo pointer and the feats panel can classify via RTTI on K2).
+- No new hooks, as scoped. `port_worklist.py dialog_speech.cpp`: **12/12,
+  0 unresolved**; chain audit over the dialog files: clean after the Ptr
+  conversion.
+
+The Batch 3b test items (fold into the combined round): talk to an NPC —
+entry text + replies spoken, reply arrow-navigation and selection; a
+computer/droid terminal (LB_MESSAGE path + the copy-slot alias); an
+overheard NPC bark (bark-bubble path + speaker classification).
+
+**Batch 3c — Interaction: walk-to-target, Enter-interact, action surfaces
+(ADDED 2026-08-01, same decision).** The big one — `port_worklist.py` over
+`interact_dispatch.cpp, input_poll_router.cpp, guidance_approach/autowalk/
+beacon/description/pathfind.cpp, narrated_target.cpp, cycle_input.cpp,
+engine_picker.cpp, engine_actionbar.cpp, engine_player_inputlock.cpp`
+reports **46 constants, 37 unresolved**, concentrated in:
+- `engine_picker.cpp` (16): the internal action-descriptor table
+  (stride/id/label/icon/fn/target), hover/last-clicked/last-target fields,
+  plus R() addresses: GetDefaultActions, HandleMouseClickInWorld,
+  ActionInitiateDialog, PopulateMenus (SetMainInterfaceTarget's K2 twin
+  0x007CE710 is already known from Batch 2/3).
+- `engine_actionbar.cpp` (9): MainInterface personal-action lists + strides,
+  DoPersonalAction, RePopulateMainInterface.
+- Action-queue primitives (all R()): CSWSCreatureActionManager,
+  AddMoveToPointAction, ForceMoveToPoint, AddUseObjectAction,
+  ClearAllActions — the autowalk/approach backbone.
+- Player-control: kClientAppPlayerControlOffset + SetEnabled.
+- The action-node list fields (kObjectActionNodesOffset + linked-list
+  internals) shared with combat diagnostics.
+Gates: the Dispatch `if (k1)` phases interact / guidance.approach /
+guidance.cancel / guidance.beacon / engine.inputRestore / cycle_input /
+announce_degrees, and cycle_input's own Batch-1 decline. May also need the
+OnClientHandleInputEvent hook on K2 (target already known: the Batch 2
+dispatcher 0x007B12C0) — decide when the chain enumeration says who consumes
+it. Several sessions, Batch-3-sized. Port it WHOLE per THE METHOD — the
+unified action menu, narrated-target slot and native walk-then-talk dispatch
+carry several fossilised workarounds (see the memory notes on the unified
+action menu and distant-NPC dialogue).
 
 **Batch 4 — Combat.** The four CombatRound hooks plus `OnSetPauseState`; gates in
 `combat_diag.cpp` (3) and `combat_queue_hooks.cpp`.

@@ -662,10 +662,15 @@ void SkillInfoBoxEnrichRow(void* /*panel*/, const ListBoxNavResult& r) {
         return;
     }
 
+    // Ptr, not raw addition: kFeatsCharGenDescriptionListBoxOffset is still
+    // Todo on KOTOR 2, and the feats panel can classify there via RTTI — a
+    // raw base+poison would hand a wild non-null pointer to the reads below
+    // (the Batch 3 poison-pointer lesson).
     auto* fcpBase = reinterpret_cast<unsigned char*>(fcp);
-    void* descLb  = fcpBase + kFeatsCharGenDescriptionListBoxOffset;
-    auto* descList = reinterpret_cast<CExoArrayList*>(
-        reinterpret_cast<unsigned char*>(descLb) + kListBoxControlsOffset);
+    void* descLb  = acc::off::Ptr(fcpBase, kFeatsCharGenDescriptionListBoxOffset);
+    auto* descList = descLb ? reinterpret_cast<CExoArrayList*>(
+        reinterpret_cast<unsigned char*>(descLb) + kListBoxControlsOffset)
+                            : nullptr;
     void* descRow = nullptr;
     __try {
         if (descList && descList->data && descList->size > 0) {
