@@ -97,7 +97,11 @@ const size_t kServerObjectAreaIdOffset = acc::off::Pick(0x8c, 0x90);
 // does ActionManager(8) before AddMoveToPointAction). Without it the leader's
 // queued move bails (field427 stays 2, no path) — this is the priming our
 // earlier WalkTo dispatches were missing.
-const uintptr_t kAddrCSWSCreatureActionManager = acc::addr::R(0x004f8770);
+// K2 twin confirmed by decompile: same GetClientObjectByObjectId guard,
+// ComputeAIState, and the twin 1/2-vs-8/4 ClearAllActions(1) branches
+// (the K1 byte-field `< 10` check is refactored into helper 0x00571980,
+// reading the shifted byte at creature+0x1116 — K1 +0x9f2).
+const uintptr_t kAddrCSWSCreatureActionManager = acc::addr::Pick(0x004f8770, 0x00563c90);
 void PrimeActionManager(void* creature, int mode) {
     if (!creature) return;
     __try {
@@ -266,14 +270,26 @@ bool UseObject(unsigned long targetHandle) {
         return false;
     }
 
+    // KOTOR 1's takes TWO args (ret 8; the second is unused). KOTOR 2 dropped
+    // the unused arg entirely (byte-verified ret 4) — pushing two dwords there
+    // leaves +4 on the stack after the callee's purge and corrupts this frame
+    // (the SetMainInterfaceTarget stack-imbalance class). One typedef per game.
     typedef int (__thiscall* PFN_AddUseObjectAction)(
         void* this_, unsigned long target, unsigned long param2);
+    typedef int (__thiscall* PFN_AddUseObjectActionK2)(
+        void* this_, unsigned long target);
 
     int ret = 0;
     __try {
-        auto fn = reinterpret_cast<PFN_AddUseObjectAction>(
-            kAddrCSWSObjectAddUseObjectAction);
-        ret = fn(creature, targetHandle, 0);
+        if (acc::game::IsKotor2()) {
+            auto fn = reinterpret_cast<PFN_AddUseObjectActionK2>(
+                kAddrCSWSObjectAddUseObjectAction);
+            ret = fn(creature, targetHandle);
+        } else {
+            auto fn = reinterpret_cast<PFN_AddUseObjectAction>(
+                kAddrCSWSObjectAddUseObjectAction);
+            ret = fn(creature, targetHandle, 0);
+        }
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         acclog::Write("Autowalk", "UseObject SEH-FAULT target=0x%08lx",
                       targetHandle);

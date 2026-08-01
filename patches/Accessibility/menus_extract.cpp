@@ -1230,64 +1230,77 @@ const char* TryInGameMenuIcon(void* control, void* owner,
         // language switch. Equipment has no standalone strref in any
         // observed TLK — the engine never asks for that text via TLK — so
         // we fall back to a literal that matches the German build.
+        // Keyed by the control's own .gui ID, not by its position in
+        // controls[] — the same convention TryEquipSlot below uses, and the
+        // reason this works unchanged on both games: top.gui (KOTOR 1) and
+        // top_p.gui (KOTOR 2) assign the SAME ids (0..7 labels LBLH_*, 8..15
+        // buttons BTN_*, equip/inv/char/abilities/messages/journal/map/
+        // options), while the two engines build controls[] in different
+        // member orders. Reading the id makes the array order irrelevant.
+        // (Ids dumped with xoreos-tools gff2xml from each game's own gui.bif.)
+        //
+        // KOTOR 2 needs its own strrefs: its dialog.tlk assigns KOTOR 1's ids
+        // to unrelated strings — 48218 reads "Ablativplatten Mk 1" and 48223 a
+        // spacesuit hint there, which is exactly what the first KOTOR 2 test
+        // round heard (patch-20260801-225529.log). The K2 cluster is
+        // 48620..48628, mined the same way (parse TLK header, walk entries).
+        // Two K2 captions genuinely differ in wording: "Charaktere" (not
+        // "Charakterblatt") and "Tagebuch" (not "Auftr\xe4ge").
         struct InGameMenuName {
-            uint32_t    strref;   // 0xFFFFFFFF = no strref, use literal
+            int         guiId;    // label id; the button is guiId + 8
+            uint32_t    strrefK1; // 0xFFFFFFFF = no strref, use literal
+            uint32_t    strrefK2;
             const char* literal;  // fallback if LookupTlk fails
         };
         static const InGameMenuName k_inGameMenuNames[8] = {
-            { 0xFFFFFFFFu, "Ausr\xfcstung" },     // equipment
-            { 48220u,      "Inventar"     },      // inventory
-            { 48225u,      "Charakterblatt" },    // character_sheet
-            { 48221u,      "Karte"        },      // map
-            { 48224u,      "F\xe4higkeiten" },    // abilities
-            { 48218u,      "Auftr\xe4ge" },       // journal (= "quests/orders")
-            { 48222u,      "Optionen"     },      // options
-            { 48223u,      "Nachrichten"  },      // messages
+            // K2 has a standalone equipment strref where KOTOR 1 has none.
+            { 0, 0xFFFFFFFFu, 48620u, "Ausr\xfcstung" },     // equipment
+            { 1, 48220u,      48621u, "Inventar"      },     // inventory
+            { 2, 48225u,      48622u, "Charakterblatt" },    // character_sheet
+            { 3, 48224u,      48623u, "F\xe4higkeiten" },    // abilities
+            // K2's messages slot (48624) is an EMPTY entry in its TLK, so this
+            // uses the standalone "Nachrichten" at 1563; on lookup failure the
+            // literal below still carries the caption.
+            { 4, 48223u,      1563u,  "Nachrichten"   },     // messages
+            { 5, 48218u,      48627u, "Auftr\xe4ge"   },     // journal
+            { 6, 48221u,      48626u, "Karte"         },     // map
+            { 7, 48222u,      48628u, "Optionen"      },     // options
         };
 
-        // Find the index of `control` within the owning panel's controls[].
-        // The array is COPIED out under the guard so the scan below runs
-        // over our own memory: `owner` cleared IsPanelInManager, which
-        // proves it is listed, not that it is still alive — panels[] holds
-        // freed panels during teardown, and this extractor runs from the
-        // per-frame focus monitor. Same shape as engine_manager's
-        // ReadPanelArray (Phase-3 B3b).
-        void* controls[32];
-        int n = 0;
+        // Read the control's own .gui ID. Labels carry 0..7, their buttons
+        // 8..15, so one table row serves both. The id is authoritative on
+        // both games where the array position is not (see the table note).
+        int cid = -1;
         __try {
-            auto* list = reinterpret_cast<CExoArrayList*>(
-                reinterpret_cast<unsigned char*>(owner) + kPanelControlsOffset);
-            if (list && list->data && list->size > 0) {
-                n = list->size > 32 ? 32 : list->size;
-                for (int i = 0; i < n; ++i) controls[i] = list->data[i];
-            }
+            cid = *reinterpret_cast<int*>(
+                reinterpret_cast<unsigned char*>(control) + kControlIdOffset);
         } __except (EXCEPTION_EXECUTE_HANDLER) {
-            n = 0;
+            cid = -1;
         }
-        if (n > 0) {
-            int idx = -1;
-            for (int i = 0; i < n; ++i) {
-                if (controls[i] == control) { idx = i; break; }
+        int labelId = -1;
+        if (cid >= 0 && cid <= 7)        labelId = cid;
+        else if (cid >= 8 && cid <= 15)  labelId = cid - 8;
+        if (labelId >= 0) {
+            const InGameMenuName* found = nullptr;
+            for (const auto& s : k_inGameMenuNames) {
+                if (s.guiId == labelId) { found = &s; break; }
             }
-            // Labels are at panel.controls[0..7]; buttons at [8..15].
-            // Same name table, shifted index for buttons.
-            int nameIdx = -1;
-            if (idx >= 0 && idx <= 7)       nameIdx = idx;
-            else if (idx >= 8 && idx <= 15) nameIdx = idx - 8;
-            if (nameIdx >= 0) {
-                const auto& spec = k_inGameMenuNames[nameIdx];
+            if (found) {
+                const auto& spec = *found;
+                const uint32_t strref = acc::game::IsKotor2() ? spec.strrefK2
+                                                              : spec.strrefK1;
                 bool gotTlk = false;
-                if (spec.strref != 0xFFFFFFFFu) {
+                if (strref != 0xFFFFFFFFu) {
                     char tlkText[256];
-                    if (LookupTlk(spec.strref, tlkText, sizeof(tlkText))) {
+                    if (LookupTlk(strref, tlkText, sizeof(tlkText))) {
                         size_t tlen = strnlen(tlkText, sizeof(tlkText));
                         if (tlen > 0 && tlen + 1 <= bufSize) {
                             memcpy(outBuf, tlkText, tlen + 1);
                             source = "perkind-tlk";
                             gotTlk = true;
                             acclog::Write("Menus.PerKind", "InGameMenu TLK control=%p "
-                                          "panelIdx=%d strref=%u -> \"%s\"",
-                                          control, idx, spec.strref, outBuf);
+                                          "guiId=%d strref=%u -> \"%s\"",
+                                          control, cid, strref, outBuf);
                         }
                     }
                 }
@@ -1298,7 +1311,7 @@ const char* TryInGameMenuIcon(void* control, void* owner,
                     // table instead of the hardcoded German literal. The
                     // table literal stays as an ASCII last-ditch fallback.
                     const char* fallback = spec.literal;
-                    if (spec.strref == 0xFFFFFFFFu) {
+                    if (strref == 0xFFFFFFFFu) {
                         fallback = acc::strings::Get(
                             acc::strings::Id::EquipMenuName);
                     }
@@ -1307,8 +1320,8 @@ const char* TryInGameMenuIcon(void* control, void* owner,
                         memcpy(outBuf, fallback, nlen + 1);
                         source = "perkind-literal";
                         acclog::Write("Menus.PerKind", "InGameMenu literal control=%p "
-                                      "panelIdx=%d strref=%u -> \"%s\"",
-                                      control, idx, spec.strref, outBuf);
+                                      "guiId=%d strref=%u -> \"%s\"",
+                                      control, cid, strref, outBuf);
                     }
                 }
             }

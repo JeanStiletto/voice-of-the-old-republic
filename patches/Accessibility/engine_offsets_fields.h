@@ -823,8 +823,12 @@ const size_t kObjectEffectsOffset                 = acc::off::Todo(0x124);
 // the two never overlap.
 // CExoLinkedList = { CExoLinkedListInternal* internal } (+0x0); the
 // internal is { head(+0x0), tail(+0x4), int count(+0x8) }.
-const size_t kObjectActionNodesOffset             = acc::off::Todo(0xfc);
-const size_t kExoLinkedListInternalCountOffset    = acc::off::Todo(0x8);
+// K2 witnessed in CSWSObject::AddAction (0x0053F7F0): its enqueue call loads
+// `ecx = this + 0x100` (the uniform +4 CSWSObject shift), and the enqueue body
+// (0x00739E60) shows the list as {head+0, tail+4, count+8} with node layout
+// {prev+0, next+4, data+8} — count offset unchanged.
+const size_t kObjectActionNodesOffset             = acc::off::Pick(0xfc, 0x100);
+const size_t kExoLinkedListInternalCountOffset    = acc::off::Same(0x8);
 
 const size_t kCombatRoundAttacksListOffset        = acc::off::Todo(0x4);
 const size_t kCombatRoundTimerOffset              = acc::off::Todo(0x944);

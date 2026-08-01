@@ -17,38 +17,55 @@ namespace {
 // searches the column's list for the matching action_id (falls back
 // to data[0] on no-match). SelectPrevPersonalAction writes here when
 // the user cycles via mouse-wheel / arrow button.
-const size_t kSelectedActionIdArrayOffset = acc::off::Todo(0x1bac);
+// K2 witnessed in the K2 DoPersonalAction (0x00751750): selected-id array read
+// as [this+0x1c7c + slot*4], column index stored at +0x1c98, personal lists at
+// [this+0x78 + slot*0xc] (data +0 / size +4). NOTE: K2 iterates SEVEN columns
+// (param < 7) where KOTOR 1 has six — kColumnCount stays 6 for our surface,
+// the seventh is additive at the end and unread by us.
+const size_t kSelectedActionIdArrayOffset = acc::off::Pick(0x1bac, 0x1c7c);
 
 // CSWGuiMainInterface.field5_0x74[6] — six CExoArrayList<CSWGuiInterfaceAction>.
 // Verified populated 2026-05-05: slot 1 reported size=2 matching the two
 // medikits in inventory.
-const size_t kPersonalListsOffset    = acc::off::Todo(0x74);
-const size_t kPersonalListStride     = acc::off::Todo(0x0C);
-const size_t kPersonalListDataOffset = acc::off::Todo(0x00);  // T** data
-const size_t kPersonalListSizeOffset = acc::off::Todo(0x04);  // int size
+const size_t kPersonalListsOffset    = acc::off::Pick(0x74, 0x78);
+const size_t kPersonalListStride     = acc::off::Same(0x0C);
+const size_t kPersonalListDataOffset = acc::off::Same(0x00);  // T** data
+const size_t kPersonalListSizeOffset = acc::off::Same(0x04);  // int size
 
 // CSWGuiInterfaceAction layout — same as engine_radial / engine_picker.
-const size_t kIfActionLabelOffset    = acc::off::Todo(0x00);  // CExoString
-const size_t kIfActionIdOffset       = acc::off::Todo(0x08);  // ulong
-const size_t kIfActionStride         = acc::off::Todo(0x38);
+// K2 stride witnessed 0x3C in BOTH K2 Do*Action bodies (`idx * 0x3c`) — one
+// dword grew somewhere past +0x30; id (+8) and the +0x30 flag word are
+// unchanged, so the growth is at the tail and does not move our fields.
+const size_t kIfActionLabelOffset    = acc::off::Same(0x00);  // CExoString (+0..+7, id at +8 pins it)
+const size_t kIfActionIdOffset       = acc::off::Same(0x08);  // ulong
+const size_t kIfActionStride         = acc::off::Pick(0x38, 0x3c);
 
 // Engine entry points (verified from k1_win_gog_swkotor.exe.xml +
 // docs/action-menu-investigation.md). GoG bytes match Steam per memory
 // project_ghidra_gog_steam_bytes_match.
-const uintptr_t kAddrDoPersonalAction = acc::addr::R(0x0068ad60);
+// K2 twin 0x00751750 found by its unique six-StrRef "can't do that" switch
+// (0x96d5..0xbb40, identical ids) + personal-list/selected-array reads.
+// Byte-verified ret 8 on BOTH games — the two-arg typedef stays correct.
+const uintptr_t kAddrDoPersonalAction = acc::addr::Pick(0x0068ad60, 0x00751750);
 
 // CGuiInGame::SetMainInterfaceTarget @ 0x0062b000 — same wrapper as
 // the radial/picker drive uses. Thin forwarder to
 // CSWGuiMainInterface::SetTarget (stores field1_0x64 + resets the
-// refresh-hint float field21_0x5cb0).
-const uintptr_t kAddrSetMainInterfaceTarget = acc::addr::R(0x0062b000);
+// refresh-hint float field21_0x5cb0). K2 twin byte-verified: guards
+// CGuiInGame+0x98 (the Batch-2 MainInterface slot), forwards both dwords
+// to CSWGuiMainInterface::SetTarget 0x0074CFB0 (target +0x68, hint
+// +0x595c), ret 8 — the pad-dword typedef stays correct.
+const uintptr_t kAddrSetMainInterfaceTarget = acc::addr::Pick(0x0062b000, 0x007CE710);
 
 // CGuiInGame::RePopulateMainInterface @ 0x0062b050 — thin forwarder to
 // CSWGuiMainInterface::PopulateMenus @ 0x00689d80. Refreshes both the
 // six personal-action lists (field5_0x74[0..5] via GetPersonalActions)
 // and target_action_menu.action_lists[0..2] (via GetTargetActions for
 // each row) against the currently-stamped main-interface target.
-const uintptr_t kAddrRePopulateMainInterface = acc::addr::R(0x0062b050);
+// K2 twin 0x007CEB50 (39 bytes, ret 0): same +0x98 guard, calls the K2
+// PopulateMenus 0x0074CFE0 passing its NEW int arg = 1 internally — so
+// this argless forwarder is the safest K2 entry for a full repopulate.
+const uintptr_t kAddrRePopulateMainInterface = acc::addr::Pick(0x0062b050, 0x007CEB50);
 
 typedef void (__thiscall* PFN_DoPersonalAction)(void* this_,
                                                 int slot, int param_2);
@@ -165,9 +182,11 @@ void* GetColumnActionButton(void* mi, int slot) {
     if (!mi || slot < 0 || slot >= kColumnCount) return nullptr;
     // CSWGuiMainInterface.field45_0x771c[6], stride 0x71C. action_button
     // is the first member of CSWGuiMainInterfaceAction so its address
-    // equals the array-entry address.
-    constexpr size_t kFieldArrayBase = 0x771c;
-    const size_t kColumnStride   = acc::off::Todo(0x71C);
+    // equals the array-entry address. K2 values listing-witnessed in the
+    // K2 PopulateMenus (0x0074CFE0): every Show/SetIcon receiver is
+    // `this + i*0x750 + 0x733c`.
+    const size_t kFieldArrayBase = acc::off::Pick(0x771c, 0x733c);
+    const size_t kColumnStride   = acc::off::Pick(0x71C, 0x750);
     return reinterpret_cast<unsigned char*>(mi) +
            kFieldArrayBase + static_cast<size_t>(slot) * kColumnStride;
 }

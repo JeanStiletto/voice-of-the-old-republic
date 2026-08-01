@@ -425,9 +425,17 @@ static const PanelKindOffset kPanelKindOffsets[] = {
     { acc::off::Same(0x08), PanelKind::InGameMenu,          "InGameMenu" },
     { acc::off::Same(0x0c), PanelKind::InGameEquip,         "InGameEquip" },
     { acc::off::Same(0x10), PanelKind::InGameInventory,     "InGameInventory" },
-    // KOTOR 2 puts a CSWGui3DSceneView at 0x14 — its character sheet is a
-    // different class, or lives elsewhere. Resolve before mapping.
-    { acc::off::Todo(0x14), PanelKind::InGameCharacter,     "InGameCharacter" },
+    // RESOLVED 2026-08-02: KOTOR 2 stores its character sheet at the SAME
+    // slot. The panel creator (0x007BE4C0) constructs it at 0x0084C3A0 —
+    // which vtable_xrefs proves stores the CSWGuiInGameCharacter vtable
+    // (0x009A3E7C) — and writes the result with `MOV [gui+0x14],EAX` at
+    // 0x007BF439. The earlier "K2 puts a CSWGui3DSceneView here" note was
+    // the slot-table tool misattributing a neighbouring allocation, the same
+    // way it misread the DialogComputerCamera slot as BlackenedLabel.
+    // Until this was resolved the character sheet was the one sub-screen
+    // that never announced on KOTOR 2 (patch-20260801-232432.log: six
+    // sub-screens spoke, InGameCharacter never appeared at all).
+    { acc::off::Same(0x14), PanelKind::InGameCharacter,     "InGameCharacter" },
     { acc::off::Same(0x18), PanelKind::InGameAbilities,     "InGameAbilities" },
     { acc::off::Pick(0x1c, 0x78), PanelKind::InGameMessages, "InGameMessages" },
     { acc::off::Same(0x20), PanelKind::InGameJournal,       "InGameJournal" },

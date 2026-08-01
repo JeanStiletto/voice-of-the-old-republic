@@ -45,34 +45,55 @@ namespace {
 //                                                        ClickInWorld)
 //   +0x4cc  int                   descriptor_count     (gate: must be
 //                                                        > 0 to dispatch)
-const size_t kInternalLastTargetOffset          = acc::off::Todo(0x2b4);
-const size_t kInternalLastClickedOnTargetOffset = acc::off::Todo(0x2b8);
-const size_t kInternalHoverTargetOffset         = acc::off::Todo(0x4a4);
-const size_t kInternalDescriptorArrayOffset     = acc::off::Todo(0x4c8);
-const size_t kInternalDescriptorCountOffset     = acc::off::Todo(0x4cc);
+// K2 values witnessed in the hover-update twin (0x007B3A00): it stores the
+// hovered id at internal+0x4b0 (pos vector at +0x4b4..bc), compares it against
+// last_target at the UNCHANGED +0x2b4, and reads the descriptor as
+// array=+0x4cc / count=+0x4d0 (K1's pair shifted +4). last_clicked_on_target
+// +0x2b8 witnessed in the click twin (0x007B3CA0) alongside the same cluster.
+const size_t kInternalLastTargetOffset          = acc::off::Same(0x2b4);
+const size_t kInternalLastClickedOnTargetOffset = acc::off::Same(0x2b8);
+const size_t kInternalHoverTargetOffset         = acc::off::Pick(0x4a4, 0x4b0);
+const size_t kInternalDescriptorArrayOffset     = acc::off::Pick(0x4c8, 0x4cc);
+const size_t kInternalDescriptorCountOffset     = acc::off::Pick(0x4cc, 0x4d0);
 
 // CSWGuiInterfaceAction layout (decompile of GetDefaultActions writes,
 // + struct in swkotor.exe.h line 5437). Stride 0x38 between entries.
-const size_t kInterfaceActionLabelOffset    = acc::off::Todo(0x00);  // CExoString
-const size_t kInterfaceActionIdOffset       = acc::off::Todo(0x08);  // ulong
-const size_t kInterfaceActionFnOffset       = acc::off::Todo(0x0c);  // void*
-const size_t kInterfaceActionTargetOffset   = acc::off::Todo(0x1c);  // ulong
-const size_t kInterfaceActionIconOffset     = acc::off::Todo(0x20);  // CResRef (16B)
-const size_t kInterfaceActionStride         = acc::off::Todo(0x38);
+// K2: every field position unchanged — witnessed across the K2
+// GetDefaultActions descriptor writes (fn imm32 at +0xc, target +0x1c,
+// id +8, icon SetIcon receiver desc+0x20, flags +0x30) and both Do*Action
+// bodies; label is the leading 8-byte CExoString (+0..+7, pinned by id at
+// +8). Only the stride grew, 0x38 -> 0x3C — tail growth.
+const size_t kInterfaceActionLabelOffset    = acc::off::Same(0x00);  // CExoString
+const size_t kInterfaceActionIdOffset       = acc::off::Same(0x08);  // ulong
+const size_t kInterfaceActionFnOffset       = acc::off::Same(0x0c);  // void*
+const size_t kInterfaceActionTargetOffset   = acc::off::Same(0x1c);  // ulong
+const size_t kInterfaceActionIconOffset     = acc::off::Same(0x20);  // CResRef (16B)
+const size_t kInterfaceActionStride         = acc::off::Pick(0x38, 0x3c);
 constexpr size_t kResRefMaxLen                  = 16;
 
 // Engine entry points. Addresses confirmed from XML symbol table
 // (k1_win_gog_swkotor.exe.xml) on 2026-05-05; GoG bytes match Steam
 // per memory project_ghidra_gog_steam_bytes_match.
-const uintptr_t kAddrCClientExoAppInternalGetDefaultActions = acc::addr::R(0x00620620);
-const uintptr_t kAddrCClientExoAppInternalHandleMouseClickInWorld = acc::addr::R(0x00620350);
-const uintptr_t kAddrCGuiInGameSetMainInterfaceTarget = acc::addr::R(0x0062b000);
+// K2 GetDefaultActions found by icon-resref string xrefs (the only
+// function referencing all six of i_noaction/i_dialog/i_opendoor/
+// i_useplace/i_disablemine/i_recovermine); K2 HandleMouseClickInWorld
+// confirmed by decompile — same three gates (gui busy flag now +0xcc,
+// gui_in_game+0x30, camera-mode-5), same click-gate triple, same
+// `fn(desc+0xc)(id(+8), player)` dispatch, sits right before
+// GetDefaultActions exactly like KOTOR 1's source order.
+const uintptr_t kAddrCClientExoAppInternalGetDefaultActions = acc::addr::Pick(0x00620620, 0x007B40F0);
+const uintptr_t kAddrCClientExoAppInternalHandleMouseClickInWorld = acc::addr::Pick(0x00620350, 0x007B3CA0);
+const uintptr_t kAddrCGuiInGameSetMainInterfaceTarget = acc::addr::Pick(0x0062b000, 0x007CE710);
 // CSWGuiMainInterface::PopulateMenus @0x00689d80 — builds the radial
 // action menu. Called by HandleMouseClickInWorld's NOT-MATCH branch
 // (vanilla first-click-on-target behavior). We invoke it directly when
 // the engine descriptor is empty (no default action available) so the
 // user gets the same fallback UI a sighted player would see.
-const uintptr_t kAddrCSWGuiMainInterfacePopulateMenus = acc::addr::R(0x00689d80);
+// K2 twin 0x0074CFE0 takes a NEW int argument (every engine caller,
+// including K2 HandleMouseClickInWorld's NOT-MATCH branch and the
+// RePopulateMainInterface forwarder, passes 1) — call through the
+// per-game shape below, never the K1 argless typedef.
+const uintptr_t kAddrCSWGuiMainInterfacePopulateMenus = acc::addr::Pick(0x00689d80, 0x0074CFE0);
 
 typedef void (__thiscall* PFN_GetDefaultActions)(void* this_);
 typedef void (__thiscall* PFN_HandleMouseClickInWorld)(void* this_);
@@ -88,6 +109,30 @@ typedef void (__thiscall* PFN_SetMainInterfaceTarget)(void* this_,
                                                      uint32_t target,
                                                      uint32_t pad);
 typedef void (__thiscall* PFN_PopulateMenus)(void* this_);
+// KOTOR 2's PopulateMenus grew an int argument (callee-cleaned): every engine
+// caller — HandleMouseClickInWorld's NOT-MATCH branch and the RePopulate
+// forwarder — passes 1 (full repopulate). Calling the K1 argless shape there
+// under-pushes and corrupts the caller frame; use this per-game.
+typedef void (__thiscall* PFN_PopulateMenusK2)(void* this_, int mode);
+
+// One guarded call, correct shape per game. MUST stay free of objects with
+// destructors (SEH frame).
+bool CallPopulateMenus(void* mainIf) {
+    __try {
+        if (acc::game::IsKotor2()) {
+            auto fn = reinterpret_cast<PFN_PopulateMenusK2>(
+                kAddrCSWGuiMainInterfacePopulateMenus);
+            fn(mainIf, 1);
+        } else {
+            auto fn = reinterpret_cast<PFN_PopulateMenus>(
+                kAddrCSWGuiMainInterfacePopulateMenus);
+            fn(mainIf);
+        }
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
 
 void WriteUInt32(void* base, size_t offset, uint32_t value) {
     if (!base) return;
@@ -313,13 +358,8 @@ bool Drive(uint32_t targetServerHandle, ActionSnapshot* outSnapshot,
         //      CSWCCreature::GetTargetActions(player, swc_target, row).
         //   5. Updates main_interface UI rows from the personal-action lists.
         // So the wrapper alone produces the correct populated state.
-        bool radialOpened = false;
-        __try {
-            auto fn = reinterpret_cast<PFN_PopulateMenus>(
-                kAddrCSWGuiMainInterfacePopulateMenus);
-            fn(mainIf);
-            radialOpened = true;
-        } __except (EXCEPTION_EXECUTE_HANDLER) {
+        bool radialOpened = CallPopulateMenus(mainIf);
+        if (!radialOpened) {
             acclog::Write("Picker", "PopulateMenus SEH-FAULT target=0x%08x "
                 "(empty-descriptor radial fallback)",
                 targetClient);
@@ -455,13 +495,14 @@ bool ReanchorRadial(uint32_t targetServerHandle) {
         auto getActions = reinterpret_cast<PFN_GetDefaultActions>(
             kAddrCClientExoAppInternalGetDefaultActions);
         getActions(internal);
-
-        auto populate = reinterpret_cast<PFN_PopulateMenus>(
-            kAddrCSWGuiMainInterfacePopulateMenus);
-        populate(mainIf);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         acclog::Write("Picker", "ReanchorRadial SEH-FAULT target=0x%08x",
             targetClient);
+        return false;
+    }
+    if (!CallPopulateMenus(mainIf)) {
+        acclog::Write("Picker", "ReanchorRadial PopulateMenus SEH-FAULT "
+            "target=0x%08x", targetClient);
         return false;
     }
     return true;
@@ -478,8 +519,11 @@ bool ReadCurrent(ActionSnapshot* outSnapshot) {
 // CSWCCreature::ActionInitiateDialog @0x0060f620. __thiscall; decompile shows
 // the two declared stack params are unused, but __thiscall is callee-cleanup so
 // we must still push them (the function ret 8's). this = target NPC client
-// creature.
-const uintptr_t kAddrCSWCCreatureActionInitiateDialog = acc::addr::R(0x0060f620);
+// creature. K2 twin witnessed as the fn-pointer immediate the K2
+// GetDefaultActions stores into the talk descriptor (id 0x3ea, "i_dialog") —
+// the same slot KOTOR 1's stores 0x0060f620 into. VERIFY K2 ret n before
+// clearing the gate (see typedef note above).
+const uintptr_t kAddrCSWCCreatureActionInitiateDialog = acc::addr::Pick(0x0060f620, 0x0077CF70);
 typedef void (__thiscall* PFN_ActionInitiateDialog)(void* this_,
                                                     uint32_t unused1,
                                                     void* unused2);

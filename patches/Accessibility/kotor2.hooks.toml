@@ -469,3 +469,89 @@ exclude_from_restore = []
 [[hooks.parameters]]
 source = "ebp"
 type = "pointer"
+
+# ============================================================================
+# Batch 3c — Interaction: the in-world input pipeline
+# ============================================================================
+# CClientExoAppInternal::HandleInputEvent @0x007B12C0 (K1 0x00621210). The
+# in-world event dispatcher: modifier-space reservation, overlay-Esc consume,
+# bare-1..7 dispatch prep and Q/E reannounce all live in the shared handler.
+# Identity: Batch 2's caller-trace found it as "the dispatcher"; it calls
+# GetDefaultActions (0x007B40F0) from its Q/E cases and forwards to
+# CSWGuiManager::HandleInputEvent (0x00410AA0) at its tail.
+#
+# Hooked at 0x007B12EE, after SEH registration + the `this` store:
+#   007b12e2: 64 a3 00 00 00 00     MOV FS:[0],EAX         ; SEH registered
+#   007b12e8: 89 8d fc fc ff ff     MOV [EBP-0x304],ECX    ; this stored
+#   007b12ee: c7 45 f0 00 00 00 00  MOV [EBP-0x10],0       ← hook here, 7 bytes
+#   007b12f5:                       ...                     ; resume point
+#
+# The cut is the return-slot init — frame-relative, position-independent, and
+# it never touches EAX, so the handler's consume return survives the replay
+# into the wrapper's TEST EAX,EAX (no skip_original_bytes needed, unlike the
+# Batch 1 GUI-manager hook whose cut loaded EAX).
+#
+# consumed_exit_address = 0x007B2E5E — the single epilogue, entered AFTER its
+# `MOV EAX,[EBP-0x10]` return-value reload so the handler's EAX=1 survives
+# (exclude_from_restore keeps it):
+#   007b2e5b: 8b 45 f0              MOV EAX,[EBP-0x10]     ; (skipped)
+#   007b2e5e: 8b 4d f4              MOV ECX,[EBP-0xC]      ← consumed entry
+#   007b2e61: 64 89 0d 00 00 00 00  MOV FS:[0],ECX         ; SEH unregistered
+#   007b2e68: 59                    POP ECX
+#   007b2e69: 8b e5                 MOV ESP,EBP            ; frame torn down
+#   007b2e6b: 5d                    POP EBP
+#   007b2e6c: c2 08 00              RET 8
+# MOV ESP,EBP makes the exit stack-depth-proof from any point after the
+# prologue, and the FS restore properly unregisters the SEH frame the
+# prologue installed — the same invariants the Batch 1 consumed exit keeps.
+#
+# Parameters: ecx = this (still live at the cut — the store doesn't clobber
+# it), ebp = frame. The wrapper derives [ebp+8]/[ebp+0xc] (the two event
+# args) and hands their ADDRESSES to the shared KOTOR 1 handler, preserving
+# its caller_eip read at (param-slot - 4) = [ebp+4], the return address.
+[[hooks]]
+address = 0x007b12ee
+type = "detour"
+function = "OnClientHandleInputEventK2"
+
+# c7 45 f0 00 00 00 00      MOV [EBP-0x10], 0
+original_bytes = [0xc7, 0x45, 0xf0, 0x00, 0x00, 0x00, 0x00]
+
+skip_original_bytes = false
+exclude_from_restore = ["eax"]
+consumed_exit_address = 0x007b2e5e
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "ebp"
+type = "pointer"
+
+# CClientExoAppInternal::ProcessInput @0x007B0E90 (K1 0x006227E0) — the
+# frame-boundary sequence tick (two dispatch sites into HandleInputEvent
+# 0x007B12C0 mirror KOTOR 1's shape). OnProcessInput only bumps the shared
+# input sequence so frame boundaries stay encoded as seq gaps in the
+# Diag.ClientHIE stream.
+#
+# Hooked at 0x007B0EAB, the `this` reload right after the store:
+#   007b0ea5: 89 8d 6c ff ff ff     MOV [EBP-0x94],ECX     ; this stored
+#   007b0eab: 8b 8d 6c ff ff ff     MOV ECX,[EBP-0x94]     ← hook here, 6 bytes
+#   007b0eb1: 81 c1 98 00 00 00     ADD ECX,0x98           ; resume point
+# The cut reloads ECX from the frame, so the replay re-establishes the
+# register the resume expects regardless of what the wrapper clobbered.
+[[hooks]]
+address = 0x007b0eab
+type = "detour"
+function = "OnProcessInput"
+
+# 8b 8d 6c ff ff ff         MOV ECX, [EBP-0x94]
+original_bytes = [0x8b, 0x8d, 0x6c, 0xff, 0xff, 0xff]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"

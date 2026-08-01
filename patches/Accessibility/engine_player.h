@@ -208,11 +208,19 @@ const uintptr_t kAddrGetPlayerCreature = acc::addr::Pick(0x005ED540, 0x0073F450)
 // order (sits immediately before GetGender 0x00545460, as K1's does).
 const uintptr_t kAddrCSWSObjectGetArea = acc::addr::Pick(0x004CB120, 0x005453C0);
 
-// CSWCObject.server_object — same for every client object. KOTOR 1 reads the
-// field directly; KOTOR 2's value is unestablished, so there the code calls
-// the engine's own resolver below instead. Do not "fix" the Todo by copying
-// 0xf8 — the K2 client object may have shifted it.
-const size_t kClientObjectServerObjectOffset = acc::off::Todo(0xf8);
+// CSWCObject.server_object — same for every client object, and the offset is
+// now WITNESSED identical on both games: KOTOR 2's own
+// CSWCObject::GetServerObject (0x007F2540, K1 0x0063D4B0) tests and fills
+// `[this+0xf8]`, with the same `[this+0xe4]` detach guard beside it.
+//
+// This was left Todo through Batch 3c on the theory that every KOTOR 2
+// consumer branches to the engine resolver instead. That was wrong:
+// ResolveClientObjectHandle reads the field directly, so on KOTOR 2 it read
+// through the poison offset, faulted inside its SEH guard and returned null —
+// which is why passive narration and the Q/E re-announce logged
+// "handle ... failed to resolve, silent" for every hovered/cycled object
+// (patch-20260801-225529.log). Establishing the offset fixes both.
+const size_t kClientObjectServerObjectOffset = acc::off::Same(0xf8);
 
 // CSWCCreature::GetServerCreature — __thiscall(void) → CSWSCreature*. The
 // engine's own client→server resolver (vtable-dispatched internally, so it is
@@ -230,10 +238,16 @@ const size_t kServerObjectPositionOffset    = acc::off::Pick(0x90, 0x94);
 const size_t kServerObjectOrientationOffset = acc::off::Pick(0x9c, 0xa0);
 
 // CClientExoAppInternal.player_control @+0x2a0. The facade → internal hop
-// itself is engine_app.h's GetClientAppInternal().
-const size_t kClientAppPlayerControlOffset = acc::off::Todo(0x2a0);
+// itself is engine_app.h's GetClientAppInternal(). K2 witnessed inside the
+// real SetInputClass (0x007B3050, the +0x9c writer): its restore-world case
+// does `if ([internal+0x2a0]) SetEnabled(1)` — same slot, same object.
+const size_t kClientAppPlayerControlOffset = acc::off::Same(0x2a0);
 
-const uintptr_t kAddrCSWPlayerControlSetEnabled = acc::addr::R(0x006792E0);
+// K2 SetEnabled witnessed by decompile + listing: stores enabled at [this+0xc],
+// compares player_id [this+4] against 0x7f000000, resolves the creature via
+// CClientExoApp::GetCreatureByGameObjectID (0x0073F550), then SwitchMode(0/1)
+// (0x00776DB0) — KOTOR 1's body line for line.
+const uintptr_t kAddrCSWPlayerControlSetEnabled = acc::addr::Pick(0x006792E0, 0x00865250);
 
 // __thiscall(void) → CExoString*. Backed by player_character_name @+0x294.
 const uintptr_t kAddrCClientExoAppGetPlayerCharacterName = acc::addr::R(0x005EDAB0);

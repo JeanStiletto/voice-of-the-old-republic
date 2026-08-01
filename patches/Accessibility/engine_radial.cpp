@@ -20,44 +20,66 @@ namespace {
 
 // CSWGuiTargetActionMenu lives inside CSWGuiMainInterface at +0xBC. Verified
 // against the C header (swkotor.exe.h:11611 MEMBER OFFSET="0xbc" SIZE="0x1af0").
-const size_t kMainInterfaceTargetActionMenuOffset = acc::off::Todo(0xBC);
+// K2 listing-witnessed in the K2 CSWGuiMainInterface::PopulateMenus
+// (0x0074CFE0): the TAM::PopulateMenus call receiver is `this + 0xCC`.
+const size_t kMainInterfaceTargetActionMenuOffset = acc::off::Pick(0xBC, 0xCC);
 
 // CExoArrayList<CSWGuiInterfaceAction> action_lists[3] occupy TAM +0x00
 // through TAM +0x24 (3 * 0x0C). We only need the size field, which lives
 // at +0x04 within each CExoArrayList.
-const size_t kTamActionListsOffset    = acc::off::Todo(0x00);
-const size_t kActionListSizeOffset    = acc::off::Todo(0x04);
-const size_t kActionListStride        = acc::off::Todo(0x0C);
+// K2 witnessed in the K2 TAM::DoTargetAction (0x007445D0): lists read as
+// [tam + row*0xc] data / +4 size — layout unchanged.
+const size_t kTamActionListsOffset    = acc::off::Same(0x00);
+const size_t kActionListSizeOffset    = acc::off::Same(0x04);
+const size_t kActionListStride        = acc::off::Same(0x0C);
 
 // CSWGuiMainInterfaceAction stride / row offset within TAM. target_actions[3]
 // starts at +0x54 (after action_lists[3] @+0x00 + field1[12] @+0x24).
-const size_t kTamTargetActionsOffset  = acc::off::Todo(0x54);
-const size_t kTargetActionStride      = acc::off::Todo(0x71C);
+// K2 witnessed in the K2 TAM ctor (0x00742150): eh-vector of 3 rows at
+// this+0x54 with stride 0x750 (row class grew with its sub-controls).
+const size_t kTamTargetActionsOffset  = acc::off::Same(0x54);
+const size_t kTargetActionStride      = acc::off::Pick(0x71C, 0x750);
 
 // Within a CSWGuiMainInterfaceAction, action_button is the first member at
 // offset 0. is_action lives at +0x718 (one int before the next stride
 // boundary at 0x71C). Embedded buttons: action_label at +0x1C4
 // (CSWGuiButton size 0x1C4), up_button +0x388, down_button +0x54C, then
 // field4 +0x710, field5 +0x714, is_action +0x718.
-const size_t kRowActionButtonOffset   = acc::off::Todo(0x000);
-const size_t kRowActionLabelOffset    = acc::off::Todo(0x1C4);
-const size_t kRowUpButtonOffset       = acc::off::Todo(0x388);
-const size_t kRowDownButtonOffset     = acc::off::Todo(0x54C);
-const size_t kRowField4Offset         = acc::off::Todo(0x710);
-const size_t kRowField5Offset         = acc::off::Todo(0x714);
-const size_t kRowIsActionOffset       = acc::off::Todo(0x718);
+// K2 witnessed in the K2 CSWGuiMainInterfaceAction ctor (0x00741420): four
+// sub-control ctors at this+0 / +0x1d0 / +0x3a0 / +0x570 in declaration
+// order (button, label, up, down — each control grew 0xC).
+const size_t kRowActionButtonOffset   = acc::off::Same(0x000);
+const size_t kRowActionLabelOffset    = acc::off::Pick(0x1C4, 0x1D0);
+const size_t kRowUpButtonOffset       = acc::off::Pick(0x388, 0x3A0);
+const size_t kRowDownButtonOffset     = acc::off::Pick(0x54C, 0x570);
+// K2 field4/field5 witnessed in the refactored row-flag setter (0x00741780):
+// `[row+0x744] byte = 2; [row+0x740] float = 0.1f` — K1's exact write pair.
+const size_t kRowField4Offset         = acc::off::Pick(0x710, 0x740);
+const size_t kRowField5Offset         = acc::off::Pick(0x714, 0x744);
+// K2: the row's shown-state flag byte is at +0x74d (witnessed in the K2
+// row Show 0x00741660: `[row+0x74d] = (hide != 0)`; ctor inits it 1).
+// Diag-only int32 read — anchored at +0x74c so the 4-byte read stays
+// inside the 0x750 row; the flag appears in byte 1 of the logged value.
+const size_t kRowIsActionOffset       = acc::off::Pick(0x718, 0x74c);
 
 // CSWGuiInterfaceAction stride/offsets — same as engine_picker uses on
 // the descriptor read. Re-stated here so the wide-diagnostic peek into
 // action_lists[r].data[0] doesn't depend on the picker module.
-const size_t kIfActionLabelOffset    = acc::off::Todo(0x00);  // CExoString
-const size_t kIfActionIdOffset       = acc::off::Todo(0x08);  // ulong
-const size_t kIfActionTargetOffset   = acc::off::Todo(0x1c);  // ulong
-const size_t kIfActionIconOffset     = acc::off::Todo(0x20);  // CResRef (16B)
+// K2: id/target/icon/flags positions unchanged (witnessed across the K2
+// GetDefaultActions descriptor writes + Do*Action reads); label is the
+// leading 8-byte CExoString (+0..+7 — id at +8 pins it). Stride grew
+// 0x38 -> 0x3C, tail growth only.
+const size_t kIfActionLabelOffset    = acc::off::Same(0x00);  // CExoString
+const size_t kIfActionIdOffset       = acc::off::Same(0x08);  // ulong
+const size_t kIfActionTargetOffset   = acc::off::Same(0x1c);  // ulong
+const size_t kIfActionIconOffset     = acc::off::Same(0x20);  // CResRef (16B)
 
 // CSWGuiLabel name_label sits at TAM +0x15CC (relative). Reading via
 // kLabelGuiStringPtrOffset (0xE4) for the rendered c_string.
-const size_t kTamNameLabelOffset      = acc::off::Todo(0x15CC);
+// K2 witnessed in the K2 TAM ctor: first gui_string label constructed right
+// after the position-field block (K1 0x15bc..0x15c8 -> K2 0x1644..0x1664),
+// at this+0x1668 (further labels at +0x17b0/+0x18f8, stride 0x148).
+const size_t kTamNameLabelOffset      = acc::off::Pick(0x15CC, 0x1668);
 
 // field1[12] = 4 target_types × 3 rows; each int is the selected action_id
 // for that combination (-1 = use first item). Used by inner-PopulateMenus
@@ -67,16 +89,26 @@ const size_t kTamNameLabelOffset      = acc::off::Todo(0x15CC);
 // up after the engine's next paint pass, which is why we sometimes see
 // `gui_string=[] action_button=[]` immediately after PopulateMenus even
 // though the data is fully populated.
-const size_t kTamField1Offset         = acc::off::Todo(0x24);
-const size_t kTamTargetTypeOffset     = acc::off::Todo(0x1AEA);
+// K2: selected-id 2-D array stays at +0x24; the target-type byte moved
+// 0x1AEA -> 0x1BAA (both witnessed in the K2 DoTargetAction).
+const size_t kTamField1Offset         = acc::off::Same(0x24);
+const size_t kTamTargetTypeOffset     = acc::off::Pick(0x1AEA, 0x1BAA);
 constexpr int    kActionIdNone            = -1;
-const size_t kIfActionStride          = acc::off::Todo(0x38);
+const size_t kIfActionStride          = acc::off::Pick(0x38, 0x3c);
 
 // Engine entry points (k1_win_gog_swkotor.exe.xml symbol table; GoG bytes
 // match Steam per project_ghidra_gog_steam_bytes_match).
-const uintptr_t kAddrSelectNextAction = acc::addr::R(0x006865b0);
-const uintptr_t kAddrSelectPrevAction = acc::addr::R(0x00686680);
-const uintptr_t kAddrDoTargetAction = acc::addr::R(0x00689610);
+// K2 twins found via the TAM target-type-byte (+0x1baa) displacement scan
+// and disambiguated by decompile: 0x00744260 steps +1 (wraps forward),
+// 0x00744410 steps -1 (wraps to size-1) — both write the +0x24 selected
+// array and PlayGuiSound(7), K1's bodies line for line.
+const uintptr_t kAddrSelectNextAction = acc::addr::Pick(0x006865b0, 0x00744260);
+const uintptr_t kAddrSelectPrevAction = acc::addr::Pick(0x00686680, 0x00744410);
+// K2 twin found by the six-StrRef "can't do that" switch shared with
+// DoPersonalAction; disambiguated by its TAM-layout reads (lists at +0,
+// selected array +0x24, target-type byte +0x1baa). NOTE K2 ret 8 —
+// verify the K1 typedef's arg count against it before clearing gates.
+const uintptr_t kAddrDoTargetAction = acc::addr::Pick(0x00689610, 0x007445D0);
 
 // CClientExoApp::GetGameObject @ 0x005ED580 — same address engine_area /
 // engine_picker use. (this, handle) -> CGameObject*. K2 twin 0x0073F4D0
@@ -88,19 +120,27 @@ const uintptr_t kAddrCClientGetGameObject = acc::addr::Pick(0x005ED580, 0x0073F4
 // CSWCCreatureStats::GetCanUseSkill @ 0x006477e0 — bool __thiscall
 // (CSWCCreatureStats*, ushort skill_idx). Used by CSWCDoor::GetTargetActions
 // to gate the Security row (skill_idx=6 = Security).
-const uintptr_t kAddrGetCanUseSkill = acc::addr::R(0x006477E0);
+// K2 twin: the K2 GetDefaultActions mine case calls it (push 1) exactly
+// where KOTOR 1's calls 0x006477E0. Receiver chain (lvl-up stats offset)
+// listing-witnessed separately.
+const uintptr_t kAddrGetCanUseSkill = acc::addr::Pick(0x006477E0, 0x00845730);
 
 // CSWCCreature.lvl_up_stats @ +0x2f8 → CSWCLevelUpStats*. The CSWC-
 // CreatureStats inline-member sits at +0x00 of CSWCLevelUpStats, so this
 // pointer can be reinterpreted directly as CSWCCreatureStats*. Verified:
 // swkotor.exe.h:5984 (lvl_up_stats), :6332 (creature_stats inline at +0).
-const size_t kCreatureLvlUpStatsOffset = acc::off::Todo(0x2F8);
+// K2 listing-witnessed at both GetCanUseSkill sites in the K2
+// GetDefaultActions: `ecx = [player_client + 0x310]; push 1; call`.
+const size_t kCreatureLvlUpStatsOffset = acc::off::Pick(0x2F8, 0x310);
 
 // CSWSDoor.field_0x2d8 — the second Security gate from CSWCDoor::Get-
 // TargetActions decomp: must be 0 for the Security row to populate.
 // Per the door decomp, the field is read as `*(int *)(server_door + 0x2d8)`
 // and compared `== 0`.
-const size_t kServerDoorSecurityGateOffset = acc::off::Todo(0x2D8);
+// K2 witnessed in the K2 CSWCDoor::GetTargetActions (0x0087BEC0) Security
+// case: `GetServerDoor()+0x328 == 0 && GetCanUseSkill(6)` gates the
+// Security row (id 0x3f3) — K1's shape with the gate moved 0x2D8 -> 0x328.
+const size_t kServerDoorSecurityGateOffset = acc::off::Pick(0x2D8, 0x328);
 
 // Skill index for "Security" — door decomp passes literal `6` to
 // GetCanUseSkill. Re-stated as a constant for log readability.
@@ -119,10 +159,13 @@ constexpr int kSkillSecurity = 6;
 //   [10] AsSWCCreature  (+0x28)
 //   [14] AsSWCTrigger   (+0x38)
 //   [18] AsSWCPlaceable (+0x48)
-const size_t kVtableAsSWCDoorOffset      = acc::off::Todo(0x14);
-const size_t kVtableAsSWCCreatureOffset  = acc::off::Todo(0x28);
-const size_t kVtableAsSWCTriggerOffset   = acc::off::Todo(0x38);
-const size_t kVtableAsSWCPlaceableOffset = acc::off::Todo(0x48);
+// K2 slots witnessed in the K2 GetDefaultActions (0x007B40F0): AsSWCDoor
+// +0x14 (unchanged), AsSWCCreature +0x2c, AsSWCTrigger +0x3c, AsSWCPlaceable
+// +0x4c — one virtual inserted below +0x14, shifting the later three by 4.
+const size_t kVtableAsSWCDoorOffset      = acc::off::Same(0x14);
+const size_t kVtableAsSWCCreatureOffset  = acc::off::Pick(0x28, 0x2c);
+const size_t kVtableAsSWCTriggerOffset   = acc::off::Pick(0x38, 0x3c);
+const size_t kVtableAsSWCPlaceableOffset = acc::off::Pick(0x48, 0x4c);
 
 // CSWCDoor field offsets (swkotor.exe.h:6192 STRUCTURE NAME="CSWCDoor"):
 //   +0x104  cannot_bash       (int) — gates Bash row
@@ -131,11 +174,20 @@ const size_t kVtableAsSWCPlaceableOffset = acc::off::Todo(0x48);
 //   +0x114  is_hostile        (int)
 //   +0x11c  state             (int) — door open/closed state
 //   +0x138  field17           (int) — additional Bash-row gate
-const size_t kDoorCannotBashOffset     = acc::off::Todo(0x104);
-const size_t kDoorCanUseActionsOffset  = acc::off::Todo(0x108);
-const size_t kDoorIsHostileOffset      = acc::off::Todo(0x114);
-const size_t kDoorStateOffset          = acc::off::Todo(0x11c);
-const size_t kDoorField17Offset        = acc::off::Todo(0x138);
+// K2 client-door deltas are PIECEWISE (witnessed in the K2
+// GetDefaultActions door case): cannot_bash stays +0x104, can_use_actions
+// moved +0x108 -> +0x10c, field17 +0x138 -> +0x13c — i.e. one dword
+// inserted between +0x104 and +0x108. is_hostile/state sit in the shifted
+// region and follow the +4 delta pending their own decompile witness.
+const size_t kDoorCannotBashOffset     = acc::off::Same(0x104);
+const size_t kDoorCanUseActionsOffset  = acc::off::Pick(0x108, 0x10c);
+// is_hostile/state sit inside the (0x108..0x138] range whose +4 shift is
+// bracketed by direct witnesses on BOTH ends (0x108->0x10c, 0x138->0x13c),
+// so the single-insertion model fixes them at +4. Diag-only reads
+// (LogTargetDiag) — a wrong value logs wrong, it cannot crash (SEH).
+const size_t kDoorIsHostileOffset      = acc::off::Pick(0x114, 0x118);
+const size_t kDoorStateOffset          = acc::off::Pick(0x11c, 0x120);
+const size_t kDoorField17Offset        = acc::off::Pick(0x138, 0x13c);
 
 typedef void (__thiscall* PFN_RowOp)(void* this_, int row);
 // DoTargetAction shares the (this, int row) shape with Select Next/Prev but does

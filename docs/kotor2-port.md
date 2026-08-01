@@ -20,17 +20,103 @@ Interaction** (walk-to-target, Enter-interact, action surfaces; 37 unresolved
 constants, several sessions). The risk this accepts: more untested code
 stacks up before the first combined test round — mitigated by keeping every
 batch's offline verification at the Batch 3 bar (worklist to zero on live
-paths, chain audit clean, byte-confirmed cuts). Do not let a KOTOR 1
+paths, chain audit clean, byte-confirmed cuts). ~~Do not let a KOTOR 1
 regression run slip much further — Dispatch has now been restructured THREE
-times without one.
+times without one.~~ **DISCHARGED 2026-08-01: the user ran the KOTOR 1
+regression pass over the Batch 2/3/3b changes and found no regressions.**
 
 **Batch 3b — Dialog is IMPLEMENTED (2026-08-01, same session): 12/12
 constants resolved, slot rows closed, dialog_speech phase live on both
-games, built clean. NOT tested, NOT committed.** See its section under THE
-BATCH PLAN for every witness. Next session: **Batch 3c — Interaction** (its
-scoping is in its section; start from the engine_picker descriptor table and
-the action-queue primitives, whose K1 reference addresses are all in
-engine_picker.cpp / guidance_autowalk.h).
+games, built clean. Tested via the K1 regression pass; committed with
+Batch 3.** See its section under THE BATCH PLAN for every witness.
+
+**FIRST KOTOR 2 IN-WORLD TEST ROUND RAN 2026-08-01 (log
+patch-20260801-225529.log, 5950 lines, ZERO faults / zero crashes).** What
+worked: chargen → world, sub-screen lifecycle, dialog speech (the Ebon Hawk
+prologue line), camera-turn direction readout, category cycling
+(BuildListing scanned all 177 area objects and answered correctly), the
+whole wall/room data pipeline (159 edges, 11 named doors, calibrated change
+detector), and both new input hooks (103 events logged, including the
+in-world bare keys). Three defects found, two fixed in the same session:
+
+1. **FIXED — every hovered/cycled object failed to narrate.** Both the
+   passive narration and the Q/E re-announce logged "handle ... failed to
+   resolve, silent". Cause: `kClientObjectServerObjectOffset` was left
+   `Todo` on the theory that KOTOR 2 consumers all branch to the engine
+   resolver — but `ResolveClientObjectHandle` reads the field directly, so
+   it read through the poison offset and returned null. KOTOR 2's own
+   `CSWCObject::GetServerObject` (0x007F2540) tests and fills
+   `[this+0xf8]`, the SAME offset as KOTOR 1's, so the constant is now
+   `Same(0xf8)`. **Lesson: "designed Todo" is only true per CONSUMER —
+   audit every reader before declaring an offset deliberately unresolved.**
+2. **FIXED — sub-screens announced right but read wrong.** KOTOR 2's
+   dialog.tlk assigns KOTOR 1's menu strrefs to unrelated strings (48218 =
+   "Ablativplatten Mk 1", 48223 = a spacesuit hint), which is what the icon
+   reader spoke. K2's cluster is 48620..48628, mined by parsing its TLK
+   header. Both tables (menus_extract.cpp icons, menus_monitors.cpp
+   sub-screen titles) now carry strrefK1/strrefK2. Two K2 captions differ
+   in wording ("Charaktere", "Tagebuch") and K2's messages entry (48624) is
+   empty, so that row uses the standalone 1563. The icon table is now keyed
+   by the control's own **.gui ID** instead of its position in controls[]:
+   both games assign the same ids (0..7 LBLH_*, 8..15 BTN_*, verified by
+   gff2xml over each game's own gui.bif) while the two engines build
+   controls[] in different member orders, so id-keying is correct on both
+   and the array order stops mattering.
+3. **OPEN — no wall/proximity cues.** The cue data is all there; every cue
+   drops with "drop-engine-fail" because cue playback is Batch 5 (Audio),
+   not ported yet. Expected, not a defect. Room-shape speech needs one
+   look on top of that once cues exist.
+
+**SECOND KOTOR 2 ROUND (log patch-20260801-232432.log): room-shape speech,
+Q/E, and interaction all confirmed WORKING.** Two defects found, both fixed:
+
+4. **FIXED — crash when cycling sub-screens quickly.** The process died in
+   OUR dll, not the engine: dump CrashDumps/swkotor2.exe.46564.dmp faults
+   reading `[esi+0xc]` at accessibility.dll+0x18FFFA, which disassembles to
+   `GetControlCenter`'s `ext[2]` (menus_internal.cpp). It null-checked the
+   control but read it without SEH; a fast screen switch freed the panel
+   while the chain still held one of its controls, so the pointer was
+   stale-but-non-null. Now SEH-guarded. **This is the fourth crash of the
+   identical class** (FocusProbe, TryPartyPortrait, TrySpeculativeVtableRead,
+   now this): a non-null control pointer is NOT proof of life, and KOTOR 2
+   tears panels down on paths KOTOR 1 does not. Worth a sweep for any
+   remaining unguarded control reads rather than waiting for the fifth.
+5. **FIXED — the character sheet was the one sub-screen that never
+   announced.** Its CGuiInGame slot row was a `Todo`, on a note claiming
+   KOTOR 2 puts a CSWGui3DSceneView at 0x14. That note was wrong (same
+   slot-table-tool misattribution as the BlackenedLabel case): the K2 panel
+   creator 0x007BE4C0 builds the character panel at 0x0084C3A0 — the
+   function that stores the CSWGuiInGameCharacter vtable 0x009A3E7C — and
+   writes it with `MOV [gui+0x14],EAX`. The row is now `Same(0x14)`.
+
+Slot rows still unresolved after this: PartySelection (0x78),
+InGameGalaxyMap (0x80), ControllerLossBox (0xa4), DialogMessagesAux (0xf8),
+DialogMessages (0xfc). None of them blocked anything in the two rounds so
+far; resolve them with the per-sub-screen batch below.
+
+**Q/E on KOTOR 2 — answered:** next/prev target ARE natively bound to E/Q,
+identically to KOTOR 1. The ini keymaps are byte-identical for these
+(`Action204=67`, `Action205=55`), the engine's dispatcher has the same
+0xcc/0xcd cases, and the test log shows both codes arriving at our hook
+in-world. The silence was defect 1, not a binding difference. (A first pass
+over the log wrongly reported the codes as absent — the search pattern
+skipped the `key=?(204)` form the unnamed codes print.)
+
+**Batch 3c — Interaction is IMPLEMENTED (2026-08-01, seventh session):
+the full worklist went 71 unresolved → 1 (the one survivor is the DESIGNED
+kClientObjectServerObjectOffset Todo whose consumers branch to the engine
+resolver on KOTOR 2), both in-world input hooks are written
+(OnClientHandleInputEventK2 + OnProcessInput on the K2 dispatcher/frame
+tick), the Dispatch interaction phases and cycle_input's Batch-1 decline
+are cleared, chain audit is clean, and the build is green.
+`k2_hook_status.py` reports 14 of 25 READY. NOT tested in game, NOT
+committed.** The whole address round again ran offline (eight K2 Ghidra
+rounds + capstone scans, zero test rounds spent). See "Batch 3c" under THE
+BATCH PLAN for the witness ledger, the three calling-convention divergences,
+and the combined test round this now needs. Next session: run the combined
+Batch 3+3b+3c KOTOR 2 test round (chargen → world → sub-screens → dialog →
+walk/interact/cycle), or scope Batch 4 — Combat first if the user prefers
+more offline porting before spending a test round.
 
 Batch 1 (GUI spine) is TESTED AND WORKING — the user confirmed menu navigation,
 Options + sub-panels, listbox rows and speech on KOTOR 2. Batch 2 (in-game GUI
@@ -907,6 +993,164 @@ it. Several sessions, Batch-3-sized. Port it WHOLE per THE METHOD — the
 unified action menu, narrated-target slot and native walk-then-talk dispatch
 carry several fossilised workarounds (see the memory notes on the unified
 action menu and distant-NPC dialogue).
+
+**Batch 3c — IMPLEMENTED 2026-08-01 (seventh session, one sitting).** The
+scope grew to include engine_radial.cpp (the picker's live path calls
+ResolveTargetActionMenu / LogStateWide / LogTargetDiag, and the doc mandates
+porting the unified action menu whole): final worklist over the 14-file
+closure = **92 constants, 91 resolved**; the survivor is
+kClientObjectServerObjectOffset, whose Todo is DESIGNED (KOTOR 2 consumers
+call the engine's own GetServerCreature resolver instead — do not "fix" it).
+Chain audit: 1 unresolved use, guarded. Build green (112 TUs). Uncommitted,
+untested.
+
+Address-resolution method notes (all offline; eight kotor2-project Ghidra
+rounds, two kotor1 rounds, plus capstone byte scans):
+- **Server action queue:** AddUseObjectAction found via a
+  `push 0xffff; push 0x28` byte scan (which also yielded K2's AddAction at
+  0x0053F7F0); AddMoveToPointAction via AddAction's caller census (id-1
+  shape + path-find resets); ForceMoveToPoint via its unique NINE
+  AddActionNodeParameter call sites (7 point + 2 object); ClearAllActions
+  (0x00541080) via TWO independent caller shapes (ActionInitiateDialog's
+  GetServerObject→Clear(1), DoPersonalAction's GetServerCreature→Clear(0));
+  ActionManager (0x00563C90) as the 134-byte double-Clear caller comparing
+  its param against 1/2/8/4 (the K1 `<10` byte check is refactored into
+  helper 0x00571980; the byte field moved +0x9f2→+0x1116).
+  kObjectActionNodesOffset 0xfc→0x100 (AddAction's enqueue loads
+  `ecx = this + 0x100`); list internals {head+0, tail+4, count+8}, node
+  {prev+0, next+4, data+8} — count offset Same.
+- **Picker internals:** GetDefaultActions (0x007B40F0) found by icon-resref
+  string xrefs (only function referencing all six of i_noaction/i_dialog/
+  i_opendoor/i_useplace/i_disablemine/i_recovermine); HandleMouseClickInWorld
+  (0x007B3CA0) by the click-gate displacement cluster + source order (sits
+  right before GetDefaultActions, as in K1). Internal offsets: last_target
+  Same(0x2b4), last_clicked Same(0x2b8), hover 0x4a4→0x4b0 (pos vector
+  0x4b4..bc), descriptor array 0x4c8→0x4cc, count 0x4cc→0x4d0. The
+  descriptor struct kept every field position (label 0, id 8, fn 0xc, target
+  0x1c, icon 0x20, flags 0x30) and grew its stride 0x38→**0x3C** (tail
+  growth). K2 kept K1's action ids and GUI strrefs verbatim.
+- **Verb functions** (from the fn-pointer immediates K2 GetDefaultActions
+  stores): ActionInitiateDialog 0x0077CF70, ToggleDoorState 0x0087BB20,
+  door MenuActionBash 0x0087BD10, UsePlaceable 0x00841CE0, BashPlaceable
+  0x00841D40, DisableMine 0x0087F2D0, RecoverMine 0x0087F330,
+  ActionMenuAttack 0x0077CE00. K2-only additions observed: saber-cut door
+  row (id 0x407, i_doorsaber), corpse-container "UseSearch" label variant.
+- **GUI surfaces:** SetMainInterfaceTarget 0x007CE710 (ret 8 confirmed,
+  guards CGuiInGame+0x98); CSWGuiMainInterface::SetTarget 0x0074CFB0
+  (target 0x64→0x68, refresh-hint 0x5cb0→0x595c); PopulateMenus
+  **0x0074CFE0 — grew an int arg, every engine caller passes 1** (per-game
+  typedef in engine_picker); RePopulateMainInterface 0x007CEB50 (argless
+  forwarder, passes the 1 itself — the safest K2 entry); DoPersonalAction
+  0x00751750 (ret 8 both games; found with DoTargetAction 0x007445D0 via
+  the six-strref "can't do that" switch, disambiguated by layout reads);
+  SelectNext/PrevAction 0x00744260/0x00744410 (via the TAM target-type-byte
+  displacement scan, disambiguated by wrap direction). MainInterface:
+  personal lists 0x74→0x78 (SEVEN columns on K2 — kColumnCount stays 6,
+  the extra column is additive), selected-id array 0x1bac→0x1c7c, TAM
+  embed 0xBC→0xCC, column UI array 0x771c→0x733c stride 0x71C→0x750 (the
+  GetColumnActionButton constexpr base now goes through Pick too). TAM:
+  lists Same(0/4/0xc), selected 2-D Same(0x24), target-type 0x1AEA→0x1BAA,
+  target_actions Same(0x54) stride 0x750, name label 0x15CC→0x1668, row
+  sub-controls 0/0x1D0/0x3A0/0x570, row flags 0x710/0x714→0x740/0x744
+  (witnessed in the refactored setter 0x00741780), shown-flag byte at
+  +0x74d (diag constant anchored at 0x74c to keep the 4-byte read in-row).
+- **Doors:** client-door deltas are PIECEWISE with both brackets witnessed:
+  cannot_bash Same(0x104), can_use_actions 0x108→0x10c, field17
+  0x138→0x13c; is_hostile/state (diag-only) fixed at +4 by the bracketed
+  single-insertion model. GetIsOpen is anim-based in BOTH games (current
+  anim vs 0x2742/0x2743) — no mechanism change. Server-door security gate
+  0x2D8→0x328 (witnessed in K2 CSWCDoor::GetTargetActions 0x0087BEC0,
+  found via the GetCanUseSkill(6) caller census; note the KeyRequired GFF
+  string is placeable-only on K2, the door loader differs).
+  GetCanUseSkill 0x00845730; lvl-up stats 0x2F8→0x310 (listing-witnessed).
+- **Player control:** SetEnabled 0x00865250 (decompile + listing: K1's body
+  line for line); player_control slot Same(0x2a0) on the INTERNAL
+  (witnessed inside K2's real SetInputClass 0x007B3050, the +0x9c writer).
+- **vtable-As slots:** Door Same(0x14), Creature 0x28→0x2c, Trigger
+  0x38→0x3c, Placeable 0x48→0x4c (one virtual inserted below +0x14).
+
+**Three calling-convention divergences, all byte-verified and coded:**
+1. AddUseObjectAction dropped its unused second arg on K2 (ret 8 → ret 4)
+   — per-game typedef in guidance_autowalk.cpp UseObject.
+2. PopulateMenus takes an int on K2 (engine callers pass 1) — shared
+   CallPopulateMenus helper in engine_picker.cpp used by Drive and
+   ReanchorRadial.
+3. Everything else kept K1's ret sizes (audited: AddMoveToPointAction 0x44,
+   ActionInitiateDialog 8, DoPersonalAction 8, DoTargetAction 8,
+   SetMainInterfaceTarget 8, Select* 4, ClearAllActions 4, ActionManager 4,
+   SetEnabled 4, HandleMouseClickInWorld/RePopulate 0).
+CSWSForcedAction's layout matches K2's reads field for field — no change.
+
+**The two new hooks (kotor2.hooks.toml, cuts byte-confirmed):**
+- OnClientHandleInputEventK2 @0x007B12EE — the in-world dispatcher
+  (0x007B12C0), hooked at the return-slot init after the `this` store; the
+  7-byte cut never touches EAX so the consume TEST works without
+  skip_original_bytes; consumed exit enters the single epilogue AFTER its
+  return-value reload (0x007B2E5E) with eax excluded from restore, and the
+  epilogue's `MOV ESP,EBP` + FS-unregister make it stack-depth-proof.
+  Params ecx + ebp; the wrapper hands [ebp+8]/[ebp+0xc] slot ADDRESSES to
+  the shared K1 handler, preserving its caller-eip read at [ebp+4].
+- OnProcessInput @0x007B0EAB — the frame tick (0x007B0E90), cut on the
+  6-byte `this` reload; the replay re-establishes ECX for the resume.
+The dispatcher's case map was decompiled and is IDENTICAL to KOTOR 1's —
+Q/E 0xcc/0xcd, Esc 0xdf, bare keys 0xe2..0xee with the same
+logical-code→column mapping the restamp logic uses, R 0xef — so the
+modifier-space reservation, overlay-Esc consume and bare-key prep transfer
+unchanged. Combat-queue attribution inside the handler
+(ReportPrePressDepth / ArmUserQueueAdd / LogPreFire) stays KOTOR-1-gated
+inline until Batch 4 resolves combat internals.
+
+**Gates cleared:** Dispatch phases cycle_input, announce_degrees,
+guidance.beacon, engine.inputRestore, guidance.approach, guidance.cancel,
+engine.actionQueueDiag, interact; cycle_input's TryHandleEvent decline;
+OnClientHandleInputEvent + OnProcessInput HandlerEnabled gates. Kept
+KOTOR-1-gated: map_user_markers, the probe pollers, view_mode.poll,
+levelup_pause, engine.inputReassert (its chain is the deliberately-deferred
+SetPauseState/SetSoundMode pair from Batch 2 — CAUTION: K2's SetSoundMode
+takes TWO args).
+
+**The Batch 3c test items (fold into the combined round):** walk-to-point
+(Shift+minus), Enter-interact on a door / a container / an NPC (walk-then-
+act with input left enabled — watch the approach tracker's "way blocked"
+path), Q/E cycling + comma/period discovery cycling, the unified action
+menu (Shift+numbers) including variant cycling and bare 1..7 re-stamp, a
+modifier combo of an engine-bound key (reservation consume — check
+Diag.ModShadow), Esc while a mod overlay is open (no pause menu), and one
+KOTOR 1 regression pass over the same list (Dispatch was restructured a
+FOURTH time, the input handlers lost their gates, and UseObject/
+PopulateMenus calls went per-game).
+
+**Batch 3d — Sub-screen internals (ADDED 2026-08-02, user-proposed after the
+second KOTOR 2 round, and the recommended next batch).** The two in-world
+rounds showed the SPINE is healthy on KOTOR 2 — panels identify, titles
+announce, focus walks, listboxes read — while the per-screen readers behind
+each sub-screen are still KOTOR-1-shaped. That is the gap the user heard as
+"screens announce correctly but do not all read correctly", and the
+stability risk they flagged: each unported per-screen reader walks
+KOTOR 1 offsets on KOTOR 2 panels, which is precisely the situation that
+produced defects 4 and 5.
+
+Scope, in the order the evidence justifies:
+1. **Guard sweep first** (cheap, prevents the fifth crash of the same
+   class): audit every control/panel read reachable from the menu monitors
+   for a missing `__try`, not just the ones a crash has already found.
+   `handler_chain_audit.py` finds unresolved-constant reads; this is the
+   complementary case — RESOLVED offsets read from a possibly-dead pointer.
+2. The five remaining CGuiInGame slot rows (PartySelection, InGameGalaxyMap,
+   ControllerLossBox, DialogMessagesAux, DialogMessages).
+3. Per-screen field maps for the readers that matter most in play:
+   character sheet (menus_charsheet), equipment, inventory, abilities,
+   journal — each needs its own KOTOR 2 panel-constructor decompile, the
+   same way Batch 3b did the dialog panels.
+4. The chargen editbox / typing surface, still unported and already known
+   to be silent.
+
+Method note that made Batch 3c cheap and applies here: mine each panel's
+control ids from the game's OWN gui.bif (`unkeybif e data/gui.bif
+chitin.key` + `gff2xml`), and key readers by control id rather than array
+position — both games assign the same ids, while their engines build
+controls[] in different orders. That is how the in-game menu icons were
+fixed, and it removes a whole class of per-game guessing.
 
 **Batch 4 — Combat.** The four CombatRound hooks plus `OnSetPauseState`; gates in
 `combat_diag.cpp` (3) and `combat_queue_hooks.cpp`.

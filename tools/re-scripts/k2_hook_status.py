@@ -101,6 +101,8 @@ def main():
         "OnSetMoveToModuleString": "OnSetMoveToModuleStringK2",
         "OnDoorOpen": "OnDoorOpenK2",
         "OnShowObject": "OnShowObjectK2",
+        # Batch 3c — interaction (in-world input pipeline)
+        "OnClientHandleInputEvent": "OnClientHandleInputEventK2",
     }
 
     print(f"{'handler':38s} {'K1 addr':12s} {'K2 hook':9s} {'K2 gate':9s} verdict")

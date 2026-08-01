@@ -11,6 +11,7 @@
 
 #include "menus_monitors.h"
 
+#include "engine_game.h"      // IsKotor2 — per-game sub-screen title strrefs
 #include "engine_manager.h"
 #include "engine_offsets.h"
 #include "engine_panels.h"
@@ -322,29 +323,43 @@ void MonitorFocusedControl() {
 // puts Map and Messages in the "wrong" spots from a strip POV). Keeping
 // both in one row lets the Tab handler look up the next strip neighbour
 // and the engine GUI_id in a single pass.
+// strrefK1/strrefK2: KOTOR 2's dialog.tlk assigns KOTOR 1's ids to unrelated
+// strings (48218 there is "Ablativplatten Mk 1"), so each game needs its own
+// cluster — K1 48218..48225, K2 48620..48628. Same values as the icon table in
+// menus_extract.cpp; keep the two in sync. Use SpecStrref() to read them.
 struct InGameSubScreenSpec {
     PanelKind   kind;
     int         guiId;
-    uint32_t    strref;
+    uint32_t    strrefK1;
+    uint32_t    strrefK2;
     const char* literal;
 };
 
 const InGameSubScreenSpec k_inGameSubScreens[] = {
-    { PanelKind::InGameEquip,     0, 0xFFFFFFFFu, "Ausr\xfcstung" },
-    { PanelKind::InGameInventory, 1, 48220u,      "Inventar" },
-    { PanelKind::InGameCharacter, 2, 48225u,      "Charakterblatt" },
-    { PanelKind::InGameMap,       6, 48221u,      "Karte" },
-    { PanelKind::InGameAbilities, 3, 48224u,      "F\xe4higkeiten" },
-    { PanelKind::InGameJournal,   5, 48218u,      "Auftr\xe4ge" },
-    { PanelKind::InGameOptions,   7, 48222u,      "Optionen" },
-    { PanelKind::InGameMessages,  4, 48223u,      "Nachrichten" },
+    { PanelKind::InGameEquip,     0, 0xFFFFFFFFu, 48620u, "Ausr\xfcstung" },
+    { PanelKind::InGameInventory, 1, 48220u,      48621u, "Inventar" },
+    { PanelKind::InGameCharacter, 2, 48225u,      48622u, "Charakterblatt" },
+    { PanelKind::InGameMap,       6, 48221u,      48626u, "Karte" },
+    { PanelKind::InGameAbilities, 3, 48224u,      48623u, "F\xe4higkeiten" },
+    { PanelKind::InGameJournal,   5, 48218u,      48627u, "Auftr\xe4ge" },
+    { PanelKind::InGameOptions,   7, 48222u,      48628u, "Optionen" },
+    // K2's own messages entry (48624) is empty in its TLK; 1563 carries the
+    // caption there.
+    { PanelKind::InGameMessages,  4, 48223u,      1563u,  "Nachrichten" },
     // Quest-items modal pushed by the journal's "Auftrags-Gegenstände" button.
     // Not a strip sub-screen (no icon → guiId -1); its title is read live from
     // LBL_TITLE in the announce path, so strref/literal are unused sentinels.
-    { PanelKind::InGameQuestItems, -1, 0xFFFFFFFFu, nullptr },
+    { PanelKind::InGameQuestItems, -1, 0xFFFFFFFFu, 0xFFFFFFFFu, nullptr },
 };
 constexpr int k_inGameSubScreenCount =
     sizeof(k_inGameSubScreens) / sizeof(k_inGameSubScreens[0]);
+
+// Per-game strref for a spec row. 0xFFFFFFFF means "no TLK entry" and the
+// caller falls back to the literal / localised string table.
+uint32_t SpecStrref(const InGameSubScreenSpec* s) {
+    if (!s) return 0xFFFFFFFFu;
+    return acc::game::IsKotor2() ? s->strrefK2 : s->strrefK1;
+}
 
 const InGameSubScreenSpec* FindSpec(PanelKind k) {
     for (const auto& s : k_inGameSubScreens) {
@@ -400,10 +415,11 @@ void AnnounceNewSubScreens(void** panels, int count) {
 
         char text[128];
         bool spoke = false;
-        if (spec->strref != 0xFFFFFFFFu &&
-            LookupTlk(spec->strref, text, sizeof(text))) {
+        const uint32_t strref = SpecStrref(spec);
+        if (strref != 0xFFFFFFFFu &&
+            LookupTlk(strref, text, sizeof(text))) {
             acclog::Write("Menus.SubScreen", "panel=%p kind=%s strref=%u text=\"%s\"",
-                          p, PanelKindName(k), spec->strref, text);
+                          p, PanelKindName(k), strref, text);
             prism::Speak(text, /*interrupt=*/false);
             spoke = true;
         }
@@ -414,7 +430,7 @@ void AnnounceNewSubScreens(void** panels, int count) {
             // than the hardcoded German literal. The table literal stays as
             // an ASCII last-ditch fallback.
             const char* literal = spec->literal;
-            if (spec->strref == 0xFFFFFFFFu && k == PanelKind::InGameEquip) {
+            if (strref == 0xFFFFFFFFu && k == PanelKind::InGameEquip) {
                 literal = acc::strings::Get(acc::strings::Id::EquipMenuName);
             }
             acclog::Write("Menus.SubScreen", "panel=%p kind=%s text=\"%s\" (literal)",

@@ -36,3 +36,4 @@ EXPORTS
     OnPlayerFire
     OnDoorOpen
     OnDoorOpenK2
+    OnClientHandleInputEventK2

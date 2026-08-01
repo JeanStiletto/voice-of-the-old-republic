@@ -892,10 +892,10 @@ void OnPathfindFocusForce() {
 }  // namespace
 
 bool TryHandleEvent(int param_1, int param_2) {
-    // KOTOR 2 (Batch 1): in-world cycling belongs to the world batch; its
-    // chain reads player/area/discovery state whose KOTOR 2 constants are
-    // unresolved. Decline so the key falls through to the menu logic.
-    if (acc::game::IsKotor2()) return false;
+    // Batch 3c: live on BOTH games. The Batch 1 decline is cleared — the
+    // player/area/discovery chain this reads is fully resolved for KOTOR 2
+    // (world offsets in Batch 3, script-var table in the discovery port,
+    // interaction constants in Batch 3c).
 
     // Shift state tracking — fires on both press and release, never consumed.
     // Notify peek_description on the release edge so its block cursor resets

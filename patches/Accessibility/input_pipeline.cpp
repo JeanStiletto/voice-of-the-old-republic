@@ -145,7 +145,8 @@ void PrepareBareDispatchForNarratedTarget() {
 // investigation needs explicit frame markers, restore the acclog::Write
 // call here — one line of code.
 extern "C" void __cdecl OnProcessInput(void* /*this_ptr*/) {
-    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
+    // Batch 3c: live on BOTH games (KOTOR 2 hooks it at 0x007B0EAB — the
+    // seq bump is engine-free, so there is no chain to port).
     acc::input::NextSeq();
 }
 
@@ -168,7 +169,14 @@ extern "C" void __cdecl OnProcessInput(void* /*this_ptr*/) {
 extern "C" int __cdecl OnClientHandleInputEvent(void* this_ptr,
                                                 void* p1_addr,
                                                 void* p2_addr) {
-    if (!acc::game::HandlerEnabled()) return 0;  // KOTOR 2: not ported yet — 0 = not consumed
+    // Batch 3c: live on BOTH games. KOTOR 2 enters via the frame-unpacking
+    // OnClientHandleInputEventK2 wrapper below (same param-address shape).
+    // The whole chain is ported: ManagerTranslateCode is a pure switch, the
+    // InputIndex code space is byte-verified identical across the games (see
+    // the manager-forward block's decompile note), and every engine touch
+    // (PrepareBareDispatch, SelectVariant, SelectActionInRow, dialog-panel
+    // probe) runs on Pick'd constants. Combat-queue attribution stays
+    // KOTOR-1-gated inline until Batch 4 resolves combat internals.
     if (!p1_addr || !p2_addr) return 0;
 
     int param_1 = 0;
@@ -422,12 +430,17 @@ extern "C" int __cdecl OnClientHandleInputEvent(void* this_ptr,
         // through DoTargetAction / DoPersonalAction which lands in
         // CSWSCombatRound::AddAction; that function silently free's the
         // node when internal->count > 3.
-        acc::combat::queue::ReportPrePressDepth();
-        // Attribute the resulting CSWSCombatRound::AddAction to this press so
-        // its detour speaks the authoritative "X, Platz N" cue (and engine
-        // auto-attacks, which have no press, stay silent).
-        acc::combat::queue::ArmUserQueueAdd();
-        acc::combat_diag::LogPreFire(diag_label);
+        // Combat-queue attribution is Batch 4 territory — its bodies read
+        // combat-round internals that are still unresolved on KOTOR 2.
+        // Clear this gate when Batch 4 lands.
+        if (acc::game::IsKotor1()) {
+            acc::combat::queue::ReportPrePressDepth();
+            // Attribute the resulting CSWSCombatRound::AddAction to this press
+            // so its detour speaks the authoritative "X, Platz N" cue (and
+            // engine auto-attacks, which have no press, stay silent).
+            acc::combat::queue::ArmUserQueueAdd();
+            acc::combat_diag::LogPreFire(diag_label);
+        }
 
         // Fire the refresh. PrepareBareDispatch logs its own status line
         // (`ActionBar.Prep: target=0x... — SetTarget + RePopulate done`)
@@ -601,4 +614,19 @@ extern "C" int __cdecl OnClientHandleInputEvent(void* this_ptr,
     // Not consumed — fall through to the engine's own handler. The wrapper's
     // cut bytes (5 register pushes) execute, then resume at function entry+5.
     return 0;
+}
+
+// ---------------------------------------------------------------------------
+// KOTOR 2 frame-unpacking wrapper — CClientExoAppInternal::HandleInputEvent
+// @0x007B12C0, hooked at 0x007B12EE (kotor2.hooks.toml has the full byte
+// story). Parameters arrive as ecx = this and ebp = the engine's frame:
+// [ebp+8]/[ebp+0xc] are the two event args and [ebp+4] the return address —
+// the same "slot address, return address one below" relationship the KOTOR 1
+// esp+4-LEA shape gives, so the shared handler (including its caller_eip
+// read at param-slot minus one) runs unchanged.
+extern "C" int __cdecl OnClientHandleInputEventK2(void* this_ptr,
+                                                  void* frame_ebp) {
+    if (!frame_ebp) return 0;
+    unsigned char* frame = static_cast<unsigned char*>(frame_ebp);
+    return OnClientHandleInputEvent(this_ptr, frame + 8, frame + 12);
 }

@@ -40,19 +40,33 @@ constexpr int kSaveLoadBtnDeleteId  = 11;
 constexpr int kSaveLoadBtnBackId    = 12;
 constexpr int kSaveLoadBtnSaveLoadId = 14;
 
-// Center pixel of a control's hit area. Returns false on null control or
-// degenerate extent (zero/negative width/height — sometimes seen on hidden
-// panels and templated control prototypes).
+// Center pixel of a control's hit area. Returns false on null control,
+// unreadable control, or degenerate extent (zero/negative width/height —
+// sometimes seen on hidden panels and templated control prototypes).
+//
+// SEH-guarded because a non-null pointer is NOT proof the control is alive.
+// Cycling sub-screens quickly on KOTOR 2 crashed the process here
+// (patch-20260801-232432.log + CrashDumps/swkotor2.exe.46564.dmp: fault
+// reading [esi+0xc] — this function's `ext[2]` — at accessibility.dll+0x18FFFA,
+// with a freed-and-reused control pointer). The panel had been torn down by
+// the screen switch while the chain still held its control; the null check
+// passed and the read faulted. Same failure class as the FocusProbe and
+// TryPartyPortrait crashes: engine reads here are guarded by convention, and
+// this one was the exception.
 bool acc::menus::detail::GetControlCenter(void* control, int& outCx, int& outCy) {
     if (!control) return false;
-    auto* ext = reinterpret_cast<int*>(
-        reinterpret_cast<unsigned char*>(control) + kControlExtentOffset);
-    int width  = ext[2];
-    int height = ext[3];
-    if (width <= 0 || height <= 0) return false;
-    outCx = ext[0] + width  / 2;
-    outCy = ext[1] + height / 2;
-    return true;
+    __try {
+        auto* ext = reinterpret_cast<int*>(
+            reinterpret_cast<unsigned char*>(control) + kControlExtentOffset);
+        int width  = ext[2];
+        int height = ext[3];
+        if (width <= 0 || height <= 0) return false;
+        outCx = ext[0] + width  / 2;
+        outCy = ext[1] + height / 2;
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
 }
 
 // Screen-absolute center of a CSWGuiListBox row. Listbox children's extents

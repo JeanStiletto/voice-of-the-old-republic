@@ -292,10 +292,6 @@ void Dispatch() {
     PHASE("menus.PollHomeEnd", acc::menus::PollHomeEndKeys());
 
     if (k1) {
-        // Cycle keys (`,`/`.`/`-`) and AltGr — engine drops unbound scancodes.
-        PHASE("cycle_input", acc::cycle_input::PollWin32());
-        PHASE("announce_degrees", acc::announce_degrees::PollWin32());
-
         // Shift+N drops a map marker; in-world Shift+N stays silent.
         PHASE("map_user_markers", acc::map_user_markers::PollWin32());
 
@@ -305,30 +301,40 @@ void Dispatch() {
         PHASE("probe_camera_state", acc::probe_camera_state::PollWin32());
         PHASE("probe_camera_distance", acc::probe_camera_distance::Tick());
         PHASE("view_mode.poll", acc::view_mode::PollWin32());
-
-        // Beacon driver.
-        PHASE("guidance.beacon", acc::guidance::beacon::Tick());
-
-        // Restore player input once the handed-off engine action drains from
-        // the queue (or a ceiling backstop fires).
-        PHASE("engine.inputRestore", acc::engine::TickPlayerInputRestore());
-
-        // Unified walk-to-act approach tracker — both the Shift+- autowalk and
-        // the Enter-interact (loot/talk/door) dispatches arm it; it disarms
-        // quietly on success and announces "way blocked" on a walkmesh-blocked
-        // stall.
-        PHASE("guidance.approach", acc::guidance::TickApproach());
-
-        // W/S/A/D/C/Y movement-cancel. Runs AFTER TickApproach so that if a
-        // dialog/loot/cutscene result surfaced this tick, the tracker has
-        // already disarmed and the cancel sees nothing in flight — it can't
-        // clobber a freshly-queued scripted move on the same tick the scene
-        // takes over.
-        PHASE("guidance.cancel", acc::guidance::PollMovementKeysCancel());
-
-        // Diagnostic: log player action-queue depth changes (delta only).
-        PHASE("engine.actionQueueDiag", acc::engine::TickActionQueueDiag());
     }
+
+    // ----- Batch 3c (KOTOR 2 port): interaction -----
+    // These run on BOTH games. The whole subsystem closure was resolved for
+    // KOTOR 2 offline (92 constants, sole remaining Todo is the DESIGNED
+    // kClientObjectServerObjectOffset whose consumers branch to the engine
+    // resolver) — see docs/kotor2-port.md Batch 3c.
+
+    // Cycle keys (`,`/`.`/`-`) and AltGr — engine drops unbound scancodes.
+    PHASE("cycle_input", acc::cycle_input::PollWin32());
+    PHASE("announce_degrees", acc::announce_degrees::PollWin32());
+
+    // Beacon driver.
+    PHASE("guidance.beacon", acc::guidance::beacon::Tick());
+
+    // Restore player input once the handed-off engine action drains from
+    // the queue (or a ceiling backstop fires).
+    PHASE("engine.inputRestore", acc::engine::TickPlayerInputRestore());
+
+    // Unified walk-to-act approach tracker — both the Shift+- autowalk and
+    // the Enter-interact (loot/talk/door) dispatches arm it; it disarms
+    // quietly on success and announces "way blocked" on a walkmesh-blocked
+    // stall.
+    PHASE("guidance.approach", acc::guidance::TickApproach());
+
+    // W/S/A/D/C/Y movement-cancel. Runs AFTER TickApproach so that if a
+    // dialog/loot/cutscene result surfaced this tick, the tracker has
+    // already disarmed and the cancel sees nothing in flight — it can't
+    // clobber a freshly-queued scripted move on the same tick the scene
+    // takes over.
+    PHASE("guidance.cancel", acc::guidance::PollMovementKeysCancel());
+
+    // Diagnostic: log player action-queue depth changes (delta only).
+    PHASE("engine.actionQueueDiag", acc::engine::TickActionQueueDiag());
 
     // ----- Batch 3 (KOTOR 2 port): world / area / transitions -----
     // These five run on BOTH games. Their whole read/call chains were
@@ -450,10 +456,13 @@ void Dispatch() {
     // through the ported GUI spine.
     PHASE("dialog_speech", acc::dialog_speech::Tick());
 
-    if (k1) {
-        // Enter (interact) — engine click pipeline with localised pre-roll.
-        PHASE("interact", acc::input_poll::PollHotkey());
+    // Enter (interact) — engine click pipeline with localised pre-roll.
+    // Both games since Batch 3c (picker chain + action-queue primitives
+    // fully Pick'd; the KOTOR 2 in-world input hook carries the
+    // modifier-space reservation this shares keys with).
+    PHASE("interact", acc::input_poll::PollHotkey());
 
+    if (k1) {
         // Release the level-up wizard's overlay pause once the panel closes
         // (the wizard's own Accept/Back buttons close it, so there's no close
         // site to call EndOverlayPause). After PollHotkey so a wizard opened
