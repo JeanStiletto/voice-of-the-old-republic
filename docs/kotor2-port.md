@@ -6,12 +6,19 @@ result especially — but whose cost estimate predates the RTTI finding below.
 
 ## WHERE TO RESUME (read this first)
 
-State as of 2026-08-01: **Batch 1 (GUI spine) is TESTED AND WORKING** — the
-user confirmed menu navigation, Options + sub-panels, listbox rows and speech
-all behave as intended on KOTOR 2. **Batch 2 is in progress: every address it
-needs is now identified offline** — the slot table (previous session) and all
-four hook targets with byte-confirmed cut points plus Show/Prev/SetInputClass
-(fourth session; see "The four hook addresses — ALL IDENTIFIED" under Batch 2).
+**State as of 2026-08-01 (fifth session): Batch 1 + Batch 2 tested and working;
+Batch 3's OFFSET FOUNDATION is landed but its GATES ARE NOT CLEARED — see the
+"Batch 3" section under THE BATCH PLAN for what it resolved (17→80 of 137
+constants) and the exact address round + hook-write that remains before it can
+be tested.** Next session: pin the camera pos/yaw fields, `LocalToWorld` /
+`GetArea` / client `GetGameObject`, and `CSWPartyTable::GetNPCObject`; write the
+three byte-confirmed hook cuts into `kotor2.hooks.toml`; clear the gates; test.
+
+Batch 1 (GUI spine) is TESTED AND WORKING — the user confirmed menu navigation,
+Options + sub-panels, listbox rows and speech on KOTOR 2. Batch 2 (in-game GUI
+lifecycle) is the four hook targets with byte-confirmed cut points plus
+Show/Prev/SetInputClass (see "The four hook addresses — ALL IDENTIFIED" under
+Batch 2).
 
 **Batch 2 is IMPLEMENTED (2026-08-01, same session) — built clean, NOT yet
 tested in game, NOT committed.** `k2_hook_status.py` now reports **9 of 25
@@ -623,6 +630,99 @@ DialogMessages pair) can follow, or wait for their subsystem's batch.
 **Batch 3 — World, area, transitions.** `OnSetMoveToModuleString`, `OnDoorOpen`,
 `OnShowObject`; gates in `transitions.cpp`, `door_announce.cpp`,
 `passive_narrate.cpp`. Largest offset surface — `engine_area.h` alone holds ~60.
+
+*Started 2026-08-01 (fifth session). OFFSET FOUNDATION LANDED, gates NOT yet
+cleared — not testable yet.* The closure worklist went **17→80 resolved of 137**
+(`port_worklist.py` over the 43-file Batch 3 closure). Everything the area /
+object / door / waypoint / trigger / placeable / path-graph read paths touch is
+now resolved from decompiled load/save/ctor witnesses, not derivation:
+
+- **CSWSArea** (loader 0x00523870, dtor 0x0052b4e0, GetRoom 0x0054b1d0): the
+  game-object list and rooms array consolidated on K2 — game_objects
+  0x190→0x194 / count 0x194→0x198, rooms 0x230→0x254 with its count 0x268→0x250
+  now *adjacent*, room_names 0x25c→0x280 (stride still 8), name 0x150→0x154,
+  tag 0x158→0x15c. Path graph: points count/ptr 0x238/0x23c→0x25c/0x260,
+  connections 0x240/0x244→0x264/0x268 (per-point layout unchanged). GetRoom
+  address 0x004BB600→0x0054b1d0.
+- **Objects**: tag 0x18 Same; script_var_table 0x100→0x104, fixed CSWVarTable
+  0x110→0x114 (both witnessed at the object serializer thunk 0x00540660, one
+  slot apart). Door band shifted large (LocName 0x39c→0x3ec, GenericType
+  0x2a1→0x2e1, Locked 0x2c4→0x304, OpenState 0x2cc→0x31c, Static 0x3c0→0x410,
+  TransitionDest 0x3c8→0x418). Trigger / waypoint / placeable bands took a
+  uniform **+0x40** (LocName 0x228→0x268, waypoint map-note 0x228/0x22c/0x230
+  →0x268/0x26c/0x270, placeable Useable 0x328→0x380 / HasInventory 0x324→0x37c
+  / ItemRepo 0x36c→0x3c4, trigger geometry 0x284/0x288→0x2c4/0x2c8, IsTrap
+  0x2bc→0x2fc). CreatureStats FirstName 0x14→0x34.
+- **The whole walkmesh mesh block is `Same`** — witnessed byte-for-byte in K2's
+  BWM writer (0x005ea490) and CSWSRoom ctor (0x005ff440): surface mesh +0x3c,
+  verts +0x54, face_count +0x58, faces +0x60, materials +0x64, adjacencies
+  +0x88, stride 0xc. Base-engine walkmesh code KOTOR 2 did not touch.
+- **CSWPartyTable** (SaveTableInfo 0x005fb1a0): server-internal→table
+  0x1b770→0x1f0b4, member ids 0x4→0x8 (the +4 slot became num_puppets),
+  solomode 0x190→0x238.
+- **CSWSScriptVarTable API** (var-table cluster 0x005e6580..): GetInt
+  0x0059a530→0x005e67d0, GetString →0x005e6850, SetInt →0x005e6a00, SetString
+  →0x005e6ce0; CExoString dtor →0x00733780. Area map fog grid `Same`
+  (+0x8/0xc/0x18/0x1c), module→areamap 0x218→0x238.
+
+New offline RE tools this session (all in `tools/re-scripts/`):
+`string_xref_stores.py` (GFF field-name → struct store: the workhorse for
+load/save offsets on K2's unoptimised build) and `call_sites.py` (caller-side
+`add ecx, <offset>` census — how the party-table root and object var-table
+offsets fell out). The three hook cut points are byte-confirmed off the exe
+(see below) but NOT yet written to `kotor2.hooks.toml`.
+
+**WHAT REMAINS before Batch 3 is testable** — a focused address round, because
+each surviving handler chain calls at least one K2 address still `R()`/`Todo`:
+
+1. **Camera tier** (`camera_announce` → `door_announce` facing): the manager
+   reads camera pos/yaw at a raw `camera+0x7c`/`+0x88`. K2's Aurora `Camera`
+   vtable (0x0098C45C, ctor 0x0047ecd0) puts SetPosition at slot 6 storing to
+   `+0xa8` and the pitch/yaw block near `+0x204..0x224` — so the direct field
+   reads must be re-derived for K2's `CSWCameraOnAStick` (reached via
+   `module+0x40`, that hop is `Same`). Until then `GetCameraYawRadians` faults
+   or returns garbage — do NOT clear `door_announce`.
+2. **Walls / map tier** (`room_topology` walls, `map_ui_cursor`):
+   `CSWCollisionMesh::LocalToWorld` (K1 0x00596aa0), `CSWSObject::GetArea`
+   (0x004CB120), client `GetGameObject` (0x005ED580), and the map-pin /
+   fog-of-war accessors are still `R()`. The mesh *offsets* are resolved, but
+   `walls.cpp` calls `LocalToWorld` per face — with `R()=0` that is a call to 0.
+   Confirm it is `acc::addr::Ok()`-guarded (or resolve the address) before
+   `transitions::Tick`'s room-shape tier runs.
+3. **Party-roster tier** (`passive_narrate` → `IsActivePartyMember` →
+   `GetPartyMembers`): calls `CSWPartyTable::GetNPCObject` (0x00564700, still
+   `R()`). Resolve it (candidate cluster 0x005f7f30..0x005ff3b0) or the first
+   Q/E on K2 calls a null pointer.
+
+**Byte-confirmed K2 hook cut points (design record; write these when the gates
+above are cleared):**
+
+- **OnSetMoveToModuleString** — `CServerExoApp::SetMoveToModuleString`
+  0x004aecd0 → **0x0051bfd0** (writes `internal+0x1008c`, 7 callers incl. the
+  door-transition EventHandler; K1 had 6). Unoptimised prologue; hook after it
+  at **0x0051bfd9**, cut `c7 45 fc 00 00 00 00` (7 bytes, `mov [ebp-4],0`).
+  `this`=[EBP-0xc] (facade, already stored), dest CExoString*=[EBP+8] — a clean
+  frame param, so **no LEA-vs-MOV double-deref** unlike K1. Needs an in-game
+  first-fire check: the setter identity is caller-count-inferred, not yet
+  landmark-confirmed.
+- **OnDoorOpen** — `CSWSDoor::OpenDoor` 0x00589ceb → **0x00619d00**. The opener
+  stamp is `mov [eax+0x36c],ecx` at 0x00619db0 (K1 stamped `[esi+0x31c]`). Hook
+  at **0x00619daa**, cut `8b 45 c4 8b 4d 08` (6 bytes, `mov eax,[ebp-0x3c]` +
+  `mov ecx,[ebp+8]`) — both frame-relative. `this`=[EBP-0x3c], opener id=[EBP+8].
+- **OnShowObject** — `CClientExoAppInternal::ShowObject` 0x005f9c60 → **not yet
+  pinned**. K2's `SetMainInterfaceTarget` is **0x007ce710** (reads `[this+0x98]`
+  main_interface, matching the Batch 2 `main_interface +0x98` finding); its head
+  wrapper 0x00796b50 computes `param_1 ? param_1->id : 0x7f000000` exactly like
+  K1's ShowObject head. The K2 ShowObject that calls it through the
+  `internal+0x40 → CGuiInGame` chain is the hook target — decompile 0x00796b50's
+  callers (0x007401f0, 0x00798d70, 0x007b3050) to find it. K1 hooks mid-function
+  at 0x005f9c8e reading EBX=obj / EAX=id; K2's unoptimised frame will expose
+  both as `[EBP±x]`.
+
+The offset conversions are safe on both games (`Pick` returns the K1 value on
+KOTOR 1, identical to the prior `Todo(k1)`; KOTOR 2 handlers stay gated), so this
+session's build changes nothing observable — it is pure offline groundwork that
+turns Batch 3's remaining cost into one address round plus the gate-clear.
 
 **Batch 4 — Combat.** The four CombatRound hooks plus `OnSetPauseState`; gates in
 `combat_diag.cpp` (3) and `combat_queue_hooks.cpp`.

@@ -244,10 +244,14 @@ const uintptr_t kAddrCClientExoAppGetPlayerCharacterName = acc::addr::R(0x005EDA
 // (all 1s) for avail/selectable arrays. Internal+0x1b770 matches the
 // per-portrait flag word the engine sets in OnPanelAdded. The facade and
 // internal hops themselves are engine_app.h's GetServerAppInternal().
-const size_t    kServerInternalPartyTableOffset = acc::off::Todo(0x1b770);
-const size_t    kPartyTableNumMembersOffset    = acc::off::Todo(0x0);
-const size_t    kPartyTableMemberIdsOffset     = acc::off::Todo(0x4);
-const size_t    kPartyTableSoloModeOffset      = acc::off::Todo(0x190);  // pt_solomode ulong
+// K2 values witnessed in CSWPartyTable::SaveTableInfo (0x005fb1a0): the
+// server-internal → party-table hop is +0x1f0b4 (three witnesses); the table
+// stores num_members at +0, member ids at +0x8 (the +4 slot became
+// num_puppets on K2), and PT_SOLOMODE at member[0x8e] i.e. +0x238.
+const size_t    kServerInternalPartyTableOffset = acc::off::Pick(0x1b770, 0x1f0b4);
+const size_t    kPartyTableNumMembersOffset    = acc::off::Same(0x0);
+const size_t    kPartyTableMemberIdsOffset     = acc::off::Pick(0x4, 0x8);
+const size_t    kPartyTableSoloModeOffset      = acc::off::Pick(0x190, 0x238);  // pt_solomode ulong
 constexpr int       kPartyTableMaxMembers          = 11;
 
 // CSWPartyTable thiscalls used by the PartySelection extractor (same

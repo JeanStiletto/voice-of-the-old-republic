@@ -24,12 +24,16 @@ namespace {
 
 // CSWSScriptVarTable accessors + CExoString ctor/dtor (GOG/Steam swkotor.exe;
 // GoG bytes match Steam). Addresses from Lane's RE — see the persistence doc.
-const uintptr_t kAddrSetString = acc::addr::R(0x0059a8e0);  // __thiscall(table, name, value)
-const uintptr_t kAddrGetString = acc::addr::R(0x0059a590);  // __thiscall(table, out, name) -> out
-const uintptr_t kAddrSetInt = acc::addr::R(0x0059a6f0);  // __thiscall(table, name, value, journalArg)
-const uintptr_t kAddrGetInt = acc::addr::R(0x0059a530);  // __thiscall(table, name) -> int
+// K2 CSWSScriptVarTable accessors — witnessed in the var-table cluster
+// (0x005e6580 is the shared name-lookup; the four thin accessors wrap it with
+// the K1 (type, create) pair: GetInt lookup(1,0), GetString lookup(3,0),
+// SetInt lookup(1,1), SetString lookup(3,1)).
+const uintptr_t kAddrSetString = acc::addr::Pick(0x0059a8e0, 0x005e6ce0);  // __thiscall(table, name, value)
+const uintptr_t kAddrGetString = acc::addr::Pick(0x0059a590, 0x005e6850);  // __thiscall(table, out, name) -> out
+const uintptr_t kAddrSetInt = acc::addr::Pick(0x0059a6f0, 0x005e6a00);  // __thiscall(table, name, value, journalArg)
+const uintptr_t kAddrGetInt = acc::addr::Pick(0x0059a530, 0x005e67d0);  // __thiscall(table, name) -> int
 const uintptr_t kAddrExoCtorCStr = acc::addr::Pick(0x005e5a90, 0x00733570);  // CExoString::CExoString(char*)
-const uintptr_t kAddrExoDtor = acc::addr::R(0x005e5c20);  // CExoString::~CExoString()
+const uintptr_t kAddrExoDtor = acc::addr::Pick(0x005e5c20, 0x00733780);  // CExoString::~CExoString()
 
 // Named, string-capable CSWSScriptVarTable embedded in CSWSObject at +0x100.
 // (Ghidra's struct MISLABELS the fields: the symbol "script_var_table_2" at
@@ -44,7 +48,10 @@ const uintptr_t kAddrExoDtor = acc::addr::R(0x005e5c20);  // CExoString::~CExoSt
 // shallow fields shift +4 there, but +0x100 is far enough down the class that
 // the shift cannot be assumed to be the same. Verify before trusting saved
 // mod state on KOTOR 2.
-const size_t kScriptVarTableOffset = acc::off::Todo(0x100);
+// K2 +0x104: witnessed in the object serializer thunk (0x00540660) calling
+// CSWSScriptVarTable::LoadVarTable on `this + 0x104` (the fixed CSWVarTable
+// LoadVarTable follows at this + 0x114 → kObjectVarTableOffset).
+const size_t kScriptVarTableOffset = acc::off::Pick(0x100, 0x104);
 
 typedef void  (__thiscall* PFN_SetString)(void*, void*, void*);
 // GetString returns CExoString by value → the hidden out-buffer pointer is the

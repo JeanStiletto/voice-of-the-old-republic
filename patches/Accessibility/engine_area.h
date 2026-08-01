@@ -367,7 +367,7 @@ private:
 
 // CSWSArea::GetRoom — __thiscall. Third arg is an int* outRoomIndex
 // (NULL-passable per PositionWalkable's decomp).
-const uintptr_t kAddrCSWSAreaGetRoom = acc::addr::R(0x004BB600);
+const uintptr_t kAddrCSWSAreaGetRoom = acc::addr::Pick(0x004BB600, 0x0054b1d0);
 
 // Handle-resolution chain (server-side master object table). The
 // AppManager → CServerExoApp hop itself is engine_app.h's GetServerApp().
@@ -383,8 +383,8 @@ const uintptr_t kAddrCGameObjectArrayGetGameObject = acc::addr::Pick(0x004D8230,
 const uintptr_t kAddrCClientExoAppGetGameObject = acc::addr::R(0x005ED580);
 
 // Map + fog-of-war chain.
-const uintptr_t kAddrCServerExoAppGetModule = acc::addr::R(0x004AE6B0);
-const size_t    kModuleAreaMapOffset                 = acc::off::Todo(0x218);
+const uintptr_t kAddrCServerExoAppGetModule = acc::addr::Pick(0x004AE6B0, 0x0051bd90);
+const size_t    kModuleAreaMapOffset                 = acc::off::Pick(0x218, 0x238);
 const uintptr_t kAddrCSWSAreaMapIsWorldPointExplored = acc::addr::R(0x00579210);
 // __thiscall(this, Vector by value). Returns float10 via ST(0).
 // BYTES_PURGED=12 (callee pops 3-float Vector).
@@ -394,10 +394,14 @@ const uintptr_t kAddrCSWSAreaMapGetMapRotateCCW = acc::addr::R(0x00578ED0);
 // truncated; world-units-per-map-pixel from the .are Map calibration.
 // map_ui_cursor keeps a local copy of the transform fields (+0x18..+0x24)
 // for its cursor projection.
-const size_t kAreaMapResXOffset        = acc::off::Todo(0x8);
-const size_t kAreaMapResYOffset        = acc::off::Todo(0xc);
-const size_t kAreaMapWorldPerPxXOffset = acc::off::Todo(0x18);
-const size_t kAreaMapWorldPerPxYOffset = acc::off::Todo(0x1c);
+// CSWSAreaMap fog grid is byte-identical between games — witnessed in K2's
+// area loader (SetMapData @0x005f6b90: explored-bits ptr +0, bit-dword count
+// +4, NorthAxis +0x10, 1/zoom +0x14, world origin +0x20/+0x24), and the
+// world-per-pixel transform read at +0x18/+0x1c exactly as KOTOR 1.
+const size_t kAreaMapResXOffset        = acc::off::Same(0x8);
+const size_t kAreaMapResYOffset        = acc::off::Same(0xc);
+const size_t kAreaMapWorldPerPxXOffset = acc::off::Same(0x18);
+const size_t kAreaMapWorldPerPxYOffset = acc::off::Same(0x1c);
 
 // CSWCMapPin allocation chain. operator_new at 0x43e1b0 is matched to
 // the _free that CExoString::operator= and ~CSWCMapPin invoke.
@@ -430,39 +434,49 @@ const size_t kMapPinFlagsOffset    = acc::off::Todo(0x108);  // uint32 reference
 const size_t kMapPinSubtypeOffset  = acc::off::Todo(0x10c);  // int (1 = user-placed note pin)
 
 // CSWSArea offsets. Lane's SARIF (CSWSArea SIZE=0x2d4).
-const size_t kAreaGameObjectsOffset      = acc::off::Todo(0x190);
-const size_t kAreaGameObjectCountOffset  = acc::off::Todo(0x194);
-const size_t kAreaRoomsOffset            = acc::off::Todo(0x230);  // CSWSRoom* (deref first)
-const size_t kAreaNameLocOffset          = acc::off::Todo(0x150);  // CExoLocString
-const size_t kAreaTagOffset              = acc::off::Todo(0x158);  // CExoString fallback
-const size_t kAreaRoomNamesOffset        = acc::off::Todo(0x25c);  // CExoString*
-const size_t kAreaRoomCountOffset        = acc::off::Todo(0x268);  // ulong
-const size_t kCExoStringStride           = acc::off::Todo(0x8);
+// K2 values witnessed in CSWSArea's loader (0x00523870), destructor
+// (0x0052b4e0) and GetRoom (0x0054b1d0). The game-object list and rooms array
+// consolidated on K2: rooms count and array are adjacent (+0x250/+0x254),
+// where KOTOR 1 kept them apart (+0x268/+0x230). RoomName strings moved to
+// +0x280 (stride still 8). Name/Tag took the shallow +4 shift.
+const size_t kAreaGameObjectsOffset      = acc::off::Pick(0x190, 0x194);
+const size_t kAreaGameObjectCountOffset  = acc::off::Pick(0x194, 0x198);
+const size_t kAreaRoomsOffset            = acc::off::Pick(0x230, 0x254);  // CSWSRoom* (deref first)
+const size_t kAreaNameLocOffset          = acc::off::Pick(0x150, 0x154);  // CExoLocString
+const size_t kAreaTagOffset              = acc::off::Pick(0x158, 0x15c);  // CExoString fallback
+const size_t kAreaRoomNamesOffset        = acc::off::Pick(0x25c, 0x280);  // CExoString*
+const size_t kAreaRoomCountOffset        = acc::off::Pick(0x268, 0x250);  // ulong
+const size_t kCExoStringStride           = acc::off::Same(0x8);
 
-const size_t kRoomStride = acc::off::Todo(0x4c);
+const size_t kRoomStride = acc::off::Same(0x4c);
 
 // CSWSObject base. kServerObjectPositionOffset (0x90) lives in engine_player.h.
 // CGameObject.ObjectType — identical in both games (seeded
 // kotor2_steam_aspyr.db); CGameObject is the shallow root that KOTOR 2 did not
 // grow. Still a uint8 read, not a wider one — see the kind-enum note.
 const size_t kObjectKindOffset = acc::off::Same(0x8);   // uint8 GAME_OBJECT_TYPES
-const size_t kObjectTagOffset  = acc::off::Todo(0x18);  // CExoString fallback id
+const size_t kObjectTagOffset  = acc::off::Same(0x18);  // CExoString fallback id
 
-// Per-subclass localized-name offsets (CExoLocString unless noted).
-const size_t kDoorLocNameOffset            = acc::off::Todo(0x39c);
-const size_t kDoorGenericTypeOffset        = acc::off::Todo(0x2a1);  // byte → genericdoors.2da row
-const size_t kDoorLockedOffset             = acc::off::Todo(0x2c4);  // undefined4 (bool)
-const size_t kDoorOpenStateOffset          = acc::off::Todo(0x2cc);  // byte
-const size_t kDoorDescriptionOffset        = acc::off::Todo(0x3a4);
-const size_t kDoorStaticOffset             = acc::off::Todo(0x3c0);  // undefined4 (UTD Static flag)
-const size_t kDoorTransitionDestOffset     = acc::off::Todo(0x3c8);
+// Per-subclass localized-name offsets (CExoLocString unless noted). K2 door
+// values witnessed in CSWSDoor's load (0x0061a210) / save (0x0061bfe0) /
+// GetFirstName (+0x3ec) — the door body grew, so these took a large per-field
+// shift rather than the shallow +4.
+const size_t kDoorLocNameOffset            = acc::off::Pick(0x39c, 0x3ec);
+const size_t kDoorGenericTypeOffset        = acc::off::Pick(0x2a1, 0x2e1);  // byte → genericdoors.2da row
+const size_t kDoorLockedOffset             = acc::off::Pick(0x2c4, 0x304);  // undefined4 (bool)
+const size_t kDoorOpenStateOffset          = acc::off::Pick(0x2cc, 0x31c);  // byte
+const size_t kDoorDescriptionOffset        = acc::off::Pick(0x3a4, 0x3f4);
+const size_t kDoorStaticOffset             = acc::off::Pick(0x3c0, 0x410);  // undefined4 (UTD Static flag)
+const size_t kDoorTransitionDestOffset     = acc::off::Pick(0x3c8, 0x418);
 // DUPLICATE of kCreatureStatsPointerOffset in engine_offsets_fields.h — same
 // CSWSCreature.creature_stats field under a second name. Kept in sync by hand;
 // worth collapsing to one declaration. KOTOR 2 value from the seeded
 // kotor2_steam_aspyr.db.
 const size_t kCreatureStatsPtrOffset       = acc::off::Pick(0xa74, 0x1198);  // CSWSCreatureStats*
-const size_t kCreatureStatsFirstNameOffset = acc::off::Todo(0x14);
-const size_t kPlaceableLocNameOffset       = acc::off::Todo(0x228);
+// CSWSCreatureStats.first_name — K2 +0x34 (LastName +0x3c, Description +0x58),
+// witnessed in the stats save (0x006b3d10).
+const size_t kCreatureStatsFirstNameOffset = acc::off::Pick(0x14, 0x34);
+const size_t kPlaceableLocNameOffset       = acc::off::Pick(0x228, 0x268);
 // CSWSItem.localized_name — KOTOR 2 +0x2c0, observed in its upgrade
 // OnEnterSlot, which builds the installed mod's display name from
 // `installed[slot] + 0x2c0` exactly where KOTOR 1's builds it from
@@ -471,11 +485,12 @@ const size_t kPlaceableLocNameOffset       = acc::off::Todo(0x228);
 // LocName offsets below (placeable / waypoint / trigger) must NOT be assumed to
 // follow this one; each needs its own witness.
 const size_t kItemLocNameOffset            = acc::off::Pick(0x280, 0x2c0);
-const size_t kWaypointLocNameOffset        = acc::off::Todo(0x238);
-const size_t kTriggerLocNameOffset         = acc::off::Todo(0x228);
+const size_t kWaypointLocNameOffset        = acc::off::Pick(0x238, 0x278);
+const size_t kTriggerLocNameOffset         = acc::off::Pick(0x228, 0x268);
 
-// Pillar 4 sub-state.
-const size_t kPlaceableUsableOffset        = acc::off::Todo(0x328);  // "Useable" GFF flag
+// Pillar 4 sub-state. K2 placeable values from CSWSPlaceable load
+// (0x005ef570): Useable +0x380, HasInventory +0x37c, item repository +0x3c4.
+const size_t kPlaceableUsableOffset        = acc::off::Pick(0x328, 0x380);  // "Useable" GFF flag
 // "HasInventory" GFF flag. Decompiling CSWSPlaceable::LoadPlaceable shows
 // ReadFieldBYTE("HasInventory") is stored to +0x324 (the Ghidra struct
 // mislabels +0x334 as has_inventory — that field is something else and
@@ -483,27 +498,34 @@ const size_t kPlaceableUsableOffset        = acc::off::Todo(0x328);  // "Useable
 // gates the container-GUI open on this same +0x324 != 0, then derefs
 // item_repository, confirming it as the authoritative "is a lootable
 // container" flag.
-const size_t kPlaceableHasInventoryOffset  = acc::off::Todo(0x324);
+const size_t kPlaceableHasInventoryOffset  = acc::off::Pick(0x324, 0x37c);
 // CSWSPlaceable.item_repository @+0x36c → CItemRepository. The repo's
 // live item count sits at +0x10 (items_list @+0xc). Confirmed by
 // decompiling CItemRepository::GetItemInRepository / ItemListGetItem /
 // CalculateContentsWeight — all loop `i < this->item_count` over
 // `items_list[i]`. Reading the count is a single dword load, so the
 // emptiness test is O(1) (no list walk, no per-item handle resolve).
-const size_t kPlaceableItemRepositoryOffset = acc::off::Todo(0x36c);
-const size_t kItemRepositoryItemCountOffset = acc::off::Todo(0x10);
-const size_t kWaypointHasMapNoteOffset     = acc::off::Todo(0x228);
+const size_t kPlaceableItemRepositoryOffset = acc::off::Pick(0x36c, 0x3c4);
+const size_t kItemRepositoryItemCountOffset = acc::off::Same(0x10);
+const size_t kWaypointHasMapNoteOffset     = acc::off::Pick(0x228, 0x268);
 // CSWSTrigger.transition_destination — a CExoLocString holding the
 // human-readable "to X" exit label (e.g. "Zur Oberstadt"). Read as a
 // LocString by GetObjectName's Trigger case. IsTransitionTrigger tests
 // presence structurally: inline text pointer at +0 (with length at +4),
 // else the +4 slot is the TLK strref, where the GFF sentinel 0xFFFFFFFF
 // means "no destination" (trap / banter / script trigger).
-const size_t kTriggerTransitionDestOffset  = acc::off::Todo(0x30c);  // CExoLocString
+// CSWSTrigger band took a uniform +0x40 shift on K2 (localized_name
+// 0x228→0x268 witnessed in the trigger load 0x00620250); transition_destination
+// inherits it. DERIVED from the band shift, not directly witnessed — confirm
+// against a K2 trigger-load "TransitionDestination" read before trusting the
+// transition-exit label on K2.
+const size_t kTriggerTransitionDestOffset  = acc::off::Pick(0x30c, 0x34c);  // CExoLocString
 
-// BioWare-authored map-note labels (CSWSWaypoint SIZE=0x240).
-const size_t kWaypointMapNoteEnabledOffset = acc::off::Todo(0x22c);
-const size_t kWaypointMapNoteLocOffset     = acc::off::Todo(0x230);
+// BioWare-authored map-note labels (CSWSWaypoint SIZE=0x240). K2 values from
+// the waypoint save (0x00629040): HasMapNote +0x268, MapNoteEnabled +0x26c,
+// MapNote(Loc) +0x270 — the +0x40 waypoint-band shift.
+const size_t kWaypointMapNoteEnabledOffset = acc::off::Pick(0x22c, 0x26c);
+const size_t kWaypointMapNoteLocOffset     = acc::off::Pick(0x230, 0x270);
 
 // Trap ("mine") detected-by bookkeeping — engine model in
 // docs/llm-docs/mine-trap-model.md. Each trappable kind carries a
@@ -512,18 +534,20 @@ const size_t kWaypointMapNoteLocOffset     = acc::off::Todo(0x230);
 // offset: data pointer at +0, count at +4. Offsets verified against the
 // CSWSCreature::UpdateMineCheck decompile (the engine's own consumer).
 const size_t kTriggerTrapDetectedListOffset   = acc::off::Todo(0x2a8);
-const size_t kTriggerIsTrapOffset             = acc::off::Todo(0x2bc);  // undefined4, != 0 on mines
+const size_t kTriggerIsTrapOffset             = acc::off::Pick(0x2bc, 0x2fc);  // undefined4, != 0 on mines
 
-// CSWSTrigger footprint polygon (world-space Vector array). Offsets from
-// the Ghidra CSWSTrigger struct, anchored by the verified neighbours
-// localized_name @+0x228 and the trap fields @+0x2a8/0x2bc above.
-const size_t kTriggerGeometryCountOffset      = acc::off::Todo(0x284);  // int
-const size_t kTriggerGeometryOffset           = acc::off::Todo(0x288);  // Vector*
+// CSWSTrigger footprint polygon (world-space Vector array). K2 +0x40 band
+// shift (count 0x284→0x2c4, ptr 0x288→0x2c8), witnessed in the trigger save
+// (0x00621ba0) Geometry serialization.
+const size_t kTriggerGeometryCountOffset      = acc::off::Pick(0x284, 0x2c4);  // int
+const size_t kTriggerGeometryOffset           = acc::off::Pick(0x288, 0x2c8);  // Vector*
 
 // Fixed NWScript local-variable table (CSWVarTable: ulong[3] boolean bits
-// + byte[8] numbers) embedded at CSWSObject+0x110. This is the mislabeled
-// `script_var_table_2` — see persistence-scriptvartable.md.
-const size_t kObjectVarTableOffset            = acc::off::Todo(0x110);
+// + byte[8] numbers) embedded at CSWSObject+0x110 (K2 +0x114). This is the
+// mislabeled `script_var_table_2` — see persistence-scriptvartable.md. K2
+// witnessed in the object serializer thunk (0x00540660: this+0x114 →
+// SWVarTable load), which sits one slot above the +0x104 script_var_table.
+const size_t kObjectVarTableOffset            = acc::off::Pick(0x110, 0x114);
 const size_t kDoorTrapDetectedListOffset      = acc::off::Todo(0x2dc);
 const size_t kPlaceableTrapDetectedListOffset = acc::off::Todo(0x318);
 
@@ -546,14 +570,20 @@ const size_t kPlaceableTrapDetectedListOffset = acc::off::Todo(0x318);
 // CSWCollisionMesh::LocalToWorld @0x596aa0 __thiscall(this, out, local).
 // BYTES_PURGED=8. Short-circuits when world_coords != 0; we always call.
 
-const size_t kRoomSurfaceMeshOffset            = acc::off::Todo(0x3c);
-const size_t kCollisionMeshVerticesOffset      = acc::off::Todo(0x54);
-const size_t kCollisionMeshFaceCountOffset     = acc::off::Todo(0x58);
-const size_t kCollisionMeshFacesOffset         = acc::off::Todo(0x60);
-const size_t kCollisionMeshMaterialsOffset     = acc::off::Todo(0x64);
-const size_t kSurfaceMeshAdjacenciesOffset     = acc::off::Todo(0x88);
+// The whole surface/collision-mesh block is byte-identical between games —
+// witnessed in K2's BWM writer (0x005ea490), which serializes vertex_count
+// +0x50 / vertices +0x54 / face_count +0x58 / faces +0x60 / materials +0x64
+// exactly where KOTOR 1 does, and CSWSRoom's constructor (0x005ff440) storing
+// the surface mesh at +0x3c with adjacencies at +0x88. This is expected:
+// walkmesh geometry is base-engine code KOTOR 2 did not touch.
+const size_t kRoomSurfaceMeshOffset            = acc::off::Same(0x3c);
+const size_t kCollisionMeshVerticesOffset      = acc::off::Same(0x54);
+const size_t kCollisionMeshFaceCountOffset     = acc::off::Same(0x58);
+const size_t kCollisionMeshFacesOffset         = acc::off::Same(0x60);
+const size_t kCollisionMeshMaterialsOffset     = acc::off::Same(0x64);
+const size_t kSurfaceMeshAdjacenciesOffset     = acc::off::Same(0x88);
 
-const size_t kWalkmeshFaceStride               = acc::off::Todo(0xc);   // 3 × ulong
+const size_t kWalkmeshFaceStride               = acc::off::Same(0xc);   // 3 × ulong
 
 const uintptr_t kAddrCollisionMeshLocalToWorld = acc::addr::R(0x00596aa0);
 

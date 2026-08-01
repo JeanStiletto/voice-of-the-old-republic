@@ -65,7 +65,9 @@ constexpr LabelEntry kWallSwitchLabels[] = {
 // guessed boolean 19; the disassembly constant belonged to the script's
 // globals table, not the GetLocalBoolean argument.)
 constexpr uint32_t kLocalBoolUsedMask   = 1u << 2;
-const size_t   kLocalBoolWordOffset = acc::off::Todo(0x110);
+// Same fixed CSWVarTable as kObjectVarTableOffset — the boolean bit-words are
+// its first ulongs, so this rides the +4 shift to K2 +0x114.
+const size_t   kLocalBoolWordOffset = acc::off::Pick(0x110, 0x114);
 
 constexpr LabelEntry kCaptiveJediLabels[] = {
     {0, acc::strings::Id::PlaceableStateCaptive},

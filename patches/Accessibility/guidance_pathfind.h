@@ -56,12 +56,17 @@ bool ComputePath(void* area,
 
 }  // namespace acc::guidance
 
-// CSWSArea nav graph offsets (memory: project_kotor_nav_graph_layout).
-const size_t kAreaPathPointsCountOffset      = acc::off::Todo(0x238);
-const size_t kAreaPathPointsPtrOffset        = acc::off::Todo(0x23c);
-const size_t kAreaPathConnectionsCountOffset = acc::off::Todo(0x240);
-const size_t kAreaPathConnectionsPtrOffset   = acc::off::Todo(0x244);
+// CSWSArea nav graph offsets (memory: project_kotor_nav_graph_layout). K2
+// values witnessed in the area's Path_Points parser (0x0052ccd0): points count
+// +0x25c, points ptr +0x260, connections count +0x264, connections ptr +0x268.
+// The per-point layout (position at +0, connection cursor at +0xc, stride 0x10)
+// is unchanged — the parser stores X/Y/Conections/First_Conection at the same
+// intra-element offsets as KOTOR 1.
+const size_t kAreaPathPointsCountOffset      = acc::off::Pick(0x238, 0x25c);
+const size_t kAreaPathPointsPtrOffset        = acc::off::Pick(0x23c, 0x260);
+const size_t kAreaPathConnectionsCountOffset = acc::off::Pick(0x240, 0x264);
+const size_t kAreaPathConnectionsPtrOffset   = acc::off::Pick(0x244, 0x268);
 
-const size_t kPathPointStride                = acc::off::Todo(0x10);
-const size_t kPathPointPositionOffset        = acc::off::Todo(0x00);  // Vector
-const size_t kPathPointCsrOffset             = acc::off::Todo(0x0c);  // uint32
+const size_t kPathPointStride                = acc::off::Same(0x10);
+const size_t kPathPointPositionOffset        = acc::off::Same(0x00);  // Vector
+const size_t kPathPointCsrOffset             = acc::off::Same(0x0c);  // uint32
