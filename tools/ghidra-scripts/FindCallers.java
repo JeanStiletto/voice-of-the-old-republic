@@ -49,7 +49,15 @@ public class FindCallers extends GhidraScript {
             while (refs.hasNext()) {
                 Reference ref = refs.next();
                 RefType rt = ref.getReferenceType();
-                if (!rt.isCall() && !rt.isJump()) continue;
+                // DATA references are kept, not filtered. In the Odyssey GUI
+                // a handler is almost never CALLed by the code that owns it —
+                // it is handed to CSWGuiControl::AddEvent as an immediate, so
+                // the only reference to it is the PUSH, which Ghidra records
+                // as DATA. Dropping those (the original behaviour) made this
+                // script blind to exactly the case it gets used for most:
+                // "which constructor registers this callback, and what else
+                // does that constructor register". The type is printed, so a
+                // caller who wants only real calls can still filter on it.
                 Address from = ref.getFromAddress();
                 Function caller = currentProgram.getFunctionManager()
                         .getFunctionContaining(from);

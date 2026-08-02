@@ -373,11 +373,32 @@ const uintptr_t kAddrGetSimpleString = acc::addr::Pick(0x0041e8f0, 0x0071DEE0);
 //     Equivalent to mouse-click after hover.
 //
 // is_active lives at +0x4c on every CSWGuiControl (verified by Ghidra
-// decompile of OnSelectSlot's prologue test).
+// decompile of OnSelectSlot's prologue test). KOTOR 2 reads +0x50 for the
+// same gate — all four handlers below open with that test, which is a third
+// independent witness for kControlIsActiveOffset's K2 column.
+//
+// ── KOTOR 2 twins (found 2026-08-03) ────────────────────────────────────
+// None of these four is a virtual, so the vtable-slot map could not name
+// them. They are also never CALLed by the class that owns them: the Odyssey
+// GUI hands a handler to CSWGuiControl::AddEvent as an immediate, so the
+// only reference is the PUSH, which Ghidra records as a DATA reference.
+// (FindCallers.java used to filter those out — it no longer does, and this
+// hunt is why.)
+//
+// Route: the equip panel's KOTOR 2 constructor was already known @0x008A92D0
+// (recorded in engine_offsets_fields.h's stat-label note). Its per-slot init
+// loop registers the same pair KOTOR 1's does, in the same order —
+// AddEvent(slot_btn, 0x27, this, OnSelectSlot) then
+// AddEvent(slot_btn, 0, this, OnEnterSlot) — which names both directly.
+//
+// OnEnterSlot's corroboration is the strongest of the four: its KOTOR 2
+// reference set matches KOTOR 1's site-for-site — CloseDescription,
+// UpdateInventory, HandleInputEvent, OnChangeCharacter, OnPanelAdded, plus
+// the constructor's registration.
 typedef void (__thiscall* PFN_InGameEquipOnEnterSlot)(void* panel, void* slot_btn);
 typedef void (__thiscall* PFN_InGameEquipOnSelectSlot)(void* panel, void* slot_btn);
-const uintptr_t kAddrInGameEquipOnEnterSlot = acc::addr::R(0x006b9470);
-const uintptr_t kAddrInGameEquipOnSelectSlot = acc::addr::R(0x006b8eb0);
+const uintptr_t kAddrInGameEquipOnEnterSlot = acc::addr::Pick(0x006b9470, 0x008ac330);
+const uintptr_t kAddrInGameEquipOnSelectSlot = acc::addr::Pick(0x006b8eb0, 0x008abe70);
 
 // Picker-side commit handlers.
 //
@@ -393,10 +414,34 @@ const uintptr_t kAddrInGameEquipOnSelectSlot = acc::addr::R(0x006b8eb0);
 //     calls CloseDescription. Does NOT commit; the equip must already have
 //     happened in OnItemSelected. Gates on `btn_equip->is_active != 0` AND
 //     `panel.field33_0x4270 & 1` (latter set by OnSelectSlot).
+//
+// ── KOTOR 2 twins (found 2026-08-03) ────────────────────────────────────
+// OnOKPressed is registered TWICE in KOTOR 1 — once on the equip button in
+// the constructor, once on every item entry in AddItemEntryToList — and the
+// same is true in KOTOR 2, which is what pinned it and then unlocked the
+// last one. The constructor's first tail registration matches KOTOR 1's
+// equip-button sequence exactly (clear bit 2, AddEvent 0x27, later clear
+// bit 1 on the same control — the only control KOTOR 1 masks twice), and
+// its body is a landmark match: gate on btn->is_active AND panel+0x5094 & 1
+// (the picker-open flag KOTOR 1 calls field33_0x4270), clear the four
+// previously_equipped_* fields, call CloseDescription.
+//
+// Its SECOND reference site is the KOTOR 2 AddItemEntryToList @0x008B01B0 —
+// same shape as KOTOR 1's (guard on the entry count, allocate the entry,
+// lay it out through the proto-item, register handlers) — and that function
+// registers OnItemSelected on event 0 just as KOTOR 1 does. So OnOKPressed
+// identifies AddItemEntryToList, and AddItemEntryToList identifies
+// OnItemSelected. KOTOR 2 adds a third registration there (event 1) that
+// KOTOR 1 has no counterpart for; we do not use it.
+//
+// OnItemSelected's body confirms independently: gate on entry->is_active,
+// the description-listbox bit-1 gate, selected_slot read from panel+0x5098
+// (the same field HandleInputEvent indexes the slot-id array with), and the
+// 0x7f000000 "empty" branch for unequip.
 typedef void (__thiscall* PFN_InGameEquipOnItemSelected)(void* panel, void* item_entry);
 typedef void (__thiscall* PFN_InGameEquipOnOKPressed)(void* panel, void* btn_equip);
-const uintptr_t kAddrInGameEquipOnItemSelected = acc::addr::R(0x006b7920);
-const uintptr_t kAddrInGameEquipOnOKPressed = acc::addr::R(0x006b9160);
+const uintptr_t kAddrInGameEquipOnItemSelected = acc::addr::Pick(0x006b7920, 0x008af2d0);
+const uintptr_t kAddrInGameEquipOnOKPressed = acc::addr::Pick(0x006b9160, 0x008aec20);
 
 // CSWGuiUpgrade (workbench upgrade.gui) slot-pick + commit chain.
 // Same structural shape as the equip-screen pair above, RE'd from Lane's

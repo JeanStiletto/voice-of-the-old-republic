@@ -1079,12 +1079,18 @@ for (int i = 0; i < g_chainCount; ++i) {
     const char* src = acc::menus::extract::FromControl(g_chain[i].control,
                                               text, sizeof(text),
                                               panel);
+    // Per-game offsets, not literals: on KOTOR 2 both fields sit +4 and the
+    // hardcoded KOTOR 1 values printed a neighbouring dword, which made
+    // every K2 chain dump look like garbage flags (bit_flags=0x10,
+    // is_active=434) and sent one investigation chasing a phantom.
     unsigned int isActive =
         *reinterpret_cast<unsigned int*>(
-            reinterpret_cast<unsigned char*>(g_chain[i].control) + 0x4c);
+            reinterpret_cast<unsigned char*>(g_chain[i].control) +
+            kControlIsActiveOffset);
     unsigned int bitFlags =
         *reinterpret_cast<unsigned int*>(
-            reinterpret_cast<unsigned char*>(g_chain[i].control) + 0x44);
+            reinterpret_cast<unsigned char*>(g_chain[i].control) +
+            kControlBitFlagsOffset);
     // sortCy is only printed when it differs from cy — i.e. for virtual rows
     // and listbox blocks — so the common case stays as terse as before.
     char sortNote[32];

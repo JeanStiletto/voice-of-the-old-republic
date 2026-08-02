@@ -6,6 +6,52 @@ result especially — but whose cost estimate predates the RTTI finding below.
 
 ## WHERE TO RESUME (read this first)
 
+**Equipment-screen batch — IMPLEMENTED 2026-08-03 (thirteenth session; four
+Ghidra rounds + a gui.bif mine, driven by the FIRST combined test round).
+Built green, applied to both games, awaiting the combined test.** This batch
+is different from the twelve before it: it came out of real in-game feedback,
+not the batch plan. The witness ledger:
+
+- **The equip picker's Enter did nothing** because BOTH pending ops declined
+  — `EquipSelect` (kind 4) and `EquipCommit` (kind 5) — all four
+  `CSWGuiInGameEquip` handlers still being KOTOR 1 addresses. The listbox
+  populated anyway (vtable-dispatched path), which is exactly why it looked
+  like it should have worked.
+- **All four handlers resolved.** OnEnterSlot 0x008AC330, OnSelectSlot
+  0x008ABE70, OnItemSelected 0x008AF2D0, OnOKPressed 0x008AEC20. Full
+  reasoning inline at the declarations in `engine_offsets_addresses.h`.
+  The chain that unlocked them: the K2 equip ctor was already known
+  (0x008A92D0, recorded in the stat-label note) → its per-slot init loop
+  registers OnSelectSlot/OnEnterSlot in KOTOR 1's exact order → its first
+  tail registration is OnOKPressed on the equip button → OnOKPressed's
+  SECOND reference site is AddItemEntryToList 0x008B01B0 → that registers
+  OnItemSelected. Each was then body-verified against KOTOR 1's documented
+  shape, and OnEnterSlot's reference set matches KOTOR 1's site-for-site.
+- **Method note worth keeping:** none of the four is a virtual and none is
+  CALLed by its own class — the Odyssey GUI passes a handler to
+  `CSWGuiControl::AddEvent` as an immediate, so its only reference is a
+  DATA one. `FindCallers.java` was filtering DATA refs out and reported
+  "0 found"; it no longer does. For a callback-registered handler, "who
+  references this" is the whole search.
+- **The K2-only second weapon set is now named.** BTN_INV_WEAP_L2 / _R2
+  (.gui ids 20/21) used to speak as "control 20" / "control 21". Their
+  panel item-id offsets came out of the engine's own slot-bit → array-index
+  mapper 0x008A91C0, which re-derives all nine KOTOR 1 slots at exactly the
+  offsets already recorded — so the two new arms are as trustworthy as the
+  table. Both weapon rows now carry a set qualifier taken from the engine's
+  own "Konfig 1"/"Konfig 2" strrefs, so it localises for free.
+- **BTN_SWAPWEAPONS (id 42) is a real K2 feature**, not noise to filter —
+  it swaps the active weapon set. Already reads its own text.
+- **Cross-game bug found by this batch:** the disabled-suffix check and the
+  chain diagnostic both hardcoded KOTOR 1's `bit_flags` / `is_active`
+  offsets instead of the per-game constants. On K2 that read four bytes low,
+  so EVERY navigable control on EVERY panel announced "nicht verfügbar",
+  and every K2 chain dump printed nonsense flags. Both fixed; swept for
+  other literal-offset sites, only those two existed.
+- Test items for the combined round are in the reply that closed this
+  session; the K1 regression surface is the disabled suffix (shared code)
+  and the equip screen generally (its slot table is untouched).
+
 **Footstep-suppress port — IMPLEMENTED 2026-08-02 (eleventh session; one
 kotor2 caller sweep + decompile round + byte dump, zero test rounds).
 Built green, NOT tested in game.** The witness ledger:

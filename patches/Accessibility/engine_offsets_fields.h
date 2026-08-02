@@ -1081,6 +1081,24 @@ const size_t    kEquipPanelLeftWeaponIdOffset      = acc::off::Pick(0x427c, 0x50
 const size_t    kEquipPanelRightWeaponIdOffset     = acc::off::Pick(0x4280, 0x50a0);
 const size_t    kEquipPanelGlovesIdOffset          = acc::off::Pick(0x4294, 0x50b4);  // hands
 const size_t    kEquipPanelBeltIdOffset            = acc::off::Pick(0x429c, 0x50bc);
+// KOTOR 2's second weapon set ("Konfig 2" on the panel; BTN_INV_WEAP_L2 /
+// BTN_INV_WEAP_R2, .gui ids 20/21). KOTOR 1 has no such slots.
+//
+// Read out of the engine's own slot-bit -> array-index mapper 0x008a91c0,
+// which HandleInputEvent 0x008aed10 calls as
+// `panel[0x1427 + Map(selected_slot)]` (dword index; 0x1427*4 = 0x509c, the
+// array base above). The mapper is a complete switch and it re-derives all
+// nine KOTOR 1 slots at exactly the offsets already recorded here — head
+// 0x01->2, body 0x02->5, hands 0x08->6, right weapon 0x10->1, left weapon
+// 0x20->0, left arm 0x80->3, right arm 0x100->4, implant 0x200->7, belt
+// 0x400->8 — so the two new arms of the same switch are as trustworthy as
+// the rest of the table:
+//   slot bit 0x80000 (left weapon 2)  -> index 9  -> 0x509c + 9*4  = 0x50c0
+//   slot bit 0x40000 (right weapon 2) -> index 10 -> 0x509c + 10*4 = 0x50c4
+// HandleInputEvent's own set-2 handling corroborates the bit values: it
+// pairs 0x10 with 0x20 and 0x40000 with 0x80000 when clearing the off-hand.
+const size_t    kEquipPanelLeftWeapon2IdOffset     = acc::off::Kotor2Only(0x50c0);
+const size_t    kEquipPanelRightWeapon2IdOffset    = acc::off::Kotor2Only(0x50c4);
 
 // Stat-value labels inline in the panel struct. Each is a CSWGuiLabel
 // (SIZE=0x140). UpdateInventory @0x006b9970 writes the rendered value
