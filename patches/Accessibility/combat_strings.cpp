@@ -17,7 +17,8 @@
 
 #include "combat_strings.h"
 
-#include "strings.h"  // for acc::strings::Lang + GetLanguage
+#include "engine_game.h"  // IsKotor2 — K2 anchor deltas in Get()
+#include "strings.h"      // for acc::strings::Lang + GetLanguage
 
 namespace acc::combat::loc {
 
@@ -700,9 +701,48 @@ const MsgStrings kPl = {
     " otrzymuje ",                              // damage_amount_marker (1403 gap C1..C2)
 };
 
+// ---- KOTOR 2 anchor deltas ------------------------------------------------
+//
+// The K2 German dialog.tlk keeps every combat strref the parser depends on
+// (42042-42150 summary/breakdown block, 1374-1456 save/damage/absorb block,
+// 32292 ability use, 42417 deflection) with byte-identical text except four
+// anchors, found 2026-08-02 by running `kdev combat-strings-extract` against
+// both installs' TLKs and diffing:
+//   - 42043 "ist erfolgreich " grew a trailing space -> double space in the
+//     glued hit phrase (the miss verb 42044 did not -> phrase_miss unchanged).
+//   - 42046 "verwendet " grew a trailing space -> it lands before the
+//     engine-appended '.' of the feat clause.
+//   - 42157 "Auswirkungsstatistik: " grew a trailing space; RuleAuswirkung
+//     slices the target directly after this prefix, so the anchor must carry
+//     the space or every target name starts with one.
+//   - 32292 swapped verbs: "benutzt" -> "verwendet". Doubles as the spoken
+//     ability line's glue (RuleAbilityUse), which stays correct German.
+// The auto-hit/-fail tags (42390/42391) also grew trailing spaces, but they
+// are strstr'd as substrings, so the shorter K1 form matches either way and
+// is kept — it also survives any engine-side trailing-space trim.
+//
+// Reconstruction caveat as in the header: glue order is assumed identical to
+// K1; confirm with one K2 combat capture (grep `MsgBuf: raw:` vs `emit-*`).
+// Non-DE locales: no K2 TLKs locally (same Steam language-swap workflow as
+// K1); they stay on the K1 anchors, where any mismatch falls through to raw
+// speech — no regression.
+MsgStrings BuildDeK2() {
+    MsgStrings m = kDe;
+    m.phrase_hit         = " ist erfolgreich  mit Angriff auf ";
+    m.feat_marker        = " verwendet .";
+    m.prefix_auswirkung  = "Auswirkungsstatistik: ";
+    m.ability_use_marker = " verwendet ";
+    return m;
+}
+
 }  // namespace
 
 const MsgStrings& Get() {
+    if (acc::game::IsKotor2() &&
+        acc::strings::GetLanguage() == acc::strings::Lang::De) {
+        static const MsgStrings kDeK2 = BuildDeK2();
+        return kDeK2;
+    }
     switch (acc::strings::GetLanguage()) {
         case acc::strings::Lang::En: return kEn;
         case acc::strings::Lang::De: return kDe;

@@ -1338,32 +1338,46 @@ const char* TryInGameMenuIcon(void* control, void* owner,
 //     German install reads the engine's own translations, fall back to
 //     a strings.h literal (which adapts to active language).
 //
-//     IDs come from equip.gui via xoreos-tools gff2xml; same .gui maps
-//     button ID → matching label ID (n+1) so we cover both with one
-//     spec table by listing both ids for each slot.
+//     IDs come from equip.gui / K2 equip_p.gui via xoreos-tools gff2xml.
+//     K1 maps button ID → matching label ID as n+1; K2 re-numbers both
+//     sets independently (labels sit in a 1..16 block, buttons in 15..48),
+//     so the label ids are explicit per game. The TLK strrefs are the same
+//     in both games' dialog.tlk (verified against the K2 TLK 2026-08-02).
+//     The K2-only second-weapon-set pair (BTN 20/21, LBL 2/1) is NOT
+//     listed: its panel item-id offsets are unmined, and naming the slot
+//     while guessing the item would misreport "leer" — those controls ride
+//     the generic fallback until a K2 ctor round extends the offset band.
+struct EquipSlotName {
+    int           btnId;
+    int           lblId;
+    uint32_t      strref;     // 0xFFFFFFFF = no TLK, use literal
+    acc::strings::Id literalId;
+    size_t        itemIdOffset;  // CSWGuiInGameEquip-relative
+};
+// Namespace scope, not function-local static: the initializers are runtime
+// consts (per-game ids + Pick'd offsets), and a dynamically-initialized
+// static local inside SEH-using TryEquipSlot trips MSVC C2712 (the init
+// guard needs unwinding). Same workaround as the rest of the patch.
+namespace {
+const bool kEquipTableIsK2 = acc::game::IsKotor2();
+const EquipSlotName k_equipSlots[] = {
+    { kEquipBtnHeadId,     kEquipTableIsK2 ? 10 : kEquipBtnHeadId    + 1, 31375u,      acc::strings::Id::EquipSlotHead,    kEquipPanelHeadIdOffset         },
+    { kEquipBtnImplantId,  kEquipTableIsK2 ? 16 : kEquipBtnImplantId + 1, 0xFFFFFFFFu, acc::strings::Id::EquipSlotImplant, kEquipPanelImplantIdOffset      },
+    { kEquipBtnBodyId,     kEquipTableIsK2 ?  7 : kEquipBtnBodyId    + 1, 31380u,      acc::strings::Id::EquipSlotBody,    kEquipPanelArmorIdOffset        },
+    { kEquipBtnArmLId,     kEquipTableIsK2 ?  8 : kEquipBtnArmLId    + 1, 31376u,      acc::strings::Id::EquipSlotArmL,    kEquipPanelLeftArmbandIdOffset  },
+    { kEquipBtnArmRId,     kEquipTableIsK2 ?  6 : kEquipBtnArmRId    + 1, 31377u,      acc::strings::Id::EquipSlotArmR,    kEquipPanelRightArmbandIdOffset },
+    { kEquipBtnWeapLId,    kEquipTableIsK2 ?  4 : kEquipBtnWeapLId   + 1, 31378u,      acc::strings::Id::EquipSlotWeapL,   kEquipPanelLeftWeaponIdOffset   },
+    { kEquipBtnWeapRId,    kEquipTableIsK2 ?  3 : kEquipBtnWeapRId   + 1, 31379u,      acc::strings::Id::EquipSlotWeapR,   kEquipPanelRightWeaponIdOffset  },
+    { kEquipBtnBeltId,     kEquipTableIsK2 ?  5 : kEquipBtnBeltId    + 1, 31382u,      acc::strings::Id::EquipSlotBelt,    kEquipPanelBeltIdOffset         },
+    { kEquipBtnHandsId,    kEquipTableIsK2 ?  9 : kEquipBtnHandsId   + 1, 31383u,      acc::strings::Id::EquipSlotHands,   kEquipPanelGlovesIdOffset       },
+};
+}  // namespace
+
 const char* TryEquipSlot(void* control, void* owner,
                          char* outBuf, size_t bufSize) {
     const char* source = nullptr;
     if (owner &&
         IdentifyPanel(owner) == PanelKind::InGameEquip) {
-        struct EquipSlotName {
-            int           btnId;
-            int           lblId;
-            uint32_t      strref;     // 0xFFFFFFFF = no TLK, use literal
-            acc::strings::Id literalId;
-            size_t        itemIdOffset;  // CSWGuiInGameEquip-relative
-        };
-        static const EquipSlotName k_equipSlots[] = {
-            { kEquipBtnHeadId,     kEquipBtnHeadId    + 1, 31375u,      acc::strings::Id::EquipSlotHead,    kEquipPanelHeadIdOffset         },
-            { kEquipBtnImplantId,  kEquipBtnImplantId + 1, 0xFFFFFFFFu, acc::strings::Id::EquipSlotImplant, kEquipPanelImplantIdOffset      },
-            { kEquipBtnBodyId,     kEquipBtnBodyId    + 1, 31380u,      acc::strings::Id::EquipSlotBody,    kEquipPanelArmorIdOffset        },
-            { kEquipBtnArmLId,     kEquipBtnArmLId    + 1, 31376u,      acc::strings::Id::EquipSlotArmL,    kEquipPanelLeftArmbandIdOffset  },
-            { kEquipBtnArmRId,     kEquipBtnArmRId    + 1, 31377u,      acc::strings::Id::EquipSlotArmR,    kEquipPanelRightArmbandIdOffset },
-            { kEquipBtnWeapLId,    kEquipBtnWeapLId   + 1, 31378u,      acc::strings::Id::EquipSlotWeapL,   kEquipPanelLeftWeaponIdOffset   },
-            { kEquipBtnWeapRId,    kEquipBtnWeapRId   + 1, 31379u,      acc::strings::Id::EquipSlotWeapR,   kEquipPanelRightWeaponIdOffset  },
-            { kEquipBtnBeltId,     kEquipBtnBeltId    + 1, 31382u,      acc::strings::Id::EquipSlotBelt,    kEquipPanelBeltIdOffset         },
-            { kEquipBtnHandsId,    kEquipBtnHandsId   + 1, 31383u,      acc::strings::Id::EquipSlotHands,   kEquipPanelGlovesIdOffset       },
-        };
         int cid = *reinterpret_cast<int*>(
             reinterpret_cast<unsigned char*>(control) + kControlIdOffset);
         for (const auto& s : k_equipSlots) {

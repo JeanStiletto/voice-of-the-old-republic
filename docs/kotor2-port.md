@@ -42,6 +42,73 @@ Built green, NOT tested in game.** The witness ledger:
   (shared handler restructured — per-game verdict mapping, log field
   verdict= renamed suppress=).
 
+**Static-data batch — IMPLEMENTED 2026-08-02 (twelfth session; pure offline
+round — TLK dumps + .gui mining + 2DA classification, zero Ghidra, zero test
+rounds). NOT tested in game.** Closes the three K1-data-on-K2 holes the user
+flagged (combat anchors / subtitle-suppress lists / decorative ids) plus the
+equip-panel id family found on the way. The ledger:
+
+- **Combat anchors (combat_strings.cpp): K2 keeps every combat strref the
+  parser uses with byte-identical German text except four** — found by
+  running `kdev combat-strings-extract` against both installs' TLKs and
+  diffing. K2-DE deltas (BuildDeK2, selected in Get()): phrase_hit gained a
+  double space (strref 42043 grew a trailing space), feat_marker became
+  " verwendet ." (42046 ditto), prefix_auswirkung gained a trailing space
+  (42157 — anchor must carry it or every extracted target name starts with
+  a space), ability_use_marker swapped verbs "benutzt" → "verwendet"
+  (32292). Auto-hit/-fail tags kept the K1 form deliberately (strstr'd
+  substrings — match either way). Non-DE locales stay on K1 anchors (no K2
+  TLKs locally; mismatch falls through to raw speech). Glue-order caveat as
+  ever: confirm with one K2 combat capture (`MsgBuf: raw:` vs `emit-*`).
+- **Subtitle-suppress data (dialog_speech.cpp) went per game.** The
+  human-appearance bitmask was REGENERATED from K2's own appearance.2da
+  (424 human rows of 671; build/dump-2da now takes a k1|k2 arg — the K1
+  path reproduces the shipped mask byte-for-byte). K2 classifier notes:
+  Twilek_* (K2 renamed K1's Alien_Twilek_* family — the old prefix rule
+  would have MISSED them), Party_NPC_* blanket-human after droid/Wookiee
+  exclusions (covers K1 leftovers reused in flashbacks), Darth Nihilus
+  excluded (non-language vocalisations — subtitle is the only channel).
+  kNeverSuppressTags/kAlwaysSuppressTags are per game, K2 empty (IsKotor2
+  short-circuit; all shipped entries were K1 characters). OPEN DESIGN
+  POINT for the user: K2 was never dubbed — German install = English VO +
+  German subtitles — so default-on suppression removes the only German
+  channel for "human" speakers; decide during the test round whether the
+  HumanSubtitles toggle should default differently on K2.
+- **The equip/charsheet/partyselect .gui id family went per game**
+  (mined from K2's character_p/equip_p/partyselect_p.gui — the install's
+  Aspyr override copies are id-identical to gui.bif). K2 RE-NUMBERS
+  everything: slot buttons 7..23-odd → 15..25 block with implant at 48,
+  LB_ITEMS 5 → 41, BTN_BACK/BTN_EQUIP 36/37 → 39/40, workbench-upgrade
+  BTN_BACK 28 → 13. menus_internal.h constants are now runtime-resolved
+  Pick-style consts; new shared IsEquipSlotButtonId replaced the two
+  9-way OR sites and includes K2's second-weapon-set pair (BTN 20/21 —
+  K2-only; their panel item-id offsets are UNMINED, so they navigate +
+  activate but announce as "control 20/21" until a K2 ctor round extends
+  the kEquipPanel*IdOffset band). TryEquipSlot's label ids are explicit
+  per game (K2 broke the K1 label=button+1 rule); slot-name strrefs
+  31375-31383 verified present in the K2 TLK.
+- **Decorative chain filter (IsDecorativeControl) per-game where id-keyed.**
+  CRITICAL fix: K1's charsheet drop-set {1,64,65,66,67} lands on K2's
+  BTN_AUTO (65) and BTN_LEVELUP (66) — real actions the old filter would
+  have DROPPED from the chain. K2 set is just BTN_3DCHAR (id 5).
+  kPartySelectionAddBtnId is K1-only (-1 on K2 — the panel has no single
+  add button; every portrait is its own BTN_NPCn). Equip OK/Back filtering
+  rides the per-game constants. Offset-keyed entries (equip party-cycle,
+  level-up back/cancel, map note-stepper) were already Pick'd or compare
+  inert.
+- Test items for the next K2 round (fold into the combined round): combat
+  lines parse (hit/miss phrasing, feat clause, ability use "verwendet",
+  Auswirkung target names have no leading space); a human NPC's subtitle
+  suppression classifies right + an alien (e.g. any Twi'lek thug) still
+  speaks; equip screen: all 9 slot buttons announce slot name + item, the
+  two weapon-set-2 buttons populate the picker on Enter (they will speak
+  as "control 20/21" — known gap), OK/Schliessen stay out of the chain,
+  charsheet chain includes BTN_AUTO/BTN_LEVELUP but not the model rotator,
+  party selection portraits navigate. K1 regression: one equip pass (slot
+  announce + picker + chain), one charsheet chain walk, one combat
+  capture, one human/alien subtitle check (shared code: constants went
+  runtime-const, slot predicate deduped, extract table restructured).**
+
 **State as of 2026-08-02 (tenth session, remaining-surface sweep): SIX
 batches implemented and committed in one sitting, all offline, zero test
 rounds — level-up (3a4d812), peek (a05024a), item-description cluster

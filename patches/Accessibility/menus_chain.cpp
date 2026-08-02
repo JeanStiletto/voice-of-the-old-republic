@@ -505,6 +505,8 @@ if (IdentifyPanel(panel) == PanelKind::WorkbenchUpgrade) {
 //     arrows over the 9-slot NPC roster. Useless in KOTOR 1: max
 //     active party is 3 (PC + 2 NPCs), and the 2 portrait slots already
 //     cover both companions.
+//   (All charsheet ids above are KOTOR 1; the K2 set — just the moved
+//   model rotator — lives in the per-game branch below.)
 bool IsDecorativeControl(void* panel, void* c,
                          const char* closeCaption, bool haveCloseCaption) {
     PanelKind pk = IdentifyPanel(panel);
@@ -519,9 +521,18 @@ bool IsDecorativeControl(void* panel, void* c,
     // chain — dropping them lets Up/Down step straight from the wager row
     // to Setzen/Beenden.
     if (pk == PanelKind::PazaakWager && (cid == 4 || cid == 5)) return true;
-    if (pk == PanelKind::InGameCharacter &&
-        (cid == 1 || cid == 64 || cid == 65 || cid == 66 || cid == 67)) {
-        return true;
+    // Charsheet decorative ids are strictly per game: K2's panel dropped
+    // the party portraits/pagination entirely and re-numbered the model
+    // rotator (BTN_3DCHAR 1 → 5) — and K1's ids 65/66 are K2's BTN_AUTO /
+    // BTN_LEVELUP, real actions that must stay in the chain (mined from K2
+    // character_p.gui 2026-08-02; override copy id-identical to gui.bif).
+    if (pk == PanelKind::InGameCharacter) {
+        if (acc::game::IsKotor2()) {
+            if (cid == 5) return true;  // BTN_3DCHAR (model rotator)
+        } else if (cid == 1 || cid == 64 || cid == 65 || cid == 66 ||
+                   cid == 67) {
+            return true;
+        }
     }
     // InGameEquip BTN_EQUIP (id=37, "OK"): the OK button is the
     // engine's picker-commit button. The accessibility picker
@@ -1017,13 +1028,7 @@ if (IdentifyPanel(panel) == PanelKind::InGameEquip) {
     for (int i = 0; i < g_chainCount; ++i) {
         int cid = *reinterpret_cast<int*>(
             reinterpret_cast<unsigned char*>(g_chain[i].control) + kControlIdOffset);
-        bool isSlot =
-            cid == kEquipBtnHeadId    || cid == kEquipBtnImplantId ||
-            cid == kEquipBtnBodyId    || cid == kEquipBtnArmLId    ||
-            cid == kEquipBtnArmRId    || cid == kEquipBtnWeapLId   ||
-            cid == kEquipBtnWeapRId   || cid == kEquipBtnBeltId    ||
-            cid == kEquipBtnHandsId;
-        if (!isSlot) continue;
+        if (!IsEquipSlotButtonId(cid)) continue;
         if (firstSlotIdx < 0) {
             firstSlotIdx = i;
             firstSlotY   = g_chain[i].cy;
@@ -1199,3 +1204,16 @@ void RebindChain(void* panel) {
 }
 
 }  // namespace acc::menus::chain
+
+// True iff cid is one of the equip screen's slot buttons. Declared in
+// menus_internal.h at global scope (like the id constants themselves); the
+// ids resolve per game, and the K2-only second-weapon-set pair is -1 on K1
+// so the extra compares are inert there.
+bool IsEquipSlotButtonId(int cid) {
+    return cid == kEquipBtnHeadId    || cid == kEquipBtnImplantId ||
+           cid == kEquipBtnBodyId    || cid == kEquipBtnArmLId    ||
+           cid == kEquipBtnArmRId    || cid == kEquipBtnWeapLId   ||
+           cid == kEquipBtnWeapRId   || cid == kEquipBtnBeltId    ||
+           cid == kEquipBtnHandsId   || cid == kEquipBtnWeapL2Id  ||
+           cid == kEquipBtnWeapR2Id;
+}

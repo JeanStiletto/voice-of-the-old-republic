@@ -110,12 +110,7 @@ void HandleEnterActivation(void* activePanel, int code, int val, bool& consumed)
             acc::engine::PanelKind::InGameEquip) {
         equipSlotCid = *reinterpret_cast<int*>(
             reinterpret_cast<unsigned char*>(e.control) + kControlIdOffset);
-        isEquipSlot =
-            equipSlotCid == kEquipBtnHeadId    || equipSlotCid == kEquipBtnImplantId ||
-            equipSlotCid == kEquipBtnBodyId    || equipSlotCid == kEquipBtnArmLId    ||
-            equipSlotCid == kEquipBtnArmRId    || equipSlotCid == kEquipBtnWeapLId   ||
-            equipSlotCid == kEquipBtnWeapRId   || equipSlotCid == kEquipBtnBeltId    ||
-            equipSlotCid == kEquipBtnHandsId;
+        isEquipSlot = IsEquipSlotButtonId(equipSlotCid);
     }
 
     // Workbench upgrade slot buttons (per-game .gui ids — see

@@ -171,41 +171,64 @@ extern void* s_pendingAnnouncePanel;
 extern void* s_pendingAnnounceControl;
 }  // namespace acc::menus
 
-// Equipment screen control IDs from equip.gui (extracted via xoreos-tools
-// gff2xml). The 9 BTN_INV_* slot buttons + the picker listbox + the two
-// action buttons. Both menus.cpp and menus_extract.cpp need these — the
-// former for input handling (slot detection, picker zone, equip dispatch),
-// the latter for per-kind label resolution (slot button → "Kopf" /
-// "Implantat" / etc.).
-constexpr int kEquipBtnHeadId    =  7;  // BTN_INV_HEAD     (TLK 31375)
-constexpr int kEquipBtnImplantId =  9;  // BTN_INV_IMPLANT  (literal — no TLK)
-constexpr int kEquipBtnBodyId    = 11;  // BTN_INV_BODY     (TLK 31380)
-constexpr int kEquipBtnArmLId    = 13;  // BTN_INV_ARM_L    (TLK 31376)
-constexpr int kEquipBtnWeapLId   = 15;  // BTN_INV_WEAP_L   (TLK 31378)
-constexpr int kEquipBtnBeltId    = 17;  // BTN_INV_BELT     (TLK 31382)
-constexpr int kEquipBtnWeapRId   = 19;  // BTN_INV_WEAP_R   (TLK 31379)
-constexpr int kEquipBtnArmRId    = 21;  // BTN_INV_ARM_R    (TLK 31377)
-constexpr int kEquipBtnHandsId   = 23;  // BTN_INV_HANDS    (TLK 31383)
-constexpr int kEquipLbItemsId    =  5;  // LB_ITEMS
+// Equipment screen control IDs from equip.gui / K2 equip_p.gui (extracted
+// via xoreos-tools gff2xml; K2 values mined 2026-08-02 — the install's
+// override copy is id-identical to the gui.bif one). K2 RE-NUMBERS the
+// whole panel: the slot buttons moved from K1's odd 7..23 spread to a
+// 15..25 block (implant parked at 48), LB_ITEMS 5 → 41, BTN_BACK/BTN_EQUIP
+// 36/37 → 39/40, and two K2-only second-weapon-set slots appeared
+// (BTN_INV_WEAP_L2/R2). Both menus.cpp and menus_extract.cpp need these —
+// the former for input handling (slot detection, picker zone, equip
+// dispatch), the latter for per-kind label resolution (slot button →
+// "Kopf" / "Implantat" / etc.). Runtime-resolved consts in the
+// engine_offsets Pick style — constexpr can't branch on the running game.
+const int kEquipBtnHeadId    = acc::game::IsKotor2() ? 15 :  7;  // BTN_INV_HEAD     (TLK 31375)
+const int kEquipBtnImplantId = acc::game::IsKotor2() ? 48 :  9;  // BTN_INV_IMPLANT  (literal — no TLK)
+const int kEquipBtnBodyId    = acc::game::IsKotor2() ? 17 : 11;  // BTN_INV_BODY     (TLK 31380)
+const int kEquipBtnArmLId    = acc::game::IsKotor2() ? 18 : 13;  // BTN_INV_ARM_L    (TLK 31376)
+const int kEquipBtnWeapLId   = acc::game::IsKotor2() ? 19 : 15;  // BTN_INV_WEAP_L   (TLK 31378)
+const int kEquipBtnBeltId    = acc::game::IsKotor2() ? 22 : 17;  // BTN_INV_BELT     (TLK 31382)
+const int kEquipBtnWeapRId   = acc::game::IsKotor2() ? 23 : 19;  // BTN_INV_WEAP_R   (TLK 31379)
+const int kEquipBtnArmRId    = acc::game::IsKotor2() ? 24 : 21;  // BTN_INV_ARM_R    (TLK 31377)
+const int kEquipBtnHandsId   = acc::game::IsKotor2() ? 25 : 23;  // BTN_INV_HANDS    (TLK 31383)
+// KOTOR 2 only: the second weapon-set slot buttons. -1 on K1 (matches no
+// control). Their panel item-id member offsets are NOT mined yet, so they
+// navigate + activate (picker populates) but announce without a slot name
+// or equipped-item name — expect "control 20/21" until a K2 ctor round
+// extends the kEquipPanel*IdOffset band.
+const int kEquipBtnWeapL2Id  = acc::game::IsKotor2() ? 20 : -1;  // BTN_INV_WEAP_L2
+const int kEquipBtnWeapR2Id  = acc::game::IsKotor2() ? 21 : -1;  // BTN_INV_WEAP_R2
+const int kEquipLbItemsId    = acc::game::IsKotor2() ? 41 :  5;  // LB_ITEMS
 // upgrade.gui LB_ITEMS — the compatible-crystal list the workbench upgrade
 // picker drives. Same role as the equip picker's LB_ITEMS: excluded from the
 // generic chain flatten so its rows aren't double-exposed as stale buttons.
+// Same id in both games' .gui files.
 constexpr int kWorkbenchUpgradeLbItemsId = 0;  // LB_ITEMS
 // upgrade.gui BTN_BACK — the cursor-park target while the upgrade picker is
 // armed (see ParkPickerCursorOffList in menus_listbox_picker.cpp). Shared
 // here rather than file-local because both the spec callbacks and the picker
-// monitor need it, and they now live in separate TUs.
-constexpr int kWorkbenchUpgradeBtnBackId = 28;  // BTN_BACK
-constexpr int kEquipBtnBackId    = 36;  // BTN_BACK         (TLK 1582 = Schliess.)
-constexpr int kEquipBtnEquipId   = 37;  // BTN_EQUIP        (TLK 1580 = OK)
+// monitor need it, and they now live in separate TUs. K2 re-numbers it to 13
+// — inside K1's slot-button range, the same collision
+// IsWorkbenchUpgradeSlotButtonId already routes around.
+const int kWorkbenchUpgradeBtnBackId = acc::game::IsKotor2() ? 13 : 28;  // BTN_BACK
+const int kEquipBtnBackId    = acc::game::IsKotor2() ? 39 : 36;  // BTN_BACK         (TLK 1582 = Schliess.)
+const int kEquipBtnEquipId   = acc::game::IsKotor2() ? 40 : 37;  // BTN_EQUIP        (TLK 1580 = OK)
+
+// True iff cid is one of the equip screen's slot buttons (both weapon sets
+// on K2). Shared by the chain click-pitch capture (menus_chain.cpp) and the
+// slot activation path (menus_chain_input.cpp); defined in menus_chain.cpp.
+bool IsEquipSlotButtonId(int cid);
 
 // partyselection.gui BTN_NPC ("Hinzuf." / "Add") — the mouse flow's
 // commit button: click a portrait to highlight it, then click this to
 // toggle that companion in or out of the party. Keyboard nav never needs
 // it because Enter on the portrait itself already runs the engine's
 // OnToggled (see menus_chain_input.cpp's isPartyAddBlocked branch, which
-// rides that same path), so it is filtered from the chain.
-constexpr int kPartySelectionAddBtnId = 38;  // BTN_NPC
+// rides that same path), so it is filtered from the chain. KOTOR 1 only:
+// K2's partyselect_p.gui has no single add button (every portrait is its
+// own BTN_NPCn), so the K2 value matches no control and the filter is
+// inert there.
+const int kPartySelectionAddBtnId = acc::game::IsKotor2() ? -1 : 38;  // BTN_NPC
 
 // CSWGuiInGameItemEntry (LB_ITEMS row) — field6_0x394 bit-field after the
 // embedded CSWGuiButton + item id + borders + text. OnEnterSlot tags the
