@@ -48,7 +48,8 @@ int SetLeaderQueueModeBit(int on) {
     // CSWCCreature.field200_0x440 — same offset combat_diag reads as `cm`,
     // set by CSWCCreature::SetCombatMode @0x00610a10. Bit 0 is the
     // replace-vs-append discriminator both action dispatchers branch on.
-    const size_t kCSWCCreatureCombatModeOffset = acc::off::Todo(0x440);
+    // K2 0x458 — witnessed in the K2 DoTargetAction twin 0x007445D0.
+    const size_t kCSWCCreatureCombatModeOffset = acc::off::Pick(0x440, 0x458);
     void* leader = GetClientLeader();
     if (!leader) return -1;
     __try {
@@ -75,7 +76,7 @@ bool IsAnyPartyMemberInCombat() {
     // client-side on the same field/namespace as the global we already poll,
     // so there is no client/server timing skew between the two.
     const size_t    kInternalPartyOffset          = acc::off::Todo(0x270);     // CClientExoAppInternal.party
-    const size_t    kCSWCCreatureCombatModeOffset = acc::off::Todo(0x440);     // field200_0x440 bit 0
+    const size_t    kCSWCCreatureCombatModeOffset = acc::off::Pick(0x440, 0x458);  // field200_0x440 bit 0; K2 via DoTargetAction twin
     const uintptr_t kAddrCSWPartyGetCharacter = acc::addr::R(0x006346C0); // __thiscall(int) -> CSWCCreature*
     constexpr int       kPartyScanCap                 = 8;          // KOTOR party <=3; generous cap
     typedef void* (__thiscall* PFN_GetCharacter)(void* this_, int index);

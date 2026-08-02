@@ -33,6 +33,19 @@ bool IsUseItemButton(void* panel, void* control) {
 }
 
 bool IsFilterButton(void* panel, void* control) {
+    // KOTOR 2 replaced K1's single filter-CYCLE button with seven direct
+    // filter buttons laid out one button-stride apart (BTN_ALL..BTN_QUESTS).
+    // Any of them changes the filtered list, so all get the repopulate-
+    // then-invalidate treatment.
+    if (acc::game::IsKotor2()) {
+        if (!panel || !control) return false;
+        auto base = reinterpret_cast<uintptr_t>(panel);
+        auto c    = reinterpret_cast<uintptr_t>(control);
+        if (c < base + kInventoryFilterFirstButtonOffset ||
+            c > base + kInventoryFilterLastButtonOffset) return false;
+        return ((c - base) - kInventoryFilterFirstButtonOffset) %
+                   kInventoryFilterButtonStride == 0;
+    }
     return IsButtonAtOffset(panel, control, kInventoryFilterButtonOffset);
 }
 

@@ -418,21 +418,26 @@ void Dispatch() {
 
         // Stuck-detection — feeds g_was_stuck for OnPlayFootstep.
         PHASE("footstep_suppress", acc::audio::footstep_suppress::Tick());
-
-        // Combat — mode entry/exit, log narration, attack resolution, saves,
-        // leader-change announce, examine panel monitor, queue submenu,
-        // examine view, specials heartbeat.
-        PHASE("combat.mode", acc::combat::TickCombatMode());
-        PHASE("combat.log", acc::combat::TickCombatLog());
-        PHASE("combat.absorb", acc::combat::TickCombatAbsorb());
-        PHASE("combat.deflect", acc::combat::TickCombatDeflect());
-        PHASE("combat.effects", acc::combat::TickCombatEffects());
-        PHASE("combat.leaderChange",
-              acc::combat::query::TickLeaderChangeAutoAnnounce());
-        PHASE("combat.queue", acc::combat::queue::Tick());
-        PHASE("combat_diag", acc::combat_diag::Tick());
-        PHASE("examine_view", acc::examine_view::Tick());
     }
+
+    // Combat — mode entry/exit, log narration, attack resolution, saves,
+    // leader-change announce, examine panel monitor, queue submenu,
+    // examine view, specials heartbeat. Both games since Batch 4: the
+    // combat-round/action structs are witnessed on KOTOR 2 (action struct
+    // byte-identical, round block at +0x150, creature→round at +0x10dc),
+    // the msg listbox / pause / combat-mode accessors are Pick'd, and the
+    // few still-unresolved diagnostics (effect icons, faction id, stealth)
+    // decline under their own guards.
+    PHASE("combat.mode", acc::combat::TickCombatMode());
+    PHASE("combat.log", acc::combat::TickCombatLog());
+    PHASE("combat.absorb", acc::combat::TickCombatAbsorb());
+    PHASE("combat.deflect", acc::combat::TickCombatDeflect());
+    PHASE("combat.effects", acc::combat::TickCombatEffects());
+    PHASE("combat.leaderChange",
+          acc::combat::query::TickLeaderChangeAutoAnnounce());
+    PHASE("combat.queue", acc::combat::queue::Tick());
+    PHASE("combat_diag", acc::combat_diag::Tick());
+    PHASE("examine_view", acc::examine_view::Tick());
 
     // Help overlay lifecycle (self-disarm on world teardown, list state).
     // Engine-free apart from the in-world pause hold, whose engine calls are
@@ -440,13 +445,16 @@ void Dispatch() {
     // original slot between examine_view and special_watch.
     PHASE("help.tick", acc::help::Tick());
 
-    if (k1) {
-        PHASE("combat.special_watch", acc::combat::special_watch::Tick());
+    // Both games since Batch 4 — the special-watch chain (combat round,
+    // action struct, attack feat) is fully witnessed on KOTOR 2.
+    PHASE("combat.special_watch", acc::combat::special_watch::Tick());
 
+    if (k1) {
         // Stealth distance readout — while the leader is stealthed and a
         // hostile creature is the narrated-target focus, speak the closing
         // distance every ~2 m. Inert otherwise (no stealth / no hostile
-        // focus).
+        // focus). Stays KOTOR 1: kCreatureStealthModeOffset has no K2
+        // witness yet.
         PHASE("stealth_watch", acc::stealth_watch::Tick());
     }
 
@@ -469,10 +477,13 @@ void Dispatch() {
         // this frame is already live when we check.
         PHASE("levelup_pause", acc::engine_levelup::TickLevelUpPause());
 
-        // MessageBoxModal close cleanup — engine's close path doesn't unpause
-        // or unmute on its own.
-        PHASE("engine.inputReassert", acc::engine::TickInputClassReassert());
     }
+
+    // MessageBoxModal close cleanup — engine's close path doesn't unpause
+    // or unmute on its own. Both games since Batch 4/5: SetPauseState,
+    // SetSoundMode (per-game signature) and the ExoSound global are all
+    // Pick'd with byte-level witnesses.
+    PHASE("engine.inputReassert", acc::engine::TickInputClassReassert());
 
     // Audio-glossary delayed-playback timer.
     PHASE("modsettings", acc::menus::modsettings::Tick());

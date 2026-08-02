@@ -28,10 +28,15 @@ EXPORTS
     OnShowObject
     OnShowObjectK2
     OnCombatRoundAddAction
+    OnCombatRoundAddActionK2
     OnCombatRoundRemoveAllActions
+    OnCombatRoundRemoveAllActionsK2
     OnCombatRoundSetCurrentAction
+    OnCombatRoundSetCurrentActionK2
     OnCombatRoundRemoveLastAction
+    OnCombatRoundRemoveLastActionK2
     OnSetPauseState
+    OnSetPauseStateK2
     OnTurretBulletHit
     OnPlayerFire
     OnDoorOpen

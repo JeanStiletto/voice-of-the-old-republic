@@ -555,3 +555,174 @@ exclude_from_restore = []
 [[hooks.parameters]]
 source = "ecx"
 type = "pointer"
+
+# ============================================================================
+# Batch 4 — Combat round + pause state.
+#
+# The four CSWSCombatRound hooks and the server SetPauseState, all unoptimised
+# EBP-frame functions cut right after the prologue with `this` still in ECX
+# and params at [EBP+8]/[EBP+0xC]. Identities:
+#   AddAction        0x00590270 — queue-cap `cmp GetCount(),4`, sorted insert,
+#                                 free-on-full: K1 0x004D3660's body.
+#   RemoveAllActions 0x00590430 — tail-remove loop until empty, frees each.
+#   RemoveLastAction 0x005904C0 — single tail remove + free, returns 1/0.
+#   SetCurrentAction 0x005908A0 — one-line byte store at [round+0xb24].
+#   SetPauseState    0x00538ED0 — internal; carries K1's pause-bit field set
+#                                 at K1's own server-internal offsets
+#                                 (bits +0x10078, timers +0x10048/4c/50).
+# ============================================================================
+
+[[hooks]]
+address = 0x00590276
+type = "detour"
+function = "OnCombatRoundAddActionK2"
+
+# 89 4d e0    MOV [EBP-0x20], ECX
+# 8b 45 e0    MOV EAX, [EBP-0x20]
+original_bytes = [0x89, 0x4d, 0xe0, 0x8b, 0x45, 0xe0]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "ebp"
+type = "pointer"
+
+[[hooks]]
+address = 0x00590436
+type = "detour"
+function = "OnCombatRoundRemoveAllActionsK2"
+
+# 89 4d f0    MOV [EBP-0x10], ECX
+# 8b 45 f0    MOV EAX, [EBP-0x10]
+original_bytes = [0x89, 0x4d, 0xf0, 0x8b, 0x45, 0xf0]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks]]
+address = 0x005904c6
+type = "detour"
+function = "OnCombatRoundRemoveLastActionK2"
+
+# 89 4d ec                MOV [EBP-0x14], ECX
+# c7 45 fc 00 00 00 00    MOV [EBP-0x4], 0
+original_bytes = [0x89, 0x4d, 0xec, 0xc7, 0x45, 0xfc, 0x00, 0x00, 0x00, 0x00]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks]]
+address = 0x005908a4
+type = "detour"
+function = "OnCombatRoundSetCurrentActionK2"
+
+# 89 4d fc    MOV [EBP-0x4], ECX
+# 8b 45 fc    MOV EAX, [EBP-0x4]
+original_bytes = [0x89, 0x4d, 0xfc, 0x8b, 0x45, 0xfc]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "ebp"
+type = "pointer"
+
+[[hooks]]
+address = 0x00538ed9
+type = "detour"
+function = "OnSetPauseStateK2"
+
+# 89 8d 3c ff ff ff    MOV [EBP-0xC4], ECX
+original_bytes = [0x89, 0x8d, 0x3c, 0xff, 0xff, 0xff]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "ebp"
+type = "pointer"
+
+# ============================================================================
+# Batch 5 — Audio: listener-position override + pitch-variance neutraliser.
+# Both reuse the KOTOR 1 handlers directly — the K2 functions take the same
+# parameter shapes at their entry points.
+# ============================================================================
+
+# CExoSound::SetListenerPosition — K2 facade @0x0070B940 (single Vector*
+# forward into the AIL listener writer 0x007082D0; one caller, the K2
+# UpdateSoundEngine path — the same per-frame camera write K1 hooks).
+# Hooked AT ENTRY with the whole prologue as the cut; the handler always
+# returns 1 (consume) and performs the engine call itself with the possibly
+# overridden position. consumed_exit_address = 0x0070B960, the bare RET 4 —
+# valid from entry state because the skipped cut never built the frame.
+# Params: ecx = this (CExoSound*), esp+4 = address of the Vector* slot
+# (the LEA contract the shared handler expects).
+[[hooks]]
+address = 0x0070b940
+type = "detour"
+function = "OnSetListenerPosition"
+
+# 55            PUSH EBP
+# 8b ec         MOV EBP, ESP
+# 51            PUSH ECX
+# 89 4d fc      MOV [EBP-4], ECX
+original_bytes = [0x55, 0x8b, 0xec, 0x51, 0x89, 0x4d, 0xfc]
+
+skip_original_bytes = false
+exclude_from_restore = ["eax"]
+consumed_exit_address = 0x0070b960
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "esp+4"
+type = "pointer"
+
+# CExoSoundSourceInternal::CalculatePitchVarianceFrequency — K2 twin
+# @0x00710550 (the only rand() caller in the sound TU; jitters the applied
+# rate at [internal+0x5c]). Hooked AT ENTRY, cut = the prologue. Handler
+# return 0 → cut replays and the engine jitter runs; nonzero → jump to
+# consumed_exit_address 0x0071062D, the function's bare RET — valid from
+# entry state, and skipping the body leaves [internal+0x5c] at its
+# unjittered base, which on KOTOR 2 IS the neutralise (its callers read
+# the field, not EAX).
+[[hooks]]
+address = 0x00710550
+type = "detour"
+function = "OnCalculatePitchVarianceFrequency"
+
+# 55            PUSH EBP
+# 8b ec         MOV EBP, ESP
+# 83 ec 40      SUB ESP, 0x40
+original_bytes = [0x55, 0x8b, 0xec, 0x83, 0xec, 0x40]
+
+skip_original_bytes = false
+exclude_from_restore = ["eax"]
+consumed_exit_address = 0x0071062d
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"

@@ -117,19 +117,34 @@ void FillResRef(CResRef& out, const char* tag);
 // For a KOTOR 2 port this is one of the values the upstream address
 // database already carries by name — see the EXO_RESOURCE_MANAGER_PTR /
 // APP_MANAGER_PTR cluster in KPatchManager's AddressDatabases.
-const uintptr_t kAddrCExoSoundPtr = acc::addr::TodoGlobal(0x007A39EC);
+// KOTOR 2: 0x00A1B494 holds the CExoSound* facade object (its facades read
+// the internal at [facade+0]; the source ctor 0x0070AAB0 reads this exact
+// global). Note the K1/K2 globals point at DIFFERENT layers — K1's holds the
+// CExoSoundInternal*, K2's the CExoSound facade; every use here goes through
+// the game's own functions so the distinction stays inside the engine.
+const uintptr_t kAddrCExoSoundPtr = acc::addr::PickGlobal(0x007A39EC, 0x00A1B494);
 
 // CExoSound::PlayOneShotSound  — __thiscall, RET 0x18 (6 × 4-byte args).
-const uintptr_t kAddrCExoSoundPlayOneShotSound = acc::addr::R(0x005D5E00);
+// K2 facade 0x0070BA40: byte-verified same signature (resref, group byte,
+// delay, volume byte, fixed-variance float, pitch-variance float) and its
+// internal 0x00708360 is K1's PlayOneShotSound body step for step (0xa8
+// source-internal alloc, SetResRef, SetPriorityGroup, SetVolume, variance
+// pair, Play). NOTE: 0x0070B170 is NOT this — that one is the stream/VO
+// player facade (streamsounds/streamvoice path builder 0x0070C0C0).
+const uintptr_t kAddrCExoSoundPlayOneShotSound = acc::addr::Pick(0x005D5E00, 0x0070BA40);
 
 // CExoSound::Play3DOneShotSound — __thiscall, RET 0x28 (CResRef* +
 // Vector + 7 × 4-byte slots).
-const uintptr_t kAddrCExoSoundPlay3DOneShotSound = acc::addr::R(0x005D5E10);
+// K2 facade 0x0070BA90: same signature including the z += z_offset fadd
+// before forwarding to the internal 0x00708510.
+const uintptr_t kAddrCExoSoundPlay3DOneShotSound = acc::addr::Pick(0x005D5E10, 0x0070BA90);
 
 // CExoSound::SetListenerPosition(Vector*) — __thiscall. Engine writes
 // this every frame from the camera; we detour rather than race that
 // from OnUpdate. Hook target for view-mode listener override.
-const uintptr_t kAddrCExoSoundSetListenerPosition = acc::addr::R(0x005D5DF0);
+// K2 facade 0x0070B940: same single-Vector* forward into the internal
+// AIL-listener writer (0x007082D0 → _AIL_set_listener_3D_position).
+const uintptr_t kAddrCExoSoundSetListenerPosition = acc::addr::Pick(0x005D5DF0, 0x0070B940);
 
 // CExoSoundSourceInternal::CalculatePitchVarianceFrequency — __thiscall,
 // returns the per-fire randomised playback frequency. We detour this
@@ -142,8 +157,12 @@ const uintptr_t kAddrCExoSoundSetListenerPosition = acc::addr::R(0x005D5DF0);
 // hook sites itself. It is kept because the address belongs next to the rest of
 // the CExoSound surface, and R()-wrapped like every other .text address here so
 // that the file has one rule rather than an exception someone has to explain.
+// K2 twin 0x00710550 — the only rand() caller in the K2 sound TU; jitters
+// the applied-rate field [internal+0x5c] from variance [internal+0x7c] and
+// base frequency [internal+0x50]. NOTE its K2 callers ignore EAX and re-read
+// +0x5c, so consuming the function (leaving +0x5c at base) IS the neutralise.
 const uintptr_t kAddrCExoSoundSourceInternalCalculatePitchVarianceFrequency
-    = acc::addr::R(0x005DB3D0);
+    = acc::addr::Pick(0x005DB3D0, 0x00710550);
 
 // CExoSoundSource — engine-managed source with full lifecycle (Stop,
 // per-tick position update, looping). Use when a feature needs sustained
@@ -160,18 +179,28 @@ const uintptr_t kAddrCExoSoundSourceInternalCalculatePitchVarianceFrequency
 //   5. Stop → dtor → free.
 //
 // CResRef-takers (Play, SetResRef) use the 16-byte CResRef struct.
-const uintptr_t kAddrCExoSoundSourceCtor = acc::addr::R(0x005D5870);
-const uintptr_t kAddrCExoSoundSourceCtorWithResRef = acc::addr::R(0x005D60E0);
+// KOTOR 2 column paired 2026-08-02 by walking both TUs in source order with
+// capstone (K1 facades 0x005D58xx.. vs K2 facades 0x0070AAxx..; every K2
+// facade is the `[source+4]`-guarded forward of its K1 twin). Structural
+// anchors that pin the alignment: the ctor's DisableSound-global check +
+// 0xa8 internal alloc, Play's double push-0, SetVolume's clamp (K1 vs the
+// K2 global max byte), SetResRef's leading Stop call, GetLooping reading
+// [internal+0x24] on BOTH games, SetDistance writing the min/max pair
+// (K1 +0x6c/0x70 → K2 +0x74/0x78), and Stop's plain no-arg forward
+// (0x0070AF80 — unlisted in the function catalogue; it sits between
+// SetResRef and SetFixedVariance).
+const uintptr_t kAddrCExoSoundSourceCtor = acc::addr::Pick(0x005D5870, 0x0070AAB0);
+const uintptr_t kAddrCExoSoundSourceCtorWithResRef = acc::addr::Pick(0x005D60E0, 0x0070AB90);
 const uintptr_t kAddrCExoSoundSourceDtor = acc::addr::Pick(0x005D60A0, 0x0070AB60);
-const uintptr_t kAddrCExoSoundSourceSetPriorityGroup = acc::addr::R(0x005D5900);
-const uintptr_t kAddrCExoSoundSourceSet3D = acc::addr::R(0x005D5910);
-const uintptr_t kAddrCExoSoundSourcePlay = acc::addr::R(0x005D5930);
-const uintptr_t kAddrCExoSoundSourceSetVolume = acc::addr::R(0x005D5950);
-const uintptr_t kAddrCExoSoundSourceSetPitchVariance = acc::addr::R(0x005D5980);
-const uintptr_t kAddrCExoSoundSourceSetLooping = acc::addr::R(0x005D59D0);
-const uintptr_t kAddrCExoSoundSourceSetPosition = acc::addr::R(0x005D59E0);
-const uintptr_t kAddrCExoSoundSourceStop = acc::addr::R(0x005D5A20);
-const uintptr_t kAddrCExoSoundSourceSetFixedVariance = acc::addr::R(0x005D5A30);
-const uintptr_t kAddrCExoSoundSourceGetLooping = acc::addr::R(0x005D6190);
-const uintptr_t kAddrCExoSoundSourceSetDistance = acc::addr::R(0x005D61A0);
-const uintptr_t kAddrCExoSoundSourceSetResRef = acc::addr::R(0x005D61C0);
+const uintptr_t kAddrCExoSoundSourceSetPriorityGroup = acc::addr::Pick(0x005D5900, 0x0070ACC0);
+const uintptr_t kAddrCExoSoundSourceSet3D = acc::addr::Pick(0x005D5910, 0x0070ACF0);
+const uintptr_t kAddrCExoSoundSourcePlay = acc::addr::Pick(0x005D5930, 0x0070AD50);
+const uintptr_t kAddrCExoSoundSourceSetVolume = acc::addr::Pick(0x005D5950, 0x0070AD80);
+const uintptr_t kAddrCExoSoundSourceSetPitchVariance = acc::addr::Pick(0x005D5980, 0x0070ADD0);
+const uintptr_t kAddrCExoSoundSourceSetLooping = acc::addr::Pick(0x005D59D0, 0x0070AE30);
+const uintptr_t kAddrCExoSoundSourceSetPosition = acc::addr::Pick(0x005D59E0, 0x0070AE90);
+const uintptr_t kAddrCExoSoundSourceStop = acc::addr::Pick(0x005D5A20, 0x0070AF80);
+const uintptr_t kAddrCExoSoundSourceSetFixedVariance = acc::addr::Pick(0x005D5A30, 0x0070AFA0);
+const uintptr_t kAddrCExoSoundSourceGetLooping = acc::addr::Pick(0x005D6190, 0x0070AE60);
+const uintptr_t kAddrCExoSoundSourceSetDistance = acc::addr::Pick(0x005D61A0, 0x0070AEE0);
+const uintptr_t kAddrCExoSoundSourceSetResRef = acc::addr::Pick(0x005D61C0, 0x0070AF20);

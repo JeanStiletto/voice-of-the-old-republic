@@ -191,7 +191,10 @@ namespace {
 // screen isn't mounted. The earlier panels[]-walk only found this panel
 // when the user had the Messages screen open, missing every live
 // combat-log row in the process.
-const size_t kCGuiInGameInGameMessagesOffset = acc::off::Todo(0x1c);
+// KOTOR 2 swaps this slot with PartySelection: the K2 creator 0x007BE4C0
+// stores the CSWGuiInGameMessages ctor result (0x00757C40) at [gui+0x78]
+// (see the slot table in engine_panels.cpp).
+const size_t kCGuiInGameInGameMessagesOffset = acc::off::Pick(0x1c, 0x78);
 
 // Resolve the persistent combat-log panel via the CGuiInGame singleton.
 // nullptr until CGuiInGame is constructed (DLL attach / title screen).

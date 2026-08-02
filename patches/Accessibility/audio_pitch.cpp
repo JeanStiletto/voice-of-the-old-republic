@@ -24,12 +24,15 @@
 
 #include "log.h"
 #include "engine_game.h"
+#include "engine_offsets_select.h"
 
 namespace acc::audio::pitch {
 
 namespace {
 
-constexpr ptrdiff_t kOffsetBaseFrequency = 0x48;
+// K2 0x50 — witnessed in the K2 jitter twin 0x00710550 (base frequency
+// read), matching audio_loop's kInternalBaseFrequencyOffset.
+const ptrdiff_t kOffsetBaseFrequency = acc::off::Pick(0x48, 0x50);
 
 // Counter (not bool) so nested helpers don't prematurely re-arm jitter.
 // Audio thread sees its own counter (always 0) → chorus calls fall through.
@@ -52,7 +55,10 @@ bool IsScopedZeroActive() {
 }  // namespace acc::audio::pitch
 
 extern "C" int __cdecl OnCalculatePitchVarianceFrequency(void* source) {
-    if (!acc::game::HandlerEnabled()) return 0;  // KOTOR 2: not ported yet — 0 = keep engine jitter
+    // Gate cleared for KOTOR 2 in Batch 5. Same handler serves both games:
+    // the K2 twin's callers ignore EAX and re-read the applied-rate field,
+    // so consuming (which skips the jitter write) neutralises jitter there;
+    // the returned base frequency only needs to be non-zero.
     // Out-of-scope sounds keep their jitter — fall through.
     if (!acc::audio::pitch::IsScopedZeroActive()) return 0;
 

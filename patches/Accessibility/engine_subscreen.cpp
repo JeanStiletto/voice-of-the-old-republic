@@ -37,7 +37,10 @@ namespace {
 // CSWCMessage::SendPlayerToServerInput_TogglePauseRequest passes 2 to
 // CServerExoApp::TogglePauseState, so bit 2 is the "menu pause" source
 // the Esc-menu close path also clears.
-const uintptr_t kAddrSetPauseState = acc::addr::R(0x004ae9a0);
+// K2 facade 0x0051C760 (movzx byte bit + on_off, ret 8, forwards to the
+// internal 0x00538ED0 whose body carries K1's exact pause-bit field set —
+// [internal+0x10078] bits, +0x10048/4c/50 timers, all at K1's offsets).
+const uintptr_t kAddrSetPauseState = acc::addr::Pick(0x004ae9a0, 0x0051C760);
 using PFN_SetPauseState =
     void(__thiscall *)(void* server, int source_bit, unsigned long on_off);
 
@@ -48,12 +51,29 @@ using PFN_SetPauseState =
 // is the engine's canonical caller — it flips mode 2 <-> 0 when entering
 // or leaving combat-style pauses. We call it with mode 0 to unmute the
 // audio mixer after a MessageBoxModal close.
-const uintptr_t kAddrSetSoundMode = acc::addr::R(0x005d5e80);
+// CAUTION — the two games differ in SIGNATURE here, not just address:
+// KOTOR 1's 0x005d5e80 is CExoSoundInternal::SetSoundMode(int mode) with
+// `this` = the internal; KOTOR 2's 0x0070BC60 is the CExoSound FACADE
+// taking TWO args (mode, flag — engine callers pass 0) with `this` = the
+// facade object, ret 8. CallSetSoundMode below hides the split.
+const uintptr_t kAddrSetSoundMode = acc::addr::Pick(0x005d5e80, 0x0070BC60);
 using PFN_SetSoundMode = void(__thiscall *)(void* self, int mode);
+using PFN_SetSoundModeK2 = void(__thiscall *)(void* self, int mode, int flag);
 
-// ExoSound global @ 0x007a39ec. Pointer to the CExoSoundInternal
-// singleton. Dereference to get the `this` for SetSoundMode.
-const uintptr_t kAddrExoSoundPtr = acc::addr::TodoGlobal(0x007a39ec);
+// ExoSound global. KOTOR 1: 0x007a39ec holds the CExoSoundInternal*.
+// KOTOR 2: 0x00A1B494 holds the CExoSound* facade object. Either way,
+// dereference once to get the `this` the game's own SetSoundMode expects.
+const uintptr_t kAddrExoSoundPtr = acc::addr::PickGlobal(0x007a39ec, 0x00A1B494);
+
+// One call site for both games' SetSoundMode shapes. SEH-free by design —
+// callers wrap it in their own __try.
+void CallSetSoundMode(void* exoSound, int mode) {
+    if (acc::game::IsKotor2()) {
+        reinterpret_cast<PFN_SetSoundModeK2>(kAddrSetSoundMode)(exoSound, mode, 0);
+    } else {
+        reinterpret_cast<PFN_SetSoundMode>(kAddrSetSoundMode)(exoSound, mode);
+    }
+}
 
 // SetPauseState's first arg is the bit MASK itself (engine does
 // `byte | mask` / `byte & ~mask`), NOT a bit index. Bit 0x02 is the
@@ -128,9 +148,7 @@ void DispatchUnpauseCleanup(const char* trigger) {
         void* exoSound =
             *reinterpret_cast<void**>(kAddrExoSoundPtr);
         if (exoSound) {
-            auto fn = reinterpret_cast<PFN_SetSoundMode>(
-                kAddrSetSoundMode);
-            fn(exoSound, 0);
+            CallSetSoundMode(exoSound, 0);
         } else {
             acclog::Write("PauseToggle",
                           "SetSoundMode skipped: ExoSound NULL");
@@ -500,7 +518,9 @@ extern "C" void __cdecl OnHideSWInGameGui(void* thisPtr, void* p1_addr) {
 extern "C" void __cdecl OnSetPauseState(void* thisPtr,
                                          void* p1_addr,
                                          void* p2_addr) {
-    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
+    // Gate cleared for KOTOR 2 in Batch 4: the shadow accumulator is game-
+    // agnostic and the suppression reads (GUI-manager modal stack, sub-screen
+    // state) are all resolved and live there since Batches 1/2.
     if (!p1_addr || !p2_addr) return;
 
     int mask = 0;
@@ -620,3 +640,23 @@ extern "C" void __cdecl OnSetSWGuiStatusK2(void* thisGui, void* ebp) {
                      static_cast<char*>(ebp) + 0xC);
 }
 
+
+// CServerExoAppInternal::SetPauseState @0x00538ED0 on KOTOR 2 (K1 hooks its
+// 0x004B8110 twin directly), hooked at 0x00538ED9 — the `this` store right
+// after the prologue. The internal carries KOTOR 1's exact pause-bit field
+// set at the SAME server-internal offsets (bits byte +0x10078, timer trio
+// +0x10048/4c/50), witnessed in its own body.
+//   ECX       = this    (CServerExoAppInternal*)
+//   [EBP+8]   = mask    (pause source bit)
+//   [EBP+0xC] = on_off
+// The shared handler expects stack-slot ADDRESSES (the esp+N LEA contract)
+// and reads caller_eip at *(p1_addr - 1) = [EBP+4], the return address —
+// both preserved by handing EBP+8 / EBP+0xC through.
+extern "C" __declspec(dllexport)
+void __cdecl OnSetPauseStateK2(void* thisPtr, void* ebp) {
+    if (!acc::game::IsKotor2()) return;
+    if (!thisPtr || !ebp) return;
+    OnSetPauseState(thisPtr,
+                    static_cast<char*>(ebp) + 8,
+                    static_cast<char*>(ebp) + 0xC);
+}

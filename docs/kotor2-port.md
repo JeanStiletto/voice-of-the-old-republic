@@ -6,6 +6,67 @@ result especially — but whose cost estimate predates the RTTI finding below.
 
 ## WHERE TO RESUME (read this first)
 
+**State as of 2026-08-02 (eighth session): Batches 3d, 4 and 5 are ALL
+IMPLEMENTED in one sitting (user decision: everything except Batch 6 at
+once, accepting a bigger combined test round). `k2_hook_status.py` reports
+21 of 25 READY** — the four not-READY are the three Batch 6 hooks
+(RulesInit / TurretBulletHit / PlayerFire) and OnPlayFootstep, deferred
+with a documented candidate (see Batch 5). Built clean, committed, NOT
+tested in game. All three address rounds ran offline (three kotor2 Ghidra
+rounds, one kotor1 round, heavy capstone work; zero test rounds spent).
+
+**THE COMBINED TEST ROUND THIS NEEDS (KOTOR 2):**
+
+1. `kdev apply --game k2`, launch, load into the world.
+2. **Sub-screens read (3d):** character sheet — every stat row (XP,
+   HP, FP on a Jedi, six attributes with modifiers, alignment slider;
+   class/level rows are expected ABSENT on K2 — the panel has no such
+   labels). Equipment — hover a slot: defense + attack/to-hit rows
+   (the HP row is expected absent); swap weapon-set and note whether
+   values still read (we anchor set 1 — log finding if silent).
+   Inventory — rows read, filter buttons (7 on K2) repopulate + chain
+   rebinds. Journal — entries read, Enter speaks description, the three
+   sort buttons re-sort + list re-reads, swap-text works. Abilities —
+   tab cycling (Skills/Powers/Feats), skill rows with rank/bonus/total,
+   feat/power chart rows speak name+description (chart internals were
+   re-derived: columns SHRANK to 0xb4 on K2).
+3. **Editbox (3d):** chargen name field — typing narrates, random/accept
+   buttons work; save-game name popup likewise.
+4. **Messages screen (3d):** open it — K2 has separate Dialog/Feedback/
+   Combat/Effects listboxes; the feedback + dialog boxes are mapped, the
+   two new ones ride the generic reader.
+5. **Combat (4):** fight something. Expect: combat-mode entry/exit
+   announces, combat-log lines spoken (MsgBuf was live since Batch 2 —
+   now the round diagnostics attribute them), queue announce "X, Platz N"
+   on chained bare-key actions in combat, queue-full line at 4, examine
+   view (Ö) shows HP/wound state (effect ICONS are expected missing —
+   deliberately unresolved). Watch `Combat.Diag` ADD/CLEAR/SETCUR/REMLAST
+   lines for the four hooks' first fires.
+6. **Pause (4):** Space pause/unpause speaks (`Pause` channel shows the
+   shadow transitions); Esc-menu open/close does NOT double-speak; popup
+   close unpauses (the engine.inputReassert path now runs on K2).
+7. **Audio cues (5):** the wall/proximity cue set should now PLAY (was
+   open defect 3 — `drop-engine-fail` should disappear). Volume slider
+   in mod settings still routes cues; cue pitch is stable across fires
+   (the jitter neutraliser consumes the K2 twin). View-mode cursor
+   listener override works (ListenerHook channel).
+8. **KOTOR 1 regression pass:** menus + charsheet/equip/inventory/journal/
+   abilities read; one fight with queue announces; pause; cues + volume
+   slider; editbox typing. Shared code touched: monitors guard sweep,
+   spec-table constexpr→const conversions, Dispatch restructured a FIFTH
+   time (combat/pause/audio phases ungated), SetSoundMode/SetPauseState
+   call sites went per-game, FindControlById gained SEH.
+
+Batch-5 leftover, deliberate: **OnPlayFootstep has no K2 hook.** Candidate
+fully scouted: K2 PlayFootstep twin = 0x0077D390 (6 rand calls, builds the
+footstep resref; callers 0x008F92B0/0x008FB130/0x00907360 in the animation-
+event region; early-out tests [this+0x68] then byte [[this+0x68]+0xc6]==1
+where K1 tests [this+0x20]). Not hooked because the play-vs-compute split
+between it and its callers is unverified — without it footsteps simply
+always play on K2 (vanilla behaviour; only the stuck-suppression cue is
+missing). stealth_watch, map_ui_cursor, minigames, chargen grids and the
+probe pollers also stay K1-gated as before.
+
 **State as of 2026-08-01 (sixth session): Batch 3 is IMPLEMENTED — address
 round complete, hooks written, gates cleared, `k2_hook_status.py` reports
 12 of 25 READY. Built clean, NOT tested in game, NOT committed.** The whole
@@ -1152,12 +1213,111 @@ position — both games assign the same ids, while their engines build
 controls[] in different orders. That is how the in-game menu icons were
 fixed, and it removes a whole class of per-game guessing.
 
-**Batch 4 — Combat.** The four CombatRound hooks plus `OnSetPauseState`; gates in
-`combat_diag.cpp` (3) and `combat_queue_hooks.cpp`.
+**Batch 3d — IMPLEMENTED 2026-08-02 (eighth session, together with 4+5).**
+The witness ledger:
 
-**Batch 5 — Audio.** `OnPlayFootstep`, `OnSetListenerPosition`,
-`OnCalculatePitchVarianceFrequency`; gates in `audio_bus.cpp`,
-`audio_pitch.cpp`, `audio_footstep_suppress.cpp`.
+- **Guard sweep:** four unguarded engine reads fixed in menus_monitors.cpp
+  (control-id fallback read, two panel vtable reads, the StatusSummary
+  bit-flags read, the dialog-reply selection short) and two in
+  menus_internal.cpp (FindControlById's whole walk, IsSaveLoadPanel's
+  vtable read). New SEH leaf helpers `TryReadU32/U16/Ptr` in engine_reads.
+- **Slot rows, all five closed** from a full decompile of the creator
+  0x007BE4C0: PartySelection **Pick(0x78, 0x1c)** — it SWAPPED slots with
+  InGameMessages; InGameGalaxyMap **Same(0x80)**; ControllerLossBox
+  **Pick(0xa4, 0xb4)** (ctor inlined in the creator; K2's 0xa4 is a second
+  MessageBox instance); DialogMessagesAux/DialogMessages **Kotor1Only** (no
+  K2 store past +0xb8 — those kinds fall to the vtable detector). The
+  creator also re-confirmed every existing Pick row independently.
+- **Per-screen field maps** from one ctor round (charsheet 0x0084C3A0,
+  abilities 0x008A25C0, equip 0x008A92D0, inventory 0x008A6170, journal
+  0x007FAE60, messages 0x00757C40, name-chargen 0x00918B10, save-name
+  0x008586D0) plus targeted method decompiles: charsheet fully Pick'd
+  (SetStats twin 0x0084E6F0 witnessed saves-into-_STAT, FP behind IsJedi
+  with the Same(0x2) shown bit, HP cur/max Same(0x4c/0x4e) behind
+  clientCreature+0x310); abilities fully Pick'd including the button trio
+  0x008A5790/57D0/5810 (tab byte at CGuiInGame+0xfc0), OnEnterSkill/Feat/
+  Power twins, DisplayPowers 0x008A5620, UpdateView 0x008A3C60,
+  SetSelectedSkill 0x0089C070 and the re-derived chart internals (first
+  column 0x60, stride 0xb4, featId +0xa8, status +0xac); equip labels from
+  the stat-writer 0x008AD930 (HP row Kotor1Only — no vitality label on K2);
+  journal (desc listbox Pick(0x1a4,0x1b0) settled by member-ctor order,
+  OnControlEntered 0x007FC390, Populate 0x007FC880, three sort buttons
+  replace BTN_SORT); inventory (Populate 0x008A7BA0, CheckFilter 0x008A8DF0
+  keying the filter byte at gui+0xfc1, SEVEN direct filter buttons matched
+  as a range). Editbox surface cleared (both panels Pick'd; internals were
+  already resolved). Sub-screen closure worklist: **100/100.**
+
+**Batch 4 — Combat. IMPLEMENTED 2026-08-02 (same sitting).** The four
+CombatRound hooks plus `OnSetPauseState`; gates in `combat_diag.cpp` (3)
+and `combat_queue_hooks.cpp`. What landed:
+
+- **The action struct is byte-identical on K2** (ClearData twin 0x0058C810
+  vs K1's 0x004D1D50 — same sentinels/init at every offset; loader allocs
+  the same 0x88), so ALL kCombatRoundAction* went Same.
+- **Round block moved +0x150** (GFF saver 0x00592310: Timer 0xa94, Length
+  0xa9c, CurrentAttack 0xabc, Engaged 0xb08; loader 0x00592840 appends
+  SchedActionList through [round+0xb00]); current-action byte at **0xb24**
+  (setter twin 0x005908A0); creature→round at **+0x10dc** by a 35-site
+  caller census (the +0x724 derivation would have said 0x10ec — witness
+  beat arithmetic again). List internals all Same.
+- **Hooks (cuts byte-confirmed):** AddAction 0x00590270 @0x00590276,
+  RemoveAllActions 0x00590430 @0x00590436, RemoveLastAction 0x005904C0
+  @0x005904C6, SetCurrentAction 0x005908A0 @0x005908A4, SetPauseState
+  internal 0x00538ED0 @0x00538ED9 (its body carries K1's pause fields at
+  K1's own offsets — bits +0x10078, timers +0x10048/4c/50). K2 wrappers
+  pass frame-slot ADDRESSES to preserve the esp+N LEA contract.
+- **Accessors:** SetPauseState facade Pick(0x004ae9a0, 0x0051C760);
+  client GetPauseState Pick(→0x0073F680, field 0x1cc identical),
+  GetAutoPaused Pick(→0x00740960, K1's [internal+0x384]&1 byte for byte),
+  GetCombatMode Pick(→0x00740860, field 0x320 identical); combat-mode bit
+  Pick(0x440, 0x458) from the DoTargetAction twin; effects list
+  Pick(0x124, 0x148) + effect Type Same(0x8) from the EffectList
+  serializers; HP Same(0xe0); weapon slots Same via the K2 slot mapper
+  0x006D0670; GetFeat/GetSpell/rules-spells (0x104) from the OnEnter
+  twins. Gates cleared: all combat Dispatch phases + special_watch + the
+  input-pipeline queue attribution + engine.inputReassert.
+- Deliberately unresolved (guarded degrades, listed for a later pass):
+  effect-icon trio (K2 routes the array through a passed-in list — no
+  creature-relative witness), faction id, stats feats list, stealth mode,
+  GetDamageLevel/GetLevel/GetBlind/Get{Feat,Spell}NameText accessors
+  (examine-view extras; CallIntThis guards them).
+
+**Batch 5 — Audio. IMPLEMENTED 2026-08-02 (same sitting).**
+`OnSetListenerPosition` + `OnCalculatePitchVarianceFrequency` live;
+`OnPlayFootstep` deferred (candidate documented in WHERE TO RESUME).
+
+- **The whole CExoSoundSource facade cluster paired by capstone** (no
+  Ghidra needed for the setters): ctor 0x0070AAB0, ctorWithResRef
+  0x0070AB90, dtor 0x0070AB60 (deleting on BOTH games), SetPriorityGroup
+  0x0070ACC0, Set3D 0x0070ACF0, Play 0x0070AD50, SetVolume 0x0070AD80,
+  SetPitchVariance 0x0070ADD0, SetLooping 0x0070AE30, SetPosition
+  0x0070AE90, GetLooping 0x0070AE60 ([internal+0x24] both games),
+  SetDistance 0x0070AEE0, SetResRef 0x0070AF20, Stop 0x0070AF80 (absent
+  from the function catalogue; between SetResRef and SetFixedVariance
+  0x0070AFA0). ExoSound global PickGlobal(0x007a39ec, 0x00A1B494) — NOTE
+  K1's holds the internal, K2's the facade object; all uses go through the
+  matching game's own functions.
+- **One-shots:** PlayOneShotSound facade 0x0070BA40 and Play3DOneShotSound
+  0x0070BA90 — IDENTICAL signatures to K1 including the z+z_offset fadd.
+  (0x0070B170 is NOT it — that's the stream/VO facade into 0x0070C0C0.)
+  This makes cue playback live and closes in-world defect 3.
+- **Priority groups:** table ptr Pick(0x4c, 0x50), stride/fields Same
+  (getter twin 0x00709010, volume-byte use in 0x007101F0).
+- **Pitch internals:** the K2 jitter twin is **0x00710550** (the only
+  rand() caller in the sound TU): base freq [internal+0x50], applied rate
+  [internal+0x5c], variance +0x7c; voice3d Same(0x3c), handle Same(0x4).
+  K2 moved to the newer Miles sample API — the IAT went
+  Pick(0x0073D4E8, 0x00986508 = _AIL_set_sample_playback_rate@8), same
+  (handle, rate) shape. Hook at the twin's entry, consume exits to its
+  bare RET — on K2 consuming alone IS the neutralise (callers read the
+  field, not EAX).
+- **Listener:** facade 0x0070B940 (single caller — the K2 UpdateSoundEngine
+  path), internal 0x007082D0 → _AIL_set_listener_3D_position. Hooked at
+  entry with the same (ecx, esp+4) contract as K1; the shared handler runs
+  unmodified.
+- **SetSoundMode signature split handled** at both call sites
+  (engine_subscreen + tutorial_popup): K1 internal takes (mode), K2's
+  facade 0x0070BC60 takes (mode, flag=0) ret 8 — per-game typedefs.
 
 **Batch 6 — Minigames and leftovers**, AFTER a triage pass deciding what KOTOR 2
 even has. `OnTurretBulletHit`, `OnPlayerFire`, `OnRulesInit`. Do not spend

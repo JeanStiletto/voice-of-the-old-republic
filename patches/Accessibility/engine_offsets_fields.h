@@ -242,8 +242,11 @@ const size_t    kEditboxStringLengthOffset = acc::off::Pick(0x15c, 0x164);
 // `name_editbox` is at a fixed offset within the panel struct (not just in
 // panel.controls[]), so the spec's findEditbox callback can index directly
 // rather than walking children for the unique vtable.
-const size_t    kNameChargenEditboxOffset  = acc::off::Todo(0x230);
-const size_t    kNameChargenEndButtonOffset = acc::off::Todo(0x6c);
+// K2 column from the CSWGuiNameChargen ctor 0x00918B10 by tag: END_BTN
+// @0x70, NAME_BOX_EDIT @0x240, MAIN_TITLE_LBL @0x3a8, SUB_TITLE_LBL @0x4f0,
+// BTN_BACK @0x638, BTN_RANDOM @0x808.
+const size_t    kNameChargenEditboxOffset  = acc::off::Pick(0x230, 0x240);
+const size_t    kNameChargenEndButtonOffset = acc::off::Pick(0x6c, 0x70);
 
 // CSWGuiNameChargen carries a `main_title_label` ("CHARAKTERAUSWAHL") and a
 // `subtitle_label` ("Name") at distinct fixed offsets. The first one is the
@@ -253,7 +256,7 @@ const size_t    kNameChargenEndButtonOffset = acc::off::Todo(0x6c);
 // main_title_label first — wrong for any user trying to know which step
 // they're on. The editbox spec's titleOverride reads subtitle_label
 // directly via this offset to substitute the correct title speech.
-const size_t    kNameChargenSubtitleLabelOffset = acc::off::Todo(0x4d0);
+const size_t    kNameChargenSubtitleLabelOffset = acc::off::Pick(0x4d0, 0x4f0);
 
 // CSWGuiSaveNamePanel (the "Enter name for saved game" modal popup that opens
 // on top of the SaveLoad screen when committing a save). Verified against
@@ -274,9 +277,11 @@ const size_t    kNameChargenSubtitleLabelOffset = acc::off::Todo(0x4d0);
 // unchanged. Unlike CSWGuiNameChargen, title_label is the screen-specific
 // title (no stale parent header), so the spec's titleOverride reads it
 // directly.
-const size_t    kSaveNameEditboxOffset        = acc::off::Todo(0x3f0);
-const size_t    kSaveNameOkButtonOffset       = acc::off::Todo(0x68);
-const size_t    kSaveNameTitleLabelOffset     = acc::off::Todo(0x550);
+// K2 column from the shared SaveNamePanel/SaveGameEditBox ctor 0x008586D0
+// by tag: BTN_OK @0x6c, BTN_CANCEL @0x23c, EDITBOX @0x40c, LBL_TITLE @0x574.
+const size_t    kSaveNameEditboxOffset        = acc::off::Pick(0x3f0, 0x40c);
+const size_t    kSaveNameOkButtonOffset       = acc::off::Pick(0x68, 0x6c);
+const size_t    kSaveNameTitleLabelOffset     = acc::off::Pick(0x550, 0x574);
 
 // CSWGuiClassSelection (chargen "Klassenauswahl" panel — also backs the
 // second-level "Standard- vs. Eigener Charakter" prompt). Verified against
@@ -526,16 +531,23 @@ const size_t    kFeatsCharGenChosenListSizeOffset      = acc::off::Todo(0x19e4);
 //   chart +0x0c  byte              selected_col   (0..2 in BuildButtons)
 //   chart +0x0d  byte              selected_row
 const size_t    kFeatsCharGenChartOffset               = acc::off::Todo(0x1a08);
-const size_t    kSkillFlowChartRowsDataOffset          = acc::off::Todo(0x0);
-const size_t    kSkillFlowChartRowsSizeOffset          = acc::off::Todo(0x4);
-const size_t    kSkillFlowChartSelectedColOffset       = acc::off::Todo(0xc);
-const size_t    kSkillFlowChartSelectedRowOffset       = acc::off::Todo(0xd);
+// K2 witnessed in CSWGuiSkillFlowChart::SetSelectedSkill's twin 0x0089C070
+// (rows data [chart+0], size [chart+4], selected col/row bytes +0xc/+0xd)
+// and ClearChart's twin 0x0089A6E0 (same rows fields) — all identical.
+const size_t    kSkillFlowChartRowsDataOffset          = acc::off::Same(0x0);
+const size_t    kSkillFlowChartRowsSizeOffset          = acc::off::Same(0x4);
+const size_t    kSkillFlowChartSelectedColOffset       = acc::off::Same(0xc);
+const size_t    kSkillFlowChartSelectedRowOffset       = acc::off::Same(0xd);
 
 // CSWGuiSkillFlow row (1148 bytes). Three CSWGuiFlowSkillStruct columns
 // at +0x5c, +0x184, +0x2ac (stride 0x128) plus 2 connector-line images
 // at +0x3d4 / +0x428 the renderer uses to draw progression arrows.
-const size_t    kSkillFlowFirstColumnOffset            = acc::off::Todo(0x5c);
-const size_t    kSkillFlowColumnStride                 = acc::off::Todo(0x128);
+// K2: the CSWGuiSkillFlow ctor 0x00899930 builds the 3-column vector at
+// row+0x60 with element size 0xb4 (the columns SHRANK on K2), and
+// SetSelectedSkill's twin walks cells as row + col*0xb4 + 0x108 for the
+// feat id — 0x108 = 0x60 (first column) + 0xa8 (id within the cell).
+const size_t    kSkillFlowFirstColumnOffset            = acc::off::Pick(0x5c, 0x60);
+const size_t    kSkillFlowColumnStride                 = acc::off::Pick(0x128, 0xb4);
 // MUST stay constexpr: sizes real arrays (`unsigned short featId[...]` in
 // menus_chargen_feats and menus_powers_levelup), so it has to be a compile-time
 // constant and cannot go through the acc::off markers. If KOTOR 2's skill-flow
@@ -549,9 +561,13 @@ constexpr int   kSkillFlowColumnsPerRow          = 3;
 //                            3 existing, 4 locked — same enum DetermineFeat
 //                            returns)
 //   +0x124  ulong  selection bits (bit 0 = currently selected)
-const size_t    kFlowSkillStructFeatIdOffset           = acc::off::Todo(0x11c);
-const size_t    kFlowSkillStructStatusOffset           = acc::off::Todo(0x120);
-const unsigned  kFlowSkillStructEmptyFeatId            = acc::off::Todo(0xffffffff);
+// K2 cell fields witnessed in SetSelectedSkill (id compare at cell+0xa8)
+// and the per-row SetSkillStatus twin 0x0089A160 (status byte store at
+// row + col*0xb4 + 0x10c = cell+0xac). Empty sentinel stays 0xffffffff
+// (CreateFeatChart's twin initialises cells with -1, as on KOTOR 1).
+const size_t    kFlowSkillStructFeatIdOffset           = acc::off::Pick(0x11c, 0xa8);
+const size_t    kFlowSkillStructStatusOffset           = acc::off::Pick(0x120, 0xac);
+const unsigned  kFlowSkillStructEmptyFeatId            = acc::off::Same(0xffffffff);
 
 // CSWRules / CSWSRules — the global rules object holds the feats array.
 // Global slot at 0x007a3a28 holds a CSWSRules* (which is a thin wrapper
@@ -804,9 +820,17 @@ const size_t    kUpgradeActiveSlotOff = acc::off::Todo(0x2fb0);  // panel.field7
 // combat_queue.cpp uses a best-effort guess matching the order the engine's
 // AddX adders are declared in (CSWSCombatRound::Add* @0x4d3660+).
 
-const size_t kCreatureCombatRoundOffset           = acc::off::Todo(0x9c8);
-const size_t kObjectHitPointsOffset               = acc::off::Todo(0xe0);
-const size_t kObjectEffectsOffset                 = acc::off::Todo(0x124);
+// K2 0x10dc witnessed by caller census: 35 call sites load
+// [creature+0x10dc] into ECX immediately before calling a K2 combat-round
+// method (AddAction 0x00590270 et al). NOT the derived guess (+0x724 would
+// have given 0x10ec — piecewise strikes again).
+const size_t kCreatureCombatRoundOffset           = acc::off::Pick(0x9c8, 0x10dc);
+// Same on KOTOR 2 — its CSWSObject::GetCurrentHitPoints twin 0x005413C0
+// reads the word at [obj+0xe0] (plus a variant adding [obj+0xe8]).
+const size_t kObjectHitPointsOffset               = acc::off::Same(0xe0);
+// K2: the object's EffectList saver 0x00540860 iterates data [obj+0x148]
+// with count [obj+0x14c] — the CExoArrayList moved 0x124→0x148.
+const size_t kObjectEffectsOffset                 = acc::off::Pick(0x124, 0x148);
 
 // AI action queue — CSWSObject.action_nodes @+0xfc, a
 // CExoLinkedList<CSWSObjectActionNode>. The list holds the player's
@@ -830,13 +854,20 @@ const size_t kObjectEffectsOffset                 = acc::off::Todo(0x124);
 const size_t kObjectActionNodesOffset             = acc::off::Pick(0xfc, 0x100);
 const size_t kExoLinkedListInternalCountOffset    = acc::off::Same(0x8);
 
-const size_t kCombatRoundAttacksListOffset        = acc::off::Todo(0x4);
-const size_t kCombatRoundTimerOffset              = acc::off::Todo(0x944);
-const size_t kCombatRoundLengthOffset             = acc::off::Todo(0x94c);
-const size_t kCombatRoundCurrentAttackOffset      = acc::off::Todo(0x96c);
-const size_t kCombatRoundActionsOffset            = acc::off::Todo(0x9b0);
-const size_t kCombatRoundEngagedOffset            = acc::off::Todo(0x9b8);
-const size_t kCombatRoundCurrentActionOffset      = acc::off::Todo(0x9d0);
+// K2 column witnessed in the K2 CombatRound GFF saver 0x00592310 (Timer
+// 0xa94, RoundLength 0xa9c, CurrentAttack byte 0xabc, Engaged 0xb08 — a
+// uniform +0x150 on this block), the loader 0x00592840 (SchedActionList
+// appends through the list pointer at [round+0xb00]) and SetCurrentAction's
+// twin 0x005908A0 (byte store at +0xb24; K2 inserted a handle at +0xb20).
+// The attacks array stays at +0x4 (same head layout as K1; AttackID save
+// reads a parallel short array).
+const size_t kCombatRoundAttacksListOffset        = acc::off::Same(0x4);
+const size_t kCombatRoundTimerOffset              = acc::off::Pick(0x944, 0xa94);
+const size_t kCombatRoundLengthOffset             = acc::off::Pick(0x94c, 0xa9c);
+const size_t kCombatRoundCurrentAttackOffset      = acc::off::Pick(0x96c, 0xabc);
+const size_t kCombatRoundActionsOffset            = acc::off::Pick(0x9b0, 0xb00);
+const size_t kCombatRoundEngagedOffset            = acc::off::Pick(0x9b8, 0xb08);
+const size_t kCombatRoundCurrentActionOffset      = acc::off::Pick(0x9d0, 0xb24);
 
 // CExoLinkedList layout — verified against SARIF DATATYPE export
 // 2026-05-28. THREE distinct structs need correct offsets:
@@ -859,19 +890,27 @@ const size_t kCombatRoundCurrentActionOffset      = acc::off::Todo(0x9d0);
 //
 // Correct walk: combat_round.actions → +0 = internal* → +0 = head
 // node* → walk via Node.next at +4 until null.
-const size_t kListInternalOffset       = acc::off::Todo(0x0);  // CExoLinkedList<T>     +0 -> internal*
-const size_t kListInternalHeadOffset   = acc::off::Todo(0x0);  // CExoLinkedListInternal+0 -> head node*
-const size_t kListInternalCountOffset  = acc::off::Todo(0x8);  // CExoLinkedListInternal+8 -> count (engine authoritative)
-const size_t kLinkedListNodeNextOff    = acc::off::Todo(0x4);  // CExoLinkedListNode    +4 -> next
-const size_t kLinkedListNodeDataOff    = acc::off::Todo(0x8);  // CExoLinkedListNode    +8 -> data
+// All Same on KOTOR 2 — witnessed twice: Batch 3c's AddAction enqueue body
+// (0x00739E60), and this batch's K2 list helpers (GetCount 0x005210F0 reads
+// [list]→[internal+8], GetHead 0x007A1720 reads [list]→[internal+0]).
+const size_t kListInternalOffset       = acc::off::Same(0x0);  // CExoLinkedList<T>     +0 -> internal*
+const size_t kListInternalHeadOffset   = acc::off::Same(0x0);  // CExoLinkedListInternal+0 -> head node*
+const size_t kListInternalCountOffset  = acc::off::Same(0x8);  // CExoLinkedListInternal+8 -> count (engine authoritative)
+const size_t kLinkedListNodeNextOff    = acc::off::Same(0x4);  // CExoLinkedListNode    +4 -> next
+const size_t kLinkedListNodeDataOff    = acc::off::Same(0x8);  // CExoLinkedListNode    +8 -> data
 
 
-const size_t kCombatRoundActionTypeOffset       = acc::off::Todo(0x10);
-const size_t kCombatRoundActionTargetOffset     = acc::off::Todo(0x14);
-const size_t kCombatRoundActionRetargetOffset   = acc::off::Todo(0x18);
-const size_t kCombatRoundActionMoveToPosOffset  = acc::off::Todo(0x38);
-const size_t kCombatRoundActionResultOffset     = acc::off::Todo(0x7c);
-const size_t kCombatRoundActionDamageOffset     = acc::off::Todo(0x80);
+// The WHOLE CSWSCombatRoundAction struct is unchanged on KOTOR 2: its K2
+// ClearData twin 0x0058C810 initialises field-for-field what K1's 0x004D1D50
+// does — same 0x7f000000 handle sentinels at +0x14/+0x20/+0x44/+0x64, same
+// retargettable=1 at +0x18, same result=4 at +0x7c, same +0x38..0x40 skip —
+// and the K2 loader allocates the same 0x88 bytes per action.
+const size_t kCombatRoundActionTypeOffset       = acc::off::Same(0x10);
+const size_t kCombatRoundActionTargetOffset     = acc::off::Same(0x14);
+const size_t kCombatRoundActionRetargetOffset   = acc::off::Same(0x18);
+const size_t kCombatRoundActionMoveToPosOffset  = acc::off::Same(0x38);
+const size_t kCombatRoundActionResultOffset     = acc::off::Same(0x7c);
+const size_t kCombatRoundActionDamageOffset     = acc::off::Same(0x80);
 
 // CSWSCreatureStats inline attribute-total bytes (post-mod totals). Read
 // these directly to avoid relying on the GetXStat dispatch table (some of
@@ -895,7 +934,10 @@ const size_t kStatsFactionIdOffset                = acc::off::Todo(0x78);
 // (140 bytes) per SARIF layout dump. The array exposes GetSpell(id) ->
 // CSWSpell*. Used by combat::queue to decode action_type=9 (Cast Force
 // Power) queue entries to their specific spell name.
-const size_t    kRulesSpellsOffset                = acc::off::Todo(0x8c);
+// K2 0x104 — witnessed in the K2 OnEnterPower twin 0x008A49D0, which loads
+// the rules global [0x00A1B4D0] and calls GetSpell on the CSWSpellArray*
+// at [rules+0x104].
+const size_t    kRulesSpellsOffset                = acc::off::Pick(0x8c, 0x104);
 
 // CSWSpell.spell_description — int (TLK strref) at +0x0c per SARIF
 // DATATYPE dump. CSWSpell has no GetSpellDescriptionText accessor, so
@@ -908,9 +950,10 @@ const size_t    kSpellDescriptionStrRefOffset     = acc::off::Todo(0x0c);
 //   action_type=9  → spell_id at +0x24    (CSWSpellArray::GetSpell)
 //   action_type=10 → item_handle at +0x64 (CServerExoApp::GetItemByGameObjectID)
 //   action_type=11 → feat_id at +0x5c     (CSWRules::GetFeat)
-const size_t    kCombatRoundActionSpellIdOffset   = acc::off::Todo(0x24);
-const size_t    kCombatRoundActionItemHandleOff   = acc::off::Todo(0x64);
-const size_t    kCombatRoundActionFeatIdOffset    = acc::off::Todo(0x5c);
+// Same on KOTOR 2 — covered by the ClearData struct witness above.
+const size_t    kCombatRoundActionSpellIdOffset   = acc::off::Same(0x24);
+const size_t    kCombatRoundActionItemHandleOff   = acc::off::Same(0x64);
+const size_t    kCombatRoundActionFeatIdOffset    = acc::off::Same(0x5c);
 
 // CGameEffect layout — what's stored in CSWSObject.effects.
 // `effects` is CExoArrayList<CGameEffect*> at +0x124 (already known).
@@ -923,7 +966,9 @@ const size_t    kCombatRoundActionFeatIdOffset    = acc::off::Todo(0x5c);
 //   +0xc float     duration
 //   ...
 // CSWSObject.effects → walk to get CGameEffect*, then read +0x8 for type.
-const size_t    kGameEffectTypeOffset             = acc::off::Todo(0x8);
+// K2: the effect loader twin 0x005E5510 stores the GFF "Type" ushort at
+// [effect+8] (the 64-bit "Id" occupies +0/+4, as on KOTOR 1).
+const size_t    kGameEffectTypeOffset             = acc::off::Same(0x8);
 
 // CSWSCreature.effect_icons — CExoArrayList<CEffectIconObject*> with data
 // ptr at +0x8f4 and size at +0x8f8. This is the sighted buff/debuff icon
@@ -932,6 +977,13 @@ const size_t    kGameEffectTypeOffset             = acc::off::Todo(0x8);
 // and OnRemoveEffectIcon walks the same raw offsets — both decompile-
 // verified 2026-07-17. Each CEffectIconObject (0x20 bytes): +0x0 ushort
 // effecticon.2da row id, +0x2 CResRef icon resref, +0x18 ushort priority.
+// DELIBERATELY still Todo on KOTOR 2 (Batch 4): the K2 icon-apply chain
+// routes the array through a passed-in list rather than fixed creature
+// offsets (K2 CEffectIconObject ctor 0x006ECC90, apply walker 0x006E7610
+// — no creature-relative displacement in either), so the K1-style offsets
+// have no confirmed K2 twin yet. Consumers are SEH-guarded and degrade:
+// the examine view simply lists no buff icons on KOTOR 2 until this is
+// resolved from a live probe or a deeper caller decompile.
 const size_t    kCreatureEffectIconsDataOffset    = acc::off::Todo(0x8f4);
 const size_t    kCreatureEffectIconsSizeOffset    = acc::off::Todo(0x8f8);
 const size_t    kEffectIconObjectIdOffset         = acc::off::Todo(0x0);
@@ -952,11 +1004,16 @@ const size_t    kCreatureInventoryOffset          = acc::off::Pick(0xa2c, 0x1150
 // CSWInventory::GetItemInSlot which returns a small CSWItem* wrapper
 // (size 0x10) — the wrong shape for the localized_name @+0x280 chain;
 // reading the handle directly bypasses that confusion.
-const size_t    kInventoryRightWeaponHandleOffset = acc::off::Todo(0x14);  // main hand
-const size_t    kInventoryLeftWeaponHandleOffset  = acc::off::Todo(0x18);  // off hand
-const size_t    kInventoryHeadHandleOffset        = acc::off::Todo(0x4);
-const size_t    kInventoryTorsoHandleOffset       = acc::off::Todo(0x8);
-const size_t    kInventoryHandsHandleOffset       = acc::off::Todo(0x10);
+// Same on KOTOR 2: its GetItemInSlot slot-mapper twin 0x006D0670 returns
+// inventory+0x14 for slot bit 0x10 (right weapon) and +0x18 for 0x20
+// (left weapon) — the identical bit→field table.
+const size_t    kInventoryRightWeaponHandleOffset = acc::off::Same(0x14);  // main hand
+const size_t    kInventoryLeftWeaponHandleOffset  = acc::off::Same(0x18);  // off hand
+// Same on KOTOR 2 — the K2 slot mapper 0x006D0670 maps slot bits to the
+// identical field table (bit0→+4, bit1→+8, bit3→+0x10, ...).
+const size_t    kInventoryHeadHandleOffset        = acc::off::Same(0x4);
+const size_t    kInventoryTorsoHandleOffset       = acc::off::Same(0x8);
+const size_t    kInventoryHandsHandleOffset       = acc::off::Same(0x10);
 const size_t    kInventoryLeftArmHandleOffset     = acc::off::Todo(0x20);
 const size_t    kInventoryRightArmHandleOffset    = acc::off::Todo(0x24);
 const size_t    kInventoryImplantHandleOffset     = acc::off::Todo(0x28);
@@ -1012,12 +1069,21 @@ const size_t    kEquipPanelBeltIdOffset            = acc::off::Pick(0x429c, 0x50
 //                       "Schaden".
 // Single-weapon mode: only the RIGHT-hand pair carries values; LEFT pair
 // is blanked to "". Dual-wield: both pairs carry per-hand values.
-const size_t    kEquipPanelDefenseLabelOffset            = acc::off::Todo(0x2098);
-const size_t    kEquipPanelHpLabelOffset                 = acc::off::Todo(0x21d8);
-const size_t    kEquipPanelLeftWeaponDamageLabelOffset   = acc::off::Todo(0x1b98);  // Lane: left_weapon_attack_label
-const size_t    kEquipPanelLeftWeaponTohitLabelOffset    = acc::off::Todo(0x1cd8);
-const size_t    kEquipPanelRightWeaponDamageLabelOffset  = acc::off::Todo(0x1e18);  // Lane: right_weapon_attack_label
-const size_t    kEquipPanelRightWeaponTohitLabelOffset   = acc::off::Todo(0x1f58);
+// K2 column witnessed in the K2 stat-writer 0x008AD930 (the UpdateInventory
+// twin): "%d-%d" damage goes into LBL_ATKL/ATKR (0x22ac/0x253c), the +N
+// to-hit into LBL_TOHITL/TOHITR (0x23f4/0x2684), and the armor-class value
+// into LBL_DEF (SetText on its text sub-object at 0x4c34+0xf0). KOTOR 2's
+// equip panel has NO vitality label at all (none in ctor 0x008A92D0, no HP
+// write in the stat-writer) — the HP row is Kotor1Only and the spec walk
+// skips it there. K2 also carries a second weapon-set label quartet
+// (LBL_ATKL2 0x320c / TOHITL2 0x3354 / ATKR2 0x349c / TOHITR2 0x35e4) the
+// engine writes for the alternate weapon config — we anchor on set 1.
+const size_t    kEquipPanelDefenseLabelOffset            = acc::off::Pick(0x2098, 0x4c34);
+const size_t    kEquipPanelHpLabelOffset                 = acc::off::Kotor1Only(0x21d8);
+const size_t    kEquipPanelLeftWeaponDamageLabelOffset   = acc::off::Pick(0x1b98, 0x22ac);  // Lane: left_weapon_attack_label
+const size_t    kEquipPanelLeftWeaponTohitLabelOffset    = acc::off::Pick(0x1cd8, 0x23f4);
+const size_t    kEquipPanelRightWeaponDamageLabelOffset  = acc::off::Pick(0x1e18, 0x253c);  // Lane: right_weapon_attack_label
+const size_t    kEquipPanelRightWeaponTohitLabelOffset   = acc::off::Pick(0x1f58, 0x2684);
 
 // Bottom-row party-cycle buttons inline in CSWGuiInGameEquip — mirrors the
 // 4-button strip on InGameCharacter. All four (change_party_1/2 portraits
@@ -1107,18 +1173,24 @@ const size_t    kInGameMapDownButtonOffset            = acc::off::Pick(0xC74, 0x
 // Member offsets verified from Lane's RE database (docs/llm-docs/re/
 // k1_win_gog_swkotor.exe.sarif, struct CSWGuiInGameAbilities). Decimal
 // offsets from the SARIF in parentheses.
-const size_t    kAbilitiesSkillRankLabelOffset   = acc::off::Todo(0x2190);  // (8592)  "Fähigkeitenrang"
-const size_t    kAbilitiesRankValueLabelOffset   = acc::off::Todo(0x22D0);  // (8912)  e.g. "8"
-const size_t    kAbilitiesBonusLabelOffset       = acc::off::Todo(0x2410);  // (9232)  "Bonus"
-const size_t    kAbilitiesBonusValueLabelOffset  = acc::off::Todo(0x2550);  // (9552)  e.g. "+3"
-const size_t    kAbilitiesTotalLabelOffset       = acc::off::Todo(0x2690);  // (9872)  "Gesamtrang"
-const size_t    kAbilitiesTotalValueLabelOffset  = acc::off::Todo(0x27D0);  // (10192) e.g. "11"
-const size_t    kAbilitiesNameLabelOffset        = acc::off::Todo(0x2910);  // (10512) selected entry name
-const size_t    kAbilitiesFeatsButtonOffset      = acc::off::Todo(0x2B90);  // (11152) BTN_FEATS  (Talente)
-const size_t    kAbilitiesPowersButtonOffset     = acc::off::Todo(0x2D54);  // (11604) BTN_POWERS (Kräfte)
-const size_t    kAbilitiesSkillsButtonOffset     = acc::off::Todo(0x2F18);  // (12056) BTN_SKILLS (Fähigkeiten)
-const size_t    kAbilitiesListBoxOffset          = acc::off::Todo(0x30DC);  // (12508) LB_ABILITY (main list)
-const size_t    kAbilitiesDescListBoxOffset      = acc::off::Todo(0x33BC);  // (13244) LB_DESC (description)
+// KOTOR 2 column mined from the K2 panel ctor 0x008A25C0 by .gui tag (label
+// stride 0x148, button stride 0x1d0 both check out on consecutive members).
+// K2 inserts LBL_BAR1..6 / LBL_FILTER / LBL_ABILITIES / LB_DESC_FEATS before
+// the listboxes, which is why LB_ABILITY jumps by ~0x1000. K2 also has a
+// SECOND description listbox, LB_DESC_FEATS @0x3c84, which the engine's own
+// description switcher (0x008A53D0) selects when the Feats tab is active.
+const size_t    kAbilitiesSkillRankLabelOffset   = acc::off::Pick(0x2190, 0x214c);  // LBL_SKILLRANK
+const size_t    kAbilitiesRankValueLabelOffset   = acc::off::Pick(0x22D0, 0x2294);  // LBL_RANKVAL
+const size_t    kAbilitiesBonusLabelOffset       = acc::off::Pick(0x2410, 0x23dc);  // LBL_BONUS
+const size_t    kAbilitiesBonusValueLabelOffset  = acc::off::Pick(0x2550, 0x2524);  // LBL_BONUSVAL
+const size_t    kAbilitiesTotalLabelOffset       = acc::off::Pick(0x2690, 0x266c);  // LBL_TOTAL
+const size_t    kAbilitiesTotalValueLabelOffset  = acc::off::Pick(0x27D0, 0x27b4);  // LBL_TOTALVAL
+const size_t    kAbilitiesNameLabelOffset        = acc::off::Pick(0x2910, 0x28fc);  // LBL_NAME
+const size_t    kAbilitiesFeatsButtonOffset      = acc::off::Pick(0x2B90, 0x2b8c);  // BTN_FEATS  (Talente)
+const size_t    kAbilitiesPowersButtonOffset     = acc::off::Pick(0x2D54, 0x2d5c);  // BTN_POWERS (Kräfte)
+const size_t    kAbilitiesSkillsButtonOffset     = acc::off::Pick(0x2F18, 0x2f2c);  // BTN_SKILLS (Fähigkeiten)
+const size_t    kAbilitiesListBoxOffset          = acc::off::Pick(0x30DC, 0x40bc);  // LB_ABILITY (main list)
+const size_t    kAbilitiesDescListBoxOffset      = acc::off::Pick(0x33BC, 0x43ac);  // LB_DESC (description)
 
 // The two CSWGuiSkillFlowChart members on the panel (field30/field31). Their
 // internals are the SAME CSWGuiSkillFlowChart layout the chargen/level-up
@@ -1127,12 +1199,19 @@ const size_t    kAbilitiesDescListBoxOffset      = acc::off::Todo(0x33BC);  // (
 // re-declaring panel-local aliases for them. We read row vs row-count to clamp
 // the engine's chart nav, which otherwise WRAPS top<->bottom (unlike the skills
 // listbox, which clamps).
-const size_t    kAbilitiesPowersChartOffset       = acc::off::Todo(0x3f78);  // field30 (Powers)
-const size_t    kAbilitiesFeatsChartOffset        = acc::off::Todo(0x3f88);  // field31 (Feats)
+// K2 values witnessed twice each: the panel ctor constructs the two chart
+// members at +0x4874/+0x4884 (same 0x10 spacing as KOTOR 1), and the panel's
+// CreatePowerChart/CreateFeatChart wrappers (0x008A4830 / 0x008A47C0) run
+// `add ecx, 0x4874` / `add ecx, 0x4884` before calling the chart builders —
+// the powers wrapper passes the same trailing 0 K1's CreatePowerChart takes.
+const size_t    kAbilitiesPowersChartOffset       = acc::off::Pick(0x3f78, 0x4874);  // field30 (Powers)
+const size_t    kAbilitiesFeatsChartOffset        = acc::off::Pick(0x3f88, 0x4884);  // field31 (Feats)
 
 // CGuiInGame.field139_0xbc0 — the active abilities tab: 0 = Skills,
 // 1 = Powers, 2 = Feats. Read to route per-tab input + announce the tab.
-const size_t    kGuiInGameAbilitiesTabOffset      = acc::off::Todo(0xbc0);
+// K2: all three K2 tab-button handlers (0x008A5790/57D0/5810) store their
+// tab value (2/1/0) at [GetInGameGui()+0xfc0] — a triple witness.
+const size_t    kGuiInGameAbilitiesTabOffset      = acc::off::Pick(0xbc0, 0xfc0);
 
 // CSWSCreatureStats.feats @+0x0 — CExoArrayList<ushort>. Count lives
 // at +0x4 (size field of the list). Static feat list (granted at level-
@@ -1155,10 +1234,16 @@ const size_t    kExaminePanelHandleOffset         = acc::off::Todo(0x984);
 //   dialog_lb    @+0x344   (dialog history)
 //   show_button  @+0x76c   (toggles between feedback / dialog view)
 //   exit_button  @+0x930
-const size_t kInGameMessagesMessagesListBoxOffset = acc::off::Todo(0x64);
-const size_t kInGameMessagesDialogListBoxOffset   = acc::off::Todo(0x344);
-const size_t kInGameMessagesShowButtonOffset      = acc::off::Todo(0x76c);
-const size_t kInGameMessagesExitButtonOffset      = acc::off::Todo(0x930);
+// KOTOR 2 rebuilt this panel (ctor 0x00757C40): separate LB_MESSAGES /
+// LB_DIALOG / LB_COMBAT / LB_EFFECTS_GOOD / LB_EFFECTS_BAD listboxes with a
+// four-way view-button row (BTN_DIALOG 0x1c7c / BTN_FEEDBACK 0x1e4c /
+// BTN_COMBAT 0x201c / BTN_EFFECTS 0x21ec) replacing K1's single show
+// toggle — hence Kotor1Only for the toggle; K2's view buttons ride the
+// generic button path.
+const size_t kInGameMessagesMessagesListBoxOffset = acc::off::Pick(0x64, 0x68);     // LB_MESSAGES
+const size_t kInGameMessagesDialogListBoxOffset   = acc::off::Pick(0x344, 0x358);   // LB_DIALOG
+const size_t kInGameMessagesShowButtonOffset      = acc::off::Kotor1Only(0x76c);
+const size_t kInGameMessagesExitButtonOffset      = acc::off::Pick(0x930, 0x12fc);  // BTN_EXIT
 
 // CSWGuiDialog (and Cinematic / ComputerCamera variants which share base
 // layout):
@@ -1432,9 +1517,22 @@ const size_t    kBaseItemItemTypeOffset          = acc::off::Todo(0xac);
 // opened does not exist there. KOTOR 2's journal offers BTN_MESSAGES instead.
 const size_t    kJournalItemsListBoxOffset             = acc::off::Pick(0x5c4, 0x5e8);
 const size_t    kJournalQuestItemsButtonOffset         = acc::off::Kotor1Only(0x8a4);
-const size_t    kJournalSwapTextButtonOffset           = acc::off::Todo(0xa68);
-const size_t    kJournalSortButtonOffset               = acc::off::Todo(0xc2c);
-const size_t    kJournalExitButtonOffset               = acc::off::Todo(0xdf0);
+// K2 (ctor 0x007FAE60 by tag): BTN_SWAPTEXT @0x8d8 — engine-witnessed a
+// second time by the K2 journal HandleInputEvent (case 0x27 swaps mode and
+// restamps the caption strref at panel+0x8d8). K1's single BTN_SORT has no
+// K2 counterpart: KOTOR 2 replaced it with three direct sort-mode buttons,
+// declared below; journal::IsSortButton matches any of them there.
+const size_t    kJournalSwapTextButtonOffset           = acc::off::Pick(0xa68, 0x8d8);
+const size_t    kJournalSortButtonOffset               = acc::off::Kotor1Only(0xc2c);
+const size_t    kJournalExitButtonOffset               = acc::off::Pick(0xdf0, 0xaa8);
+// KOTOR 2 only — the three sort-mode buttons that replaced K1's BTN_SORT
+// (their handlers, cases 0x2f/0x30 in the K2 journal HandleInputEvent,
+// repopulate the list synchronously): BTN_FILTER_TIME / _NAME / _PLANET.
+// K1 column is a dead value (the buttons do not exist there); consumers
+// gate on IsKotor2 before touching these.
+const size_t    kJournalFilterTimeButtonOffset         = acc::off::Pick(0, 0xc78);
+const size_t    kJournalFilterNameButtonOffset         = acc::off::Pick(0, 0xe48);
+const size_t    kJournalFilterPlanetButtonOffset       = acc::off::Pick(0, 0x1018);
 
 // CSWGuiInGameInventory — the "Inventar" sub-screen. Same embedded-button
 // shape as the journal above: every button is constructed in place at
@@ -1474,7 +1572,16 @@ const size_t    kJournalExitButtonOffset               = acc::off::Todo(0xdf0);
 //    pointers spoke different item names after a filter change) so nothing
 //    dangles, but the chain keeps the OLD row count and row→item mapping.
 //    Force the repopulate, then invalidate.
-const size_t    kInventoryItemListBoxOffset            = acc::off::Todo(0x564);
-const size_t    kInventoryExitButtonOffset             = acc::off::Todo(0x1164);
-const size_t    kInventoryUseItemButtonOffset          = acc::off::Todo(0x1328);
-const size_t    kInventoryFilterButtonOffset           = acc::off::Todo(0x14ec);
+// K2 (ctor 0x008A6170 by tag): LB_ITEMS @0x588, BTN_EXIT @0xb68,
+// BTN_USEITEM @0xd38. K1's single filter-CYCLE button has no K2
+// counterpart: KOTOR 2 lays out SEVEN direct filter buttons instead
+// (BTN_ALL @0x1800 .. BTN_QUESTS @0x22e0, stride 0x1d0), matched as a
+// range by inventory::IsFilterButton on that game.
+const size_t    kInventoryItemListBoxOffset            = acc::off::Pick(0x564, 0x588);
+const size_t    kInventoryExitButtonOffset             = acc::off::Pick(0x1164, 0xb68);
+const size_t    kInventoryUseItemButtonOffset          = acc::off::Pick(0x1328, 0xd38);
+const size_t    kInventoryFilterButtonOffset           = acc::off::Kotor1Only(0x14ec);
+// KOTOR 2 only — bounds of the direct filter-button run (see above).
+const size_t    kInventoryFilterFirstButtonOffset      = acc::off::Pick(0, 0x1800);  // BTN_ALL
+const size_t    kInventoryFilterLastButtonOffset       = acc::off::Pick(0, 0x22e0);  // BTN_QUESTS
+const size_t    kInventoryFilterButtonStride           = acc::off::Pick(1, 0x1d0);

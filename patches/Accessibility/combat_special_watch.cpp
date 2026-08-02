@@ -59,7 +59,9 @@ constexpr DWORD kRepeatPeriodMs = 6000;
 //   target        @+0x14  ulong
 //   attack_feat?  @+0x84  ulong  (feat ID for Power Attack / Flurry /
 //                                 Critical Strike; 0 for raw attacks)
-const size_t kActionAttackFeatOffset = acc::off::Todo(0x84);
+// Same on KOTOR 2 — covered by the ClearData struct witness (the K2 twin
+// 0x0058C810 zeroes the identical field set through +0x84).
+const size_t kActionAttackFeatOffset = acc::off::Same(0x84);
 
 // Read CSWSCreature.combat_round @+0x9c8. SEH-guarded.
 void* ReadCombatRound(void* serverCreature) {

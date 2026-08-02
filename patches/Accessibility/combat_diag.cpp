@@ -23,16 +23,24 @@ namespace {
 // CSWCCreature combat-mode bit (set by CSWCCreature::SetCombatMode @0x00610a10).
 // Bit 0 of field200_0x440 is the chain/overwrite knob DoPersonalAction +
 // DoTargetAction branch on.
-const size_t kCSWCCreatureCombatModeOffset = acc::off::Todo(0x440);
+// K2 0x458 — witnessed twice in the K2 DoTargetAction twin 0x007445D0,
+// which tests `[clientCreature+0x458] & 1` exactly where K1 tests 0x440.
+const size_t kCSWCCreatureCombatModeOffset = acc::off::Pick(0x440, 0x458);
 
 // Engine accessors used by DoPersonalAction's chain branch.
-const uintptr_t kAddrCClientExoAppGetAutoPaused = acc::addr::R(0x005edef0);
-const uintptr_t kAddrCClientExoAppGetPauseState = acc::addr::R(0x005ed640);
+// GetAutoPaused: K2 facade 0x00740960 is K1's inlined body byte for byte
+// ([internal+0x384] & 1) and shows up in the K2 DoPersonalAction call
+// census — a double witness.
+// GetPauseState: K2 facade 0x0073F680 → internal 0x00784420, which reads
+// the SAME [internal+0x1cc] & bit as K1's 0x005EE8F0.
+const uintptr_t kAddrCClientExoAppGetAutoPaused = acc::addr::Pick(0x005edef0, 0x00740960);
+const uintptr_t kAddrCClientExoAppGetPauseState = acc::addr::Pick(0x005ed640, 0x0073F680);
 
 // main_interface.field1_0x64 — the engine target handle SetTarget stamps.
 // Resolved through engine_panels' ResolveMainInterface so we can compare
-// per-press.
-const size_t kMainInterfaceTargetHandleOff = acc::off::Todo(0x64);
+// per-press. K2 0x68 — witnessed by Batch 3c's CSWGuiMainInterface::
+// SetTarget twin 0x0074CFB0, which stamps [this+0x68].
+const size_t kMainInterfaceTargetHandleOff = acc::off::Pick(0x64, 0x68);
 
 typedef unsigned long (__thiscall* PFN_GetAutoPaused)(void* this_);
 typedef unsigned long (__thiscall* PFN_GetPauseState)(void* this_, uint8_t which);
@@ -104,8 +112,9 @@ int ReadQueueSize(void* serverCreature) {
 int ReadOuterQueueSize(void* serverCreature) {
     if (!serverCreature) return -1;
     __try {
-        constexpr size_t kObjectActionNodesOffset = 0xfc;
-        // The inline CExoLinkedList<T> at +0xfc starts with the
+        // The inline CExoLinkedList<T> at kObjectActionNodesOffset (the
+        // resolved per-game constant — a local raw 0xfc literal here
+        // silently read the wrong field on KOTOR 2) starts with the
         // internal pointer (offset 0 = kListInternalOffset).
         void* internalPtr = *reinterpret_cast<void**>(
             reinterpret_cast<unsigned char*>(serverCreature) +
@@ -284,7 +293,9 @@ const char* RoleTag(void* combatRound) {
 
 
 extern "C" void __cdecl OnCombatRoundRemoveAllActions(void* this_combatRound) {
-    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
+    // Gate cleared for KOTOR 2 in Batch 4 — the whole read chain
+    // (kCombatRoundActionsOffset, the list internals, RoleTag's
+    // kCreatureCombatRoundOffset) is Pick'd there.
     // Skip no-op clears. The engine's very next instruction after our cut is
     // TEST EAX,EAX / JZ — a clear against a round with no queued actions
     // removes nothing and returns immediately. This hook exists to answer
@@ -318,7 +329,7 @@ extern "C" void __cdecl OnCombatRoundRemoveAllActions(void* this_combatRound) {
 
 extern "C" void __cdecl OnCombatRoundSetCurrentAction(void* this_combatRound,
                                                      void* esp_byte_addr) {
-    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
+    // Gate cleared for KOTOR 2 in Batch 4 (same chain as RemoveAllActions).
     uint8_t byte_param = 0xff;
     __try {
         if (esp_byte_addr) {
@@ -332,9 +343,43 @@ extern "C" void __cdecl OnCombatRoundSetCurrentAction(void* this_combatRound,
 }
 
 extern "C" void __cdecl OnCombatRoundRemoveLastAction(void* this_combatRound) {
-    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
+    // Gate cleared for KOTOR 2 in Batch 4 (same chain as RemoveAllActions).
     acclog::Write("Combat.Diag",
         "REMLAST [%s] round=%p",
         acc::combat_diag::RoleTag(this_combatRound),
         this_combatRound);
+}
+
+// ============================================================================
+// KOTOR 2 wrappers — Batch 4. The K2 combat-round methods are unoptimised
+// EBP-frame functions; every cut fires right after the prologue with `this`
+// still live in ECX and the params at [EBP+8]. The shared KOTOR 1 handlers
+// take stack-SLOT ADDRESSES (the esp+N LEA contract), so the wrappers hand
+// the frame slots' addresses through unchanged.
+// ============================================================================
+
+// CSWSCombatRound::RemoveAllActions @0x00590430 (tail-remove loop until
+// empty + per-action free — K1 0x004D3770's contract), hooked at 0x00590436.
+extern "C" __declspec(dllexport)
+void __cdecl OnCombatRoundRemoveAllActionsK2(void* thisRound) {
+    if (!acc::game::IsKotor2()) return;
+    OnCombatRoundRemoveAllActions(thisRound);
+}
+
+// CSWSCombatRound::SetCurrentAction @0x005908A0 (one-line byte store at
+// [round+0xb24] — K1 0x004D2B40's exact twin), hooked at 0x005908A4.
+//   ECX = this, [EBP+8] = action byte.
+extern "C" __declspec(dllexport)
+void __cdecl OnCombatRoundSetCurrentActionK2(void* thisRound, void* ebp) {
+    if (!acc::game::IsKotor2()) return;
+    if (!ebp) return;
+    OnCombatRoundSetCurrentAction(thisRound, static_cast<char*>(ebp) + 8);
+}
+
+// CSWSCombatRound::RemoveLastAction @0x005904C0 (single tail remove + free,
+// returns 1 — K1 0x004D37B0's contract), hooked at 0x005904C6.
+extern "C" __declspec(dllexport)
+void __cdecl OnCombatRoundRemoveLastActionK2(void* thisRound) {
+    if (!acc::game::IsKotor2()) return;
+    OnCombatRoundRemoveLastAction(thisRound);
 }

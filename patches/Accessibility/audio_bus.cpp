@@ -102,12 +102,19 @@ uint8_t EffectiveVolumeByte(uint8_t baseVolume) {
 //   CExoSoundInternal  +0x4c -> CPriorityGroup* (heap array)
 //   CPriorityGroup stride 0x18: +0x06 priority(byte) +0x07 volume(byte)
 //                               +0x14 fade_time(ushort)
-const size_t   kSoundInternalOffset      = acc::off::Todo(0x00);
-const size_t   kPriorityGroupsPtrOff     = acc::off::Todo(0x4c);
-const size_t   kPriorityGroupStride      = acc::off::Todo(0x18);
-const size_t   kPriorityGroupPriorityOff = acc::off::Todo(0x06);
-const size_t   kPriorityGroupVolumeOff   = acc::off::Todo(0x07);
-const size_t   kPriorityGroupFadeTimeOff = acc::off::Todo(0x14);
+// K2 witnesses: every K2 CExoSound facade reads the internal at [facade+0]
+// (kSoundInternalOffset Same); GetPriorityGroup's twin 0x00709010 indexes
+// `[exoInternal+0x50] + group*0x18` (table ptr moved 0x4c→0x50, stride
+// unchanged), and SetPriorityGroup's internal twin 0x007101F0 reads the
+// group's volume byte at +7 — the same slot pair as KOTOR 1. FadeTime at
+// +0x14 rides the unchanged stride/layout (the sentinel-row scan tolerates
+// a miss by falling back to group 26).
+const size_t   kSoundInternalOffset      = acc::off::Same(0x00);
+const size_t   kPriorityGroupsPtrOff     = acc::off::Pick(0x4c, 0x50);
+const size_t   kPriorityGroupStride      = acc::off::Same(0x18);
+const size_t   kPriorityGroupPriorityOff = acc::off::Same(0x06);
+const size_t   kPriorityGroupVolumeOff   = acc::off::Same(0x07);
+const size_t   kPriorityGroupFadeTimeOff = acc::off::Same(0x14);
 
 // Our installer stamps this value into the FadeTime column of the custom
 // full-volume row it appends to prioritygroups.2da. Vanilla fade times
@@ -352,7 +359,9 @@ namespace {
 typedef void (__thiscall* PFN_InternalSetListenerPosition)(
     void* internal_, Vector* pos);
 
-const uintptr_t kAddrCExoSoundInternalSetListenerPosition = acc::addr::R(0x005D6600);
+// K2 twin 0x007082D0 — the function behind the K2 facade 0x0070B940; calls
+// _AIL_set_listener_3D_position with the forwarded Vector*.
+const uintptr_t kAddrCExoSoundInternalSetListenerPosition = acc::addr::Pick(0x005D6600, 0x007082D0);
 
 // Diagnostic toggle. False = always passthrough (verified independent of
 // view-mode WalkTo and Trigger-1 cue silence). Kept as a quick override
@@ -364,7 +373,9 @@ constexpr bool kSubstituteCursorForListener = true;
 
 extern "C" int __cdecl OnSetListenerPosition(void* exoSound,
                                              Vector** posSlot) {
-    if (!acc::game::HandlerEnabled()) return 1;  // KOTOR 2: not ported yet — 1 = engine proceeds normally
+    // Gate cleared for KOTOR 2 in Batch 5: the K2 facade takes the same
+    // (ecx, esp+4) shape, [exoSound+0] is the internal on both games via
+    // kSoundInternalOffset's witness, and the internal setter is Pick'd.
     Vector* enginePos = nullptr;
     if (posSlot) {
         __try {

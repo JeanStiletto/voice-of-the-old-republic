@@ -179,10 +179,15 @@ void AnnounceControl(void* control) {
     if (isListBoxContainer) {
         return;
     }
-    int id = *reinterpret_cast<int*>(
-        reinterpret_cast<unsigned char*>(control) + kControlIdOffset);
+    // Guarded: the control can be freed between capture and this read (the
+    // GetControlCenter crash class). A dead control still announces — the
+    // fallback is never silenced — just with an unknowable id.
+    uint32_t id = 0;
+    if (!acc::engine::TryReadU32(control, kControlIdOffset, &id)) {
+        id = static_cast<uint32_t>(-1);
+    }
     char placeholder[64];
-    snprintf(placeholder, sizeof(placeholder), "control %d", id);
+    snprintf(placeholder, sizeof(placeholder), "control %d", static_cast<int>(id));
     prism::Speak(placeholder, /*interrupt=*/false);
 }
 
@@ -203,8 +208,9 @@ void MonitorFocusedControl() {
     if (void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr)) {
         void* fg = GetForegroundPanel(mgr);
         if (fg && fg != acc::menus::chain::g_chainPanel) {
-            void** vt = *reinterpret_cast<void***>(fg);
-            if (reinterpret_cast<uintptr_t>(vt) ==
+            void* vt = nullptr;  // guarded: fg may already be torn down
+            if (acc::engine::TryReadPtr(fg, 0, &vt) &&
+                reinterpret_cast<uintptr_t>(vt) ==
                     kVtableCSWGuiPortraitCharGen) {
                 acc::menus::chain::RebindChain(fg);
             }
@@ -228,8 +234,9 @@ void MonitorFocusedControl() {
         // value.
         void* chainPanel = acc::menus::chain::g_chainPanel;
         if (!chainPanel) return;
-        void** vt = *reinterpret_cast<void***>(chainPanel);
-        if (reinterpret_cast<uintptr_t>(vt) !=
+        void* vt = nullptr;  // guarded: the chain can outlive its panel
+        if (!acc::engine::TryReadPtr(chainPanel, 0, &vt) ||
+            reinterpret_cast<uintptr_t>(vt) !=
                 kVtableCSWGuiPortraitCharGen) {
             return;
         }
@@ -590,8 +597,9 @@ void BuildContentFingerprint(void* panel, char* out, size_t outSize) {
         // placeholder text. Read only rows carrying the visible bit so speech
         // reflects what's on screen, not all eight templates.
         if (kind == PanelKind::StatusSummary) {
-            uint32_t bitFlags = *reinterpret_cast<uint32_t*>(
-                reinterpret_cast<unsigned char*>(c) + kControlBitFlagsOffset);
+            uint32_t bitFlags = 0;  // guarded: row may be freed mid-walk
+            if (!acc::engine::TryReadU32(c, kControlBitFlagsOffset, &bitFlags))
+                continue;
             if ((bitFlags & kControlVisibleBit) == 0) continue;
         }
 
@@ -857,8 +865,10 @@ void MonitorDialogReplies() {
     PanelKind k = dialogKind;
     void* fg = dialogPanel;
 
-    short selIdx = *reinterpret_cast<short*>(
-        reinterpret_cast<unsigned char*>(lb) + kListBoxSelectionIndexOffset);
+    uint16_t selRaw = 0;  // guarded: the dialog panel can close mid-tick
+    if (!acc::engine::TryReadU16(lb, kListBoxSelectionIndexOffset, &selRaw))
+        return;
+    short selIdx = static_cast<short>(selRaw);
 
     if (s_dialogReplyState.listBox != lb) {
         s_dialogReplyState.listBox = lb;

@@ -106,16 +106,21 @@ bool acc::menus::detail::IsChainNavigable(void* control) {
 // now spans both TUs via menus_internal.h.
 void* acc::menus::detail::FindControlById(void* panel, int id) {
     if (!panel) return nullptr;
-    auto* list = reinterpret_cast<CExoArrayList*>(
-        reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
-    if (!list->data || list->size <= 0) return nullptr;
-    int n = list->size > 64 ? 64 : list->size;
-    for (int i = 0; i < n; ++i) {
-        void* c = list->data[i];
-        if (!c) continue;
-        int cid = *reinterpret_cast<int*>(
-            reinterpret_cast<unsigned char*>(c) + kControlIdOffset);
-        if (cid == id) return c;
+    // SEH: the panel may be freed, and the controls array can carry a
+    // non-null garbage tail entry (the chargen TryPartyPortrait crash).
+    __try {
+        auto* list = reinterpret_cast<CExoArrayList*>(
+            reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
+        if (!list->data || list->size <= 0) return nullptr;
+        int n = list->size > 64 ? 64 : list->size;
+        for (int i = 0; i < n; ++i) {
+            void* c = list->data[i];
+            if (!c) continue;
+            int cid = *reinterpret_cast<int*>(
+                reinterpret_cast<unsigned char*>(c) + kControlIdOffset);
+            if (cid == id) return c;
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
     }
     return nullptr;
 }
@@ -152,8 +157,9 @@ bool acc::menus::detail::IsSaveLoadPanel(void* panel) {
 
     void* lb = FindControlById(panel, kSaveLoadLbGamesId);
     if (!lb) return false;
-    void** lbVtable = *reinterpret_cast<void***>(lb);
-    if (reinterpret_cast<uintptr_t>(lbVtable) != kVtableListBox) return false;
+    void* lbVtable = nullptr;  // guarded: control may be freed mid-check
+    if (!acc::engine::TryReadPtr(lb, 0, &lbVtable) ||
+        reinterpret_cast<uintptr_t>(lbVtable) != kVtableListBox) return false;
 
     // Tighten: require IDs 11/12/14 to all be Buttons. Mirrors the
     // engine-layer IsSaveLoadStructural — the workbench upgrade panel

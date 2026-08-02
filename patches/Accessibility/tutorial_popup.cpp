@@ -8,6 +8,7 @@
 #include "log.h"
 #include "engine_rebase.h"
 #include "engine_offsets_select.h"
+#include "engine_game.h"     // IsKotor2 — SetSoundMode signature split
 
 namespace acc::tutorial_popup {
 
@@ -51,13 +52,18 @@ constexpr size_t kShownBitsBase = 0xba8;
 // box, so the row-keyed hint never fires for our synthetic popups.
 constexpr int kSyntheticReason = 0x2a;
 
-// ---- Pause (mirrors engine_subscreen; kept self-contained here) ----
+// ---- Pause (mirrors engine_subscreen; kept self-contained here — keep
+// the three values in sync with engine_subscreen.cpp's copies) ----
 using PFN_SetPauseState =
     void(__thiscall*)(void* server, int source_bit, unsigned long on_off);
-const uintptr_t kAddrSetPauseState = acc::addr::R(0x004ae9a0);
+const uintptr_t kAddrSetPauseState = acc::addr::Pick(0x004ae9a0, 0x0051C760);
+// CAUTION: signatures differ per game — K1 internal takes (mode), K2's
+// facade takes (mode, flag) with flag 0. See engine_subscreen for the
+// witnesses.
 using PFN_SetSoundMode = void(__thiscall*)(void* self, int mode);
-const uintptr_t kAddrSetSoundMode = acc::addr::R(0x005d5e80);
-const uintptr_t kAddrExoSoundPtr    = acc::addr::TodoGlobal(0x007a39ec);
+using PFN_SetSoundModeK2 = void(__thiscall*)(void* self, int mode, int flag);
+const uintptr_t kAddrSetSoundMode = acc::addr::Pick(0x005d5e80, 0x0070BC60);
+const uintptr_t kAddrExoSoundPtr    = acc::addr::PickGlobal(0x007a39ec, 0x00A1B494);
 constexpr unsigned char kPauseBitMenu   = 0x02;
 
 // ---- State ----
@@ -86,7 +92,13 @@ void SetPause(bool on) {
         // Audio resync on unpause (un-mute the mixer), same as the modal-close path.
         __try {
             void* exo = *reinterpret_cast<void**>(kAddrExoSoundPtr);
-            if (exo) reinterpret_cast<PFN_SetSoundMode>(kAddrSetSoundMode)(exo, 0);
+            if (exo) {
+                if (acc::game::IsKotor2()) {
+                    reinterpret_cast<PFN_SetSoundModeK2>(kAddrSetSoundMode)(exo, 0, 0);
+                } else {
+                    reinterpret_cast<PFN_SetSoundMode>(kAddrSetSoundMode)(exo, 0);
+                }
+            }
         } __except (EXCEPTION_EXECUTE_HANDLER) {
             acclog::Write("TutorialPopup", "SEH in SetSoundMode(0)");
         }

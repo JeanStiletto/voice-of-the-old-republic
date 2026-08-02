@@ -31,6 +31,14 @@ bool ReadCExoString(void* base, size_t offset, char* outBuf, size_t bufSize);
 
 uint32_t ReadU32(void* base, size_t offset);
 
+// SEH-guarded single-field reads for possibly-dead engine pointers (a
+// non-null control pointer is NOT proof of life on KOTOR 2). Return false
+// on fault instead of crashing; use for any read through a pointer the
+// engine may have freed since we captured it.
+bool TryReadU32(void* base, size_t offset, uint32_t* out);
+bool TryReadU16(void* base, size_t offset, uint16_t* out);
+bool TryReadPtr(void* base, size_t offset, void** out);
+
 // SEH-wrapped TLK lookup. False on invalid strref, missing TLK pointer,
 // or any fault.
 bool LookupTlk(uint32_t strref, char* outBuf, size_t bufSize);

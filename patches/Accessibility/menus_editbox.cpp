@@ -477,10 +477,9 @@ void DisarmIfArmed(const char* reason) {
 
 bool TryHandleInput(int /*n*/, void* /*thisPtr*/, void* activePanel,
                     int param_1, int param_2, int& outRv) {
-    // KOTOR 2 (Batch 1): the chargen-name and save-name editbox offsets are
-    // unresolved there, so the monitor never arms and edit mode can't engage;
-    // this early-out is then belt and braces.
-    if (acc::game::IsKotor2()) return false;
+    // Cleared for KOTOR 2 (Batch 3d): the chargen-name and save-name panel
+    // offsets and the editbox internals are all resolved (ctors 0x00918B10 /
+    // 0x008586D0); menus_editbox.cpp's worklist is 13/13.
     if (!s_state.editMode) return false;
     if (!activePanel || activePanel != s_state.panel) return false;
     if (param_2 == 0) return false;  // press-edge only
@@ -545,9 +544,7 @@ bool TryHandleInput(int /*n*/, void* /*thisPtr*/, void* activePanel,
 }
 
 void TickEditboxMonitors() {
-    // KOTOR 2 (Batch 1): the editbox panel offsets its specs point at are
-    // unresolved there. Decline the whole monitor.
-    if (acc::game::IsKotor2()) return;
+    // Cleared for KOTOR 2 (Batch 3d) — every spec offset is resolved.
     PanelMatch m = FindMatchingPanel();
     if (!m.spec) {
         // No spec-matching panel anywhere. Disarm if we were armed against

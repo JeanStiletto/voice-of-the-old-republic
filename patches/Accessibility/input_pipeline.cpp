@@ -430,17 +430,16 @@ extern "C" int __cdecl OnClientHandleInputEvent(void* this_ptr,
         // through DoTargetAction / DoPersonalAction which lands in
         // CSWSCombatRound::AddAction; that function silently free's the
         // node when internal->count > 3.
-        // Combat-queue attribution is Batch 4 territory — its bodies read
-        // combat-round internals that are still unresolved on KOTOR 2.
-        // Clear this gate when Batch 4 lands.
-        if (acc::game::IsKotor1()) {
-            acc::combat::queue::ReportPrePressDepth();
-            // Attribute the resulting CSWSCombatRound::AddAction to this press
-            // so its detour speaks the authoritative "X, Platz N" cue (and
-            // engine auto-attacks, which have no press, stay silent).
-            acc::combat::queue::ArmUserQueueAdd();
-            acc::combat_diag::LogPreFire(diag_label);
-        }
+        // Combat-queue attribution — cleared for KOTOR 2 in Batch 4: the
+        // combat-round internals it reads (actions list, list internals,
+        // creature→round) are all witnessed and Pick'd there, and the K2
+        // AddAction detour is installed.
+        acc::combat::queue::ReportPrePressDepth();
+        // Attribute the resulting CSWSCombatRound::AddAction to this press
+        // so its detour speaks the authoritative "X, Platz N" cue (and
+        // engine auto-attacks, which have no press, stay silent).
+        acc::combat::queue::ArmUserQueueAdd();
+        acc::combat_diag::LogPreFire(diag_label);
 
         // Fire the refresh. PrepareBareDispatch logs its own status line
         // (`ActionBar.Prep: target=0x... — SetTarget + RePopulate done`)

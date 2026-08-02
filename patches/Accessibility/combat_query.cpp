@@ -50,9 +50,15 @@ typedef int (__thiscall* PFN_GetIntThiscall)(void* this_);
 // 0x004ed310 with param_1=1) gates internally on stats[+0x6c] (is_pc)
 // and returns garbage for any non-PC creature, which is why Tab to
 // Carth used to read "60" (random obj.e0 base) instead of "50/66".
-const size_t kClientCreatureLvlUpStatsOffset = acc::off::Todo(0x2f8);
-const size_t kClientStatsCurrentHpOffset     = acc::off::Todo(0x4c);  // pregame_current_hp
-const size_t kClientStatsMaxHpOffset         = acc::off::Todo(0x4e);  // max_hit_points
+// K2 column witnessed in the K2 character-sheet SetStats twin 0x0084E6F0:
+// it fetches the stats block via `clientCreature + 0x310` (the same
+// 0x2F8→0x310 shift Batch 3c saw on the door-security path), formats
+// "%d/%d" from the short at stats+0x4c, and its max-HP accessor
+// 0x00848CF0 is a one-line read of the short at stats+0x4e — both HP
+// shorts identical to KOTOR 1.
+const size_t kClientCreatureLvlUpStatsOffset = acc::off::Pick(0x2f8, 0x310);
+const size_t kClientStatsCurrentHpOffset     = acc::off::Same(0x4c);  // pregame_current_hp
+const size_t kClientStatsMaxHpOffset         = acc::off::Same(0x4e);  // max_hit_points
 
 int ReadCurrentHpFromClient(void* clientLeader) {
     if (!clientLeader) return -1;

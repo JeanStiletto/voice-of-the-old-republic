@@ -467,10 +467,15 @@ static const PanelKindOffset kPanelKindOffsets[] = {
     { acc::off::Same(0x74), PanelKind::PowersFeatsSkillsDebugMenu,
                                                             "PowersFeatsSkillsDebugMenu" },
     // KOTOR 2's 0x78 is InGameMessages (above), so this must NOT inherit it.
-    { acc::off::Todo(0x78), PanelKind::PartySelection,      "PartySelection" },
+    // KOTOR 2 swaps this slot with InGameMessages: K1 files PartySelection
+    // at 0x78 and Messages at 0x1c; K2's creator (0x007BE4C0) stores the
+    // CSWGuiPartySelection ctor result (0x0089CF30) at [gui+0x1c].
+    { acc::off::Pick(0x78, 0x1c), PanelKind::PartySelection, "PartySelection" },
     { acc::off::Same(0x7c), PanelKind::InGamePause,         "InGamePause" },
     // 0x80 holds CSWGui3DSceneView on KOTOR 2.
-    { acc::off::Todo(0x80), PanelKind::InGameGalaxyMap,     "InGameGalaxyMap" },
+    // Same slot on both games: K2 creator stores the CSWGuiInGameGalaxyMap
+    // ctor result (0x008973D0) at [gui+0x80].
+    { acc::off::Same(0x80), PanelKind::InGameGalaxyMap,     "InGameGalaxyMap" },
     { acc::off::Same(0x84), PanelKind::Store,               "Store" },
     { acc::off::Pick(0x8c, 0x94), PanelKind::SoloModeQuery, "SoloModeQuery" },
     // KOTOR 2 witnessed by SetSWGuiStatus @0x007C9C40: status 1 adds, any
@@ -485,7 +490,11 @@ static const PanelKindOffset kPanelKindOffsets[] = {
     { acc::off::Pick(0xa0, 0xb0), PanelKind::TutorialBox,   "TutorialBox" },
     // KOTOR 2's 0xa4 is a CSWGuiMessageBox, not the controller-loss box —
     // which it does have as a class (CSWGuiControllerLossBox in the RTTI).
-    { acc::off::Todo(0xa4), PanelKind::ControllerLossBox,   "ControllerLossBox" },
+    // K2 creator stores the ControllerLossBox at [gui+0xb4] (the ctor is
+    // inlined there — the CSWGuiControllerLossBox vftable store is visible
+    // in the creator body itself). K2's 0xa4 is a second MessageBox
+    // instance (ctor 0x0075B370 with arg 1), not this box.
+    { acc::off::Pick(0xa4, 0xb4), PanelKind::ControllerLossBox, "ControllerLossBox" },
     { acc::off::Pick(0xa8, 0xb8), PanelKind::StatusSummary, "StatusSummary" },
     // Dialogue input-routing surfaces (per CGuiInGame layout in
     // swkotor.exe.h:10282). The in-game session log shows that during
@@ -494,8 +503,11 @@ static const PanelKindOffset kPanelKindOffsets[] = {
     // distinct from the rendering panel (DialogCinematicCopy at +0x3c).
     // Hypothesis: that routing target is one of these two — registering
     // both so the next log identifies which.
-    { acc::off::Todo(0xf8), PanelKind::DialogMessagesAux, "DialogMessagesAux" },
-    { acc::off::Todo(0xfc), PanelKind::DialogMessages,    "DialogMessages" },
+    // KOTOR 1 only: K2's creator stores no panel slot past +0xb8, and the
+    // +0xf8..0x11f region there belongs to other fields (message rings at
+    // +0x110/+0x118). On K2 these kinds fall through to the vtable detector.
+    { acc::off::Kotor1Only(0xf8), PanelKind::DialogMessagesAux, "DialogMessagesAux" },
+    { acc::off::Kotor1Only(0xfc), PanelKind::DialogMessages,    "DialogMessages" },
     // Heap-allocated kinds with no CGuiInGame slot. The sentinel offset
     // skips them during slot lookup; PanelKindName still resolves the
     // friendly name, and IdentifyPanel falls through to a structural

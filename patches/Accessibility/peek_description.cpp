@@ -163,7 +163,9 @@ static void RefreshStore(void* panel, void* focused) {
 }
 
 // CSWGuiInGameJournal::OnControlEntered — no is_active gate, direct call.
-const std::uintptr_t kAddrJournalOnControlEntered = acc::addr::R(0x00645100);
+// (Duplicate of menus_journal.cpp's file-local copy — keep the two values
+// in sync. K2 twin 0x007FC390, identified with the journal batch 3d work.)
+const std::uintptr_t kAddrJournalOnControlEntered = acc::addr::Pick(0x00645100, 0x007FC390);
 
 static void RefreshJournal(void* panel, void* focused) {
     if (!panel || !focused) return;

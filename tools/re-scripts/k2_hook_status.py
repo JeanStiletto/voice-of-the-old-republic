@@ -103,6 +103,12 @@ def main():
         "OnShowObject": "OnShowObjectK2",
         # Batch 3c — interaction (in-world input pipeline)
         "OnClientHandleInputEvent": "OnClientHandleInputEventK2",
+        # Batch 4 — combat round + pause state
+        "OnCombatRoundAddAction": "OnCombatRoundAddActionK2",
+        "OnCombatRoundRemoveAllActions": "OnCombatRoundRemoveAllActionsK2",
+        "OnCombatRoundSetCurrentAction": "OnCombatRoundSetCurrentActionK2",
+        "OnCombatRoundRemoveLastAction": "OnCombatRoundRemoveLastActionK2",
+        "OnSetPauseState": "OnSetPauseStateK2",
     }
 
     print(f"{'handler':38s} {'K1 addr':12s} {'K2 hook':9s} {'K2 gate':9s} verdict")

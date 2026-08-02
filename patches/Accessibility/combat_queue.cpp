@@ -37,7 +37,9 @@ namespace {
 typedef int  (__thiscall* PFN_RemoveLastAction)(void* combatRound);
 
 const uintptr_t kAddrCombatRoundRemoveLastAction =
-    acc::addr::R(0x004d37b0);  // CSWSCombatRound::RemoveLastAction
+    // K2 twin 0x005904C0: single tail-remove + free, returns 1 on success,
+    // 0 when the queue is empty — K1's exact contract.
+    acc::addr::Pick(0x004d37b0, 0x005904C0);  // CSWSCombatRound::RemoveLastAction
 
 // Read CSWSCreature.combat_round @+0x9c8.
 void* ReadCombatRound(void* serverCreature) {

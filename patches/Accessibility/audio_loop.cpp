@@ -30,15 +30,23 @@ constexpr size_t kSourceStructSize = 16;
 // (no re-stream). We make the same call with an absolute rate, bypassing the
 // engine's rand()-based variance. Field offsets confirmed in swkotor.exe.h
 // (CExoSoundSourceInternal) and the SetPitchVariance byte dump.
-const size_t   kSoundSourceInternalOffset   = acc::off::Todo(0x04);  // CExoSoundSource.internal
-const size_t   kInternalBaseFrequencyOffset = acc::off::Todo(0x48);  // sample natural Hz
-const size_t   kInternalPitchVarFreqOffset  = acc::off::Todo(0x54);  // applied rate field
-const size_t   kInternalVoice3DOffset       = acc::off::Todo(0x3c);  // C3DVoice* (null until playing)
-const size_t   kVoiceHandleOffset           = acc::off::Todo(0x04);  // Miles handle inside the voice
+// K2 witnesses: every K2 source facade reads the internal at [source+4];
+// the pitch-jitter twin 0x00710550 reads base frequency at [internal+0x50]
+// and updates the applied rate at [internal+0x5c]; the rate-apply helper
+// 0x0070FA10 walks [internal+0x3c] → [voice+4] into the Miles sample calls.
+const size_t   kSoundSourceInternalOffset   = acc::off::Same(0x04);  // CExoSoundSource.internal
+const size_t   kInternalBaseFrequencyOffset = acc::off::Pick(0x48, 0x50);  // sample natural Hz
+const size_t   kInternalPitchVarFreqOffset  = acc::off::Pick(0x54, 0x5c);  // applied rate field
+const size_t   kInternalVoice3DOffset       = acc::off::Same(0x3c);  // voice object (null until playing)
+const size_t   kVoiceHandleOffset           = acc::off::Same(0x04);  // Miles handle inside the voice
 // SetPitchVariance reaches the Miles setter via `call dword ptr [0x0073d4e8]`;
 // the slot holds the resolved AIL_set_3D_sample_playback_rate import. Calling
 // through the engine's own IAT slot avoids resolving mss32.dll ourselves.
-const uintptr_t kIatAilSet3DPlaybackRate    = acc::addr::R(0x0073D4E8);
+// KOTOR 2 moved to the newer Miles sample API: its IAT slot 0x00986508 holds
+// _AIL_set_sample_playback_rate@8 — same (handle, rate) shape, and the K2
+// voice handle at [voice+4] IS an HSAMPLE (the engine's own rate-apply
+// helper 0x0070FA10 feeds it to the sample-API imports).
+const uintptr_t kIatAilSet3DPlaybackRate    = acc::addr::Pick(0x0073D4E8, 0x00986508);
 typedef void (__stdcall* PFN_AIL_set_3D_sample_playback_rate)(void* handle, int rate);
 
 typedef void* (__thiscall* PFN_SourceCtor)(void* this_);

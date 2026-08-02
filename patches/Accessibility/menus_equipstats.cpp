@@ -69,6 +69,9 @@ const EquipStatRowSpec* FindSpecForControl(void* panel, void* labelControl) {
     if (ctrl < panelBase) return nullptr;
     size_t offset = static_cast<size_t>(ctrl - panelBase);
     for (int i = 0; i < k_specCount; ++i) {
+        // Rows absent on the running game (the HP row on KOTOR 2) carry the
+        // poison offset and never match, but skip explicitly for clarity.
+        if (!acc::off::Ok(k_specs[i].valueOffset)) continue;
         if (k_specs[i].valueOffset == offset) return &k_specs[i];
     }
     return nullptr;
@@ -89,6 +92,9 @@ void ForEachEquipStatRowAnchor(void* panel,
         acc::engine::PanelKind::InGameEquip) return;
     auto* base = reinterpret_cast<unsigned char*>(panel);
     for (int i = 0; i < k_specCount; ++i) {
+        // Never form base+poison for a row this game lacks (the pointer-
+        // formation trap): the HP row is Kotor1Only on KOTOR 2.
+        if (!acc::off::Ok(k_specs[i].valueOffset)) continue;
         void* label = base + k_specs[i].valueOffset;
         if (!callback(label, k_specs[i].sortCy, userData)) return;
     }

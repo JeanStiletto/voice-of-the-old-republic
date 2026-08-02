@@ -35,7 +35,9 @@
 extern "C" void __cdecl OnCombatRoundAddAction(void* this_combatRound,
                                                void* esp_action_addr,
                                                void* esp_param2_addr) {
-    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
+    // Gate cleared for KOTOR 2 in Batch 4: the action struct is byte-
+    // identical there (ClearData twin witness) and the queue-announce
+    // chain's constants are all Pick'd.
     // Deref the stack slots per project_kpatchmanager_lea_bug.md — `source =
     // "esp+N"` emits LEA so the handler receives the *address* of the slot.
     void* action = nullptr;
@@ -72,4 +74,19 @@ extern "C" void __cdecl OnCombatRoundAddAction(void* this_combatRound,
     // poll did. OnEngineActionAdded self-filters to the controlled creature's
     // round.
     acc::combat::queue::OnEngineActionAdded(this_combatRound, action);
+}
+
+// CSWSCombatRound::AddAction @0x00590270 on KOTOR 2 (K1 hooks 0x004D3660),
+// hooked at 0x00590276 — the `this` store after the prologue. Identity:
+// the body checks the queue cap (`GetCount; cmp eax,4`), inserts sorted by
+// priority, and frees the action on the full-queue path — K1's structure
+// line for line. Unoptimised frame: ECX = this, action* at [EBP+8],
+// param2 at [EBP+0xC]; the shared handler wants the SLOT ADDRESSES.
+extern "C" __declspec(dllexport)
+void __cdecl OnCombatRoundAddActionK2(void* thisRound, void* ebp) {
+    if (!acc::game::IsKotor2()) return;
+    if (!ebp) return;
+    OnCombatRoundAddAction(thisRound,
+                           static_cast<char*>(ebp) + 8,
+                           static_cast<char*>(ebp) + 0xC);
 }

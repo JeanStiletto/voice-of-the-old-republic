@@ -49,32 +49,39 @@ namespace {
 // Verified via session 20260514-201250: Soldat level 3 with infinite-
 // force cheat shows 0x16e4 = "999/999" (godmoded FP) and 0x1824 =
 // "30/36" (normal HP for that class+level). Names match Lane.
-constexpr size_t kCharSheetLblClass    = 0x02e4;  // class name "Soldat" (lbl_class1)
-constexpr size_t kCharSheetLblLevel    = 0x06a4;  // level number "1" (lbl_level1)
-constexpr size_t kCharSheetLblFort     = 0x0924;  // fortitude save val
-constexpr size_t kCharSheetLblRef      = 0x0a64;  // reflex save val
-constexpr size_t kCharSheetLblWill     = 0x0ba4;  // will save val
-constexpr size_t kCharSheetLblXpCur    = 0x11e4;  // current XP — Lane: lbl_exp_stat
-constexpr size_t kCharSheetLblXpThresh = 0x1464;  // next-level threshold — Lane: lbl_needed_xp
-constexpr size_t kCharSheetLblDefStat  = 0x15a4;  // defense val
-constexpr size_t kCharSheetLblFp       = 0x16e4;  // FP — Lane: lbl_force_stat
-constexpr size_t kCharSheetLblHp       = 0x1824;  // HP — Lane: lbl_vitality_stat
-constexpr size_t kCharSheetLblStr      = 0x1d24;  // "14"
-constexpr size_t kCharSheetLblStrMod   = 0x1fa4;  // "+2"
-constexpr size_t kCharSheetLblWis      = 0x20e4;
-constexpr size_t kCharSheetLblWisMod   = 0x2364;
-constexpr size_t kCharSheetLblCha      = 0x24a4;
-constexpr size_t kCharSheetLblChaMod   = 0x2724;
-constexpr size_t kCharSheetLblInt      = 0x2864;
-constexpr size_t kCharSheetLblIntMod   = 0x2ae4;
-constexpr size_t kCharSheetLblCon      = 0x2c24;
-constexpr size_t kCharSheetLblConMod   = 0x2ea4;
-constexpr size_t kCharSheetLblDex      = 0x2fe4;
-constexpr size_t kCharSheetLblDexMod   = 0x3264;
+// KOTOR 2 column mined from the K2 panel ctor 0x0084C3A0 (tag wiring, label
+// stride 0x148) and cross-checked in the K2 SetStats twin 0x0084E6F0, which
+// writes the save values into the *_STAT labels (0x588/0x6d0/0x818), FP into
+// 0xfc8 behind the IsJedi branch, HP into 0x1110, and attribute value/mod
+// into 0x1630/0x18c0 — the same role split assumed here. KOTOR 2's character
+// panel builds NO class or level labels at all (no CLASS/LEVEL tag in its
+// ctor), so those two rows are Kotor1Only and the spec walk skips them.
+const size_t kCharSheetLblClass    = acc::off::Kotor1Only(0x02e4);  // class name "Soldat" (lbl_class1)
+const size_t kCharSheetLblLevel    = acc::off::Kotor1Only(0x06a4);  // level number "1" (lbl_level1)
+const size_t kCharSheetLblFort     = acc::off::Pick(0x0924, 0x588);   // fortitude save val
+const size_t kCharSheetLblRef      = acc::off::Pick(0x0a64, 0x6d0);   // reflex save val
+const size_t kCharSheetLblWill     = acc::off::Pick(0x0ba4, 0x818);   // will save val
+const size_t kCharSheetLblXpCur    = acc::off::Pick(0x11e4, 0xaa8);   // current XP — Lane: lbl_exp_stat
+const size_t kCharSheetLblXpThresh = acc::off::Pick(0x1464, 0xd38);   // next-level threshold — Lane: lbl_needed_xp
+const size_t kCharSheetLblDefStat  = acc::off::Pick(0x15a4, 0xe80);   // defense val
+const size_t kCharSheetLblFp       = acc::off::Pick(0x16e4, 0xfc8);   // FP — Lane: lbl_force_stat
+const size_t kCharSheetLblHp       = acc::off::Pick(0x1824, 0x1110);  // HP — Lane: lbl_vitality_stat
+const size_t kCharSheetLblStr      = acc::off::Pick(0x1d24, 0x1630);  // "14"
+const size_t kCharSheetLblStrMod   = acc::off::Pick(0x1fa4, 0x18c0);  // "+2"
+const size_t kCharSheetLblWis      = acc::off::Pick(0x20e4, 0x1a08);
+const size_t kCharSheetLblWisMod   = acc::off::Pick(0x2364, 0x1c98);
+const size_t kCharSheetLblCha      = acc::off::Pick(0x24a4, 0x1de0);
+const size_t kCharSheetLblChaMod   = acc::off::Pick(0x2724, 0x2070);
+const size_t kCharSheetLblInt      = acc::off::Pick(0x2864, 0x21b8);
+const size_t kCharSheetLblIntMod   = acc::off::Pick(0x2ae4, 0x2448);
+const size_t kCharSheetLblCon      = acc::off::Pick(0x2c24, 0x2590);
+const size_t kCharSheetLblConMod   = acc::off::Pick(0x2ea4, 0x2820);
+const size_t kCharSheetLblDex      = acc::off::Pick(0x2fe4, 0x2968);
+const size_t kCharSheetLblDexMod   = acc::off::Pick(0x3264, 0x2bf8);
 
 // Alignment slider — CSWGuiSlider @+0x55c4. cur/max at the standard slider
 // offsets per engine_offsets.h.
-constexpr size_t kCharSheetSldAlign    = 0x55c4;
+const size_t kCharSheetSldAlign    = acc::off::Pick(0x55c4, 0x3a60);
 
 // Whether the engine showed the Force line is our "is a Force user" signal.
 // CSWGuiInGameCharacter::SetStats @0x006afda0 calls CSWClass::IsJedi on the
@@ -85,7 +92,10 @@ constexpr size_t kCharSheetSldAlign    = 0x55c4;
 // creature pointer; the +0x59e4 region holds party_count / selected index,
 // and SetStats re-fetches the creature fresh each call). lbl_force_stat lives
 // at panel + kCharSheetLblFp; bit_flags at +kControlBitFlagsOffset (0x44).
-const uint32_t kControlShownBit = acc::off::Todo(0x2);
+// Same bit on KOTOR 2: its SetStats twin 0x0084E6F0 runs the identical
+// `& ~2` / `| 2` dance on the force label's bit_flags (at +0x48 there,
+// matching kControlBitFlagsOffset's K2 column).
+const uint32_t kControlShownBit = acc::off::Same(0x2);
 
 // True iff the character currently shown on this sheet is a Force user.
 // Reads the engine's own decision: lbl_force_stat's "shown" bit (0x02 of
@@ -136,7 +146,7 @@ struct StatRowSpec {
     StatRowKind      kind;
 };
 
-constexpr StatRowSpec k_statRowSpecs[] = {
+const StatRowSpec k_statRowSpecs[] = {
     // Identity block — class, level, experience.
     { kCharSheetLblClass,  0,                     acc::strings::Id::FmtCharSheetClass,      1, StatRowKind::LabelValue },
     { kCharSheetLblLevel,  0,                     acc::strings::Id::FmtCharSheetLevel,      2, StatRowKind::LabelValue },
@@ -173,6 +183,10 @@ const StatRowSpec* FindSpecForControl(void* panel, void* labelControl) {
     if (ctrl < panelBase) return nullptr;
     size_t offset = static_cast<size_t>(ctrl - panelBase);
     for (int i = 0; i < k_statRowCount; ++i) {
+        // Rows with no counterpart on the running game (class/level on
+        // KOTOR 2) carry the poison offset and can never match a real
+        // control address, but skip them explicitly for clarity.
+        if (!acc::off::Ok(k_statRowSpecs[i].valueOffset)) continue;
         if (k_statRowSpecs[i].valueOffset == offset) {
             // FP row only exists for Force users — for everyone else the
             // row is dropped from the chain (no nav landing, no extract).
@@ -205,6 +219,10 @@ void ForEachStatRowAnchor(void* panel,
         if (k_statRowSpecs[i].valueOffset == kCharSheetLblFp && !hasForce) {
             continue;
         }
+        // Never form base+poison for a row the running game lacks — a wild
+        // non-null anchor would be registered in the chain (the pointer-
+        // formation trap documented in engine_offsets_select.h).
+        if (!acc::off::Ok(k_statRowSpecs[i].valueOffset)) continue;
         void* label = base + k_statRowSpecs[i].valueOffset;
         if (!callback(label, k_statRowSpecs[i].sortCy, userData)) return;
     }

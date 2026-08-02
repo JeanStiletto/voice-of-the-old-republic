@@ -280,7 +280,10 @@ const uintptr_t kVtableCSWGuiPowersLevelUp             = acc::addr::Pick(0x00759
 // Signature per Ghidra decomp (DECOMP @0x006cdc00):
 //   void __thiscall SetSelectedSkill(ulong param_1)
 // Callee-pops 4 bytes.
-const uintptr_t kAddrCSWGuiSkillFlowChartSetSelectedSkill = acc::addr::R(0x006cdc00);
+// K2 twin 0x0089C070 verified structurally: same cell-search loop (3 columns,
+// id compare per cell), same selected col/row byte pair at chart+0xc/+0xd,
+// same per-row select call on hit, same `ret 4`.
+const uintptr_t kAddrCSWGuiSkillFlowChartSetSelectedSkill = acc::addr::Pick(0x006cdc00, 0x0089C070);
 
 // CSWGuiListBox::SetSelectedControl @0x0041c040 — __thiscall(listbox, index,
 // playSound). The engine's canonical "select row N": deselects the previously
@@ -469,7 +472,9 @@ const uintptr_t kAddrUpgradeSlotTypeTable = acc::addr::Pick(0x00756fb0, 0x009A84
 // Server-side combat-mode global. Read via accessor for safety; the
 // CClientExoApp facade is 8 bytes (vtable + internal), and the actual
 // flag lives on the internal struct.
-const uintptr_t kAddrGetCombatMode = acc::addr::R(0x005ede70);
+// K2 facade 0x00740860 reads [internal+0x320] — the SAME field K1's
+// 0x005EDE70 inlines.
+const uintptr_t kAddrGetCombatMode = acc::addr::Pick(0x005ede70, 0x00740860);
 const uintptr_t kAddrGetPausedByCombat = acc::addr::R(0x005edc10);
 
 // CSWSCreature engine getters — Phase 2A snapshot path.
@@ -532,7 +537,10 @@ const uintptr_t kAddrCSWSCreatureGetFaction = acc::addr::R(0x00513fc0);
 // CSWRules::GetFeat — __thiscall(ushort feat_index) -> CSWFeat*.
 // Returns nullptr if index out-of-range or feat not loaded (bit_flags
 // & 0x10 unset). BYTES_PURGED=4.
-const uintptr_t kAddrCSWRulesGetFeat = acc::addr::R(0x00550c00);
+// K2 twin 0x006A20F0 — witnessed in the K2 abilities OnEnterFeat twin
+// (0x008A5330), which resolves the feat id through it and reads the name
+// strref at [feat+8].
+const uintptr_t kAddrCSWRulesGetFeat = acc::addr::Pick(0x00550c00, 0x006A20F0);
 
 // CSWFeat::GetNameText — __thiscall(CExoString* out) -> CExoString*.
 // Fetches localized feat name via CTlkTable::Fetch using the feat's
@@ -549,7 +557,10 @@ const uintptr_t kAddrCSWFeatGetDescriptionText = acc::addr::R(0x005cd800);
 // CSWSpellArray::GetSpell — __thiscall(int spell_id) -> CSWSpell* (cast
 // as int in the Ghidra signature). Returns nullptr / 0 if spell_id is
 // out of range. BYTES_PURGED=4.
-const uintptr_t kAddrCSWSpellArrayGetSpell = acc::addr::R(0x0059b6d0);
+// K2 twin 0x006C1450 — witnessed in the K2 OnEnterPower twin: bounds-checks
+// against [array+0] and indexes [array+4] with the same per-spell stride
+// pattern (0x1a8 there).
+const uintptr_t kAddrCSWSpellArrayGetSpell = acc::addr::Pick(0x0059b6d0, 0x006C1450);
 
 // CSWSpell::GetSpellNameText — __thiscall(CExoString* out) -> CExoString*.
 // Same shape as CSWFeat::GetNameText: constructs the localized name into
@@ -569,21 +580,33 @@ const uintptr_t kAddrCSWSpellGetSpellNameText = acc::addr::R(0x0059b940);
 // mouse-hit-test driven) are what keyboard nav must call. All are
 // __thiscall(this, <one 4-byte arg>) — purgeSize 4; the typedef must carry the
 // arg or the callee's `ret 4` corrupts the caller frame.
-const uintptr_t kAddrAbilitiesOnEnterSkill = acc::addr::R(0x006ad180);  // (this, CSWGuiControl* row)
-const uintptr_t kAddrAbilitiesOnEnterFeat = acc::addr::R(0x006ad410);  // (this, ushort featId)
-const uintptr_t kAddrAbilitiesOnEnterPower = acc::addr::R(0x006acce0);  // (this, int) — crashes when powers empty
+// K2 twins identified by structure in one decompile round: OnEnterSkill
+// (0x008A5050) reads row->id and indexes the skill table at [this+0x68]
+// stride 0xc; OnEnterFeat (0x008A5330) is the small GetFeat + name-strref
+// [feat+8] + description path; OnEnterPower (0x008A49D0) is the
+// EvilCost/GoodCost + FP-cost calculator. All keep the one-arg `ret 4`.
+const uintptr_t kAddrAbilitiesOnEnterSkill = acc::addr::Pick(0x006ad180, 0x008A5050);  // (this, CSWGuiControl* row)
+const uintptr_t kAddrAbilitiesOnEnterFeat = acc::addr::Pick(0x006ad410, 0x008A5330);  // (this, ushort featId)
+const uintptr_t kAddrAbilitiesOnEnterPower = acc::addr::Pick(0x006acce0, 0x008A49D0);  // (this, int) — crashes when powers empty
 // OnAbilitySelectionChanged is the engine's mouse-driven selection handler
 // (hit-tests cursor vs the CSWGuiSkillFlow chart). Kept for reference; do NOT
 // call it for keyboard nav.
 const uintptr_t kAddrAbilitiesOnAbilitySelChanged = acc::addr::R(0x006ad4b0);  // (this, int) mouse-driven
-const uintptr_t kAddrAbilitiesUpdateView = acc::addr::R(0x006ad560);  // void(void)
-const uintptr_t kAddrAbilitiesOnSkillsButton = acc::addr::R(0x006adad0);  // void(void) — field139=0 + UpdateView
-const uintptr_t kAddrAbilitiesOnFeatsButton = acc::addr::R(0x006ada70);  // void(void) — field139=2 + UpdateView
-const uintptr_t kAddrAbilitiesOnPowersButton = acc::addr::R(0x006adaa0);  // void(void) — field139=1 + UpdateView
+// K2 button trio disassembled 2026-08-02: each stores its tab value (2/1/0)
+// at [GetInGameGui()+0xfc0] then calls UpdateView 0x008A3C60 — K1's exact
+// shape, and the witness for kGuiInGameAbilitiesTabOffset's K2 column.
+const uintptr_t kAddrAbilitiesUpdateView = acc::addr::Pick(0x006ad560, 0x008A3C60);  // void(void)
+const uintptr_t kAddrAbilitiesOnSkillsButton = acc::addr::Pick(0x006adad0, 0x008A5810);  // void(void) — field139=0 + UpdateView
+const uintptr_t kAddrAbilitiesOnFeatsButton = acc::addr::Pick(0x006ada70, 0x008A5790);  // void(void) — field139=2 + UpdateView
+const uintptr_t kAddrAbilitiesOnPowersButton = acc::addr::Pick(0x006adaa0, 0x008A57D0);  // void(void) — field139=1 + UpdateView
 // DisplayPowers() — predicate: returns 1 iff the character is a Jedi AND the
 // powers chart has rows. Used to decide whether the Powers tab exists (the
 // engine's own tab cycle uses it to skip an empty Powers tab). Pure check.
-const uintptr_t kAddrAbilitiesDisplayPowers = acc::addr::R(0x006abe70);  // int(void)
+// K2 twin 0x008A5620: same class-HasForce predicate off the displayed
+// character (at K2 panel+0x4870, lvl-up stats +0x310, class byte +0x32).
+// NOTE the K2 body drops K1's second condition (powers-chart row count > 0)
+// — it answers "is a Force class" only, which is fine for tab existence.
+const uintptr_t kAddrAbilitiesDisplayPowers = acc::addr::Pick(0x006abe70, 0x008A5620);  // int(void)
 
 // CSWGuiInGameAbilities::HandleInputEvent(this, int code, int val). The panel's
 // own input handler; code 0x29 runs the engine's smart tab cycle
@@ -750,7 +773,10 @@ const uintptr_t kAddrCSWItemGetBaseItem = acc::addr::Pick(0x005b4790, 0x006D6E30
 // and rebuilds one CSWGuiJournalItemEntry per quest in the current
 // active/done + sort mode, then clears the journal's HasChanged flag (so the
 // next Draw won't repopulate again).
-const uintptr_t kAddrJournalPopulateItemListBox = acc::addr::R(0x00645330);
+// K2 twin 0x007FC880 — called synchronously by the K2 journal's own
+// HandleInputEvent after every swap-text (case 0x27) and sort-mode
+// (cases 0x2f/0x30) change, exactly the repopulate role K1 gives it.
+const uintptr_t kAddrJournalPopulateItemListBox = acc::addr::Pick(0x00645330, 0x007FC880);
 
 // CSWGuiInGameInventory::PopulateItemListBox @0x006b4810 — the inventory
 // sibling of the journal call above. Rebuilds item_listbox from the equipped
@@ -761,7 +787,10 @@ const uintptr_t kAddrJournalPopulateItemListBox = acc::addr::R(0x00645330);
 // NOT in the 2004-relink rebase table (no known-good bytes to sigscan for);
 // R() returns 0 there and inventory::ForceRepopulate self-skips via
 // acc::addr::Ok, leaving that build on the pre-existing lazy behaviour.
-const uintptr_t kAddrInventoryPopulateItemListBox = acc::addr::R(0x006b4810);
+// K2 twin 0x008A7BA0: the populate loop calling CheckFilter (0x008A8DF0,
+// which switches on the filter byte at CGuiInGame+0xfc1) and CreateItemEntry
+// (0x008A75F0), then ListBox::SetSelectedControl — K1's exact structure.
+const uintptr_t kAddrInventoryPopulateItemListBox = acc::addr::Pick(0x006b4810, 0x008A7BA0);
 
 // CSWGuiJournalItemEntry rows are CSWGuiButton-derived (size 0x1cc) with
 // their own vtable. The journal's OnControlEntered fires on mouse hover

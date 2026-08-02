@@ -66,6 +66,44 @@ uint32_t ReadU32(void* base, size_t offset) {
         reinterpret_cast<unsigned char*>(base) + offset);
 }
 
+// SEH-guarded single-field reads for possibly-dead engine pointers. A
+// non-null control/panel pointer is NOT proof of life (KOTOR 2 tears panels
+// down on paths KOTOR 1 does not — the GetControlCenter / FocusProbe crash
+// class), so any read through a pointer the engine may have freed goes
+// through one of these instead of a raw dereference.
+bool TryReadU32(void* base, size_t offset, uint32_t* out) {
+    if (!base || !out) return false;
+    __try {
+        *out = *reinterpret_cast<uint32_t*>(
+            reinterpret_cast<unsigned char*>(base) + offset);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+bool TryReadU16(void* base, size_t offset, uint16_t* out) {
+    if (!base || !out) return false;
+    __try {
+        *out = *reinterpret_cast<uint16_t*>(
+            reinterpret_cast<unsigned char*>(base) + offset);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+bool TryReadPtr(void* base, size_t offset, void** out) {
+    if (!base || !out) return false;
+    __try {
+        *out = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(base) + offset);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 // Out-arg: the engine copy-constructs `out` from a stack-local CExoString,
 // allocating a fresh c_string via its own CRT. We copy the string into our
 // caller's buffer, then deliberately leak `tmp.c_string` — calling the
