@@ -6,6 +6,42 @@ result especially — but whose cost estimate predates the RTTI finding below.
 
 ## WHERE TO RESUME (read this first)
 
+**Footstep-suppress port — IMPLEMENTED 2026-08-02 (eleventh session; one
+kotor2 caller sweep + decompile round + byte dump, zero test rounds).
+Built green, NOT tested in game.** The witness ledger:
+
+- **The Batch-5 candidate 0x0077D390 is REFUTED** — decompiled, it is the
+  class-selection screen's idle-fidget animation driver (rand-picked
+  "greeting"/"hturnl"/"hturnr"/"pause*" resrefs; its callers construct
+  CSWGuiClassSelection). Its [this+0x68]/+0xc6 "early-out" is that GUI
+  panel's model-loaded check, nothing to do with footsteps.
+- **The real CSWCCreature::PlayFootstep twin is 0x00765E90**, found by the
+  Play3DOneShotSound-facade (0x0070BA90) caller sweep (36 callers; the
+  creature-region shortlist decompiled). Landmark-for-landmark match: same
+  [this+0x20] early-out (K1's field6_0x20 — offset UNMOVED), FootstepType +
+  footstepsounds + surfacemat 2DA reads, rand()%3 variant concat, K1's
+  exact priority-group constants 0x13/0x12/0x14, listener-distance gate
+  max+2.0, Play3DOneShotSound, footprint-visual twin 0x00772900, water
+  DoFootstepAudio twin 0x00773560, rumble 0x00766460. The play-vs-compute
+  split that deferred this hook is VERIFIED: one function both computes
+  and plays, as on K1.
+- **Hook at 0x00765EEA** (cut = CMP [EBP-0x3C],0 + JNZ, 6 bytes,
+  skip_original_bytes, consumed_exit 0x00765F10). The branch sense is
+  INVERTED vs K1 — the JNZ jumps to the play path and falls through into
+  the early-out cascade — so the handler maps the shared verdict per game
+  (K2: return 0 = suppress, nonzero = play; K1 unchanged: 1 = suppress).
+  EAX carries `this` at the cut. Full forensic note in kotor2.hooks.toml.
+- Gates cleared: the HandlerEnabled gate in OnPlayFootstep + the core_tick
+  if(k1) around footstep_suppress::Tick. Chain audit clean — the whole
+  Tick/stuck-probe closure (player position, area iteration, cached walls,
+  combat mode) was already Pick'd by earlier batches.
+- Test items for the next K2 round: footsteps audible in normal walking;
+  grind into a wall until net progress dies → steps go SILENT while still
+  pushing; keep pushing ~5 s → the free-directions probe speaks; in combat
+  steps always pass through. K1 regression: the same wall-grind check
+  (shared handler restructured — per-game verdict mapping, log field
+  verdict= renamed suppress=).
+
 **State as of 2026-08-02 (tenth session, remaining-surface sweep): SIX
 batches implemented and committed in one sitting, all offline, zero test
 rounds — level-up (3a4d812), peek (a05024a), item-description cluster
@@ -269,11 +305,10 @@ NOT tested in game.** The ledger:
   regression: chargen feats + level-up feats pass.
 
 **STILL K1-GATED (the remaining port surface, in suggested order):**
-pazaak + pazaakdeck, swoop race/audio, footstep_suppress
-(needs the OnPlayFootstep hook — candidate 0x0077D390, play-vs-compute split
-still unverified), OnRulesInit/mouse-guard decision, camera probes
-(deliberately deferred dev diagnostics). endar_softlock and floor_puzzle stay
-K1 by design (K1-module-specific content workarounds).
+pazaak + pazaakdeck, swoop race/audio, OnRulesInit/mouse-guard decision,
+camera probes (deliberately deferred dev diagnostics). endar_softlock and
+floor_puzzle stay K1 by design (K1-module-specific content workarounds).
+footstep_suppress was ported 2026-08-02 — see its ledger at the top.
 
 **State as of 2026-08-02 (eighth session): Batches 3d, 4 and 5 are ALL
 IMPLEMENTED in one sitting (user decision: everything except Batch 6 at
@@ -326,15 +361,12 @@ rounds, one kotor1 round, heavy capstone work; zero test rounds spent).
    time (combat/pause/audio phases ungated), SetSoundMode/SetPauseState
    call sites went per-game, FindControlById gained SEH.
 
-Batch-5 leftover, deliberate: **OnPlayFootstep has no K2 hook.** Candidate
-fully scouted: K2 PlayFootstep twin = 0x0077D390 (6 rand calls, builds the
-footstep resref; callers 0x008F92B0/0x008FB130/0x00907360 in the animation-
-event region; early-out tests [this+0x68] then byte [[this+0x68]+0xc6]==1
-where K1 tests [this+0x20]). Not hooked because the play-vs-compute split
-between it and its callers is unverified — without it footsteps simply
-always play on K2 (vanilla behaviour; only the stuck-suppression cue is
-missing). stealth_watch, map_ui_cursor, minigames, chargen grids and the
-probe pollers also stay K1-gated as before.
+~~Batch-5 leftover, deliberate: **OnPlayFootstep has no K2 hook.**~~
+**DISCHARGED 2026-08-02 (eleventh session):** the scouted candidate
+0x0077D390 was decompiled and REFUTED (it is the class-selection idle-anim
+driver — its "6 rand calls building the footstep resref" pick idle
+animations, and its "early-out" is a GUI model check). The real twin is
+0x00765E90; see the footstep ledger at the top of WHERE TO RESUME.
 
 **State as of 2026-08-01 (sixth session): Batch 3 is IMPLEMENTED — address
 round complete, hooks written, gates cleared, `k2_hook_status.py` reports
@@ -1553,7 +1585,9 @@ and `combat_queue_hooks.cpp`. What landed:
 
 **Batch 5 — Audio. IMPLEMENTED 2026-08-02 (same sitting).**
 `OnSetListenerPosition` + `OnCalculatePitchVarianceFrequency` live;
-`OnPlayFootstep` deferred (candidate documented in WHERE TO RESUME).
+`OnPlayFootstep` was deferred here and ported 2026-08-02 (eleventh
+session) after the documented candidate was refuted — see the footstep
+ledger in WHERE TO RESUME.
 
 - **The whole CExoSoundSource facade cluster paired by capstone** (no
   Ghidra needed for the setters): ctor 0x0070AAB0, ctorWithResRef

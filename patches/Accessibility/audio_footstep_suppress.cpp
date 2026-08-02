@@ -453,29 +453,44 @@ void Tick() {
 
 }  // namespace acc::audio::footstep_suppress
 
-// CSWCCreature::PlayFootstep detour. Hook REPLACES the engine's JZ at
-// 0x0061a31a (skip_original_bytes=true) so the handler owns both branches:
-//   return 1 → wrapper jumps to 0x0061a632 (engine's natural early-out
-//              destructor cascade). Use for our stuck-suppression OR to
-//              mimic the engine's own field6_0x20==0 branch.
-//   return 0 → resume at 0x0061a320 (audio plays).
-// ESI holds `this` at the cut point.
+// CSWCCreature::PlayFootstep detour — BOTH games. The hook replaces the
+// engine's own field6_0x20 early-out branch (skip_original_bytes=true on
+// both entries) so the handler owns the play-vs-skip decision, but the
+// branch SENSE is inverted between the binaries, so the shared verdict
+// maps to opposite return values:
 //
-// The hooks.toml comment above the entry documents why every "obvious"
-// cut location clobbered EFLAGS or EAX.
+// KOTOR 1 — hook at the JZ 0x0061a31a (jumps on field==0 to the early-out):
+//   return 1 → consumed_exit 0x0061a632, the early-out destructor cascade
+//              (footstep suppressed)
+//   return 0 → natural resume 0x0061a320 (audio plays)
+//   ESI holds `this` at the cut.
+//
+// KOTOR 2 — hook at the CMP+JNZ 0x00765eea (jumps on field!=0 to the play
+// path and FALLS THROUGH into the early-out cascade):
+//   return 1 → consumed_exit 0x00765f10, the play path
+//   return 0 → natural resume 0x00765ef0, the early-out destructor cascade
+//              (footstep suppressed)
+//   EAX holds `this` at the cut.
+//
+// Both games test the SAME [this+0x20] field (K2 witnessed at 0x00765ee4).
+// The hooks.toml comment above the K1 entry documents why every "obvious"
+// K1 cut location clobbered EFLAGS or EAX; the kotor2.hooks.toml entry
+// documents the K2 cut and its inverted polarity.
 extern "C" int __cdecl OnPlayFootstep(void* creature) {
-    if (!acc::game::HandlerEnabled()) return 1;  // KOTOR 2: not ported yet — 1 = let the footstep play
-    if (!creature) return 1;
+    // Per-game verdict encoding — see the polarity note above.
+    const int kSuppress = acc::game::IsKotor2() ? 0 : 1;
+    const int kPlay     = acc::game::IsKotor2() ? 1 : 0;
+    if (!creature) return kSuppress;
 
-    // Mimic the engine's field6_0x20==0 early-out — we replaced its JZ.
+    // Mimic the engine's field6_0x20==0 early-out — we replaced its branch.
     uint32_t field20 = 0;
     __try {
         field20 = *reinterpret_cast<uint32_t*>(
             static_cast<unsigned char*>(creature) + 0x20);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return 1;  // bad pointer — abort safely, audio skipped
+        return kSuppress;  // bad pointer — abort safely, audio skipped
     }
-    if (field20 == 0) return 1;  // engine's natural early-out
+    if (field20 == 0) return kSuppress;  // engine's natural early-out
 
     void* leader = acc::engine::GetClientLeader();
     const bool is_leader = (leader && creature == leader);
@@ -493,7 +508,7 @@ extern "C" int __cdecl OnPlayFootstep(void* creature) {
     // with distance, so any non-leader footstep we'd hear is by definition
     // close enough to mask the leader's own silence; safe to mute the whole
     // class until the leader's velocity recovers.
-    const int verdict = (stuck && !in_combat) ? 1 : 0;
+    const bool suppress = (stuck && !in_combat);
 
     if (is_leader) {
         // Stamps walk-anim freshness for the stuck-direction probe gate.
@@ -501,9 +516,10 @@ extern "C" int __cdecl OnPlayFootstep(void* creature) {
     }
 
     acclog::Write("FootstepSup", "PlayFootstep this=%p leader=%p field20=0x%x "
-        "is_leader=%d stuck=%d combat=%d verdict=%d",
+        "is_leader=%d stuck=%d combat=%d suppress=%d",
         creature, leader, field20,
-        is_leader ? 1 : 0, stuck ? 1 : 0, in_combat ? 1 : 0, verdict);
+        is_leader ? 1 : 0, stuck ? 1 : 0, in_combat ? 1 : 0,
+        suppress ? 1 : 0);
 
-    return verdict;  // 1 = suppress (wrapper jumps to 0x0061a632)
+    return suppress ? kSuppress : kPlay;
 }

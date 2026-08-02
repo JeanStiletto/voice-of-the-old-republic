@@ -442,10 +442,13 @@ void Dispatch() {
     // Pick'd from the K2 map ctor and fog-method decompiles.
     PHASE("map_ui_cursor", acc::map_ui_cursor::Tick());
 
-    if (k1) {
-        // Stuck-detection — feeds g_was_stuck for OnPlayFootstep.
-        PHASE("footstep_suppress", acc::audio::footstep_suppress::Tick());
-    }
+    // Stuck-detection — feeds g_was_stuck for OnPlayFootstep. Both games
+    // since the footstep port (2026-08-02): the whole chain was already
+    // Pick'd (player position, area iteration, cached walls, combat mode);
+    // only the K2 hook itself was missing (twin 0x00765E90, found after
+    // the Batch-5 candidate 0x0077D390 was refuted as the class-selection
+    // idle-animation driver).
+    PHASE("footstep_suppress", acc::audio::footstep_suppress::Tick());
 
     // Combat — mode entry/exit, log narration, attack resolution, saves,
     // leader-change announce, examine panel monitor, queue submenu,

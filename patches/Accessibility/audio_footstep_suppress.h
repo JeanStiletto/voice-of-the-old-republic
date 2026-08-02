@@ -16,11 +16,14 @@
 // GetClientLeader identity, same check the engine uses internally for
 // priority-group assignment.
 //
-// CRITICAL: hook site is mid-function at engine's own JZ. Earlier attempts
-// at "cleaner" entry-point hooks silenced all footsteps because cut bytes
-// landed across TEST EAX,EAX, clobbering ZF before the engine's downstream
-// JZ. See hooks.toml around OnPlayFootstep for the forensic detail and
-// the EFLAGS / EAX wrapper-bug notes. Do not "simplify" without re-reading.
+// CRITICAL: on both games the hook site is mid-function at the engine's
+// own early-out branch (K1 JZ, K2 CMP+JNZ — with INVERTED return polarity;
+// see the handler comment in the .cpp). Earlier K1 attempts at "cleaner"
+// entry-point hooks silenced all footsteps because cut bytes landed across
+// TEST EAX,EAX, clobbering ZF before the engine's downstream JZ. See
+// hooks.toml / kotor2.hooks.toml around OnPlayFootstep for the forensic
+// detail and the EFLAGS / EAX wrapper-bug notes. Do not "simplify" without
+// re-reading.
 //
 // was_stuck reflects the PREVIOUS tick's displacement (~33ms lag at 30Hz).
 //
