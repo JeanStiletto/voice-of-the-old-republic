@@ -43,11 +43,21 @@ bool ToggleMouseLook(bool& outNew);
 
 }  // namespace acc::engine
 
-const unsigned int kClientAppOptionsOffset      = acc::off::Todo(0x4);
-const unsigned int kClientOptionsBitFieldOffset = acc::off::Todo(0x8);
+// K2 witnessed 2026-08-02 off the exe bytes: CClientExoApp::GetOptions twin
+// 0x0072FB00 does [this+4] -> internal, [internal+4] -> CClientOptions (thin
+// caller 0x0079F6C0 feeds the INI writer 0x007B5F50 with that result), and
+// the writer reads `[options+0x8] >> 1 & 1` right before pushing the
+// "Mouse Look" key string — chain and bitfield identical to KOTOR 1.
+const unsigned int kClientAppOptionsOffset      = acc::off::Same(0x4);
+const unsigned int kClientOptionsBitFieldOffset = acc::off::Same(0x8);
 constexpr unsigned int kClientOptionsMouseLookMask  = 0x2;
 
-// AutoPause options bitfield (CClientOptions::bit_flags_2). Action-menu pause
-// is bit 0xf; siblings live at 0xb..0x10 (see action-menu-and-combat.md).
-const unsigned int kClientOptionsAutoPauseFlagsOffset    = acc::off::Todo(0x14);
-constexpr unsigned int kClientOptionsActionMenuAutoPauseMask = 0x8000;
+// AutoPause options bitfield (CClientOptions::bit_flags_2). K1: +0x14, action-
+// menu pause bit 0xf; siblings at 0xb..0x10 (see action-menu-and-combat.md).
+// K2 witnessed 2026-08-02: BOTH the field and the bit moved — the "Action Menu"
+// INI load site (0x007B9FF0 region) writes `[options+0x1c]` masking 0xffffbfff
+// then or-ing `(v & 1) << 0xe`, and the save site (0x007B78F1) reads
+// `[options+0x1c] >> 0xe & 1`. So +0x1c with mask 0x4000 on KOTOR 2.
+const unsigned int kClientOptionsAutoPauseFlagsOffset    = acc::off::Pick(0x14, 0x1c);
+const unsigned int kClientOptionsActionMenuAutoPauseMask =
+    static_cast<unsigned int>(acc::off::Pick(0x8000, 0x4000));

@@ -774,12 +774,17 @@ bool IsDoorStatic(void* serverDoor) {
 // SEH-guarded. Offsets: gui_in_game +0x40, fade +0x6c, panel.alpha +0x4c,
 // input_class +0x9c, area_not_ready +0x288.
 bool MaybeDrivePassiveSelection() {
-    const size_t kClientInternalOffset = acc::off::Todo(0x4);    // CClientExoApp -> internal
-    const size_t kGuiInGameOffset      = acc::off::Todo(0x40);   // internal.gui_in_game
-    const size_t kFadeOffset           = acc::off::Todo(0x6c);   // CGuiInGame.fade
-    const size_t kFadeAlphaOffset      = acc::off::Todo(0x4c);   // CSWGuiFade.panel.alpha
-    const size_t kInputClassOffset     = acc::off::Todo(0x9c);   // internal.input_class
-    const size_t kAreaNotReadyOffset   = acc::off::Todo(0x288);  // internal.area_not_ready
+    // K2 witnessed 2026-08-02 in the K2 client MainLoop twin FUN_00781be0
+    // (its gate at +0x500-line reads `([internal+0x9c]==0 || ==4) &&
+    // [internal+0x288]==0` — byte-for-byte K1's gate), and in the K2
+    // IsGlobalFadeObscuring twin 0x007CBC70, which reads
+    // `0.001 < [[gui+0x6c] + 0x50]` — fade slot unchanged, alpha +0x4c->+0x50.
+    const size_t kClientInternalOffset = acc::off::Same(0x4);    // CClientExoApp -> internal
+    const size_t kGuiInGameOffset      = acc::off::Same(0x40);   // internal.gui_in_game
+    const size_t kFadeOffset           = acc::off::Same(0x6c);   // CGuiInGame.fade
+    const size_t kFadeAlphaOffset      = acc::off::Pick(0x4c, 0x50);  // CSWGuiFade.panel.alpha
+    const size_t kInputClassOffset     = acc::off::Same(0x9c);   // internal.input_class
+    const size_t kAreaNotReadyOffset   = acc::off::Same(0x288);  // internal.area_not_ready
     // These two R() lookups re-run every tick and A12 flagged them as
     // recomputed work. Measured and deliberately LEFT AS IS: R() is a binary
     // search over a 223-entry sorted table, so this is ~16 comparisons a
@@ -788,8 +793,14 @@ bool MaybeDrivePassiveSelection() {
     // as object unwinding and trips C2712 in this SEH function (tried, it
     // does), and hoisting to namespace scope would make the value depend on
     // static-init ordering against CurrentBuild().
-    const uintptr_t kAddrIsGlobalFading = acc::addr::R(0x0062ac60);  // __thiscall(gui)->int
-    const uintptr_t kAddrDoPassiveSelection = acc::addr::R(0x005fa5a0);  // __thiscall(internal,float)
+    // K2 twins witnessed 2026-08-02 at the K2 MainLoop gate (FUN_00781be0):
+    // `if (!FUN_007cbc40()) if (!FUN_007cbc70()) FUN_0079a4c0(dt);` — the
+    // same IsGlobalFading -> IsGlobalFadeObscuring -> DoPassiveSelection
+    // sequence as K1's 0x00603b44/0x00603b50/0x00603b61.
+    const uintptr_t kAddrIsGlobalFading =
+        acc::addr::Pick(0x0062ac60, 0x007cbc40);  // __thiscall(gui)->int
+    const uintptr_t kAddrDoPassiveSelection =
+        acc::addr::Pick(0x005fa5a0, 0x0079a4c0);  // __thiscall(internal,float)
     using PFN_Fade      = int(__thiscall*)(void*);
     using PFN_DoPassive = void(__thiscall*)(void*, float);
 

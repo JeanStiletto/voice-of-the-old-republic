@@ -539,7 +539,13 @@ const size_t kWaypointMapNoteLocOffset     = acc::off::Pick(0x230, 0x270);
 // (party detection adds every party member at once). Layout at the given
 // offset: data pointer at +0, count at +4. Offsets verified against the
 // CSWSCreature::UpdateMineCheck decompile (the engine's own consumer).
-const size_t kTriggerTrapDetectedListOffset   = acc::off::Todo(0x2a8);
+// K2 witnessed 2026-08-02 in the K2 UpdateMineCheck twin 0x0056C310 (found
+// via its unique 400.0f/9.0f detect-radius constants; K1 caller decompile
+// matches branch for branch). The K2 build calls the un-inlined list
+// helpers (contains 0x00476620 / append-unique 0x005210A0) with
+// ECX = obj + offset: trigger branch `add ecx,0x2e8`, door `add ecx,0x32c`,
+// placeable `add ecx,0x370`. Same {data,count} layout at +0/+4.
+const size_t kTriggerTrapDetectedListOffset   = acc::off::Pick(0x2a8, 0x2e8);
 const size_t kTriggerIsTrapOffset             = acc::off::Pick(0x2bc, 0x2fc);  // undefined4, != 0 on mines
 
 // CSWSTrigger footprint polygon (world-space Vector array). K2 +0x40 band
@@ -554,8 +560,8 @@ const size_t kTriggerGeometryOffset           = acc::off::Pick(0x288, 0x2c8);  /
 // witnessed in the object serializer thunk (0x00540660: this+0x114 →
 // SWVarTable load), which sits one slot above the +0x104 script_var_table.
 const size_t kObjectVarTableOffset            = acc::off::Pick(0x110, 0x114);
-const size_t kDoorTrapDetectedListOffset      = acc::off::Todo(0x2dc);
-const size_t kPlaceableTrapDetectedListOffset = acc::off::Todo(0x318);
+const size_t kDoorTrapDetectedListOffset      = acc::off::Pick(0x2dc, 0x32c);
+const size_t kPlaceableTrapDetectedListOffset = acc::off::Pick(0x318, 0x370);
 
 // Walkmesh wall-edge extraction. Pillar 1 foundation.
 //

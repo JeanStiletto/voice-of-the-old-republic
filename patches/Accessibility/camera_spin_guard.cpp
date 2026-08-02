@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdint>
 
+#include "engine_app.h"      // GetClientAppInternal — K2 viewport-object chain
 #include "engine_manager.h"  // kAddrGuiManagerPtr
 #include "engine_options.h"  // GetMouseLook
 #include "engine_player.h"   // GetCameraYawRadians / GetCameraPosition /
@@ -22,10 +23,21 @@ namespace {
 constexpr float kRadToDeg = 57.29577951308232f;
 
 // Engine globals (decompiled, see UpdateCamera @0x5f5e10).
-const uintptr_t kAddrScreenFramePercent   = acc::addr::TodoGlobal(0x007A2444);  // float
+// K2 witnessed 2026-08-02 in the K2 edge-band code at 0x0078C520-0x0078C6A0
+// (found via the 0.001f-initialised .data global): screenFramePercentage
+// twin = 0x00A10910 (both FMULs), mouse_x read as [[GuiManager global]+0]
+// (mouse_y +4), viewport width as int16 [+0x6c] on the object at
+// [client internal + 0x274] — K2 splits the width off the GuiManager.
+const uintptr_t kAddrScreenFramePercent   = acc::addr::PickGlobal(0x007A2444, 0x00A10910);  // float
+// rightClickHeld: LOG-ONLY (episode START diagnostic). No K2 witness yet —
+// SafeRead declines to 0 there. Not part of the guard's firing logic.
 const uintptr_t kAddrRightClickHeld       = acc::addr::TodoGlobal(0x008338F0);  // int
-const size_t    kGuiMouseXOffset          = acc::off::Todo(0x00);        // ulong
-const size_t    kGuiViewportWidthOffset   = acc::off::Todo(0x6C);        // int16
+const size_t    kGuiMouseXOffset          = acc::off::Same(0x00);        // ulong
+const size_t    kGuiViewportWidthOffset   = acc::off::Same(0x6C);        // int16
+// K2 only: the viewport object holding width/height (+0x6c/+0x6e) hangs off
+// the client internal at +0x274 (witnessed via the getter 0x0073FEA0). On
+// K1 the width lives on the GuiManager itself, so this is unused there.
+const size_t    kK2InternalViewportObjOffset = 0x274;
 
 // Cursor-edge guard (Option A): after a load the cursor parks frozen at the
 // screen border (mouse_x=0) and the post-load input pipeline ignores
@@ -179,7 +191,14 @@ void Tick() {
     // --- Cursor / edge-band state (the suspected driver) ---
     void* gui = SafeRead<void*>(kAddrGuiManagerPtr, nullptr);
     uint32_t mouseX = SafeReadOff<uint32_t>(gui, kGuiMouseXOffset, 0);
-    int16_t  vpW    = SafeReadOff<int16_t>(gui, kGuiViewportWidthOffset, 0);
+    // Width source is per-game: K1 keeps it on the GuiManager, K2 on the
+    // viewport object at [internal+0x274] (see the constant's witness note).
+    void* vpObj = gui;
+    if (acc::game::IsKotor2()) {
+        vpObj = SafeReadOff<void*>(acc::engine::GetClientAppInternal(),
+                                   kK2InternalViewportObjOffset, nullptr);
+    }
+    int16_t  vpW    = SafeReadOff<int16_t>(vpObj, kGuiViewportWidthOffset, 0);
     float pct       = SafeRead<float>(kAddrScreenFramePercent, 0.0f);
     // Floor the detection band well above what the config arithmetic gives. At
     // an 800px viewport with the default screenFramePercentage (0.001) that is

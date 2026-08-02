@@ -21,7 +21,11 @@ namespace {
 // +0x4d0. Both are Lane-named fields in the RE database (the NWScript
 // ACTION_MODE_STEALTH / ACTION_MODE_DETECT toggles), confirmed against
 // k1_win_gog_swkotor.exe.xml. Non-zero once the leader engages Stealth mode.
-const size_t kCreatureStealthModeOffset = acc::off::Todo(0x4d1);
+// K2 witnessed 2026-08-02: GetDetectMode twin 0x005802C0 reads byte
+// [this+0x510] (with K1's same animation==10000 special case), and the
+// stealth setter twin 0x005B7AA0 compare-and-writes byte [this+0x511] —
+// the same adjacent pairing, shifted +0x40.
+const size_t kCreatureStealthModeOffset = acc::off::Pick(0x4d1, 0x511);
 
 // Announce once the metre reading has moved this far. 1 m (not 2) because
 // stealth movement is slow — closing 2 m takes several seconds, which reads as

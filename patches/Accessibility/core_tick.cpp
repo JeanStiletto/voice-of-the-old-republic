@@ -261,8 +261,11 @@ void Dispatch() {
     // the Q/E candidate halo and passive narration (root cause of the second-
     // door "Q/E can't find the door in front of me"). Since the fade can't be
     // cleared, drive DoPassiveSelection ourselves while that's the only blocker.
-    // No-op in normal play. See engine_area.cpp.
-    if (k1) acc::engine::MaybeDrivePassiveSelection();
+    // No-op in normal play. See engine_area.cpp. Both games since the K2
+    // systems pass (2026-08-02): the whole gate chain is witnessed in the K2
+    // MainLoop twin — K2's scripted holds (Peragus opening) pin the fade the
+    // same way the Endar Spire does.
+    acc::engine::MaybeDrivePassiveSelection();
 
     // Speak the "Steam Big Picture is eating your keypresses" warning if the
     // focus-probe poll thread queued one (windowed-mode focus theft — the
@@ -295,13 +298,25 @@ void Dispatch() {
         // Shift+N drops a map marker; in-world Shift+N stays silent.
         PHASE("map_user_markers", acc::map_user_markers::PollWin32());
 
-        // Diagnostic probes (Shift+AltGr Mouse Look, F9 pathfind, F10 audio
-        // frame, F12 camera state, Ctrl+F12 camera distance, B view mode).
-        PHASE("probe_audio_frame", acc::probe_audio_frame::PollWin32());
+        // Camera diagnostic probes (F12 camera state, Ctrl+F12 camera
+        // distance). Stay KOTOR 1: pure dev diagnostics on 6 unresolved
+        // camera/behavior vtable offsets — port when a K2 camera
+        // investigation actually needs them, not before.
         PHASE("probe_camera_state", acc::probe_camera_state::PollWin32());
         PHASE("probe_camera_distance", acc::probe_camera_distance::Tick());
-        PHASE("view_mode.poll", acc::view_mode::PollWin32());
     }
+
+    // Audio-frame probe (F10) — engine-constant-free (player position +
+    // sector math only). Both games since the K2 systems pass (2026-08-02).
+    PHASE("probe_audio_frame", acc::probe_audio_frame::PollWin32());
+
+    // Both games since the K2 systems pass (2026-08-02): view_mode.cpp's
+    // whole closure is resolved — its one Todo (CClientOptions bitfield)
+    // was witnessed off the K2 exe (chain and mouse-look identical; the
+    // autopause field/bit MOVED and is Pick'd). Map-pin offsets stay Todo
+    // but only the K1-gated map stamper writes pins, so no pin can reach
+    // the narrated-target slot on KOTOR 2.
+    PHASE("view_mode.poll", acc::view_mode::PollWin32());
 
     // ----- Batch 3c (KOTOR 2 port): interaction -----
     // These run on BOTH games. The whole subsystem closure was resolved for
@@ -345,10 +360,10 @@ void Dispatch() {
     // Drain deferred Q/E reannounce.
     PHASE("passive_narrate", acc::passive_narrate::Tick());
 
-    if (k1) {
-        // Tab speaks the new leader's name.
-        PHASE("party_leader_announce", acc::party_leader_announce::Tick());
-    }
+    // Both games since the K2 systems pass (2026-08-02): its whole surface
+    // (GetClientLeader / GetActiveLeaderName / GetPlayerPosition / hotkeys)
+    // was already Pick'd and live on KOTOR 2 via other callers.
+    PHASE("party_leader_announce", acc::party_leader_announce::Tick());
 
     // ----- ORDER LOAD-BEARING -----
     // camera_announce → camera_orient → spatial::change_detector →
@@ -365,18 +380,16 @@ void Dispatch() {
     // dedup sees this frame's last-spoken direction. Cheap when idle.
     PHASE("door_announce", acc::door_announce::Tick());
 
-    if (k1) {
-        // Story-locked-object bark replay — flushes a queued explanation the
-        // frame after the router spoke the generic "locked" line, so ordering
-        // holds.
-        PHASE("locked_recall", acc::locked_recall::Tick());
-        // camera_orient (active camera turning) and its spin guard stay
-        // KOTOR-1-gated: the guard is a workaround for the ACTIVE edge-turn
-        // driver, which is not ported yet — the passive yaw readout above
-        // never triggers the guarded behaviour. Port them together.
-        PHASE("camera_orient", acc::camera_orient::Tick());
-        PHASE("camera_spin_diag", acc::camera_spin_guard::Tick());
-    }
+    // Both games since the K2 systems pass (2026-08-02).
+    // locked_recall: TLK lookup + narrated-target slot only, both ported.
+    // camera_orient + spin guard ported TOGETHER (the guard is a workaround
+    // for the active edge-turn driver — never split them): their surface is
+    // camera pos/yaw (Pick'd, live via camera_announce), TurnScancode
+    // (engine-constant-free — INI + DIK fallback) and GetMouseLook, whose
+    // CClientOptions chain was witnessed on the K2 exe this pass.
+    PHASE("locked_recall", acc::locked_recall::Tick());
+    PHASE("camera_orient", acc::camera_orient::Tick());
+    PHASE("camera_spin_diag", acc::camera_spin_guard::Tick());
 
     PHASE("spatial.change_detector", acc::spatial::change_detector::Tick());
 
@@ -392,27 +405,35 @@ void Dispatch() {
     // Area + room transition announces.
     PHASE("transitions", acc::transitions::Tick());
 
-    if (k1) {
-        // Discovery-tier deferred load (runs after transitions has set the
-        // area).
-        PHASE("discovery", acc::discovery::Tick());
+    // Both games since the K2 systems pass (2026-08-02): discovery's whole
+    // closure was already Pick'd (ScriptVarTable 0x100->0x104, the four var
+    // accessors, CExoString ctor/dtor — resolved in the Batch 3c address
+    // rounds); only this gate was still standing.
+    PHASE("discovery", acc::discovery::Tick());
 
+    if (k1) {
         // Endar Spire room-5 softlock guard + plot-state diagnostic. Inert
         // outside END_M01AA (self-gated); flushes queued door hints every
         // frame.
         PHASE("endar_softlock", acc::endar::Tick());
 
-        // Trap ("mine") detected-state watcher — mirrors the engine's per-trap
-        // detected-by lists for sighted-parity trap warnings. Internally
-        // throttled to 250ms scans.
-        PHASE("trap_watch", acc::trap_watch::Tick());
-
         // Temple floor-plate puzzle assist — inert outside unk_m44ab.
         // Internally throttled to 150ms scans.
         PHASE("floor_puzzle", acc::floor_puzzle::Tick());
+    }
 
-        PHASE("view_mode", acc::view_mode::Tick());
+    // Both games since the K2 systems pass (2026-08-02): the three per-kind
+    // trap detected-by list offsets are witnessed in the K2 UpdateMineCheck
+    // twin (see engine_area.h). Mirrors the engine's per-trap detected-by
+    // lists for sighted-parity trap warnings; 250ms internal throttle.
+    PHASE("trap_watch", acc::trap_watch::Tick());
 
+    // Both games since the K2 systems pass (2026-08-02) — see the
+    // view_mode.poll note above. Same slot as before (after floor_puzzle,
+    // before map_ui_cursor) so cursor/listener ordering is unchanged.
+    PHASE("view_mode", acc::view_mode::Tick());
+
+    if (k1) {
         // Map UI cursor — gates on PanelKind::InGameMap.
         PHASE("map_ui_cursor", acc::map_ui_cursor::Tick());
 
@@ -449,14 +470,12 @@ void Dispatch() {
     // action struct, attack feat) is fully witnessed on KOTOR 2.
     PHASE("combat.special_watch", acc::combat::special_watch::Tick());
 
-    if (k1) {
-        // Stealth distance readout — while the leader is stealthed and a
-        // hostile creature is the narrated-target focus, speak the closing
-        // distance every ~2 m. Inert otherwise (no stealth / no hostile
-        // focus). Stays KOTOR 1: kCreatureStealthModeOffset has no K2
-        // witness yet.
-        PHASE("stealth_watch", acc::stealth_watch::Tick());
-    }
+    // Stealth distance readout — while the leader is stealthed and a
+    // hostile creature is the narrated-target focus, speak the closing
+    // distance every ~2 m. Inert otherwise (no stealth / no hostile
+    // focus). Both games since the K2 systems pass (2026-08-02):
+    // stealth_mode witnessed at K2 creature+0x511 (see stealth_watch.cpp).
+    PHASE("stealth_watch", acc::stealth_watch::Tick());
 
     // Dialog screen + bark bubble narration. Both games since Batch 3b —
     // its whole constant closure is resolved for KOTOR 2 (12/12; the reply

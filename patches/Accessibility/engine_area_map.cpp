@@ -135,7 +135,14 @@ bool GetCurrentAreaResName(char* outBuf, size_t bufSize) {
         // {c_string,len} is safe). We deliberately leak the engine-allocated
         // c_string — this runs once per area change (matches the engine_reads
         // leak convention; freeing across the DLL/CRT boundary is riskier).
-        const uintptr_t kAddrGetModuleResourceName = acc::addr::R(0x004c4b80);
+        // K2 twin 0x00561030, witnessed 2026-08-02 via the K2
+        // StoreCurrentModule twin (string anchor "GAMEINPROGRESS:" at
+        // 0x005306ed): same call position (right after server GetModule
+        // 0x0052F4C0, result fed to IncludeModuleInSave 0x0053AB60) and the
+        // same this+pushed-out-buffer shape; reads the module string at
+        // [module+0x5c].
+        const uintptr_t kAddrGetModuleResourceName =
+            acc::addr::Pick(0x004c4b80, 0x00561030);
         struct { char* p; int len; } out = {nullptr, 0};
         using PFN = void* (__thiscall*)(void*, void*);
         reinterpret_cast<PFN>(kAddrGetModuleResourceName)(module, &out);
