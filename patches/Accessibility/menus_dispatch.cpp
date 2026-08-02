@@ -371,7 +371,11 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
     {
         void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
         void* fg = GetForegroundPanel(mgr);
-        activePanel = fg ? fg : g_currentPanel;
+        // Liveness-filtered on the fallback leg: activePanel is dereferenced
+        // all the way down the routing path, and g_currentPanel can be a
+        // freed panel (module loads suppress its only writer for the whole
+        // load). The comparison/log below wants the raw value.
+        activePanel = fg ? fg : CurrentPanelIfLive();
         // First-fire-per-pair divergence log: when fg != g_currentPanel we
         // want to see it in the log, but only once per (fg, g_currentPanel)
         // tuple to avoid spamming during steady-state (every keypress in a

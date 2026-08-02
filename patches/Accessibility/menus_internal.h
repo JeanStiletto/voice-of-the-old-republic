@@ -149,6 +149,22 @@ bool QueueButtonByIdActivate(void* panel, int buttonId, const char* logPrefix);
 // Read-only from menus_extract.cpp; never assign here.
 extern void* g_currentPanel;
 
+// Liveness-filtered view of g_currentPanel — returns it only while it is
+// still in the manager's panels[], nullptr once the engine has freed it.
+//
+// g_currentPanel is a raw cached pointer with no invalidation hook, and
+// OnSetActiveControl (its only writer) is SUPPRESSED for the whole duration
+// of a save-load / module load. So every area transition leaves it pointing
+// at a panel the module teardown freed, and it stays that way until the next
+// ordinary focus event. The freed block is promptly reused, so panel+0x20 /
+// +0x24 (CExoArrayList data + size) read back as whatever now lives there —
+// non-null, plausibly-sized, and data[0] takes an AV. Same failure the chain
+// side already guards with ValidateChainPanel; this is its shared form.
+//
+// Use this at every site that DEREFERENCES the panel. Pointer comparisons
+// (g_chainPanel != g_currentPanel and friends) may read the raw global.
+void* CurrentPanelIfLive();
+
 // Cross-TU state owned by menus.cpp, touched by the two TUs the Phase-1
 // split carved out of it. These were file-static / anonymous-namespace
 // while everything lived in one TU; the split is the only reason they are

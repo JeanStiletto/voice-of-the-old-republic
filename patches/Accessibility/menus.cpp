@@ -197,6 +197,14 @@ typedef void (__thiscall* PFN_PanelSetActiveControl)(void* panel, void* control)
 // extern decl in menus_internal.h.
 void* g_currentPanel = nullptr;
 
+// See menus_internal.h for why every deref of g_currentPanel has to come
+// through here. IsPanelInManager is a pointer-equality scan over panels[] —
+// it never dereferences the candidate, so it is safe on a wild pointer.
+void* CurrentPanelIfLive() {
+    return acc::engine::IsPanelInManager(g_currentPanel) ? g_currentPanel
+                                                         : nullptr;
+}
+
 // Sub-screen drill state. The InGameMenu icon strip is kept in foreground by
 // the engine: each icon's onClick (OnInvButtonPressed @0x624d10 etc.) jumps
 // into CGuiInGame::SwitchToSWInGameGui @0x62cf10, which calls AddPanel for the
@@ -665,13 +673,14 @@ extern "C" void __cdecl OnListBoxSetActiveControl(void* listBox, void* newRow,
                 reinterpret_cast<unsigned char*>(listBox) +
                 kListBoxControlsOffset);
             int ctrlsSize = ctrls ? ctrls->size : 0;
-            if (ctrlsSize == 1 && g_currentPanel &&
+            void* livePanel = CurrentPanelIfLive();
+            if (ctrlsSize == 1 && livePanel &&
                 acc::menus::monitors::IsInGameSubScreenKind(
-                    IdentifyPanel(g_currentPanel))) {
+                    IdentifyPanel(livePanel))) {
                 acclog::Write("Menus.ListBox",
                               "sub-screen description listbox silenced "
                               "(panel kind=%s)",
-                              PanelKindName(IdentifyPanel(g_currentPanel)));
+                              PanelKindName(IdentifyPanel(livePanel)));
             } else if (acc::tutorial_hints::IsSuppressedTutorialText(text) ||
                        acc::tutorial_popup::SyntheticActive()) {
                 // The tutorial popup's single-row message listbox: the keyboard

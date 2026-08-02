@@ -164,7 +164,8 @@ void AnnounceControl(void* control) {
         strncpy_s(s_focusMonitorText, spoken, _TRUNCATE);
         return;
     }
-    if (g_currentPanel && IsClassSelectionIcon(g_currentPanel, control)) {
+    void* livePanel = CurrentPanelIfLive();
+    if (livePanel && IsClassSelectionIcon(livePanel, control)) {
         return;
     }
     // A listbox container with no extractable text is the engine's panel-open

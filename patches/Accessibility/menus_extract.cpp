@@ -763,12 +763,15 @@ const char* TrySlider(void* control, char* outBuf, size_t bufSize) {
         uint32_t max = ReadU32(control, kSliderMaxValueOffset);
         char label[128];
         const char* labelText = nullptr;
-        if (g_currentPanel &&
-            IsSoundOptionsMovieSlider(g_currentPanel, control)) {
+        // Liveness-filtered: TrySlider runs ahead of FromControl's
+        // ResolveOwnerPanel, so the raw global is all we have here — and both
+        // callees walk panel+kPanelControlsOffset.
+        void* panel = CurrentPanelIfLive();
+        if (panel && IsSoundOptionsMovieSlider(panel, control)) {
             labelText = acc::strings::Get(
                 acc::strings::Id::SoundOptionsMovieVolume);
-        } else if (g_currentPanel &&
-                   FindSiblingLabel(g_currentPanel, control,
+        } else if (panel &&
+                   FindSiblingLabel(panel, control,
                                     label, sizeof(label))) {
             labelText = label;
         }
@@ -1966,10 +1969,15 @@ const char* TryPortraitCharGenArrow(void* control, void* owner,
 //    defeating both the chain squash and FindAdjacentArrow.
 const char* TrySiblingLabel(void* control, char* outBuf, size_t bufSize) {
     const char* source = nullptr;
-    if (g_currentPanel && IsChainNavigable(control) &&
-        !IsCycleFlankerArrow(g_currentPanel, control)) {
+    // Liveness-filtered — both callees walk panel+kPanelControlsOffset, and a
+    // module load leaves g_currentPanel pointing at a freed panel (crash
+    // analysed 2026-08-02, swkotor2.exe.51156.dmp: opening Equipment right
+    // after an area transition faulted on data[0] of the reused block).
+    void* panel = CurrentPanelIfLive();
+    if (panel && IsChainNavigable(control) &&
+        !IsCycleFlankerArrow(panel, control)) {
         char label[256];
-        if (FindSiblingLabel(g_currentPanel, control,
+        if (FindSiblingLabel(panel, control,
                              label, sizeof(label))) {
             size_t llen = strnlen(label, sizeof(label));
             if (llen > 0 && llen + 1 <= bufSize) {
