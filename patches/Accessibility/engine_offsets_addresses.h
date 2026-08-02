@@ -217,7 +217,12 @@ const uintptr_t kVtableCSWGuiFeatsCharGen           = acc::addr::Pick(0x007598b0
 // Signature per Ghidra decomp (DECOMP @0x006f2fb0):
 //   void __thiscall OnEnterFeat(ushort param_1)
 // Callee-pops 4 bytes (ushort widened to dword on stack).
-const uintptr_t kAddrCSWGuiFeatsCharGenOnEnterFeat = acc::addr::R(0x006f2fb0);
+// K2 twin 0x0090B9B0, decompile/disasm-matched: GetFeat twin 0x006A20F0,
+// name strref [feat+0x8] SetStrRef'd onto the name label, description
+// strref [feat+0xc] into SetDescription 0x0090C390, BTN_SELECT restyle at
+// the ctor-witnessed +0x1168. Called from BuildButtons 0x0090BD50 and the
+// selection-changed callback 0x0090C530 — K1's positions.
+const uintptr_t kAddrCSWGuiFeatsCharGenOnEnterFeat = acc::addr::Pick(0x006f2fb0, 0x0090B9B0);
 
 // CSWGuiFeatsCharGen::OnFeatPicked — the canonical "user clicked this
 // feat" engine entry point. Calls DetermineFeat to derive the user's
@@ -231,7 +236,14 @@ const uintptr_t kAddrCSWGuiFeatsCharGenOnEnterFeat = acc::addr::R(0x006f2fb0);
 // Signature per Ghidra decomp (DECOMP @0x006f3c20):
 //   void __thiscall OnFeatPicked(ulong param_1)
 // Callee-pops 4 bytes.
-const uintptr_t kAddrCSWGuiFeatsCharGenOnFeatPicked = acc::addr::R(0x006f3c20);
+// K2 twin 0x0090B890, disasm-matched: DetermineFeat twin 0x0090BCB0,
+// remaining-selections byte +0x1bde, AddChosenFeat 0x0090BF90 /
+// RemoveChosenFeat 0x0090C120 + BuildButtons repaint, and K1's exact
+// message strrefs (0xa622 all-selected, 0xa4c6/0xa4c7/0xa4c8 family)
+// through the same message-box sequence. Reached from the double-click
+// callback 0x0090C5A0 with the SkillHitCheckMouse equality guard —
+// the PowersLevelUp pattern repeated verbatim.
+const uintptr_t kAddrCSWGuiFeatsCharGenOnFeatPicked = acc::addr::Pick(0x006f3c20, 0x0090B890);
 
 // CSWGuiPowersLevelUp engine surfaces — Force-power picker (pwrlvlup.gui)
 // used by both the chargen Power-selection screen and the InGameLevelUp

@@ -457,9 +457,6 @@ bool IsChargenFeatsPanel(void* panel) {
 bool HandleInput(int n, void* thisPtr, void* panel,
                  int param_1, int param_2, int& outRv)
 {
-    // KOTOR 2 (Batch 1): kFeatsCharGenChartOffset and the feat-tree constants
-    // are unresolved there. Decline; the generic chain still navigates.
-    if (acc::game::IsKotor2()) return false;
     if (!IsChargenFeatsPanel(panel)) return false;
     EnsureBound(panel);
     if (s_chartRowCount + kButtonRowCount == 0) return false;

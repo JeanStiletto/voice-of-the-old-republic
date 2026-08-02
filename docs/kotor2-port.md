@@ -223,11 +223,39 @@ The ledger:
   markers reset on area change. K1 regression: same list (GetClientArea
   gained a branch, two Dispatch phases moved out of if(k1)).
 
+**Chargen feats/grids batch — IMPLEMENTED 2026-08-02 (tenth session; one
+Ghidra round + capstone, zero test rounds). Worklist 30/30, built green,
+NOT tested in game.** The ledger:
+
+- **CSWGuiFeatsCharGen K2**: ctor 0x00909E00 / dtor 0x0090A9A0 (RTTI
+  vtable 0x009AA434, already Pick'd). Ctor tag-wiring: LBL_NAME +0xab0,
+  BTN_ACCEPT +0xbf8, BTN_BACK +0xdc8, BTN_RECOMMENDED +0xf98, BTN_SELECT
+  +0x1168, LB_FEATS +0x15c8, LB_DESC +0x18b8 — the panel RE-ORDERS members
+  vs K1 (buttons before listboxes), so nothing follows a delta rule.
+  **Chart at +0x1bf4** (the second class the level-up round's
+  SetSelectedSkill census flagged — mystery closed). The four
+  feat lists sit at +0x1ba8..+0x1bcc (12-byte stride), each list's
+  IDENTITY pinned by the K2 BuildButtons twin 0x0090BD50 painting K1's
+  exact status codes (1=existing, 2=granted, 0=available, 4=chosen).
+- **OnEnterFeat → 0x0090B9B0** (name strref [feat+0x8] onto the name
+  label, desc strref [feat+0xc] into SetDescription 0x0090C390);
+  **OnFeatPicked → 0x0090B890** (DetermineFeat 0x0090BCB0, add/remove +
+  repaint, K1's exact strref cluster 0xa622/0xa4c6-c8), reached from the
+  ctor-registered selection-changed/double-click callbacks
+  0x0090C530/0x0090C5A0 — the PowersLevelUp pattern verbatim.
+- **Rules feat table from the banked GetFeat twin 0x006A20F0**: array
+  POINTER [rules+0x108], count word [rules+0x11c], stride 0x50 (K1
+  0x90/0xa4/0x48); name strref Same(+0x8). Same *kAddrRulesGlobal base.
+- Gates cleared: the chargen-feats reader decline + the diagnostic dump
+  decline (its rules-table walk is now resolved).
+- Test items: chargen step 5 (Talente) — 2D grid navigation with
+  name/status/description per cell, Enter picks/unpicks (+ each refusal
+  message), the granted-feats overlay, recommended/accept/back buttons;
+  same again on the LEVEL-UP wizard's feat step (same panel class). K1
+  regression: chargen feats + level-up feats pass.
+
 **STILL K1-GATED (the remaining port surface, in suggested order):**
-chargen feat/power grids (kAbilitiesCharGen*;
-NOTE the level-up round already located their chart cluster: two classes at
-0x00909xxx/0x0090Bxxx with charts +0x1bf8/+0x1bf4 — see the SetSelectedSkill
-caller census), pazaak + pazaakdeck, swoop race/audio, footstep_suppress
+pazaak + pazaakdeck, swoop race/audio, footstep_suppress
 (needs the OnPlayFootstep hook — candidate 0x0077D390, play-vs-compute split
 still unverified), OnRulesInit/mouse-guard decision, camera probes
 (deliberately deferred dev diagnostics). endar_softlock and floor_puzzle stay

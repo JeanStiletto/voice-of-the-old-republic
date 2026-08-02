@@ -498,10 +498,15 @@ const size_t    kAbilitiesCharGenDescriptionListBoxOffset      = acc::off::Todo(
 // rendered on top, with its own listbox of granted feats. The main panel
 // stays underneath; its description_listbox.controls[0] mirrors the picker
 // selection so reading from there gives the focused-feat description.
-const size_t    kFeatsCharGenNameLabelOffset        = acc::off::Todo(0xbac);
-const size_t    kFeatsCharGenSelectButtonOffset     = acc::off::Todo(0x1238);
-const size_t    kFeatsCharGenFeatsListBoxOffset     = acc::off::Todo(0x13fc);
-const size_t    kFeatsCharGenDescriptionListBoxOffset = acc::off::Todo(0x16dc);
+// KOTOR 2 values from its own ctor 0x00909E00, tag-wired (LBL_NAME,
+// BTN_SELECT, LB_FEATS, LB_DESC): the panel re-orders members (buttons
+// before the listboxes, unlike K1) so nothing here follows a delta rule —
+// each is its own witness. OnEnterFeat's tail independently reconfirms
+// the name label (+0xab0, via its text_params at +0xf0) and BTN_SELECT.
+const size_t    kFeatsCharGenNameLabelOffset        = acc::off::Pick(0xbac, 0xab0);
+const size_t    kFeatsCharGenSelectButtonOffset     = acc::off::Pick(0x1238, 0x1168);
+const size_t    kFeatsCharGenFeatsListBoxOffset     = acc::off::Pick(0x13fc, 0x15c8);
+const size_t    kFeatsCharGenDescriptionListBoxOffset = acc::off::Pick(0x16dc, 0x18b8);
 
 // Four parallel feat lists tracked on the panel — each a
 // CExoArrayList<ushort> { ushort* data, int size, int capacity }
@@ -512,14 +517,19 @@ const size_t    kFeatsCharGenDescriptionListBoxOffset = acc::off::Todo(0x16dc);
 //   field20 @ +0x19c8  data; @ +0x19cc size  — granted   (auto-given this level)
 //   field23 @ +0x19d4  data; @ +0x19d8 size  — available (BuildAvailableList output)
 //   field26 @ +0x19e0  data; @ +0x19e4 size  — chosen    (picked this session)
-const size_t    kFeatsCharGenExistingListDataOffset    = acc::off::Todo(0x19bc);
-const size_t    kFeatsCharGenExistingListSizeOffset    = acc::off::Todo(0x19c0);
-const size_t    kFeatsCharGenGrantedListDataOffset     = acc::off::Todo(0x19c8);
-const size_t    kFeatsCharGenGrantedListSizeOffset     = acc::off::Todo(0x19cc);
-const size_t    kFeatsCharGenAvailableListDataOffset   = acc::off::Todo(0x19d4);
-const size_t    kFeatsCharGenAvailableListSizeOffset   = acc::off::Todo(0x19d8);
-const size_t    kFeatsCharGenChosenListDataOffset      = acc::off::Todo(0x19e0);
-const size_t    kFeatsCharGenChosenListSizeOffset      = acc::off::Todo(0x19e4);
+// KOTOR 2: the four lists sit at +0x1ba8/+0x1bb4/+0x1bc0/+0x1bcc (same
+// 12-byte stride, ctor-witnessed), and the K2 BuildButtons twin 0x0090BD50
+// pins each list's IDENTITY by painting K1's exact status codes from it
+// (status 1=existing from +0x1ba8, 2=granted from +0x1bb4, 0=available
+// from +0x1bc0, 4=chosen from +0x1bcc).
+const size_t    kFeatsCharGenExistingListDataOffset    = acc::off::Pick(0x19bc, 0x1ba8);
+const size_t    kFeatsCharGenExistingListSizeOffset    = acc::off::Pick(0x19c0, 0x1bac);
+const size_t    kFeatsCharGenGrantedListDataOffset     = acc::off::Pick(0x19c8, 0x1bb4);
+const size_t    kFeatsCharGenGrantedListSizeOffset     = acc::off::Pick(0x19cc, 0x1bb8);
+const size_t    kFeatsCharGenAvailableListDataOffset   = acc::off::Pick(0x19d4, 0x1bc0);
+const size_t    kFeatsCharGenAvailableListSizeOffset   = acc::off::Pick(0x19d8, 0x1bc4);
+const size_t    kFeatsCharGenChosenListDataOffset      = acc::off::Pick(0x19e0, 0x1bcc);
+const size_t    kFeatsCharGenChosenListSizeOffset      = acc::off::Pick(0x19e4, 0x1bd0);
 
 // CSWGuiSkillFlowChart embedded at +0x1a08 (struct size 0x10). It's the
 // 2D scrollable feat-tree grid: a CExoArrayList-shaped header + a
@@ -530,7 +540,9 @@ const size_t    kFeatsCharGenChosenListSizeOffset      = acc::off::Todo(0x19e4);
 //   chart +0x08  int               rows_capacity
 //   chart +0x0c  byte              selected_col   (0..2 in BuildButtons)
 //   chart +0x0d  byte              selected_row
-const size_t    kFeatsCharGenChartOffset               = acc::off::Todo(0x1a08);
+// KOTOR 2 +0x1bf4 — ctor-witnessed (`add ecx,0x1bf4` before the chart ctor
+// 0x0089A650) and the address the SetSelectedSkill caller census flagged.
+const size_t    kFeatsCharGenChartOffset               = acc::off::Pick(0x1a08, 0x1bf4);
 // K2 witnessed in CSWGuiSkillFlowChart::SetSelectedSkill's twin 0x0089C070
 // (rows data [chart+0], size [chart+4], selected col/row bytes +0xc/+0xd)
 // and ClearChart's twin 0x0089A6E0 (same rows fields) — all identical.
@@ -581,10 +593,18 @@ const unsigned  kFlowSkillStructEmptyFeatId            = acc::off::Same(0xffffff
 //   +0x08   ulong   name_strref (the TLK strref the engine writes onto a
 //                                SkillEntry row's text_params)
 // (kAddrRulesGlobal itself is in engine_offsets_addresses.h, data-globals.)
-const size_t    kRulesFeatsArrayOffset        = acc::off::Todo(0x90);
-const size_t    kRulesFeatCountOffset         = acc::off::Todo(0xa4);
-const size_t    kFeatStructSize               = acc::off::Todo(0x48);
-const size_t    kFeatNameStrRefOffset         = acc::off::Todo(0x08);
+// KOTOR 2 values disasm-witnessed in its own GetFeat 0x006A20F0 (the
+// Batch-4-banked twin): array POINTER at [rules+0x108], count word at
+// [rules+0x11c], stride 0x50 (grew from 0x48; K2 adds a flags dword at
+// feat+0x28 whose bit 4 gates validity). Same base as our reads — the
+// callers hand it *kAddrRulesGlobal (0x00A1B4D0), the global every K2
+// rules decompile this port has made uses.
+const size_t    kRulesFeatsArrayOffset        = acc::off::Pick(0x90, 0x108);
+const size_t    kRulesFeatCountOffset         = acc::off::Pick(0xa4, 0x11c);
+const size_t    kFeatStructSize               = acc::off::Pick(0x48, 0x50);
+// Same on K2: its OnEnterFeat twin 0x0090B9B0 SetStrRefs [feat+0x8] onto
+// the name label (description strref at [feat+0xc]).
+const size_t    kFeatNameStrRefOffset         = acc::off::Same(0x08);
 
 // Offset of the embedded CSWGuiSkillFlowChart inside CSWGuiPowersLevelUp.
 // Matches struct field33_0x19fc (swkotor.exe.h:16637). We call
