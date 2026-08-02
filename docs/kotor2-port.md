@@ -69,11 +69,10 @@ equip-panel id family found on the way. The ledger:
   exclusions (covers K1 leftovers reused in flashbacks), Darth Nihilus
   excluded (non-language vocalisations — subtitle is the only channel).
   kNeverSuppressTags/kAlwaysSuppressTags are per game, K2 empty (IsKotor2
-  short-circuit; all shipped entries were K1 characters). OPEN DESIGN
-  POINT for the user: K2 was never dubbed — German install = English VO +
-  German subtitles — so default-on suppression removes the only German
-  channel for "human" speakers; decide during the test round whether the
-  HumanSubtitles toggle should default differently on K2.
+  short-circuit; all shipped entries were K1 characters). The user's German
+  K2 install has German VO (confirmed by the user 2026-08-02 — an earlier
+  "K2 was never dubbed" claim in this ledger was WRONG), so the suppress
+  semantics carry over from K1 unchanged.
 - **The equip/charsheet/partyselect .gui id family went per game**
   (mined from K2's character_p/equip_p/partyselect_p.gui — the install's
   Aspyr override copies are id-identical to gui.bif). K2 RE-NUMBERS

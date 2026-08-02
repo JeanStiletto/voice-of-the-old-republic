@@ -85,10 +85,7 @@ constexpr uint64_t kHumanAppearanceMaskK1[kHumanAppearanceWordCountK1] = {
 // Twilek_* (renamed from Alien_Twilek_*) excluded, Party_NPC_* blanket-human
 // after droid/Wookiee exclusions (covers the K1 leftovers reused in
 // flashbacks), Darth Nihilus excluded (non-language vocalisations — his
-// subtitle is the only channel). CAVEAT for the German install: K2 was never
-// dubbed (English VO + German subtitles), so "the player already understands
-// the voice" only holds for players who follow spoken English; the
-// HumanSubtitles toggle is the lever either way.
+// subtitle is the only channel).
 constexpr int    kHumanAppearanceMaxIdK2     = 670;
 constexpr size_t kHumanAppearanceWordCountK2 = 11;
 constexpr uint64_t kHumanAppearanceMaskK2[kHumanAppearanceWordCountK2] = {
