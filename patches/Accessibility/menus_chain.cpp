@@ -653,8 +653,9 @@ bool IsDecorativeControl(void* panel, void* c,
             if (!inActiveParty && !available) return true;
         }
     }
-    // WorkbenchUpgrade slot buttons (cid 12..18) that the engine has
-    // marked non-interactive (bit_flags & 0x2 == 0). For a 3-slot
+    // WorkbenchUpgrade slot buttons (per-game ids — see
+    // IsWorkbenchUpgradeSlotButtonId) that the engine has marked
+    // non-interactive (bit_flags & 0x2 == 0). For a 3-slot
     // ranged weapon (saber=3) these are the 4 Kristall positions;
     // for a 4-slot saber/double-shaft (saber=2) they are the 3
     // Aufwertungs positions. Sighted players see them greyed; a
@@ -663,11 +664,11 @@ bool IsDecorativeControl(void* panel, void* c,
     // Dropping them from the chain lets arrow-down go straight from
     // the last applicable slot to BTN_ASSEMBLE.
     if (pk == PanelKind::WorkbenchUpgrade &&
-        cid >= 12 && cid <= 18) {
+        acc::engine::IsWorkbenchUpgradeSlotButtonId(cid)) {
         uint32_t bf = 0;
         __try {
             bf = *reinterpret_cast<uint32_t*>(
-                reinterpret_cast<unsigned char*>(c) + 0x44);
+                reinterpret_cast<unsigned char*>(c) + kControlBitFlagsOffset);
         } __except (EXCEPTION_EXECUTE_HANDLER) {
             bf = 0;
         }

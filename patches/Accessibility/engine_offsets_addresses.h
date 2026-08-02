@@ -440,7 +440,18 @@ const uintptr_t kAddrCSWGuiUpgradeOnAssemble = acc::addr::R(0x006c6190);
 // SetDescription writes the resulting string into the description label at
 // panel + kUpgradeDescLabelOffset, so we read it back from there.
 typedef void (__thiscall* PFN_CSWGuiUpgradeOnControlEntered)(void* panel, void* item_entry);
-const uintptr_t kAddrCSWGuiUpgradeOnControlEntered = acc::addr::R(0x006c5370);
+// K2: 0x008CCB80 — the PICKER-ROW handler. K2 SPLIT K1's single OnControlEntered
+// in two: the ctor registers 0x008CE3F0 (event 0) on the SLOT-BUTTON banks,
+// while CreateItemEntry 0x008CE930 registers 0x008CCB80 (event 0) on each
+// offered-mod row — and the row is what our saber-description path drives.
+// Body decompile-matched: is_active gate [row+0x50], obj id [row+0x1d0],
+// empty-string SetDescription on the 0x7f000000 sentinel, GetItemByGameObjectID
+// twin 0x0051C0E0, K1's exact 0x7dac GUI-string fallback, SetDescription twin
+// 0x008CCD70. NOTE the K1 saber keyed-bonus concat is absent from the K2 row
+// handler — whatever K2 renders on hover is what we read back, so parity with
+// the screen is preserved by construction; listen for missing bonus lines in
+// the test round.
+const uintptr_t kAddrCSWGuiUpgradeOnControlEntered = acc::addr::Pick(0x006c5370, 0x008CCB80);
 
 // CSWGuiUpgrade::ShowItems @0x006c2f80 — __thiscall(int visible). visible!=0
 // opens the mod-picker zone (disables the slot buttons + slot labels, shows

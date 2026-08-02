@@ -716,7 +716,11 @@ const size_t    kControlIsActiveOffset       = acc::off::Pick(0x4c, 0x50);
 // CSWGuiUpgrade.field9 - the description label CSWGuiUpgrade::OnControlEntered
 // writes its built string into (see engine_offsets_addresses.h); we read the
 // result back from here.
-const size_t    kUpgradeDescLabelOffset            = acc::off::Todo(0x1f60);  // panel.field9 (CSWGuiLabel)
+// K2 0x2ee0, witnessed in the K2 SetDescription twin 0x008CCD70: SetText on
+// [this+0x2fd0] (label text_params at label+0xf0), extent block from
+// [this+0x2ee4], GetFontHeight on the text object [this+0x2fb8], and the
+// SetExtent vtable call through [this+0x2ee0] — the label base.
+const size_t    kUpgradeDescLabelOffset            = acc::off::Pick(0x1f60, 0x2ee0);  // panel.field9 (CSWGuiLabel)
 
 // CSWGuiUpgrade.field24_0x2f48 — bit 0 is the "picker open" state (set by
 // OnSlotSelected, cleared by OnUpgradeSelected's close tail). Clear it on cancel.
@@ -1437,7 +1441,13 @@ const uint32_t  kControlVisibleBit                     = acc::off::Same(0x2);
 // CSWGuiStoreItemEntry.obj_id @ +0x1c4 — the client-side game-object
 // handle for the row's CSWSItem. Resolve via ClientToServerObjectId then
 // GetItemByGameObjectID.
-const size_t    kStoreItemEntryObjIdOffset             = acc::off::Todo(0x1c4);
+// K2 +0x1d0: the id sits right after the embedded CSWGuiButton, whose size
+// grew 0x1c4 -> 0x1d0. Witnessed, not derived: the K2 item-entry ctor
+// 0x008B0A60 initialises `[entry+0x1d0] = 0x7f000000` (the invalid-handle
+// sentinel, K1's exact init), and all three K2 OnControlEntered twins
+// (inventory 0x008A8100, store 0x008B6E90, upgrade rows 0x008CCB80) read
+// the id at [row+0x1d0].
+const size_t    kStoreItemEntryObjIdOffset             = acc::off::Pick(0x1c4, 0x1d0);
 
 // CSWSItem.bit_flags @ +0x288 (ulong), CSWSItem.stack_size @ +0x28c (ushort).
 // Verified two ways: (1) Ghidra struct DB names them at these offsets;

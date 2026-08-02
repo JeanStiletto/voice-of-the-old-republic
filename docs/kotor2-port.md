@@ -83,9 +83,63 @@ game.** The witness ledger:
   regression: one Shift+L level-up pass (shared reader restructured:
   per-game id functions replaced the constexpr ids).
 
+**Peek batch — IMPLEMENTED 2026-08-02 (tenth session, after the level-up
+batch; two Ghidra rounds + capstone/registration scans, zero test rounds).
+Worklist 36/36, built green, NOT tested in game.** The witness ledger:
+
+- **The OnControlEntered family is registered per control with EVENT ID 0**
+  through the same registrar the button callbacks use (0x00418AF0) — that
+  registration scan is what found every twin: inventory **0x008A8100**
+  (registered by its CreateItemEntry 0x008A75F0; body has K1's literal
+  "Error: Invalid item"), store **0x008B6E90** (registered by 0x008B5DB0;
+  K1's exact 0xa3df unlimited-stock strref), upgrade **split in two on K2** —
+  the ctor registers 0x008CE3F0 on the slot-button banks while CreateItemEntry
+  0x008CE930 registers **0x008CCB80** on the picker rows (K1's exact 0x7dac
+  empty-description fallback; the saber keyed-bonus concat is ABSENT from the
+  K2 row handler — listen for missing bonus lines in the test round). Our
+  constant points at the row handler.
+- **kUpgradeDescLabelOffset → Pick(0x1f60, 0x2ee0)** from the K2
+  SetDescription twin 0x008CCD70 (SetText on label+0xf0, extent at +0x2ee4,
+  GetFontHeight text object +0x2fb8, SetExtent vtable at [this+0x2ee0]).
+- **Item-entry row id +0x1c4 → +0x1d0** (the embedded button grew 0x1c4 →
+  0x1d0): witnessed by the K2 entry ctor 0x008B0A60 initialising
+  [entry+0x1d0] = 0x7f000000 and by all three twins reading [row+0x1d0].
+  kStoreItemEntryObjIdOffset went Pick with the same values.
+- **Raw K1 literals converted to Pick with ctor witnesses** (the
+  GetInputClass lesson — worklist can't see raw literals): inventory
+  description_listbox 0x844→0x878, container items_listbox 0x7f0→0x824,
+  equip items_listbox 0x30d8→0x372c (each from its own K2 panel ctor,
+  cross-checked against Lane's K1 DB member maps; the equip ctor scan
+  independently reproduced the witnessed 0x3edc back-button offset).
+- **K2 re-numbers upgrade_p.gui and BTN_BACK lands at id 13 — inside K1's
+  12..18 slot-button range.** New shared per-game predicate
+  `IsWorkbenchUpgradeSlotButtonId` (engine_panels) replaced the range test
+  at all three sites (peek, chain nav, chain input; the chain site's raw
+  0x44 bit_flags read now uses kControlBitFlagsOffset). K2 slot buttons:
+  7/8/6 normal + 17/18/19/23/24/25 saber-bank.
+- **IsWorkbenchUpgradeStructural never identified the panel on K2** (its
+  id-15 probe hits a label there); probes went per game (K2: BTN_ASSEMBLE
+  id 11, BTN_UPGRADE31 id 7). WorkbenchItems/Select detectors survive
+  unchanged (ids match / vtable Pick).
+- Deliberate degrades left in place, all behind existing decline gates:
+  the item-description builder cluster (kAddrItemAdd*,
+  GetPropertyDescription, ClientToServerObjectId, GetItemByGameObjectID,
+  kSwsItem* fields) stays unresolved — on K2 SpeakItemBlocks declines and
+  peek falls through to the engine-rendered description-listbox path, which
+  the ported twins feed; menus_pending's workbench/equip engine ops decline
+  via EngineOpsReady. **That builder cluster is the natural next batch** —
+  it also unlocks examine-view extras and the equip picker commit.
+- Test items for the next K2 round: Shift+Up/Down on inventory rows, a
+  store (buy + sell lists), journal entries, abilities rows, equip slot
+  buttons + a container; workbench: category select → item pick → slot
+  buttons announce installed mods, slot picker rows read descriptions.
+  K1 regression: same list (shared code touched: the slot-button
+  predicate, the upgrade structural detector, chain bit_flags read).
+
 **STILL K1-GATED (the remaining port surface, in suggested order):**
-peek_description (3 non-virtual OnControlEntered
-twins + upgrade desc label), map_ui_cursor + map_user_markers (map-pin
+item-description builder cluster (kAddrItemAdd* + item fields —
+unlocks Shift+arrow block navigation, examine extras, equip/workbench
+commits; scoped by the peek batch above), map_ui_cursor + map_user_markers (map-pin
 offset cluster in engine_area.h), chargen feat/power grids (kAbilitiesCharGen*;
 NOTE the level-up round already located their chart cluster: two classes at
 0x00909xxx/0x0090Bxxx with charts +0x1bf8/+0x1bf4 — see the SetSelectedSkill

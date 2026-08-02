@@ -98,6 +98,12 @@ bool IsSaveLoadStructural(void* panel) {
 // CSWGuiButtons — plus the BTN_ASSEMBLE button at ID 24. ID 11 is the
 // LBL_UPGRADE44 LabelHilight (NOT a button), which is what disambiguates
 // this panel from SaveLoad.
+// K2 upgrade_p.gui RE-NUMBERS everything (mined from its own gui.bif):
+// BTN_ASSEMBLE is id 11, the normal slot buttons BTN_UPGRADE31/32/33 are
+// ids 7/8/6, the saber bank BTN_UPGRADE31_LS..36_LS ids 17/18/19/23/24/25,
+// BTN_BACK id 13. The probes below therefore go per game — K1's id-15 probe
+// hits LBL_UPGRADE32_LS (a label) on K2 and the panel silently never
+// identified there.
 bool IsWorkbenchUpgradeStructural(void* panel) {
     if (!panel) return false;
     __try {
@@ -107,12 +113,13 @@ bool IsWorkbenchUpgradeStructural(void* panel) {
         if (!lb) return false;
         void** lbVtable = *reinterpret_cast<void***>(lb);
         if (reinterpret_cast<uintptr_t>(lbVtable) != kVtableListBox) return false;
-        // Probe the BTN_ASSEMBLE (ID 24) and one of the slot buttons
-        // (ID 15 = BTN_UPGRADE41) for the standard CSWGuiButton vtable.
-        // Two ID hits + vtable checks is enough to disambiguate from
-        // every other 29-control heap-allocated panel we've seen.
-        void* assemble = FindControlByGuiId(panel, /*BTN_ASSEMBLE=*/24);
-        void* slot     = FindControlByGuiId(panel, /*BTN_UPGRADE41=*/15);
+        // Probe BTN_ASSEMBLE and one slot button for the standard
+        // CSWGuiButton vtable, at each game's own ids. Two ID hits +
+        // vtable checks is enough to disambiguate from every other
+        // heap-allocated listbox-at-0 panel we've seen.
+        const bool k2 = acc::game::IsKotor2();
+        void* assemble = FindControlByGuiId(panel, k2 ? 11 : 24);  // BTN_ASSEMBLE
+        void* slot     = FindControlByGuiId(panel, k2 ? 7 : 15);   // BTN_UPGRADE31 / BTN_UPGRADE41
         return HasVtable(assemble, kVtableCSWGuiButton) &&
                HasVtable(slot,     kVtableCSWGuiButton);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
@@ -383,6 +390,20 @@ PanelKind IdentifyOptionsSubScreen(void* panel) {
 }
 
 }  // namespace
+
+bool IsWorkbenchUpgradeSlotButtonId(int cid) {
+    // See the header comment: K1 packs the slot buttons at 12..18; K2
+    // scatters them and reuses 13 for BTN_BACK.
+    if (!acc::game::IsKotor2()) return cid >= 12 && cid <= 18;
+    switch (cid) {
+        case 6: case 7: case 8:                    // BTN_UPGRADE33/31/32
+        case 17: case 18: case 19:                 // BTN_UPGRADE31/32/33_LS
+        case 23: case 24: case 25:                 // BTN_UPGRADE34/35/36_LS
+            return true;
+        default:
+            return false;
+    }
+}
 
 // CGuiInGame resolution chain. Address values verified against Lane's
 // SARIF (CAppManager_vtable @ 0x007A39FC). Field offsets from the struct

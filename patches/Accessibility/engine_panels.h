@@ -251,6 +251,14 @@ bool HasActiveMapPanel(void** outPanel = nullptr);
 // modals the user can't unwind (see patch-20260530-112606.log).
 bool HasActiveLevelUpPanel();
 
+// True iff `cid` is one of the WorkbenchUpgrade panel's slot buttons in the
+// RUNNING game's own .gui numbering. K1 upgrade.gui packs the seven
+// BTN_UPGRADE3X/4X buttons at ids 12..18; K2 upgrade_p.gui re-numbers them
+// (BTN_UPGRADE31/32/33 = 7/8/6, BTN_UPGRADE31_LS..36_LS = 17/18/19/23/24/25)
+// and puts BTN_BACK at 13 — inside K1's range, so the K1 range test must
+// never run on K2. Shared by chain nav, chain input and the peek path.
+bool IsWorkbenchUpgradeSlotButtonId(int cid);
+
 // Heap-allocated Options sub-screen (Spieleinstellungen / Grafik /
 // Sound / Auto-Pause / Feedback / Tastenbelegung / Mauseinstellungen).
 // No CGuiInGame slot → IdentifyPanel returns Unknown; positive

@@ -118,13 +118,14 @@ void HandleEnterActivation(void* activePanel, int code, int val, bool& consumed)
             equipSlotCid == kEquipBtnHandsId;
     }
 
-    // Workbench upgrade slot buttons (BTN_UPGRADE3X/4X at .gui IDs 12..18 on
-    // upgrade.gui). Same shape as equip-screen slot buttons: direct vtable[15]
-    // activate doesn't populate LB_ITEMS with the mods compatible with this
-    // slot — only the mouse-driven hover+click pipeline does. We don't have
-    // an RE'd equivalent of OnEnterSlot/OnSelectSlot for the workbench yet,
-    // so the safe path is a full click-sim at the chain entry's extent center
-    // (mirrors the tab-button activation pattern).
+    // Workbench upgrade slot buttons (per-game .gui ids — see
+    // IsWorkbenchUpgradeSlotButtonId). Same shape as equip-screen slot
+    // buttons: direct vtable[15] activate doesn't populate LB_ITEMS with the
+    // mods compatible with this slot — only the mouse-driven hover+click
+    // pipeline does. We don't have an RE'd equivalent of
+    // OnEnterSlot/OnSelectSlot for the workbench yet, so the safe path is a
+    // full click-sim at the chain entry's extent center (mirrors the
+    // tab-button activation pattern).
     bool isWorkbenchUpgradeSlot = false;
     int  workbenchUpgradeSlotCid = 0;
     if (acc::engine::IdentifyPanel(g_chainPanel) ==
@@ -132,7 +133,7 @@ void HandleEnterActivation(void* activePanel, int code, int val, bool& consumed)
         workbenchUpgradeSlotCid = *reinterpret_cast<int*>(
             reinterpret_cast<unsigned char*>(e.control) + kControlIdOffset);
         isWorkbenchUpgradeSlot =
-            workbenchUpgradeSlotCid >= 12 && workbenchUpgradeSlotCid <= 18;
+            acc::engine::IsWorkbenchUpgradeSlotButtonId(workbenchUpgradeSlotCid);
     }
 
     // Store item row Enter — route to the engine's trade-action handler

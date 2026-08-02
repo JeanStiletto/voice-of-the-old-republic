@@ -145,7 +145,11 @@ static void CallOnControlEnteredWithActive(std::uintptr_t addr,
 }
 
 // CSWGuiInGameInventory::OnControlEntered — is_active gate applies.
-const std::uintptr_t kAddrInventoryOnControlEntered = acc::addr::R(0x006b3d10);
+// K2 twin 0x008A8100, decompile-matched: same is_active gate ([control+0x50]),
+// item id at [row+0x1d0], the identical "Error: Invalid item" literal, and the
+// same desc-label restage tail. Registered for event 0 (control-entered) by
+// the K2 CreateItemEntry 0x008A75F0 — the registration route that found it.
+const std::uintptr_t kAddrInventoryOnControlEntered = acc::addr::Pick(0x006b3d10, 0x008A8100);
 
 static void RefreshInventory(void* panel, void* focused) {
     if (!panel || !focused) return;
@@ -154,7 +158,10 @@ static void RefreshInventory(void* panel, void* focused) {
 }
 
 // CSWGuiStore::OnControlEntered — same is_active gate as Inventory.
-const std::uintptr_t kAddrStoreOnControlEntered = acc::addr::R(0x006c0aa0);
+// K2 twin 0x008B6E90, decompile-matched: is_active gate, row id [row+0x1d0]
+// through ClientToServerObjectId 0x0051C8B0, buy/sell value twins
+// 0x008B8000/0x008B8070, and K1's exact 0xa3df unlimited-stock strref.
+const std::uintptr_t kAddrStoreOnControlEntered = acc::addr::Pick(0x006c0aa0, 0x008B6E90);
 
 static void RefreshStore(void* panel, void* focused) {
     if (!panel || !focused) return;
@@ -205,8 +212,14 @@ struct PanelPeekInfo {
 };
 
 const PanelPeekInfo kPanels[] = {
-    { acc::engine::PanelKind::InGameInventory,  0x0844, RefreshInventory  },  // CSWGuiInGameInventory.description_listbox
-    { acc::engine::PanelKind::InGameJournal,    0x01a4, RefreshJournal    },  // CSWGuiInGameJournal.item_description_label (a CSWGuiListBox)
+    // Inventory description_listbox: K1 0x844 (Lane's DB), K2 0x878 — its ctor
+    // 0x008A6170 builds two listboxes at +0x588/+0x878 in the same
+    // items-then-description order as K1's +0x564/+0x844.
+    { acc::engine::PanelKind::InGameInventory,  acc::off::Pick(0x0844, 0x0878), RefreshInventory  },  // CSWGuiInGameInventory.description_listbox
+    // Duplicate of menus_journal.cpp's kJournalDescriptionListBoxOffset —
+    // keep the two values in sync (same arrangement as the journal
+    // OnControlEntered address above).
+    { acc::engine::PanelKind::InGameJournal,    acc::off::Pick(0x01a4, 0x01b0), RefreshJournal    },  // CSWGuiInGameJournal.item_description_label (a CSWGuiListBox)
     { acc::engine::PanelKind::InGameAbilities,  kAbilitiesDescListBoxOffset, RefreshAbilities },  // LB_DESC (0x33bc); refresh repaints it for the focused entry
     { acc::engine::PanelKind::Store,            kStoreDescriptionListBoxOffset, RefreshStore      },  // CSWGuiStore.description_listbox
     // CSWGuiInGameEquip is handled via the item-tooltip path below: its
@@ -241,14 +254,22 @@ struct ItemTooltipPanelInfo {
     int                    minSel;
 };
 
+// CSWGuiContainer.items_listbox: K1 +0x7f0 (Lane's DB), K2 +0x824 — the
+// only listbox its ctor 0x008B1EA0 builds, after the same six labels.
+const std::size_t kContainerItemsListBoxOffset = acc::off::Pick(0x07f0, 0x0824);
+
+// CSWGuiInGameEquip.items_listbox: K1 +0x30d8, K2 +0x372c — first of the two
+// listboxes in its ctor 0x008A92D0 (items before description, K1's order),
+// and the pair sits right before the button run whose 0x3edc entry
+// independently matches the witnessed kEquipPanelBackButtonOffset.
+const std::size_t kEquipItemsListBoxOffset = acc::off::Pick(0x30d8, 0x372c);
+
 void* ContainerFindLb(void* panel) {
-    // CSWGuiContainer.items_listbox at +0x07f0.
-    return reinterpret_cast<unsigned char*>(panel) + 0x07f0;
+    return reinterpret_cast<unsigned char*>(panel) + kContainerItemsListBoxOffset;
 }
 
 void* InGameEquipFindLb(void* panel) {
-    // CSWGuiInGameEquip.items_listbox at +0x30d8.
-    return reinterpret_cast<unsigned char*>(panel) + 0x30d8;
+    return reinterpret_cast<unsigned char*>(panel) + kEquipItemsListBoxOffset;
 }
 
 void* WorkbenchItemsFindLb(void* panel) {
@@ -401,7 +422,12 @@ const ItemTooltipPanelInfo* LookupItemTooltipPanel(acc::engine::PanelKind k) {
     return nullptr;
 }
 
-constexpr std::size_t kItemEntryGameObjectIdOffset = 0x1c4;
+// CSWGuiInGameItemEntry.item_game_object_id — right after the embedded
+// CSWGuiButton, whose size grew 0x1c4 -> 0x1d0 on K2. Witnessed by the K2
+// entry ctor 0x008B0A60 initialising [entry+0x1d0] = 0x7f000000 and by all
+// three K2 OnControlEntered twins reading [row+0x1d0]. Same value as
+// kStoreItemEntryObjIdOffset — the store row shares the layout.
+const std::size_t kItemEntryGameObjectIdOffset = acc::off::Pick(0x1c4, 0x1d0);
 
 // Read an item entry row's client handle (+0x1c4) and resolve it to a CSWSItem*.
 // Shared by the Inventory/Store focused-row path and SpeakItemRowDescription.
@@ -652,10 +678,6 @@ bool SpeakItemRowDescription(void* row) {
 
 bool HandleShiftArrow(int param_1, int param_2, void* activePanel,
                       void* focusedControl) {
-    // KOTOR 2 (Batch 1): the per-panel refresh addresses (OnControlEntered
-    // family) and several description offsets are unresolved there. Decline;
-    // Shift+arrow falls through to the underlying panel handling.
-    if (acc::game::IsKotor2()) return false;
     // Press edge only — release events fall through.
     if (param_2 == 0) return false;
     if (param_1 != kInputNavUp && param_1 != kInputNavDown) return false;
@@ -683,8 +705,9 @@ bool HandleShiftArrow(int param_1, int param_2, void* activePanel,
         }
     }
 
-    // Workbench upgrade slot button (upgrade.gui IDs 12..18): speak the
-    // installed mod's description, or "empty". Runs before the item-tooltip
+    // Workbench upgrade slot button (per-game .gui ids — see
+    // IsWorkbenchUpgradeSlotButtonId): speak the installed mod's
+    // description, or "empty". Runs before the item-tooltip
     // path because that path targets LB_ITEMS — the mod picker shown only
     // after a slot is drilled into.
     //
@@ -705,7 +728,7 @@ bool HandleShiftArrow(int param_1, int param_2, void* activePanel,
         } __except (EXCEPTION_EXECUTE_HANDLER) {
             cid = -1;
         }
-        if (cid >= 12 && cid <= 18) {
+        if (acc::engine::IsWorkbenchUpgradeSlotButtonId(cid)) {
             HandleWorkbenchSlotTooltip(activePanel, focusedControl, down);
             return true;
         }
