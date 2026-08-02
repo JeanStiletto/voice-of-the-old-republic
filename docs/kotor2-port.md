@@ -6,6 +6,20 @@ result especially — but whose cost estimate predates the RTTI finding below.
 
 ## WHERE TO RESUME (read this first)
 
+**State as of 2026-08-02 (tenth session, remaining-surface sweep): SIX
+batches implemented and committed in one sitting, all offline, zero test
+rounds — level-up (3a4d812), peek (a05024a), item-description cluster
+(64b1ea8), map cursor + user markers (ddd7235), chargen feat grids
+(008f6ce), plus the K2 systems pass from the ninth session (4d0d045 +
+9137254) — ALL UNTESTED IN GAME. The entire non-minigame surface is now
+ungated on KOTOR 2. THE BIG COMBINED TEST ROUND IS THE NEXT GATE — its
+per-batch checklists sit in each batch ledger below; run it BEFORE starting
+the minigame investigations (pazaak/swoop are fresh-RE-scale, not
+twin-hunting, and stacking them on an unvalidated base compounds risk).
+A K1 regression pass is equally due: Dispatch lost five more if(k1) blocks,
+GetClientArea gained a branch, the workbench detector/slot-id logic went
+per-game, and ComputeSectionOffsets was restructured.**
+
 **State as of 2026-08-02 (ninth session, systems pass): Batches 3d+4+5 are
 TEST-CONFIRMED in game** (tutorial played through; K1 regression pass also
 clean). Two bugs found and fixed on the way: the Batch-5 consume-exit crash
