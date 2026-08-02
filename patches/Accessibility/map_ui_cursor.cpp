@@ -89,11 +89,15 @@ constexpr uint8_t kEdgeCuePauseExemptGroup = 0x0b;
 // (shared with the map-context cycle filter); the transform-field
 // offsets stay local because the inverse projection is unique to the
 // cursor.
-const size_t kAreaMapOrientationOffset      = acc::off::Todo(0x10);
-const size_t kAreaMapWorldUnitsPerXPxOffset = acc::off::Todo(0x18);
-const size_t kAreaMapWorldUnitsPerYPxOffset = acc::off::Todo(0x1c);
-const size_t kAreaMapWorldOriginXOffset     = acc::off::Todo(0x20);
-const size_t kAreaMapWorldOriginYOffset     = acc::off::Todo(0x24);
+// Same on KOTOR 2 — the fog-grid/transform block is byte-identical, witnessed
+// in K2's SetMapData 0x005F6B90 (NorthAxis +0x10, world-per-pixel +0x18/+0x1c,
+// world origin +0x20/+0x24); see the matching kAreaMap* Same rows in
+// engine_area.h.
+const size_t kAreaMapOrientationOffset      = acc::off::Same(0x10);
+const size_t kAreaMapWorldUnitsPerXPxOffset = acc::off::Same(0x18);
+const size_t kAreaMapWorldUnitsPerYPxOffset = acc::off::Same(0x1c);
+const size_t kAreaMapWorldOriginXOffset     = acc::off::Same(0x20);
+const size_t kAreaMapWorldOriginYOffset     = acc::off::Same(0x24);
 
 // CSWGuiInGameMap.map_hider field offset. Derived from the struct layout
 // in swkotor.exe.h (CSWGuiInGameMap line 8548): after panel (CSWGuiPanel)
@@ -104,8 +108,15 @@ const size_t kAreaMapWorldOriginYOffset     = acc::off::Todo(0x24);
 //   down_button       @ +0xc74  (size 0x1c4 → ends 0xe38)
 //   map_hider         @ +0xe38  (CSWGuiMapHider, size 0x248)
 // Then field11_0x238 inside map_hider holds the waypoint linked list.
-const size_t kInGameMapHiderOffset                = acc::off::Todo(0xe38);
-const size_t kMapHiderWaypointListOffset          = acc::off::Todo(0x238);  // CExoLinkedList
+// KOTOR 2: hider embed at +0x1160, witnessed by its map-panel ctor
+// 0x00893950 (`add ecx,0x1160` before the MapHider ctor 0x00895620; the
+// same ctor's BTN_UP/BTN_DOWN wiring reproduces the already-witnessed
+// +0x610/+0x7e0 button offsets). Waypoint list at +0x248 (K1 +0x238 — the
+// hider grew +0x10), witnessed in the K2 GetNextMapNote twin 0x00896D10:
+// its node walk calls the CExoLinkedList object at [hider+0x248] and reads
+// each node's waypoint handle with the same 0x7f000000 sentinel fallback.
+const size_t kInGameMapHiderOffset                = acc::off::Pick(0xe38, 0x1160);
+const size_t kMapHiderWaypointListOffset          = acc::off::Pick(0x238, 0x248);  // CExoLinkedList
 
 // CExoLinkedList layout (visible in engine_area / from Ghidra): the
 // list holds an internal pointer; the internal exposes head/tail and

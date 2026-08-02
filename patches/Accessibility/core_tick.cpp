@@ -294,10 +294,13 @@ void Dispatch() {
     // Home/End in menus — engine drops the scancodes; we synth-dispatch.
     PHASE("menus.PollHomeEnd", acc::menus::PollHomeEndKeys());
 
-    if (k1) {
-        // Shift+N drops a map marker; in-world Shift+N stays silent.
-        PHASE("map_user_markers", acc::map_user_markers::PollWin32());
+    // Shift+N drops a map marker; in-world Shift+N stays silent. Both games
+    // since the map batch: the whole pin-creation chain (operator new, pin
+    // ctor, note assign, AddMapPin) and the CSWCMapPin layout are witnessed
+    // against K2's own script pin-creator.
+    PHASE("map_user_markers", acc::map_user_markers::PollWin32());
 
+    if (k1) {
         // Camera diagnostic probes (F12 camera state, Ctrl+F12 camera
         // distance). Stay KOTOR 1: pure dev diagnostics on 6 unresolved
         // camera/behavior vtable offsets — port when a K2 camera
@@ -313,9 +316,9 @@ void Dispatch() {
     // Both games since the K2 systems pass (2026-08-02): view_mode.cpp's
     // whole closure is resolved — its one Todo (CClientOptions bitfield)
     // was witnessed off the K2 exe (chain and mouse-look identical; the
-    // autopause field/bit MOVED and is Pick'd). Map-pin offsets stay Todo
-    // but only the K1-gated map stamper writes pins, so no pin can reach
-    // the narrated-target slot on KOTOR 2.
+    // autopause field/bit MOVED and is Pick'd). Map-pin offsets are Same/
+    // Pick'd since the map batch, so pins in the narrated-target slot read
+    // correctly on both games.
     PHASE("view_mode.poll", acc::view_mode::PollWin32());
 
     // ----- Batch 3c (KOTOR 2 port): interaction -----
@@ -433,10 +436,13 @@ void Dispatch() {
     // before map_ui_cursor) so cursor/listener ordering is unchanged.
     PHASE("view_mode", acc::view_mode::Tick());
 
-    if (k1) {
-        // Map UI cursor — gates on PanelKind::InGameMap.
-        PHASE("map_ui_cursor", acc::map_ui_cursor::Tick());
+    // Map UI cursor — gates on PanelKind::InGameMap. Both games since the
+    // map batch: the transform block is Same (K2 SetMapData witness), the
+    // hider/waypoint-list offsets and the fog + rotate entry points are
+    // Pick'd from the K2 map ctor and fog-method decompiles.
+    PHASE("map_ui_cursor", acc::map_ui_cursor::Tick());
 
+    if (k1) {
         // Stuck-detection — feeds g_was_stuck for OnPlayFootstep.
         PHASE("footstep_suppress", acc::audio::footstep_suppress::Tick());
     }

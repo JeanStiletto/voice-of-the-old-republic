@@ -159,6 +159,10 @@ int ReadGlobalNumber(const char* name) {
     if (!serverApp) return -1;
     __try {
         // table = CServerExoApp::GetGlobalVariableTable(server)
+        // Both stay R() on KOTOR 2 DELIBERATELY: the only consumer is
+        // endar_softlock (Endar-Spire story globals), which is K1-only by
+        // design — no K2 twin is needed until a K2 consumer appears. The
+        // call declines into the SEH below (returns -1) there.
         const uintptr_t kAddrGetGlobalVarTable = acc::addr::R(0x004aee60);
         const uintptr_t kAddrGlobalVarGetNumber = acc::addr::R(0x00529240);
         using PFN_GetTable = void* (__thiscall*)(void*);
@@ -250,6 +254,26 @@ bool GetMapRotateCCWFromWorldOrientation(void* areaMap,
 
 void* GetClientArea(void* serverArea) {
     if (!serverArea) return nullptr;
+    if (acc::game::IsKotor2()) {
+        // No witnessed K2 back-pointer on CSWSArea; resolve via the client
+        // module instead — the route K2's own script pin-creator 0x0082D670
+        // uses ([module+0x48] is what it hands AddMapPin). Every caller
+        // passes the CURRENT server area, so the current client area is the
+        // correct resolution; `serverArea` still gates on area-present.
+        void* internal = GetClientAppInternal();
+        if (!internal) return nullptr;
+        __try {
+            void* module = *reinterpret_cast<void**>(
+                reinterpret_cast<unsigned char*>(internal) +
+                kClientInternalModuleOffset);
+            if (!module) return nullptr;
+            return *reinterpret_cast<void**>(
+                reinterpret_cast<unsigned char*>(module) +
+                kClientModuleAreaOffset);
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            return nullptr;
+        }
+    }
     __try {
         return *reinterpret_cast<void**>(
             reinterpret_cast<unsigned char*>(serverArea) +

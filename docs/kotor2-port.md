@@ -181,9 +181,50 @@ fingerprint pass, zero test rounds). NOT tested in game.** The ledger:
   shows no "offsets diverged" lines (a diverged replica speaks the whole
   description as one block — functional but un-sliced).
 
+**Map batch (map_ui_cursor + map_user_markers) — IMPLEMENTED 2026-08-02
+(tenth session; one Ghidra round + capstone scans, zero test rounds).
+Worklist 39/42 — the three survivors are deliberate. NOT tested in game.**
+The ledger:
+
+- **CSWSAreaMap transform block is Same** (already witnessed by the K2
+  SetMapData 0x005F6B90 note): NorthAxis +0x10, world-per-px +0x18/+0x1c,
+  origin +0x20/+0x24. **IsWorldPointExplored → 0x005F73F0** (the bit-test
+  body), **GetMapRotateCCW → 0x005F7170** (atan2 + NorthAxis switch,
+  called from the K2 SetPartyMemberWorldOrientation twin at K1's exact
+  position; same by-value-Vector/ST(0) contract). NOTE: K2's map-pixel
+  space is 588x294 (K1 440x256) — engine-internal, our code never bakes it.
+- **Map panel: hider embed 0xE38 → 0x1160** (map ctor 0x00893950;
+  its BTN_UP/BTN_DOWN wiring reproduces the witnessed +0x610/+0x7e0).
+  **Hider waypoint list +0x238 → +0x248** (the K2 GetNextMapNote twin
+  0x00896D10 walks the CExoLinkedList at [hider+0x248] with the same
+  0x7f000000 sentinel; GetNext/GetPrev = the equal-size adjacent pair
+  0x00896D10/0x00896FB0).
+- **The whole pin-creation chain witnessed in K2's own script pin-creator
+  0x0082D670**: operator new → 0x00919723, CSWCMapPin ctor → 0x00893460
+  (pin size 0x110 — SAME as K1), note assign CExoString::operator=(char*)
+  → 0x007338D0, **AddMapPin → 0x007A9640** (appends via the shared
+  array-append 0x0083EA60 to the client-area pin array at +0x1c8 — the
+  triple shifted +4: ptr/count/cap 0x1c8/0x1cc/0x1d0). **CSWCMapPin layout
+  is IDENTICAL** (position +0x24 via the SetPosition virtual 0x007EEF90,
+  enabled +0xfc, note +0x100, flags +0x108, subtype +0x10c).
+- **GetClientArea routes around the unwitnessed K2 back-pointer**: on K2 it
+  resolves client-module → [module+0x48] (the exact route 0x0082D670
+  uses; new Kotor2Only offset — off:: gained the selector to match
+  addr::'s). kAreaClientAreaBackOffset stays Todo, K1-only in practice.
+- The ReadGlobalNumber globals pair stays R() deliberately: its only
+  consumer is endar_softlock, K1-only by design.
+- Gates cleared: map_ui_cursor + map_user_markers Dispatch phases (no
+  per-file declines existed).
+- Test items: open the map on K2 — cursor arrows announce position/room,
+  cycling map notes speaks them (waypoint-list walk), fog reads
+  unexplored/explored correctly (IsWorldPointExplored), rotation-correct
+  direction words on a rotated map (GetMapRotateCCW), Shift+N drops a
+  marker + it appears in map-note cycling and the narrated-target slot,
+  markers reset on area change. K1 regression: same list (GetClientArea
+  gained a branch, two Dispatch phases moved out of if(k1)).
+
 **STILL K1-GATED (the remaining port surface, in suggested order):**
-map_ui_cursor + map_user_markers (map-pin
-offset cluster in engine_area.h), chargen feat/power grids (kAbilitiesCharGen*;
+chargen feat/power grids (kAbilitiesCharGen*;
 NOTE the level-up round already located their chart cluster: two classes at
 0x00909xxx/0x0090Bxxx with charts +0x1bf8/+0x1bf4 — see the SetSelectedSkill
 caller census), pazaak + pazaakdeck, swoop race/audio, footstep_suppress

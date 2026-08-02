@@ -91,6 +91,13 @@ inline size_t Kotor1Only(size_t kotor1) {
     return acc::game::IsKotor2() ? kUnportedOffset : kotor1;
 }
 
+// Mirror of Kotor1Only: a field only KOTOR 2 has (or that only a
+// KOTOR-2-only code path reads). Poisons on KOTOR 1 so a stray K1 read
+// fails loudly; the consuming branch should also be gated on IsKotor2().
+inline size_t Kotor2Only(size_t kotor2) {
+    return acc::game::IsKotor2() ? kotor2 : kUnportedOffset;
+}
+
 // Is this offset usable on the running game? False for the poison value.
 //
 // Needed because the poison's fault-loudly contract only holds for a READ.

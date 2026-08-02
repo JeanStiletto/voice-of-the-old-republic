@@ -391,10 +391,17 @@ const uintptr_t kAddrCClientExoAppGetGameObject = acc::addr::Pick(0x005ED580, 0x
 // Map + fog-of-war chain.
 const uintptr_t kAddrCServerExoAppGetModule = acc::addr::Pick(0x004AE6B0, 0x0051bd90);
 const size_t    kModuleAreaMapOffset                 = acc::off::Pick(0x218, 0x238);
-const uintptr_t kAddrCSWSAreaMapIsWorldPointExplored = acc::addr::R(0x00579210);
+// K2 twin 0x005F73F0, decompile-confirmed: the same bit-test body (explored
+// dwords at +0, count +4, res-x +8; grid index -> `1 << (idx & 0x1f)` test),
+// calling the K2 GetMapPixelFromWorldCoord/GetGridPixelFromMapPixel twins.
+const uintptr_t kAddrCSWSAreaMapIsWorldPointExplored = acc::addr::Pick(0x00579210, 0x005F73F0);
 // __thiscall(this, Vector by value). Returns float10 via ST(0).
 // BYTES_PURGED=12 (callee pops 3-float Vector).
-const uintptr_t kAddrCSWSAreaMapGetMapRotateCCW = acc::addr::R(0x00578ED0);
+// K2 twin 0x005F7170, disasm-confirmed: atan2 on the vector then the
+// NorthAxis switch on [this+0x10]; called from the K2
+// SetPartyMemberWorldOrientation twin exactly as K1's is. Same 12-byte
+// by-value Vector, same ST(0) return.
+const uintptr_t kAddrCSWSAreaMapGetMapRotateCCW = acc::addr::Pick(0x00578ED0, 0x005F7170);
 // CSWSAreaMap fog grid geometry (Initialize @0x00578c60): fixed 440x256
 // map-pixel space, MapResX cells across, MapResY = MapResX * 256/440
 // truncated; world-units-per-map-pixel from the .are Map calibration.
@@ -411,24 +418,48 @@ const size_t kAreaMapWorldPerPxYOffset = acc::off::Same(0x1c);
 
 // CSWCMapPin allocation chain. operator_new at 0x43e1b0 is matched to
 // the _free that CExoString::operator= and ~CSWCMapPin invoke.
-const uintptr_t kAddrOperatorNew = acc::addr::R(0x0043E1B0);  // __cdecl(ulong)
-const uintptr_t kAddrCSWCMapPinCtor = acc::addr::R(0x00692540);
-const uintptr_t kAddrCExoStringAssignFromCString = acc::addr::R(0x005E5140);  // __thiscall(CExoString*, char*)
-const uintptr_t kAddrCSWCAreaAddMapPin = acc::addr::R(0x00606D90);  // __thiscall(CSWCArea*, pin)
+// K2 twins, all witnessed in the engine's own script pin-creator 0x0082D670
+// (new(0x110) + ctor + SetPosition + note assign + field stores + AddMapPin
+// — the exact sequence CreateUserMarkerPin replicates):
+//   operator new 0x00919723 (the allocator every K2 ctor call this port has
+//   decompiled goes through), pin ctor 0x00893460 (RTTI vtable store +
+//   the same +0xfc/+0x10c zero-inits), AddMapPin 0x007A9640 (appends to
+//   the client area's pin array at +0x1c8 via the shared array-append
+//   0x0083EA60), CExoString::operator=(char*) 0x007338D0 (strlen /
+//   free-old / realloc / copy — K1's exact shape).
+const uintptr_t kAddrOperatorNew = acc::addr::Pick(0x0043E1B0, 0x00919723);  // __cdecl(ulong)
+const uintptr_t kAddrCSWCMapPinCtor = acc::addr::Pick(0x00692540, 0x00893460);
+const uintptr_t kAddrCExoStringAssignFromCString = acc::addr::Pick(0x005E5140, 0x007338D0);  // __thiscall(CExoString*, char*)
+const uintptr_t kAddrCSWCAreaAddMapPin = acc::addr::Pick(0x00606D90, 0x007A9640);  // __thiscall(CSWCArea*, pin)
 
 // Server→client back-pointer (CSWSArea ends at +0x2d0 preceded by
 // CPathfindInformation* at +0x2cc).
+// Still Todo on K2 DELIBERATELY: no K2 witness found (no tiny attach writer
+// in the client-area region), and GetClientArea routes around it there via
+// the client-module chain — the route K2's own pin creator uses. Resolve
+// only if a caller ever needs a NON-current area's client twin on K2.
 const size_t kAreaClientAreaBackOffset = acc::off::Todo(0x2d0);
+
+// CSWCModule.area — the CURRENT client area. K2-only consumer (GetClientArea's
+// K2 branch); witnessed in the script pin-creator 0x0082D670, whose
+// [module+0x48] read feeds AddMapPin's `this`.
+const size_t kClientModuleAreaOffset = acc::off::Kotor2Only(0x48);
 
 // CSWCArea.map_pins (pointer array; 4-byte stride confirmed via
 // AddMapPin / ClearAllMapPins / GetMapPin decomps).
-const size_t kClientAreaMapPinsOffset       = acc::off::Todo(0x1c4);
-const size_t kClientAreaMapPinsCountOffset  = acc::off::Todo(0x1c8);
-const size_t kClientAreaMapPinsCapOffset    = acc::off::Todo(0x1cc);
+// K2: the triple shifted +4 — its AddMapPin 0x007A9640 appends through a
+// CExoArrayList AT +0x1c8 ({data, size, cap} = +0x1c8/+0x1cc/+0x1d0).
+const size_t kClientAreaMapPinsOffset       = acc::off::Pick(0x1c4, 0x1c8);
+const size_t kClientAreaMapPinsCountOffset  = acc::off::Pick(0x1c8, 0x1cc);
+const size_t kClientAreaMapPinsCapOffset    = acc::off::Pick(0x1cc, 0x1d0);
 
-const size_t kMapPinPositionOffset = acc::off::Todo(0x24);   // Vector (CGameObject base)
-const size_t kMapPinEnabledOffset  = acc::off::Todo(0xfc);   // int
-const size_t kMapPinNoteTextOffset = acc::off::Todo(0x100);  // CExoString
+// CSWCMapPin layout is IDENTICAL on K2 (size 0x110 both games), witnessed in
+// the K2 pin ctor 0x00893460 (+0xfc/+0x10c zero-inits), the script creator
+// 0x0082D670 (flags +0x108, subtype=1 +0x10c, enabled=1 +0xfc) and the
+// SetPosition virtual 0x007EEF90 (Vector store at [this+0x24]).
+const size_t kMapPinPositionOffset = acc::off::Same(0x24);   // Vector (CGameObject base)
+const size_t kMapPinEnabledOffset  = acc::off::Same(0xfc);   // int
+const size_t kMapPinNoteTextOffset = acc::off::Same(0x100);  // CExoString
 // Literal (kCExoStringStride is forward-declared below) — every
 // CExoString in this header pairs strref at +0x4.
 // const, not constexpr: derived from kMapPinNoteTextOffset, which is now
@@ -436,8 +467,8 @@ const size_t kMapPinNoteTextOffset = acc::off::Todo(0x100);  // CExoString
 // CExoString, so it rides along with whatever the text offset turns out to be
 // and needs no marker of its own.
 const size_t kMapPinNoteStrrefOffset = kMapPinNoteTextOffset + 0x4;
-const size_t kMapPinFlagsOffset    = acc::off::Todo(0x108);  // uint32 reference-number / quest bitfield
-const size_t kMapPinSubtypeOffset  = acc::off::Todo(0x10c);  // int (1 = user-placed note pin)
+const size_t kMapPinFlagsOffset    = acc::off::Same(0x108);  // uint32 reference-number / quest bitfield
+const size_t kMapPinSubtypeOffset  = acc::off::Same(0x10c);  // int (1 = user-placed note pin)
 
 // CSWSArea offsets. Lane's SARIF (CSWSArea SIZE=0x2d4).
 // K2 values witnessed in CSWSArea's loader (0x00523870), destructor
