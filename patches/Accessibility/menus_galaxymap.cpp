@@ -24,8 +24,12 @@ namespace acc::menus::galaxymap {
 namespace {
 
 // CSWGuiInGameGalaxyMap field offsets (Lane's gzf struct, SIZE 0x2550).
-const size_t kPlanetNameLabelOffset  = acc::off::Todo(0x1ca4);  // LBL_PLANETNAME (CSWGuiLabel)
-const size_t kDescriptionLabelOffset = acc::off::Todo(0x1de4);  // LBL_DESC       (CSWGuiLabel)
+// K2 witnessed 2026-08-02 in the K2 panel ctor around 0x00897600 — the only
+// function that binds BOTH control names, via the shared bind helper
+// 0x0040F620(this, &slot, &name, 1, 1): LBL_PLANETNAME -> [this+0x1d68],
+// LBL_DESC -> [this+0x1eb0].
+const size_t kPlanetNameLabelOffset  = acc::off::Pick(0x1ca4, 0x1d68);  // LBL_PLANETNAME (CSWGuiLabel)
+const size_t kDescriptionLabelOffset = acc::off::Pick(0x1de4, 0x1eb0);  // LBL_DESC       (CSWGuiLabel)
 
 // CSWGuiInGameGalaxyMap::HandleInputEvent @0x00695980. Its switch maps:
 //   0x27 / 0x2d → accept (run k_sup_galaxymap, HideGalaxyMapGui)  [travel]
@@ -79,9 +83,8 @@ bool IsGalaxyMapPanel(void* panel) {
 }
 
 bool TryHandleInput(void* activePanel, int param_1, int param_2, int& rv) {
-    // KOTOR 2 (Batch 1): the planet-name / description label offsets are
-    // unresolved there. Decline; the generic chain still navigates.
-    if (acc::game::IsKotor2()) return false;
+    // Gate cleared for KOTOR 2 (2026-08-02): both label offsets witnessed
+    // in the K2 panel ctor (see the constants above).
     if (!IsGalaxyMapPanel(activePanel)) return false;
 
     const bool isUp    = (param_1 == kInputNavUp);
@@ -176,8 +179,7 @@ void DispatchInput(void* panel, int engineCode, bool announcePlanet) {
 }
 
 void Tick() {
-    // KOTOR 2 (Batch 1): declined with TryHandleInput above — same reason.
-    if (acc::game::IsKotor2()) return;
+    // Gate cleared for KOTOR 2 (2026-08-02) together with TryHandleInput.
     void* panel = FindGalaxyMapInPanels();
     if (!panel) {
         // Map closed — drop the latch so the next open re-announces.

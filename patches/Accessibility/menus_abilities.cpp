@@ -386,10 +386,10 @@ void BrowseList(void* panel, int tab, ListBoxNavOp op) {
 
 bool HandleInput(int /*n*/, void* /*thisPtr*/, void* activePanel,
                  int param_1, int param_2, int& outRv) {
-    // KOTOR 2 (Batch 1): every kAbilities* offset and the three tab-handler
-    // addresses are unresolved there. Decline; the generic chain still
-    // navigates the screen.
-    if (acc::game::IsKotor2()) return false;
+    // Gate cleared for KOTOR 2 (2026-08-02): every constant this handler's
+    // flow touches was resolved in Batch 3d (tab handlers 0x008A5xxx Pick'd,
+    // chart internals re-derived at the 0xb4 stride, tab slot 0xfc0) — the
+    // Batch-1 decline just outlived the address round that emptied it.
     if (!IsAbilitiesPanel(activePanel)) return false;
 
     // Fresh open -> start at the tab level.

@@ -37,13 +37,28 @@ namespace acc::menus::keymap {
 namespace {
 
 // Engine entry points (decompiled, build/re/optkeymappings-keymapbutton).
-const uintptr_t kAddrSetCaptureEvent = acc::addr::R(0x006ed480);  // (panel, row) arm capture
-const uintptr_t kAddrOnFilterMove = acc::addr::R(0x006ed390);  // (panel) → MOVEMENT
-const uintptr_t kAddrOnFilterGame = acc::addr::R(0x006ed3e0);  // (panel) → GAME
-const uintptr_t kAddrOnFilterMini = acc::addr::R(0x006ed430);  // (panel) → MINIGAME
+//
+// KOTOR 2 (witnessed 2026-08-02 by decompiling both games' keymap
+// HandleInputEvent — K1 0x006EC510 vs K2 twin 0x009007A0 via the RTTI
+// slot map): K2 RESTRUCTURED the category flow. The three per-filter
+// click handlers are gone; left/right cycles `[panel+0x1364] = (idx±1)%3`
+// and calls a single SetFilter(panel, idx) = 0x00900E30. Rebind capture
+// is armed by the Enter case (0x2a) of HandleInputEvent itself. So on K2
+// we keep the engine faithful by (a) writing the index field + calling
+// SetFilter for category jumps and (b) sending 0x2a through the panel's
+// own HandleInputEvent for capture.
+const uintptr_t kAddrSetCaptureEvent = acc::addr::R(0x006ed480);  // K1 only: (panel, row) arm capture
+const uintptr_t kAddrOnFilterMove = acc::addr::R(0x006ed390);  // K1 only: (panel) → MOVEMENT
+const uintptr_t kAddrOnFilterGame = acc::addr::R(0x006ed3e0);  // K1 only: (panel) → GAME
+const uintptr_t kAddrOnFilterMini = acc::addr::R(0x006ed430);  // K1 only: (panel) → MINIGAME
+const uintptr_t kAddrKeymapHandleInputEvent =
+    acc::addr::Pick(0x006ec510, 0x009007a0);  // __thiscall(panel, key, press)
+const uintptr_t kAddrK2SetFilter        = 0x00900e30;  // K2 only: __thiscall(panel, idx)
+const size_t    kK2KeymapFilterIndexOff = 0x1364;      // K2 only: int, selected filter
 
-// CSWGuiInGameOptKeyMappings: field11_0xf2c == 1 while a capture is armed.
-const size_t kCaptureActiveOff = acc::off::Todo(0xf2c);
+// CSWGuiInGameOptKeyMappings: == 1 while a capture is armed. K1 field11_0xf2c;
+// K2 twin is the int the cancel case (0x28/0x2e) zeroes — [panel+0x1368].
+const size_t kCaptureActiveOff = acc::off::Pick(0xf2c, 0x1368);
 
 // Stable .gui control IDs (optkeymapping.gui; locale-independent like the
 // equip-slot IDs). Verified in the PanelProbe dump.
@@ -62,15 +77,17 @@ enum class EntryKind { Category, Button };
 struct TabEntry {
     EntryKind kind;
     int       guiId;       // control to read/activate
-    uintptr_t filterFn;    // Category only: OnFilter* to call (else 0)
 };
+// Category rows are in engine filter order (MOVE, GAME, MINI): their tab
+// index doubles as the K2 SetFilter index, and SwitchCategory maps the same
+// index to the K1 per-filter handler.
 const TabEntry kTabEntries[] = {
-    { EntryKind::Category, kIdFilterMove, kAddrOnFilterMove },
-    { EntryKind::Category, kIdFilterGame, kAddrOnFilterGame },
-    { EntryKind::Category, kIdFilterMini, kAddrOnFilterMini },
-    { EntryKind::Button,   kIdAcceptBtn,  0 },
-    { EntryKind::Button,   kIdCancelBtn,  0 },
-    { EntryKind::Button,   kIdDefaultBtn, 0 },
+    { EntryKind::Category, kIdFilterMove },
+    { EntryKind::Category, kIdFilterGame },
+    { EntryKind::Category, kIdFilterMini },
+    { EntryKind::Button,   kIdAcceptBtn  },
+    { EntryKind::Button,   kIdCancelBtn  },
+    { EntryKind::Button,   kIdDefaultBtn },
 };
 constexpr int kTabEntryCount = sizeof(kTabEntries) / sizeof(kTabEntries[0]);
 
@@ -207,7 +224,26 @@ bool StepRow(void* panel, ListBoxNavOp op) {
 // they `ret 4` (the dispatcher passes the clicked control). The typedef MUST
 // carry that 4-byte arg (pass a dummy) or the callee pops OUR return address
 // and the frame is corrupted → crash. Same trap as menus_abilities::SwitchToTab.
-void SwitchCategory(void* panel, uintptr_t filterFn) {
+void SwitchCategory(void* panel, int filterIndex) {
+    if (acc::game::IsKotor2()) {
+        // K2: single SetFilter(panel, idx). Mirror the engine's own
+        // left/right case: stamp the index field first (the engine writes
+        // it before the call; SetFilter may read it), then call.
+        typedef void(__thiscall* PFN)(void* panel, int idx);
+        __try {
+            *reinterpret_cast<int*>(
+                reinterpret_cast<unsigned char*>(panel) +
+                kK2KeymapFilterIndexOff) = filterIndex;
+            reinterpret_cast<PFN>(kAddrK2SetFilter)(panel, filterIndex);
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            acclog::Write("Menus.KeyMap", "SwitchCategory(K2) SEH idx=%d",
+                          filterIndex);
+        }
+        return;
+    }
+    uintptr_t filterFn = filterIndex == 0   ? kAddrOnFilterMove
+                         : filterIndex == 1 ? kAddrOnFilterGame
+                                            : kAddrOnFilterMini;
     typedef void(__thiscall* PFN)(void* panel, int dummy);
     __try {
         reinterpret_cast<PFN>(filterFn)(panel, 0);
@@ -217,6 +253,23 @@ void SwitchCategory(void* panel, uintptr_t filterFn) {
 }
 
 void ArmCapture(void* panel, void* row) {
+    if (acc::game::IsKotor2()) {
+        // K2: capture is armed by the Enter case (0x2a) of the panel's own
+        // HandleInputEvent — no per-row setter exists. Our navigator keeps
+        // the engine's listbox selection in sync, so the engine arms the
+        // row the user is on. Log the flag so the test round can verify
+        // which state Enter actually produced.
+        typedef void(__thiscall* PFN)(void* panel, int key, int press);
+        __try {
+            reinterpret_cast<PFN>(kAddrKeymapHandleInputEvent)(panel, 0x2a, 1);
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            acclog::Write("Menus.KeyMap", "ArmCapture(K2) SEH");
+            return;
+        }
+        acclog::Write("Menus.KeyMap", "ArmCapture(K2): sent 0x2a, captureActive=%d",
+                      CaptureActive(panel));
+        return;
+    }
     typedef void(__thiscall* PFN)(void* panel, void* row);
     __try {
         reinterpret_cast<PFN>(kAddrSetCaptureEvent)(panel, row);
@@ -264,9 +317,8 @@ bool IsKeyMapPanel(void* panel) {
 }
 
 void Tick() {
-    // KOTOR 2 (Batch 1): declined with HandleInput below — one gate per
-    // entry point, same reason.
-    if (acc::game::IsKotor2()) return;
+    // Gate cleared for KOTOR 2 (2026-08-02) together with HandleInput —
+    // see the engine-entry-point block at the top of this file.
     // Cursor park — must run from the Update tick, never the input hook
     // (MoveMouseToPosition recurses through the hover pipeline).
     if (s_parkPending &&
@@ -298,10 +350,9 @@ void Tick() {
 }
 
 bool HandleInput(void* activePanel, int param_1, int param_2, int& outRv) {
-    // KOTOR 2 (Batch 1): the category-filter handler addresses and the
-    // capture-active flag offset are unresolved there. Decline; the generic
-    // chain still navigates the screen (rebinds just can't be armed).
-    if (acc::game::IsKotor2()) return false;
+    // Gate cleared for KOTOR 2 (2026-08-02): category switching goes
+    // through the witnessed K2 SetFilter, capture through the panel's own
+    // HandleInputEvent Enter case, and the capture flag is Pick'd.
     if (!IsKeyMapPanel(activePanel)) return false;
 
     // Fresh open → start at the tab level on the first entry, and arm the
@@ -342,7 +393,7 @@ bool HandleInput(void* activePanel, int param_1, int param_2, int& outRv) {
         if (isEnter) {
             const TabEntry& e = kTabEntries[s_tabCursor];
             if (e.kind == EntryKind::Category) {
-                SwitchCategory(activePanel, e.filterFn);
+                SwitchCategory(activePanel, s_tabCursor);
                 // OnFilter* repopulates the listbox (frees the old row
                 // controls). The generic chain still holds those freed
                 // pointers, and MonitorFocusedControl derefs g_chain per tick —
