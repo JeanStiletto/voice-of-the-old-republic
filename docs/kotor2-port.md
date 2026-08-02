@@ -6,6 +6,47 @@ result especially — but whose cost estimate predates the RTTI finding below.
 
 ## WHERE TO RESUME (read this first)
 
+**State as of 2026-08-02 (ninth session, systems pass): Batches 3d+4+5 are
+TEST-CONFIRMED in game** (tutorial played through; K1 regression pass also
+clean). Two bugs found and fixed on the way: the Batch-5 consume-exit crash
+(both audio hooks pointed consumed_exit_address at the bare RET past the
+epilogue while their cut executed the prologue — exits moved onto the
+`MOV ESP,EBP; POP EBP; RET` epilogues; commit b558b5b) — the lesson is now
+also inline in kotor2.hooks.toml.
+
+**The systems pass then ungated, with offline witnesses (commits 4d0d045 +
+9137254, NOT yet tested in game):** view_mode + poll, discovery cycling
+(GetModuleResourceName twin 0x00561030 — area keys were collapsing to
+"untitled"), locked_recall, party_leader_announce, camera_orient +
+camera_spin_guard (edge-band constants witnessed; width moved to
+[internal+0x274] on K2), trap_watch (detected-by lists in the K2
+UpdateMineCheck twin 0x0056C310), stealth_watch (creature+0x511),
+MaybeDrivePassiveSelection (whole MainLoop-gate chain witnessed — Peragus
+scripted holds need it like the Endar Spire), probe_audio_frame, abilities
+screen (stale Batch-1 gate), galaxy map (both labels from the K2 ctor),
+keymap (K2 RESTRUCTURED: single SetFilter 0x00900E30 + index at +0x1364,
+capture via HandleInputEvent Enter case, flag +0x1368 — the per-game
+branches live in menus_keymap.cpp). K2 Override now carries the
+prioritygroups sentinel rows (K2 SCHEMA DIFFERS: volume_pc/xbox split —
+tools/re-scripts/append_accgroup_2da.py, byte-verified against K1) plus the
+four swoop cue wavs. The installer still needs the K2 row set.
+
+**USER DECISION (2026-08-02): the turret minigame does NOT exist in KOTOR 2**
+— OnTurretBulletHit/OnPlayerFire and turret_game stay K1-only permanently
+(mark constants Kotor1Only when touched). Port the rest of the minigames.
+
+**STILL K1-GATED (the remaining port surface, in suggested order):** powers
+level-up + engine_levelup (5 unresolved; CAUTION: the CGuiInGame character
+slot +0x14 is CSWGui3DSceneView on K2 per the slot table — settle what K2's
+character sheet is first), peek_description (3 non-virtual OnControlEntered
+twins + upgrade desc label), map_ui_cursor + map_user_markers (map-pin
+offset cluster in engine_area.h), chargen feat/power grids (kAbilitiesCharGen*),
+pazaak + pazaakdeck, swoop race/audio, footstep_suppress (needs the
+OnPlayFootstep hook — candidate 0x0077D390, play-vs-compute split still
+unverified), OnRulesInit/mouse-guard decision, camera probes (deliberately
+deferred dev diagnostics). endar_softlock and floor_puzzle stay K1 by
+design (K1-module-specific content workarounds).
+
 **State as of 2026-08-02 (eighth session): Batches 3d, 4 and 5 are ALL
 IMPLEMENTED in one sitting (user decision: everything except Batch 6 at
 once, accepting a bigger combined test round). `k2_hook_status.py` reports
