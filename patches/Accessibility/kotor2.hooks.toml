@@ -674,8 +674,13 @@ type = "pointer"
 # UpdateSoundEngine path — the same per-frame camera write K1 hooks).
 # Hooked AT ENTRY with the whole prologue as the cut; the handler always
 # returns 1 (consume) and performs the engine call itself with the possibly
-# overridden position. consumed_exit_address = 0x0070B960, the bare RET 4 —
-# valid from entry state because the skipped cut never built the frame.
+# overridden position. skip_original_bytes = false, so the wrapper EXECUTES
+# the cut (builds the EBP frame + PUSH ECX) before the consume exit —
+# consumed_exit_address must therefore be the epilogue at 0x0070B95D
+# (MOV ESP,EBP; POP EBP; RET 4), which unwinds exactly that frame. The bare
+# RET 4 at 0x0070B960 is WRONG here: it pops the cut's saved ECX (the
+# CExoSound*) as the return address and executes the sound object as code
+# (first-fire crash on world load, dump-verified 2026-08-02).
 # Params: ecx = this (CExoSound*), esp+4 = address of the Vector* slot
 # (the LEA contract the shared handler expects).
 [[hooks]]
@@ -691,7 +696,7 @@ original_bytes = [0x55, 0x8b, 0xec, 0x51, 0x89, 0x4d, 0xfc]
 
 skip_original_bytes = false
 exclude_from_restore = ["eax"]
-consumed_exit_address = 0x0070b960
+consumed_exit_address = 0x0070b95d
 
 [[hooks.parameters]]
 source = "ecx"
@@ -703,12 +708,16 @@ type = "pointer"
 
 # CExoSoundSourceInternal::CalculatePitchVarianceFrequency — K2 twin
 # @0x00710550 (the only rand() caller in the sound TU; jitters the applied
-# rate at [internal+0x5c]). Hooked AT ENTRY, cut = the prologue. Handler
-# return 0 → cut replays and the engine jitter runs; nonzero → jump to
-# consumed_exit_address 0x0071062D, the function's bare RET — valid from
-# entry state, and skipping the body leaves [internal+0x5c] at its
-# unjittered base, which on KOTOR 2 IS the neutralise (its callers read
-# the field, not EAX).
+# rate at [internal+0x5c]). Hooked AT ENTRY, cut = the prologue. With
+# skip_original_bytes = false the wrapper executes the cut (PUSH EBP;
+# MOV EBP,ESP; SUB ESP,0x40) on BOTH paths: return 0 → fall through into
+# the engine body with the frame built (jitter runs); nonzero → jump to
+# consumed_exit_address 0x0071062A, the epilogue (MOV ESP,EBP; POP EBP;
+# RET), which unwinds the frame the cut built. The bare RET at 0x0071062D
+# would pop a stack local as the return address (same crash class as the
+# listener hook's 2026-08-02 bug). Skipping the body leaves
+# [internal+0x5c] at its unjittered base, which on KOTOR 2 IS the
+# neutralise (its callers read the field, not EAX).
 [[hooks]]
 address = 0x00710550
 type = "detour"
@@ -721,7 +730,7 @@ original_bytes = [0x55, 0x8b, 0xec, 0x83, 0xec, 0x40]
 
 skip_original_bytes = false
 exclude_from_restore = ["eax"]
-consumed_exit_address = 0x0071062d
+consumed_exit_address = 0x0071062a
 
 [[hooks.parameters]]
 source = "ecx"
