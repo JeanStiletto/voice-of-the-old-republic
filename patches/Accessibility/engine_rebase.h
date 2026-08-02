@@ -102,6 +102,12 @@ uintptr_t PickGlobal(uintptr_t kotor1Va, uintptr_t kotor2Va);
 // contains every one KOTOR 1 has except those two.
 uintptr_t Kotor1Only(uintptr_t referenceVa);
 
+// Mirror of Kotor1Only: an address for engine machinery KOTOR 1 does not
+// have (K2-only builders, K2-only panels). 0 on KOTOR 1 so Ok() declines
+// there; never rebased (K2 has a single build). Establish the K1 absence
+// before using — same evidence bar as Kotor1Only.
+uintptr_t Kotor2Only(uintptr_t kotor2Va);
+
 // .data global pointer whose KOTOR 2 value is NOT yet known. Returns the
 // KOTOR 1 value on KOTOR 1 and 0 on KOTOR 2.
 //

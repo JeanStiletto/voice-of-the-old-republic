@@ -731,8 +731,12 @@ const uintptr_t kAddrCSWGuiStoreOnControlStoreAButton = acc::addr::R(0x006c1130)
 
 // CServerExoApp::ClientToServerObjectId — __thiscall(ulong) -> ulong.
 // CServerExoApp::GetItemByGameObjectID — __thiscall(ulong) -> CSWSItem*.
-const uintptr_t kAddrServerExoAppClientToServerObjectId = acc::addr::R(0x004aea30);
-const uintptr_t kAddrServerExoAppGetItemByGameObjectID = acc::addr::R(0x004ae760);
+// K2 twins 0x0051C8B0 / 0x0051C0E0: thin facade forwarders exactly like K1's
+// (decompiled: one-call bodies into the internals), in the banked server
+// facade cluster; both TRIPLE-witnessed as consumers by the K2
+// OnControlEntered twins (store row resolve, inventory/upgrade item reads).
+const uintptr_t kAddrServerExoAppClientToServerObjectId = acc::addr::Pick(0x004aea30, 0x0051C8B0);
+const uintptr_t kAddrServerExoAppGetItemByGameObjectID = acc::addr::Pick(0x004ae760, 0x0051C0E0);
 
 // CSWSItem::GetPropertyDescription — __thiscall(CExoString* out) -> CExoString*.
 // The text Inventory/Store/Equip render into their description listbox on
@@ -748,7 +752,12 @@ const uintptr_t kAddrServerExoAppGetItemByGameObjectID = acc::addr::R(0x004ae760
 // c_string and deliberately leak the allocation rather than calling
 // ~CExoString (heap ownership across the DLL/EXE boundary risks CRT mismatch;
 // see the same pattern in LookupTlk above).
-const uintptr_t kAddrCSWSItemGetPropertyDescription = acc::addr::R(0x0055f340);
+// K2 twin 0x00607790, decompile-matched: same GetBaseItem guards (0x2e
+// crystal / 6 grenade, PLUS a K2-only 0x31), the builder cascade (see the
+// per-game notes on the builder table below), the identical
+// description_indentified GetString tail with K1's exact 0x7dac fallback.
+// Called by all three K2 OnControlEntered twins at K1's exact position.
+const uintptr_t kAddrCSWSItemGetPropertyDescription = acc::addr::Pick(0x0055f340, 0x00607790);
 
 // CSWSItem::GetKeyedPropertyString — __thiscall(CExoString* out, byte key) ->
 // CExoString*. Formats just the properties on this item whose slot-key byte
@@ -756,6 +765,10 @@ const uintptr_t kAddrCSWSItemGetPropertyDescription = acc::addr::R(0x0055f340);
 // sorting as GetSortedPropertyStrings). This is the keyed bonus line the
 // workbench shows for an upgrade slot — the gameplay text crystals lack in
 // GetPropertyDescription. Same heap-leak rule as GetPropertyDescription.
+// Still R() on K2, DELIBERATELY: ReadItemKeyedPropertyString has no callers
+// (the saber peek switched to driving the engine's own OnControlEntered),
+// and the K2 upgrade row handler drops the keyed-bonus concat entirely —
+// there may be no K2 twin to find. Resolve only if a consumer returns.
 const uintptr_t kAddrCSWSItemGetKeyedPropertyString = acc::addr::R(0x0055f510);
 
 // Per-category property-block builders that GetPropertyDescription calls in
@@ -768,16 +781,36 @@ const uintptr_t kAddrCSWSItemGetKeyedPropertyString = acc::addr::R(0x0055f510);
 // (replicated by the caller) are: skip ALL of these when item_type is 0x2e
 // (crystal) or 6 (grenade); call the five weapon-only builders only when
 // weapon_type != 0.
+// K2 twins paired by strref-immediate fingerprints (each K1 builder's pushed
+// GUI-strref set matched exactly one K2 candidate; Damage 4/4, Defence 3/3,
+// Miscellaneous 7/7, OnHit 4/5, the single-strref builders 1/1 each), all
+// candidates taken from the K2 GetPropertyDescription twin's own call
+// sequence. K2 RESTRUCTURED the cascade — see the K2-only builders below and
+// the per-game replica in engine_reads_items::ComputeSectionOffsets:
+//   K2 order: NEW(0x0060A990), FeatReq, NEW(9CB0, A0D0, A4F0, B360),
+//   weapon-guard{Damage, Range, [Crit unless base id 0x2d], OnHit,
+//   WeaponSize} where the guard is `weapon_type != 0 || base_id == 0x2d`,
+//   then AttackMod, Defence, Misc.
 typedef void (__thiscall* PFN_AddItemProperty)(void* item, CExoString* accum);
-const uintptr_t kAddrItemAddFeatRequirements = acc::addr::R(0x00556490);  // -> "tags"
-const uintptr_t kAddrItemAddDamageProperties = acc::addr::R(0x00556de0);  // weapon-only
-const uintptr_t kAddrItemAddRangeProperties = acc::addr::R(0x005543b0);  // weapon-only
-const uintptr_t kAddrItemAddCriticalThreatProps = acc::addr::R(0x00558950);  // weapon-only
-const uintptr_t kAddrItemAddOnHitProperties = acc::addr::R(0x00558c10);  // weapon-only
-const uintptr_t kAddrItemAddWeaponSizeProperties = acc::addr::R(0x005544f0);  // weapon-only
-const uintptr_t kAddrItemAddAttackModifierProps = acc::addr::R(0x0055e930);  // -> "values"
-const uintptr_t kAddrItemAddDefenceProperties = acc::addr::R(0x005599d0);  // -> "values"
-const uintptr_t kAddrItemAddMiscellaneousProps = acc::addr::R(0x0055a510);  // -> "properties"
+const uintptr_t kAddrItemAddFeatRequirements = acc::addr::Pick(0x00556490, 0x00609110);  // -> "tags"
+const uintptr_t kAddrItemAddDamageProperties = acc::addr::Pick(0x00556de0, 0x0060B6B0);  // weapon-only
+const uintptr_t kAddrItemAddRangeProperties = acc::addr::Pick(0x005543b0, 0x0060D8E0);  // weapon-only
+const uintptr_t kAddrItemAddCriticalThreatProps = acc::addr::Pick(0x00558950, 0x0060E6B0);  // weapon-only
+const uintptr_t kAddrItemAddOnHitProperties = acc::addr::Pick(0x00558c10, 0x0060EA50);  // weapon-only
+const uintptr_t kAddrItemAddWeaponSizeProperties = acc::addr::Pick(0x005544f0, 0x0060FDD0);  // weapon-only
+const uintptr_t kAddrItemAddAttackModifierProps = acc::addr::Pick(0x0055e930, 0x0060DA50);  // -> "values"
+const uintptr_t kAddrItemAddDefenceProperties = acc::addr::Pick(0x005599d0, 0x0060FEE0);  // -> "values"
+const uintptr_t kAddrItemAddMiscellaneousProps = acc::addr::Pick(0x0055a510, 0x00610FC0);  // -> "properties"
+
+// The five builders KOTOR 2 ADDED to the cascade (no K1 counterpart — K2's
+// expanded item stat lines). Needed only so the K2 section replica calls the
+// exact engine sequence; their output lands in the "tags" (0x0060A990 runs
+// before FeatRequirements) and "values" blocks.
+const uintptr_t kAddrItemAddK2StatsHeader   = acc::addr::Kotor2Only(0x0060A990);
+const uintptr_t kAddrItemAddK2Extra1        = acc::addr::Kotor2Only(0x00609CB0);
+const uintptr_t kAddrItemAddK2Extra2        = acc::addr::Kotor2Only(0x0060A0D0);
+const uintptr_t kAddrItemAddK2Extra3        = acc::addr::Kotor2Only(0x0060A4F0);
+const uintptr_t kAddrItemAddK2Extra4        = acc::addr::Kotor2Only(0x0060B360);
 
 // CExoString default constructor — __thiscall(CExoString* this). Initialises a
 // valid empty string the engine builders can append to. (GetPropertyDescription

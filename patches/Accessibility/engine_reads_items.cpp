@@ -391,7 +391,7 @@ bool ReadBaseItemFlags(void* item, uint8_t& itemType, uint8_t& weaponType) {
 }
 
 // Append the engine's own per-category builders to ONE accumulator, in the same
-// order and with the same weapon guard GetPropertyDescription uses, recording
+// order and with the same guards GetPropertyDescription uses, recording
 // the visible (strlen) length after each section. The result is the byte offsets
 // at which Tags / Values / Properties end inside the canonical
 // GetPropertyDescription string — so the caller can slice that string rather
@@ -399,24 +399,58 @@ bool ReadBaseItemFlags(void* item, uint8_t& itemType, uint8_t& weaponType) {
 // text by a byte or two; one cumulative accumulator matches it exactly). The
 // accumulator's heap c_string is leaked (CRT-mismatch rule). offTags/offValues/
 // offProps are left at their incoming values on fault.
+//
+// The cascade is PER GAME (each replicates its own engine's decompiled
+// sequence — a mismatched replica trips the caller's divergence guard and
+// degrades to description-only):
+//   K1 (0x0055F340): FeatReq | weapon?{Damage,Range,Crit,OnHit,Size} |
+//     AttackMod, Defence | Misc.
+//   K2 (0x00607790): NEW header, FeatReq | NEW x4 | (weapon || base 0x2d)?
+//     {Damage, Range, [Crit unless base 0x2d], OnHit, Size} | AttackMod,
+//     Defence | Misc. The lightsaber base id 0x2d forces the weapon block
+//     (minus the crit builder) even with weapon_type == 0.
 void ComputeSectionOffsets(void* item, uint8_t weaponType,
                            size_t& offTags, size_t& offValues,
                            size_t& offProps) {
+    const bool k2 = acc::game::IsKotor2();
+    int baseItemId = -1;
     CExoString acc = {nullptr, 0};
     __try {
+        if (k2) {
+            baseItemId = *reinterpret_cast<int*>(
+                reinterpret_cast<unsigned char*>(item) +
+                kSwsItemBaseItemIdOffset);
+        }
         reinterpret_cast<PFN_CExoStringCtor>(kAddrCExoStringDefaultCtor)(&acc);
 
+        if (k2) {
+            reinterpret_cast<PFN_AddItemProperty>(
+                kAddrItemAddK2StatsHeader)(item, &acc);
+        }
         reinterpret_cast<PFN_AddItemProperty>(
             kAddrItemAddFeatRequirements)(item, &acc);
         offTags = acc.c_string ? strlen(acc.c_string) : 0;
 
-        if (weaponType != 0) {
+        if (k2) {
+            reinterpret_cast<PFN_AddItemProperty>(
+                kAddrItemAddK2Extra1)(item, &acc);
+            reinterpret_cast<PFN_AddItemProperty>(
+                kAddrItemAddK2Extra2)(item, &acc);
+            reinterpret_cast<PFN_AddItemProperty>(
+                kAddrItemAddK2Extra3)(item, &acc);
+            reinterpret_cast<PFN_AddItemProperty>(
+                kAddrItemAddK2Extra4)(item, &acc);
+        }
+        const bool saber = k2 && baseItemId == 0x2d;
+        if (weaponType != 0 || saber) {
             reinterpret_cast<PFN_AddItemProperty>(
                 kAddrItemAddDamageProperties)(item, &acc);
             reinterpret_cast<PFN_AddItemProperty>(
                 kAddrItemAddRangeProperties)(item, &acc);
-            reinterpret_cast<PFN_AddItemProperty>(
-                kAddrItemAddCriticalThreatProps)(item, &acc);
+            if (!saber) {
+                reinterpret_cast<PFN_AddItemProperty>(
+                    kAddrItemAddCriticalThreatProps)(item, &acc);
+            }
             reinterpret_cast<PFN_AddItemProperty>(
                 kAddrItemAddOnHitProperties)(item, &acc);
             reinterpret_cast<PFN_AddItemProperty>(
@@ -487,9 +521,12 @@ bool BuildItemDescriptionBlocks(void* item, ItemDescriptionBlocks* out) {
     // Find where Tags / Values / Properties end inside `full` by replaying the
     // engine's builder sequence into one accumulator. Crystals (0x2e) and
     // grenades (6) skip the whole property block — as does a missing base item —
-    // so all offsets stay 0 and the entire string is the description.
+    // so all offsets stay 0 and the entire string is the description. KOTOR 2's
+    // twin adds a third skip type (0x31), replicated per game.
     size_t offTags = 0, offValues = 0, offProps = 0;
-    if (haveFlags && itemType != 0x2e && itemType != 6) {
+    bool engineSkips = itemType == 0x2e || itemType == 6 ||
+                       (acc::game::IsKotor2() && itemType == 0x31);
+    if (haveFlags && !engineSkips) {
         ComputeSectionOffsets(item, weaponType, offTags, offValues, offProps);
     }
 
@@ -615,10 +652,16 @@ bool ReadCreatureForcePoints(void* clientCreature, int* outCur, int* outMax) {
     //                                   — the server stats struct is shifted 2
     //                                   bytes from this client one, so reuse of
     //                                   the server offsets here reads garbage.)
-    const size_t kLvlUpStatsOffset = acc::off::Todo(0x2f8);
-    const size_t kMaxForceOffset   = acc::off::Todo(0x11e);
-    const size_t kCurForceLoOffset = acc::off::Todo(0x122);
-    const size_t kCurForceHiOffset = acc::off::Todo(0x124);
+    // KOTOR 2 values from its charsheet SetStats twin 0x0084E6F0 (the FP
+    // label writer): stats root at clientCreature+0x310 (`creature[0xc4]`
+    // dword — double-witnessed, Batch 3d used the same root for HP), max FP
+    // = short [stats+0x126], current FP = (short)([stats+0x12a] +
+    // [stats+0x12c]) behind the same IsJedi-style class gate. The FP band
+    // shifted +8; HP (+0x4c/+0x4e) did not — bands move independently.
+    const size_t kLvlUpStatsOffset = acc::off::Pick(0x2f8, 0x310);
+    const size_t kMaxForceOffset   = acc::off::Pick(0x11e, 0x126);
+    const size_t kCurForceLoOffset = acc::off::Pick(0x122, 0x12a);
+    const size_t kCurForceHiOffset = acc::off::Pick(0x124, 0x12c);
 
     void* lvlUpStats = nullptr;
     __try {

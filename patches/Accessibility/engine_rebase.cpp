@@ -151,6 +151,12 @@ uintptr_t PickGlobal(uintptr_t kotor1Va, uintptr_t kotor2Va) {
     return acc::game::IsKotor2() ? kotor2Va : kotor1Va;
 }
 
+uintptr_t Kotor2Only(uintptr_t kotor2Va) {
+    // Mirror of Kotor1Only below: 0 on KOTOR 1 so Ok() declines there. No
+    // R() involvement — K2 has a single build, nothing to rebase.
+    return acc::game::IsKotor2() ? kotor2Va : 0;
+}
+
 uintptr_t Kotor1Only(uintptr_t referenceVa) {
     // Same run-time behaviour as a bare R() — 0 on KOTOR 2. Distinct only so
     // that "checked, and KOTOR 2 has no such thing" is not confusable with

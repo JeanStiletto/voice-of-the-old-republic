@@ -136,10 +136,53 @@ Worklist 36/36, built green, NOT tested in game.** The witness ledger:
   K1 regression: same list (shared code touched: the slot-button
   predicate, the upgrade structural detector, chain bit_flags read).
 
+**Item-description cluster — IMPLEMENTED 2026-08-02 (tenth session, after
+the peek batch; two Ghidra rounds + GFF string-xref scans + a strref
+fingerprint pass, zero test rounds). NOT tested in game.** The ledger:
+
+- **CSWSItem::GetPropertyDescription → 0x00607790**, decompile-matched
+  (GetBaseItem guards, builder cascade, description_indentified GetString
+  tail with K1's 0x7dac fallback; called by all three K2 OnControlEntered
+  twins). The server facades went Pick too: ClientToServerObjectId →
+  0x0051C8B0, GetItemByGameObjectID → 0x0051C0E0 (thin forwarders, K1's
+  shape, consumer-witnessed three ways).
+- **All nine ItemAdd* builders paired by strref-immediate fingerprints** —
+  each K1 builder's pushed GUI-strref set matched exactly one K2 candidate
+  (Damage 4/4, Defence 3/3, Misc 7/7, OnHit 4/5, singles 1/1). **K2
+  RESTRUCTURED the cascade**: a NEW builder runs before FeatRequirements,
+  four more after it, and the weapon guard became
+  `weapon_type != 0 || base_id == 0x2d` with the crit builder SKIPPED for
+  lightsabers (base 0x2d). ComputeSectionOffsets now replicates each
+  game's own sequence (five new K2-only builder addresses banked via the
+  new `acc::addr::Kotor2Only` selector); a wrong replica degrades to
+  description-only via the existing divergence guard. K2 also added item
+  type 0x31 to the skip-all guard (replicated per game).
+- **Item fields all witnessed individually** (the K2 item GFF loader
+  0x00601740 / saver 0x00602DD0 + the OnControlEntered twins): the whole
+  band is K1+0x40 — charges 0x298, max_charges 0x29c, DescIdentified
+  0x2b0, Description 0x2b8, LocalizedName 0x2c0 (already Pick'd),
+  bit_flags 0x2c8, stack_size 0x2cc. Infinite-stock bit Same (bit 2).
+  CExoLocString strref Same(+4) (K2 GetString twin 0x007356B0).
+  CSWBaseItem item_type/weapon_type Same(0xac/0x09) (witnessed in
+  0x00607790's guards). New kSwsItemBaseItemIdOffset Same(0xc).
+- **Force-points block resolved too** (charsheet SetStats twin 0x0084E6F0):
+  stats root clientCreature+0x310 (double-witnessed with Batch 3d's HP
+  chain), max FP short +0x126, current FP = (short)(+0x12a + +0x12c) — the
+  FP band shifted +8 while HP (+0x4c) did not; bands move independently.
+  This makes examine-view FP live on K2.
+- GetKeyedPropertyString stays R() DELIBERATELY: its wrapper has no
+  callers and the K2 row handler dropped the keyed-bonus concat.
+- What this unlocks on K2: Shift+Up/Down block navigation (tags / values /
+  properties / description), container + equip-picker + workbench item
+  peeks, store stock counts, examine-view item lines.
+- Test items: fold into the peek-batch list above — additionally check the
+  block navigation reads all four blocks on a weapon, a stim and a saber
+  (the saber exercises the K2-only forced weapon block), and that the log
+  shows no "offsets diverged" lines (a diverged replica speaks the whole
+  description as one block — functional but un-sliced).
+
 **STILL K1-GATED (the remaining port surface, in suggested order):**
-item-description builder cluster (kAddrItemAdd* + item fields —
-unlocks Shift+arrow block navigation, examine extras, equip/workbench
-commits; scoped by the peek batch above), map_ui_cursor + map_user_markers (map-pin
+map_ui_cursor + map_user_markers (map-pin
 offset cluster in engine_area.h), chargen feat/power grids (kAbilitiesCharGen*;
 NOTE the level-up round already located their chart cluster: two classes at
 0x00909xxx/0x0090Bxxx with charts +0x1bf8/+0x1bf4 — see the SetSelectedSkill

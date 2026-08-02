@@ -1466,9 +1466,15 @@ const size_t    kStoreItemEntryObjIdOffset             = acc::off::Pick(0x1c4, 0
 //
 // Note: the prior values (0xfc / 0x108) read random data inside CSWSObject
 // and made every stock count appear as 1. Fixed 2026-05-22.
-const size_t    kSwsItemStackSizeOffset                = acc::off::Todo(0x28c);
-const size_t    kSwsItemBitFlagsOffset                 = acc::off::Todo(0x288);
-const uint32_t  kSwsItemInfiniteStockBit               = acc::off::Todo(0x4);
+// KOTOR 2: the whole CSWSItem field band shifted +0x40, each field
+// individually witnessed (never derived) — the K2 item GFF saver 0x00602DD0
+// writes StackSize from a WORD read at [item+0x2cc] and a bit-5 flag from
+// [item+0x2c8], and the K2 store OnControlEntered twin 0x008B6E90 reads
+// stack [item+0x2cc] / tests bit 2 of [item+0x2c8] exactly like K1's. The
+// infinite-stock bit VALUE is unchanged (both games test `>> 2 & 1`).
+const size_t    kSwsItemStackSizeOffset                = acc::off::Pick(0x28c, 0x2cc);
+const size_t    kSwsItemBitFlagsOffset                 = acc::off::Pick(0x288, 0x2c8);
+const uint32_t  kSwsItemInfiniteStockBit               = acc::off::Same(0x4);
 
 // CSWSItem.charges @ +0x258 (ulong), CSWSItem.max_charges @ +0x25c (ulong).
 // Both from the Ghidra struct DB (re/swkotor.exe.h CSWSItem body). Layout
@@ -1480,8 +1486,11 @@ const uint32_t  kSwsItemInfiniteStockBit               = acc::off::Todo(0x4);
 // can't stack — e.g. some droid/usable items) has max_charges > 0; regular
 // gear and stackables leave both at 0, so this never collides with the
 // stack_size suffix.
-const size_t    kSwsItemChargesOffset                  = acc::off::Todo(0x258);
-const size_t    kSwsItemMaxChargesOffset               = acc::off::Todo(0x25c);
+// KOTOR 2 +0x298/+0x29c: the K2 item GFF loader 0x00601740 stores the
+// "Charges" field to [item+0x298] and its saver 0x00602DD0 writes the
+// adjacent field from [item+0x29c] — K1's exact adjacency, +0x40.
+const size_t    kSwsItemChargesOffset                  = acc::off::Pick(0x258, 0x298);
+const size_t    kSwsItemMaxChargesOffset               = acc::off::Pick(0x25c, 0x29c);
 
 // CSWSItem.description_indentified is a CExoLocString. GetPropertyDescription
 // appends its text via CExoLocString::GetString, which returns the INLINE
@@ -1491,13 +1500,26 @@ const size_t    kSwsItemMaxChargesOffset               = acc::off::Todo(0x25c);
 // description block we resolve the strref directly through the TLK
 // (LookupTlk), bypassing the bad inline copy. CExoLocString = { internal @0,
 // strref @0x4 } (decompile-verified at CExoLocString::GetString 005ea130).
-const size_t    kItemDescriptionLocStringOffset = acc::off::Todo(0x270);
-const size_t    kExoLocStringStrRefOffset       = acc::off::Todo(0x4);
+// KOTOR 2 +0x2b0: the K2 saver 0x00602DD0 writes DescIdentified from
+// [item+0x2b0] (Description from +0x2b8, LocalizedName from +0x2c0 — the
+// full K1 LocString trio at +0x40 each, in K1's order).
+const size_t    kItemDescriptionLocStringOffset = acc::off::Pick(0x270, 0x2b0);
+// Same on K2: its CExoLocString::GetString twin 0x007356B0 reads the strref
+// at [this+4] before the TLK global, exactly like K1's 0x005ea130.
+const size_t    kExoLocStringStrRefOffset       = acc::off::Same(0x4);
 
 // CSWBaseItem fields, read off the pointer CSWItem::GetBaseItem returns (see
 // engine_offsets_addresses.h, where the CMP-verified derivation is recorded).
-const size_t    kBaseItemWeaponTypeOffset        = acc::off::Todo(0x09);
-const size_t    kBaseItemItemTypeOffset          = acc::off::Todo(0xac);
+// Same on K2, witnessed in its GetPropertyDescription twin 0x00607790: the
+// item-type guards compare [base+0xac] and the weapon gate tests [base+9].
+const size_t    kBaseItemWeaponTypeOffset        = acc::off::Same(0x09);
+const size_t    kBaseItemItemTypeOffset          = acc::off::Same(0xac);
+
+// CSWSItem/CSWItem base-item row INDEX at +0xc (both games; K2 witnesses:
+// the GetPropertyDescription twin's `[this+0xc] == 0x2d` lightsaber gate and
+// the store stock helper 0x00605FF0 comparing [itemA+0xc] == [itemB+0xc]).
+// Used by the K2 section replica only — K1's guard never reads it.
+const size_t    kSwsItemBaseItemIdOffset         = acc::off::Same(0xc);
 
 // CSWGuiInGameJournal — quest journal panel (the "Aufträge" sub-screen).
 //
