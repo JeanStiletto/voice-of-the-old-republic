@@ -489,14 +489,14 @@ void Dispatch() {
     // modifier-space reservation this shares keys with).
     PHASE("interact", acc::input_poll::PollHotkey());
 
-    if (k1) {
-        // Release the level-up wizard's overlay pause once the panel closes
-        // (the wizard's own Accept/Back buttons close it, so there's no close
-        // site to call EndOverlayPause). After PollHotkey so a wizard opened
-        // this frame is already live when we check.
-        PHASE("levelup_pause", acc::engine_levelup::TickLevelUpPause());
-
-    }
+    // Release the level-up wizard's overlay pause once the panel closes
+    // (the wizard's own Accept/Back buttons close it, so there's no close
+    // site to call EndOverlayPause). After PollHotkey so a wizard opened
+    // this frame is already live when we check. Both games since the
+    // level-up batch: the whole Shift+L chain (CanLevelUp, SetLevelUpMode,
+    // both ShowLevelUpGUI variants, the wizard vtable) is Pick'd with
+    // decompile witnesses.
+    PHASE("levelup_pause", acc::engine_levelup::TickLevelUpPause());
 
     // MessageBoxModal close cleanup — engine's close path doesn't unpause
     // or unmute on its own. Both games since Batch 4/5: SetPauseState,

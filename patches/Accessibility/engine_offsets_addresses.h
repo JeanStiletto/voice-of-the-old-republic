@@ -250,7 +250,13 @@ const uintptr_t kAddrCSWGuiFeatsCharGenOnFeatPicked = acc::addr::R(0x006f3c20);
 //   void __thiscall OnEnterPower(ulong powerId)
 // Mirror of CSWGuiFeatsCharGen::OnEnterFeat — refreshes power_label,
 // description_listbox, BTN_SELECT label/colour for the given power.
-const uintptr_t kAddrCSWGuiPowersLevelUpOnEnterPower = acc::addr::R(0x006f1460);
+// K2 twin 0x00908F70, decompile-confirmed: DeterminePower twin 0x009092D0
+// into the status byte, selected-power store at +0x1bb0, GetSpell twin
+// 0x006C1450, the same 5-case SELECT_BTN repaint (button at the
+// ctor-witnessed +0x13a8), then name/description strrefs off the spell row.
+// Reached from the selection-changed callback 0x00909D00 the ctor registers
+// on LB_POWERS — the K1 OnPowerSelectionChanged position exactly.
+const uintptr_t kAddrCSWGuiPowersLevelUpOnEnterPower = acc::addr::Pick(0x006f1460, 0x00908F70);
 
 // Signature per Lane's SARIF (FUNCTIONS entry @0x006f2030):
 //   void __thiscall OnPowerPicked(ulong powerId)
@@ -258,7 +264,14 @@ const uintptr_t kAddrCSWGuiPowersLevelUpOnEnterPower = acc::addr::R(0x006f1460);
 // BTN_SELECT" entry. Dispatches DeterminePower → AddChosenPower /
 // RemoveChosenPower / can't-change message box. Calling directly with the
 // focused cell's powerId lets us bypass the click-sim on Hinzuf. Macht.
-const uintptr_t kAddrCSWGuiPowersLevelUpOnPowerPicked = acc::addr::R(0x006f2030);
+// K2 twin 0x00908E30, decompile-confirmed: KEEPS K1'S EXACT message strrefs
+// (0xa5e6 main-character-only on power ids 6/0xE, 0xa621 all-selected,
+// 0xa4c9 cannot-deselect, 0xa4ca prerequisites; K2 adds a case-4 0x1b412),
+// AddChosenPower/RemoveChosenPower twins 0x009095F0/0x009097A0 + the chart
+// repaint 0x00909360, message box through the MOVED gui slot +0xA0 (the
+// Batch 3d MessageBox row — mutual confirmation). Reached from the
+// double-click callback 0x00909D70, K1's OnDoubleClick position.
+const uintptr_t kAddrCSWGuiPowersLevelUpOnPowerPicked = acc::addr::Pick(0x006f2030, 0x00908E30);
 
 // CSWGuiPowersLevelUp identity by vtable — single heap-allocated class with
 // no CGuiInGame slot, so (like CSWGuiFeatsCharGen / CSWGuiLevelUpPanel) the

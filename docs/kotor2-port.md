@@ -35,17 +35,65 @@ four swoop cue wavs. The installer still needs the K2 row set.
 — OnTurretBulletHit/OnPlayerFire and turret_game stay K1-only permanently
 (mark constants Kotor1Only when touched). Port the rest of the minigames.
 
-**STILL K1-GATED (the remaining port surface, in suggested order):** powers
-level-up + engine_levelup (5 unresolved; CAUTION: the CGuiInGame character
-slot +0x14 is CSWGui3DSceneView on K2 per the slot table — settle what K2's
-character sheet is first), peek_description (3 non-virtual OnControlEntered
+**Level-up batch — IMPLEMENTED 2026-08-02 (tenth session, one offline round:
+two kotor2 Ghidra rounds + one kotor1 round + capstone scans, zero test
+rounds). Worklist 18/18, chain audit clean, built green, NOT tested in
+game.** The witness ledger:
+
+- **CGuiInGame::ShowLevelUpGUI → 0x007CB7C0** and
+  **CSWGuiInGameCharacter::ShowLevelUpGUI → 0x0084FCD0**, both
+  decompile-matched landmark for landmark (initialized +0x128, the
+  GetCharacterChangeInProgress twin 0x00740FC0, two-arg SetSoundMode, lazy
+  charsheet build new(0x4b7c)+0x0084C3A0 into [gui+0x14], SetStats
+  0x0084E6F0 — the Batch-3d twin, mutually confirming — then new(0x2cb8) +
+  CSWGuiLevelUpCharGen ctor 0x008F4AF0). On BOTH games the wizard alloc is
+  CSWGuiLevelUpCharGen (today's K1 decompile corrected the old
+  "CSWGuiLevelUpPanel" comment — that is the embedded sub-panel).
+- **level_up_mode moved +0x10C → +0x12C** (the +0x20 ring shift),
+  double-witnessed by both twins' gates; **SetLevelUpMode → 0x007BFA20**
+  (byte-identical compare-then-store on +0x12C, found by displacement scan).
+- **CSWSCreatureStats::CanLevelUp → 0x006B9790**, disasm-matched line for
+  line (ServerInfo max_level_ +0x94, Rules exp table internal+0x38,
+  experience +0x68, stats->creature +0x24, shape-equivalent dead-check
+  tail); reached from K2 ShowSWInGameGui 0x007C9DF0's default-panel branch,
+  K1's exact caller. Still a pure read-only predicate.
+- **CSWGuiPowersLevelUp**: ctor 0x009074E0 / dtor 0x00908070 via RTTI
+  vtable 0x009AA34C; **chart at +0x1BF8** (`add ecx,0x1bf8` before the
+  chart ctor 0x0089A650; tail member — chart+0x14 == the new-size 0x1c0c
+  allocated by the LevelUpPanel powers-button callback 0x00904420).
+  **OnEnterPower → 0x00908F70**, **OnPowerPicked → 0x00908E30**, both
+  decompile-confirmed (OnPowerPicked keeps K1's message strrefs
+  0xa5e6/0xa621/0xa4c9/0xa4ca verbatim and routes the box through the
+  moved MessageBox slot +0xA0; reached from the ctor-registered
+  selection-changed/double-click callbacks 0x00909D00/0x00909D70 — K1's
+  OnPowerSelectionChanged/OnDoubleClick positions).
+- **The pwrlvlup control ids are RE-NUMBERED between the games and
+  COLLIDE** (K1 id 6 = LB_POWERS vs K2 id 6 = a label; K1 id 12 = BTN_BACK
+  vs K2 id 12 = LB_POWERS) — the "both games assign the same ids" rule from
+  Batch 3d does NOT hold for this panel. menus_powers_levelup.cpp now
+  resolves ids per game (K2 set mined from its own gui.bif, pwrlvlup_p.gui).
+- Gates cleared: the reader's Batch-1 decline + the levelup_pause Dispatch
+  phase. Shift+L was already reachable on both games; it now works instead
+  of declining through the poisoned addresses.
+- Test items for the next K2 round: earn a level (Peragus start has one
+  pending), Shift+L → wizard opens + world freezes, wizard sub-screens
+  navigate/speak, powers picker: rows/cells announce with status word +
+  description, Enter picks (both the pick and each refusal message), Esc =
+  BACK_BTN, Accept closes + pause releases (levelup_pause channel). K1
+  regression: one Shift+L level-up pass (shared reader restructured:
+  per-game id functions replaced the constexpr ids).
+
+**STILL K1-GATED (the remaining port surface, in suggested order):**
+peek_description (3 non-virtual OnControlEntered
 twins + upgrade desc label), map_ui_cursor + map_user_markers (map-pin
-offset cluster in engine_area.h), chargen feat/power grids (kAbilitiesCharGen*),
-pazaak + pazaakdeck, swoop race/audio, footstep_suppress (needs the
-OnPlayFootstep hook — candidate 0x0077D390, play-vs-compute split still
-unverified), OnRulesInit/mouse-guard decision, camera probes (deliberately
-deferred dev diagnostics). endar_softlock and floor_puzzle stay K1 by
-design (K1-module-specific content workarounds).
+offset cluster in engine_area.h), chargen feat/power grids (kAbilitiesCharGen*;
+NOTE the level-up round already located their chart cluster: two classes at
+0x00909xxx/0x0090Bxxx with charts +0x1bf8/+0x1bf4 — see the SetSelectedSkill
+caller census), pazaak + pazaakdeck, swoop race/audio, footstep_suppress
+(needs the OnPlayFootstep hook — candidate 0x0077D390, play-vs-compute split
+still unverified), OnRulesInit/mouse-guard decision, camera probes
+(deliberately deferred dev diagnostics). endar_softlock and floor_puzzle stay
+K1 by design (K1-module-specific content workarounds).
 
 **State as of 2026-08-02 (eighth session): Batches 3d, 4 and 5 are ALL
 IMPLEMENTED in one sitting (user decision: everything except Batch 6 at

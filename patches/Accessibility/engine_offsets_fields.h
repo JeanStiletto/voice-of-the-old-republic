@@ -591,7 +591,12 @@ const size_t    kFeatNameStrRefOffset         = acc::off::Todo(0x08);
 // CSWGuiSkillFlowChart::SetSelectedSkill on this offset to keep the chart's
 // render-side highlight in sync with our keyboard focus (same pattern as
 // chargen_feats — see kFeatsCharGenChartOffset).
-const size_t    kPowersLevelUpChartOffset              = acc::off::Todo(0x19fc);
+// KOTOR 2: 0x1bf8, witnessed in the K2 ctor 0x009074E0 (`add ecx,0x1bf8`
+// before the chart ctor 0x0089A650 and again before the power-set feeder
+// 0x0089AAA0), and it is the tail member exactly as on K1: chart + 0x14
+// == the panel's own new-size 0x1c0c (allocated by the LevelUpPanel
+// powers-button callback 0x00904420).
+const size_t    kPowersLevelUpChartOffset              = acc::off::Pick(0x19fc, 0x1bf8);
 
 // Container offsets verified against Lane's SARIF (DATATYPE entries for
 // CSWGuiPanel and CSWGuiListBox). CExoArrayList layout:

@@ -21,7 +21,13 @@ namespace {
 // without opening a panel because of the same gate as
 // CSWGuiInGameCharacter::ShowLevelUpGUI (level_up_mode == 0). Kept as a
 // fallback when the InGameCharacter panel slot is null.
-const uintptr_t kAddrCGuiInGameShowLevelUpGUI = acc::addr::R(0x0062dc00);
+// KOTOR 2: 0x007CB7C0, decompile-matched landmark for landmark — initialized
+// gate ([this+0x128], the Batch-2 field), level_up_mode read via GetInGameGui
+// (+0x12C on K2, see SetLevelUpMode below), GetCharacterChangeInProgress twin
+// 0x00740fc0 on param==0, the two-arg SetSoundMode(4,0), lazy charsheet
+// construction (new(0x4b7c) + ctor 0x0084C3A0, stored to [this+0x14]), then
+// the charsheet ShowLevelUpGUI + SetInputClass(2,1). Same (int) signature.
+const uintptr_t kAddrCGuiInGameShowLevelUpGUI = acc::addr::Pick(0x0062dc00, 0x007CB7C0);
 
 // CSWGuiInGameCharacter::ShowLevelUpGUI — __thiscall(int) @0x006b0bb0.
 // btn_levelup click handler. RE'd via runtime peek (DumpFunctionBytes
@@ -40,7 +46,14 @@ const uintptr_t kAddrCGuiInGameShowLevelUpGUI = acc::addr::R(0x0062dc00);
 // Both gates explain the 0-return-no-panel behaviour seen in our runs:
 // `level_up_mode` is 0 in normal gameplay and only flipped to 1 when
 // the engine wants to open the level-up wizard (via SetLevelUpMode below).
-const uintptr_t kAddrCSWGuiInGameCharacterShowLevelUpGUI = acc::addr::R(0x006b0bb0);
+// KOTOR 2: 0x0084FCD0 — same gate order (level_up_mode via GetInGameGui,
+// GetCharacterChangeInProgress 0x00740fc0), then SetStats (the banked Batch-3d
+// twin 0x0084E6F0 — mutual confirmation), new(0x2cb8) + CSWGuiLevelUpCharGen
+// ctor 0x008F4AF0(manager, player id, [this+0x4b6c]), back-pointer store at
+// [wizard+0x6c], AddPanel(wizard, 3, 1). On BOTH games the wizard object is a
+// CSWGuiLevelUpCharGen (the K1 comment above says "CSWGuiLevelUpPanel" —
+// that is the embedded sub-panel the CharGen wizard builds, not the alloc).
+const uintptr_t kAddrCSWGuiInGameCharacterShowLevelUpGUI = acc::addr::Pick(0x006b0bb0, 0x0084FCD0);
 
 // CGuiInGame::SetLevelUpMode — __thiscall(int) -> void @0x00628650.
 // Tiny setter (function range 0x00628650..0x00628664 = 0x14 bytes).
@@ -48,7 +61,12 @@ const uintptr_t kAddrCSWGuiInGameCharacterShowLevelUpGUI = acc::addr::R(0x006b0b
 // Existing Ghidra comment at 0x0066aa28 ("Sets the in-game
 // level_up_mode = 0. Seems to prevent level ups from occurring?")
 // confirms the directionality: 0 = block, 1 = allow.
-const uintptr_t kAddrCGuiInGameSetLevelUpMode = acc::addr::R(0x00628650);
+// KOTOR 2: 0x007BFA20 — byte-for-byte the same compare-then-store shape
+// (`if (this->level_up_mode != arg) store`, ret 4) in the CGuiInGame method
+// region. level_up_mode moved +0x10C -> +0x12C on K2 (the +0x20 message-ring
+// shift), double-witnessed: BOTH K2 ShowLevelUpGUI twins gate on
+// [gui+0x12C] before opening the wizard.
+const uintptr_t kAddrCGuiInGameSetLevelUpMode = acc::addr::Pick(0x00628650, 0x007BFA20);
 
 // CSWSCreatureStats::CanLevelUp — undefined4 __thiscall(void) @0x005a6810.
 // Pure read-only predicate (RE'd by byte dump 2026-06-16): returns 1 only
@@ -57,13 +75,25 @@ const uintptr_t kAddrCGuiInGameSetLevelUpMode = acc::addr::R(0x00628650);
 // AND the two class-side gates pass — i.e. exactly when the Charakterblatt
 // btn_levelup button is enabled. No writes, no allocations, so it's safe
 // to call purely as a gate. ECX = CSWSCreatureStats*, no stack params.
-const uintptr_t kAddrCSWSCreatureStatsCanLevelUp = acc::addr::R(0x005a6810);
+// KOTOR 2: 0x006B9790, disasm-matched line for line: GetLevel(0), ServerInfo
+// max_level_ at +0x94, Rules required_exp_per_level at internal+0x38 vs
+// experience [this+0x68], the same vtable+0x94 gate on stats->creature
+// (+0x24 on K2), and a shape-equivalent dead-check tail (K2 gates a
+// vtable+0x9C short <= 0 behind [creature+0x11ac] where K1 calls
+// GetDeadTemp). Reached from K2 ShowSWInGameGui 0x007C9DF0's CanLevelUp
+// default-panel branch — the same caller K1 has. Still read-only.
+const uintptr_t kAddrCSWSCreatureStatsCanLevelUp = acc::addr::Pick(0x005a6810, 0x006B9790);
 
 typedef uint32_t (__thiscall* PFN_CanLevelUp)(void* this_);
 
 // CGuiInGame.in_game_character — slot @+0x14 per swkotor.exe.h:10225,
 // matching the panel-kind classifier in engine_panels.cpp.
-const size_t kCGuiInGameCharacterSlotOffset = acc::off::Todo(0x14);
+// Same on KOTOR 2, double-witnessed: the panel creator 0x007BE4C0 stores the
+// CSWGuiInGameCharacter ctor result at [gui+0x14] (the defect-5 finding that
+// fixed the slot-table row), and K2 ShowLevelUpGUI 0x007CB7C0 lazily
+// constructs the charsheet into [this+0x14] then dispatches on it — the
+// exact consumer THIS helper mirrors.
+const size_t kCGuiInGameCharacterSlotOffset = acc::off::Same(0x14);
 
 typedef uint32_t (__thiscall* PFN_ShowLevelUpGUI)(void* this_, int param_1);
 typedef void     (__thiscall* PFN_SetLevelUpMode)(void* this_, int mode);
