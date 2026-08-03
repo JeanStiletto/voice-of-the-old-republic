@@ -744,7 +744,10 @@ const size_t    kUpgradeDescLabelOffset            = acc::off::Pick(0x1f60, 0x2e
 
 // CSWGuiUpgrade.field24_0x2f48 — bit 0 is the "picker open" state (set by
 // OnSlotSelected, cleared by OnUpgradeSelected's close tail). Clear it on cancel.
-const size_t    kUpgradePickerOpenFlagOff = acc::off::Todo(0x2f48);  // panel.field24
+// K2 0x3d28, witnessed in its CloseItems 0x008CB290: that function's close tail
+// is ShowItems(0) followed by `this[0xf4a] &= ~1` — the same pair, on the same
+// bit, in the same order as the sequence this constant serves.
+const size_t    kUpgradePickerOpenFlagOff = acc::off::Pick(0x2f48, 0x3d28);  // panel.field24
 
 // CSWGuiUpgrade slot-type table geometry, plus the two panel/button fields that
 // index it. The table base is kAddrUpgradeSlotTypeTable in

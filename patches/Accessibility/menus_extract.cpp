@@ -1601,23 +1601,14 @@ const char* TryWorkbenchSlot(void* control, void* owner,
                 category = 0;
                 customValue = -1;
             }
-            const int tableIdx = (customValue - 4) + (int)category * 4;
+            // Per-game index + table read live in the engine layer; see
+            // LookupUpgradeSlotType for why they cannot be inlined here.
             int upgradeType = -1;
             uint32_t strref = 0;
-            if (tableIdx >= 0 && tableIdx < 16) {
-                __try {
-                    auto* entry = reinterpret_cast<unsigned char*>(
-                        kAddrUpgradeSlotTypeTable + tableIdx * kUpgradeSlotTypeStride);
-                    upgradeType = *reinterpret_cast<int*>(entry);
-                    strref = *reinterpret_cast<uint32_t*>(
-                        entry + kUpgradeSlotTypeStrRefOff);
-                } __except (EXCEPTION_EXECUTE_HANDLER) {
-                    upgradeType = -1;
-                    strref = 0;
-                }
-            }
+            bool haveEntry = acc::engine::LookupUpgradeSlotType(
+                customValue, (int)category, &upgradeType, &strref);
             bool resolved = false;
-            if (upgradeType != -1 && strref != 0) {
+            if (haveEntry) {
                 if (acc::engine::LookupTlk(strref, outBuf, bufSize)) {
                     source = "perkind-workbench-slot";
                     resolved = outBuf[0] != '\0';
@@ -1626,9 +1617,9 @@ const char* TryWorkbenchSlot(void* control, void* owner,
             if (resolved) {
                 acclog::Trace("Menus.PerKind",
                               "WorkbenchUpgrade control=%p id=%d cat=%d cval=%d "
-                              "table_idx=%d strref=%u -> \"%s\"",
+                              "type=%d strref=%u -> \"%s\"",
                               control, cid, (int)category, customValue,
-                              tableIdx, strref, outBuf);
+                              upgradeType, strref, outBuf);
             } else {
                 // Fallback: position-only name. Used when the table
                 // entry is a sentinel (slot doesn't apply to this
@@ -1653,9 +1644,9 @@ const char* TryWorkbenchSlot(void* control, void* owner,
                         source = "perkind-workbench-slot";
                         acclog::Trace("Menus.PerKind",
                                       "WorkbenchUpgrade control=%p id=%d cat=%d cval=%d "
-                                      "table_idx=%d strref=%u (sentinel/empty) -> fallback \"%s\"",
+                                      "type=%d strref=%u (sentinel/empty) -> fallback \"%s\"",
                                       control, cid, (int)category, customValue,
-                                      tableIdx, strref, outBuf);
+                                      upgradeType, strref, outBuf);
                     }
                 }
             }

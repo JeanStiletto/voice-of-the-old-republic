@@ -746,26 +746,22 @@ void Drain(void* gm) {
                 // "Sch\xE4rfe") so the user hears WHICH slot they just
                 // acted on, not just the generic position number.
                 char slotName[128] = {0};
-                int tableIdx = (slotIdx - 4) + (int)saberFlag * 4;
-                if (tableIdx >= 0 && tableIdx < 16) {
-                    auto* entry = reinterpret_cast<unsigned char*>(
-                        kAddrUpgradeSlotTypeTable + tableIdx * kUpgradeSlotTypeStride);
-                    int upgradeType = *reinterpret_cast<int*>(entry);
-                    uint32_t strref = *reinterpret_cast<uint32_t*>(
-                        entry + kUpgradeSlotTypeStrRefOff);
-                    if (upgradeType != -1 && strref != 0) {
-                        acc::engine::LookupTlk(strref, slotName, sizeof(slotName));
-                    }
+                int upgradeType = -1;
+                uint32_t strref = 0;
+                // Per-game index + table read; see LookupUpgradeSlotType.
+                if (acc::engine::LookupUpgradeSlotType(
+                        slotIdx, (int)saberFlag, &upgradeType, &strref)) {
+                    acc::engine::LookupTlk(strref, slotName, sizeof(slotName));
                     acclog::Write("WorkbenchSlotSelect",
-                                  "non-saber path (saber=%d slot_idx=%d table_idx=%d "
+                                  "non-saber path (saber=%d slot_idx=%d "
                                   "upgrade_type=%d strref=%u name=\"%s\") -> %s; picker disarmed",
-                                  (int)saberFlag, slotIdx, tableIdx,
+                                  (int)saberFlag, slotIdx,
                                   upgradeType, strref, slotName, outcomeTag);
                 } else {
                     acclog::Write("WorkbenchSlotSelect",
-                                  "non-saber path (saber=%d slot_idx=%d table_idx=%d "
-                                  "out-of-range) -> %s; picker disarmed",
-                                  (int)saberFlag, slotIdx, tableIdx, outcomeTag);
+                                  "non-saber path (saber=%d slot_idx=%d "
+                                  "no table entry) -> %s; picker disarmed",
+                                  (int)saberFlag, slotIdx, outcomeTag);
                 }
                 if (outcome != acc::strings::Id::Count_) {
                     const char* result = acc::strings::Get(outcome);

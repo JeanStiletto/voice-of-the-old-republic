@@ -51,6 +51,40 @@ not the batch plan. The witness ledger:
 - Test items for the combined round are in the reply that closed this
   session; the K1 regression surface is the disabled suffix (shared code)
   and the equip screen generally (its slot table is untouched).
+- **CONFIRMED IN GAME:** equipment screen and equipping fully functional.
+
+**Workbench batch — IMPLEMENTED 2026-08-03 (same session, straight after the
+equipment one; five Ghidra rounds, zero test rounds). Built green, applied,
+UNTESTED — the user knew testing would come later and asked for it anyway.**
+The workbench upgrade picker is the same architecture as the equipment picker
+and had the same five addresses missing, so the method transferred whole:
+
+- **All five resolved.** OnEnterSlot 0x008CE3F0, OnSlotSelected 0x008CEB00,
+  OnUpgradeSelected 0x008CDB00, OnAssemble 0x008CFD10, ShowItems 0x008CB2F0.
+  Reasoning inline at the declarations. Entry point was the already-known
+  slot-button event-0 handler, whose DATA references named the K2 ctor
+  0x008C9E10; from there the REGISTRATION COUNTS identify each handler and
+  every count matches KOTOR 1's (2 / 4 / 2 in the ctor, 2 in CreateItemEntry).
+- **Bonus:** kUpgradePickerOpenFlagOff is no longer Todo — K2 0x3d28, read
+  straight off CloseItems 0x008CB290, whose body is literally the ShowItems(0)
+  + clear-bit-0 pair that constant exists for.
+- **Two K2 shape differences worth knowing before reading a log:** (1) K2's
+  CreateItemEntry registers a DIFFERENT handler for rows it greys out — a
+  stub that only pops a "can't select" message — so the shared event codes
+  are not sufficient identification there; (2) K2's OnUpgradeSelected calls
+  CloseItems instead of inlining the close tail, which is why its ShowItems
+  has one fewer distinct caller than KOTOR 1's. Neither is a mismatch.
+- **A live bug the addresses would have exposed:** the slot-type table's
+  INDEX FORMULA is per-game (K1 biases the slot by four, K2 biases the
+  category by one and packs six slots per category instead of four). Both
+  call sites carried byte-identical copies of KOTOR 1's arithmetic, so the
+  workbench would have named the wrong slot on K2 even with every address
+  correct. The header had warned about exactly this; the branch was never
+  written. Now one shared `LookupUpgradeSlotType` in the engine layer owns
+  the index, the bounds and the SEH-guarded read.
+- Lesson worth carrying: **a "callers must branch per game" note in a header
+  is not a branch.** Grep for the constants such notes guard and check the
+  call sites, the same way raw-literal offsets get swept.
 
 **Footstep-suppress port — IMPLEMENTED 2026-08-02 (eleventh session; one
 kotor2 caller sweep + decompile round + byte dump, zero test rounds).

@@ -476,14 +476,43 @@ const uintptr_t kAddrInGameEquipOnOKPressed = acc::addr::Pick(0x006b9160, 0x008a
 //     UpgradeItemSelect panel, then PopModalPanel — so the upgrade.gui
 //     panel closes synchronously when this returns. Gates on
 //     `btn_assemble->is_active != 0`.
+//
+// ── KOTOR 2 twins (found 2026-08-03) ────────────────────────────────────
+// Same method as the equip four: these are AddEvent-registered, so the
+// registration sites are DATA references and the constructor is the map.
+// The KOTOR 2 constructor @0x008C9E10 was reached from the already-known
+// slot-button event-0 handler 0x008CE3F0 (recorded with the slot-type
+// table below), whose two DATA references land in it — matching KOTOR 1's
+// two exactly.
+//
+// The registration COUNTS are the identification, and every one matches
+// KOTOR 1's:
+//   * OnEnterSlot       — 2 ctor registrations (event 0, one per slot bank)
+//   * OnSlotSelected    — 4 ctor registrations (events 0x27 + 0x2d, two banks)
+//   * OnAssemble        — 2 ctor registrations (events 0x27 + 0x2d, one button)
+//   * OnUpgradeSelected — 2 registrations in CreateItemEntry @0x008CE930
+// KOTOR 2 splits the CreateItemEntry pair by a per-row flag: the working
+// handler below for normal rows, and 0x008CE300 — a stub that only pops the
+// "can't select this" message — for rows the panel greys out. KOTOR 1 has
+// no such split. We register nothing, so this only matters for reading the
+// decompile: 0x008CE300 is NOT the twin despite sharing the event codes.
+//
+// Bodies match KOTOR 1 landmark for landmark: OnUpgradeSelected gates on
+// item_entry->is_active and ends by closing the picker; OnAssemble gates on
+// btn->is_active, plays the sound, calls FinishUpgrading, then PopModalPanel.
+//
+// One structural difference worth knowing before reading logs: KOTOR 1's
+// OnUpgradeSelected inlines the close tail (ShowItems(0) then OnEnterSlot),
+// while KOTOR 2's calls CloseItems @0x008CB290 instead. That is why KOTOR 2's
+// ShowItems has one fewer distinct caller than KOTOR 1's — not a mismatch.
 typedef void (__thiscall* PFN_CSWGuiUpgradeOnEnterSlot)     (void* panel, void* slot_btn);
 typedef void (__thiscall* PFN_CSWGuiUpgradeOnSlotSelected)  (void* panel, void* slot_btn);
 typedef void (__thiscall* PFN_CSWGuiUpgradeOnUpgradeSelected)(void* panel, void* item_entry);
 typedef void (__thiscall* PFN_CSWGuiUpgradeOnAssemble)      (void* panel, void* btn_assemble);
-const uintptr_t kAddrCSWGuiUpgradeOnEnterSlot = acc::addr::R(0x006c3c30);
-const uintptr_t kAddrCSWGuiUpgradeOnSlotSelected = acc::addr::R(0x006c6500);
-const uintptr_t kAddrCSWGuiUpgradeOnUpgradeSelected = acc::addr::R(0x006c5510);
-const uintptr_t kAddrCSWGuiUpgradeOnAssemble = acc::addr::R(0x006c6190);
+const uintptr_t kAddrCSWGuiUpgradeOnEnterSlot = acc::addr::Pick(0x006c3c30, 0x008ce3f0);
+const uintptr_t kAddrCSWGuiUpgradeOnSlotSelected = acc::addr::Pick(0x006c6500, 0x008ceb00);
+const uintptr_t kAddrCSWGuiUpgradeOnUpgradeSelected = acc::addr::Pick(0x006c5510, 0x008cdb00);
+const uintptr_t kAddrCSWGuiUpgradeOnAssemble = acc::addr::Pick(0x006c6190, 0x008cfd10);
 
 // CSWGuiUpgrade::OnControlEntered @0x006c5370 — __thiscall(panel, item_entry).
 // The workbench picker's own hover handler. Unlike the generic item tooltip
@@ -518,8 +547,21 @@ const uintptr_t kAddrCSWGuiUpgradeOnControlEntered = acc::addr::Pick(0x006c5370,
 // close form to undo OnSlotSelected's open when the user backs out of the
 // picker, so sibling slots stop reading "unavailable". OnUpgradeSelected runs
 // this on commit; we mirror it on cancel.
+//
+// KOTOR 2 0x008CB2F0, identified by its caller set: OnPanelAdded (twice),
+// OnSlotSelected (twice) and CloseItems @0x008CB290, against KOTOR 1's
+// OnPanelAdded / OnSlotSelected / OnUpgradeSelected / CloseItems — the one
+// difference being KOTOR 2's OnUpgradeSelected reaching it through
+// CloseItems rather than inlining. CloseItems is the clinching witness: its
+// whole body is ShowItems(0), clear the picker-open bit, SetActiveControl
+// back to the slot zone, OnEnterSlot — i.e. exactly the close tail this
+// constant exists to reproduce.
+//
+// KOTOR 2 could arguably just call CloseItems and get the flag clear and the
+// re-focus for free, but our cancel op is game-neutral as written and now
+// works on both; noted here rather than acted on.
 typedef void (__thiscall* PFN_CSWGuiUpgradeShowItems)(void* panel, int visible);
-const uintptr_t kAddrCSWGuiUpgradeShowItems = acc::addr::R(0x006c2f80);
+const uintptr_t kAddrCSWGuiUpgradeShowItems = acc::addr::Pick(0x006c2f80, 0x008cb2f0);
 
 // CSWGuiUpgrade slot-type table — 16 entries × 12 bytes, indexed by
 // `(slot_btn.custom_value - 4) + panel.field25_0x2f4c * 4`. Each entry:

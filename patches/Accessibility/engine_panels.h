@@ -259,6 +259,25 @@ bool HasActiveLevelUpPanel();
 // never run on K2. Shared by chain nav, chain input and the peek path.
 bool IsWorkbenchUpgradeSlotButtonId(int cid);
 
+// Resolve a workbench slot to its type + display strref out of the engine's
+// slot-type table (kAddrUpgradeSlotTypeTable). Returns false when the pair
+// doesn't index a live entry, in which case the outputs are untouched.
+//
+// This exists because the INDEX FORMULA is per-game while the entry layout is
+// not, and the two call sites (chain-label extraction and the slot-select
+// announcement) were carrying byte-identical copies of KOTOR 1's arithmetic:
+//   K1  ((custom_value - 4) + category * 4) * 0xc   — 4 slots per category
+//   K2  custom_value * 0xc + (category - 1) * 0x48  — 6 slots per category
+// KOTOR 2 both drops KOTOR 1's slot bias and adds a category bias, so a
+// caller that swaps only the table base reads a neighbouring slot's name.
+// Keeping the arithmetic in one place is the only way that stays true.
+//
+// `category` is the panel's own category field, `slotCustomValue` the slot
+// button's. The table read is SEH-guarded; a sentinel entry (type -1 /
+// strref 0) reports as no-entry, which is what the engine treats it as.
+bool LookupUpgradeSlotType(int slotCustomValue, int category,
+                           int* outUpgradeType, uint32_t* outStrRef);
+
 // Heap-allocated Options sub-screen (Spieleinstellungen / Grafik /
 // Sound / Auto-Pause / Feedback / Tastenbelegung / Mauseinstellungen).
 // No CGuiInGame slot → IdentifyPanel returns Unknown; positive
