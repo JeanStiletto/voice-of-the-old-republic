@@ -99,16 +99,39 @@ namespace KotorAccessibilityInstaller
         private static string SteamLibraryFolderName(GameTarget target) =>
             target == GameTarget.Kotor2 ? "Knights of the Old Republic II" : "swkotor";
 
+        /// <summary>
+        /// Steam's own per-app uninstall key, which carries InstallLocation.
+        ///
+        /// <para>Both registry views are checked, and that is the whole point:
+        /// this used to read <see cref="RegistryView.Registry32"/> only, which on
+        /// 64-bit Windows redirects to <c>WOW6432Node</c> — and Steam writes
+        /// these keys to the 64-bit view. So the lookup returned null for BOTH
+        /// games on every 64-bit machine. Path detection hid it by falling
+        /// through to the default-library scan, but <see cref="IsSteamPath"/>
+        /// had no fallback: it always answered "not a Steam install", so the
+        /// post-install launch always started the executable directly and the
+        /// game announced that it needs to be run from Steam.</para>
+        ///
+        /// <para>Which view Steam uses is not something to assume — a 32-bit
+        /// Steam, or an older one, may well write the other. Checking both is
+        /// cheap and removes the guess.</para>
+        /// </summary>
         private static string TryReadSteamAppInstallPath(GameTarget target)
         {
-            try
+            string subKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App " + target.SteamAppId;
+
+            foreach (var view in new[] { RegistryView.Registry64, RegistryView.Registry32 })
             {
-                // Steam writes InstallLocation under its per-app uninstall key.
-                using var key = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry32)
-                    .OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App " + target.SteamAppId);
-                return key?.GetValue("InstallLocation") as string;
+                try
+                {
+                    using var baseKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, view);
+                    using var key = baseKey.OpenSubKey(subKey);
+                    if (key?.GetValue("InstallLocation") is string location && location.Length > 0)
+                        return location;
+                }
+                catch { /* view unavailable — try the other */ }
             }
-            catch { return null; }
+            return null;
         }
 
         public static bool IsValidKotor2GamePath(string path) => IsValidGamePath(GameTarget.Kotor2, path);

@@ -60,6 +60,7 @@ namespace KotorAccessibilityInstaller
         private Label _statusLabel;
         private ProgressBar _progressBar;
         private Button _cancelButton;
+        private Button _reopenButton;
 
         private readonly string _k2GamePath;
         private readonly GameLocale _expectedLocale;
@@ -121,6 +122,19 @@ namespace KotorAccessibilityInstaller
             };
             _progressBar.AccessibleName = Text;
 
+            // Reopening the Workshop page has to be possible at any time. The
+            // page is opened once automatically, but Steam can land on the wrong
+            // view, or the user can close it — and until this existed, that left
+            // them staring at a form waiting forever for a subscription they had
+            // no way to reach.
+            _reopenButton = new Button
+            {
+                Location = new Point(20, 135),
+                Size = new Size(260, 30),
+                Text = InstallerLocale.Get("K2Lang_ReopenPageButton")
+            };
+            _reopenButton.Click += (s, e) => OpenWorkshopPage(reopened: true);
+
             _cancelButton = new Button
             {
                 Location = new Point(390, 135),
@@ -135,10 +149,31 @@ namespace KotorAccessibilityInstaller
 
             Controls.AddRange(new Control[]
             {
-                _titleLabel, _statusLabel, _progressBar, _cancelButton
+                _titleLabel, _statusLabel, _progressBar, _reopenButton, _cancelButton
             });
 
             CancelButton = _cancelButton;
+        }
+
+        /// <summary>
+        /// Open the item's Workshop page in Steam. Called once at start and
+        /// again whenever the user presses the reopen button.
+        /// </summary>
+        private void OpenWorkshopPage(bool reopened)
+        {
+            string pageUrl = $"steam://url/CommunityFilePage/{_itemId}";
+            try
+            {
+                Logger.Info($"{(reopened ? "Reopening" : "Opening")} Workshop page: {pageUrl}");
+                Process.Start(new ProcessStartInfo { FileName = pageUrl, UseShellExecute = true });
+                if (reopened)
+                    UpdateStatus(InstallerLocale.Get("K2Lang_Waiting"), announce: true);
+            }
+            catch (Exception ex)
+            {
+                Logger.Warning($"Could not open the Workshop page: {ex.Message}");
+                UpdateStatus(InstallerLocale.Format("K2Lang_PageOpenFailed_Format", pageUrl), announce: true);
+            }
         }
 
         private async Task RunAsync()
@@ -151,9 +186,7 @@ namespace KotorAccessibilityInstaller
                     Config.Kotor2WorkshopAppId, _itemId));
                 Logger.Info($"Workshop tlk harvest: expecting content under {itemDir}");
 
-                string pageUrl = $"steam://url/CommunityFilePage/{_itemId}";
-                Logger.Info($"Opening Workshop page: {pageUrl}");
-                Process.Start(new ProcessStartInfo { FileName = pageUrl, UseShellExecute = true });
+                OpenWorkshopPage(reopened: false);
 
                 UpdateStatus(InstallerLocale.Get("K2Lang_Waiting"), announce: true);
 

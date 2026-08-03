@@ -407,6 +407,30 @@ namespace KotorAccessibilityInstaller
             return all;
         }
 
+        /// <summary>
+        /// Remove dump capture for one game's executable. Uninstall path: the
+        /// key is ours, so leaving it would keep Windows writing minidumps for a
+        /// game the mod is no longer part of.
+        /// </summary>
+        public static bool Disable(GameTarget target)
+        {
+            try
+            {
+                using var parent = Registry.LocalMachine.OpenSubKey(KeyRoot, writable: true);
+                if (parent == null) return true;   // never configured
+                if (parent.OpenSubKey(target.ExeName) == null) return true;
+
+                parent.DeleteSubKeyTree(target.ExeName);
+                Logger.Info($"[WerLocalDumps] Removed crash-dump capture for {target.ExeName}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Logger.Warning($"[WerLocalDumps] Could not remove capture for {target.ExeName}: {ex.Message}");
+                return false;
+            }
+        }
+
         public static bool Enable(GameTarget target)
         {
             try

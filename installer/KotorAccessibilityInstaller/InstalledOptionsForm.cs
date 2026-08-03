@@ -18,17 +18,23 @@ namespace KotorAccessibilityInstaller
     {
         public UpdateChoice UserChoice { get; private set; } = UpdateChoice.Close;
 
-        public InstalledOptionsForm(GameTarget target, string installedVersion, bool spatialAudioEnabled)
+        /// <param name="gameStates">
+        /// One line per game — see <c>Program.DescribeAllGames</c>. Shown above
+        /// the actions so both games' state is visible at once.
+        /// </param>
+        public InstalledOptionsForm(GameTarget target, string installedVersion, bool spatialAudioEnabled,
+                                    string gameStates = null)
         {
-            InitializeComponents(target, installedVersion, spatialAudioEnabled);
+            InitializeComponents(target, installedVersion, spatialAudioEnabled, gameStates);
         }
 
-        private void InitializeComponents(GameTarget target, string installedVersion, bool spatialAudioEnabled)
+        private void InitializeComponents(GameTarget target, string installedVersion, bool spatialAudioEnabled,
+                                          string gameStates)
         {
             bool offerSpatialAudio = target == GameTarget.Kotor1;
 
             Text = InstallerLocale.Get("Program_UpToDate_Title") + " — " + target.DisplayName;
-            Size = new Size(700, 300);
+            Size = new Size(700, 420);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
@@ -47,17 +53,27 @@ namespace KotorAccessibilityInstaller
                 ? InstallerLocale.Get("SpatialAudio_StateEnabled")
                 : InstallerLocale.Get("SpatialAudio_StateDisabled");
 
-            var bodyLabel = new Label
+            // A read-only multiline TextBox rather than a Label: the per-game
+            // state list makes this long enough that a screen-reader user needs
+            // to move through it line by line, which a Label does not allow.
+            var bodyLabel = new TextBox
             {
-                Text = offerSpatialAudio
-                    ? InstallerLocale.Format("InstalledOptions_Body_Format", installedVersion, audioStateLabel)
-                    : InstallerLocale.Format("InstalledOptions_BodyNoAudio_Format", installedVersion),
+                Multiline = true,
+                ReadOnly = true,
+                ScrollBars = ScrollBars.Vertical,
+                TabStop = true,
+                Text = (string.IsNullOrEmpty(gameStates)
+                            ? string.Empty
+                            : InstallerLocale.Get("GameState_Heading") + "\n" + gameStates + "\n\n")
+                       + (offerSpatialAudio
+                            ? InstallerLocale.Format("InstalledOptions_Body_Format", installedVersion, audioStateLabel)
+                            : InstallerLocale.Format("InstalledOptions_BodyNoAudio_Format", installedVersion)),
                 Location = new Point(20, 60),
-                Size = new Size(660, 130),
-                TextAlign = ContentAlignment.TopLeft
+                Size = new Size(660, 250),
             };
+            bodyLabel.AccessibleName = InstallerLocale.Get("Program_UpToDate_Title");
 
-            const int btnY = 205;
+            const int btnY = 325;
             const int btnH = 35;
 
             var reinstallButton = new Button

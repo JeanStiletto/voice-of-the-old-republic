@@ -8,18 +8,20 @@ namespace KotorAccessibilityInstaller
     {
         public UpdateChoice UserChoice { get; private set; } = UpdateChoice.Close;
 
-        public UpdateAvailableForm(GameTarget target, string installedVersion, string latestVersion, bool spatialAudioEnabled)
+        public UpdateAvailableForm(GameTarget target, string installedVersion, string latestVersion,
+                                   bool spatialAudioEnabled, string gameStates = null)
         {
-            InitializeComponents(target, installedVersion, latestVersion, spatialAudioEnabled);
+            InitializeComponents(target, installedVersion, latestVersion, spatialAudioEnabled, gameStates);
         }
 
-        private void InitializeComponents(GameTarget target, string installedVersion, string latestVersion, bool spatialAudioEnabled)
+        private void InitializeComponents(GameTarget target, string installedVersion, string latestVersion,
+                                          bool spatialAudioEnabled, string gameStates)
         {
             // dsoal is KOTOR 1 only — see InstalledOptionsForm.
             bool offerSpatialAudio = target == GameTarget.Kotor1;
 
             Text = InstallerLocale.Get("Update_Title") + " — " + target.DisplayName;
-            Size = new Size(580, 260);
+            Size = new Size(580, 330);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
@@ -34,11 +36,17 @@ namespace KotorAccessibilityInstaller
                 TextAlign = ContentAlignment.MiddleCenter
             };
 
+            // Per-game state below the version line, so an update prompt still
+            // answers "and what about the other game?" — see
+            // Program.DescribeAllGames.
             var versionLabel = new Label
             {
-                Text = InstallerLocale.Format("Update_VersionInfo_Format", installedVersion, latestVersion),
+                Text = InstallerLocale.Format("Update_VersionInfo_Format", installedVersion, latestVersion)
+                       + (string.IsNullOrEmpty(gameStates)
+                            ? string.Empty
+                            : "\n\n" + InstallerLocale.Get("GameState_Heading") + "\n" + gameStates),
                 Location = new Point(20, 60),
-                Size = new Size(540, 60),
+                Size = new Size(540, 130),
                 TextAlign = ContentAlignment.TopCenter
             };
 
@@ -86,7 +94,7 @@ namespace KotorAccessibilityInstaller
             int x = 20;
             foreach (var b in buttons)
             {
-                b.Location = new Point(x, 150);
+                b.Location = new Point(x, 220);
                 x += b.Width + 5;
             }
 

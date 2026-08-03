@@ -75,6 +75,24 @@ namespace KotorAccessibilityInstaller
             public string Ref { get; init; }
         }
 
+        /// <summary>
+        /// A mod that is authored in a git repo but distributed as an archive —
+        /// K2CP, whose repo carries the recipe and none of the payload. Both
+        /// halves are recorded: the archive is what gets fetched, the commit is
+        /// provenance.
+        /// </summary>
+        public sealed class ArchivePin
+        {
+            public string DisplayVersion { get; init; }
+            public string FileName { get; init; }
+            public string Sha256 { get; init; }
+            public long SizeBytes { get; init; }
+            public string PageUrl { get; init; }
+            public string RepoOwner { get; init; }
+            public string RepoName { get; init; }
+            public string Ref { get; init; }
+        }
+
         private sealed class Manifest
         {
             public int SchemaVersion { get; set; }
@@ -82,7 +100,7 @@ namespace KotorAccessibilityInstaller
             public FilePin Tslrcm { get; set; }
             public FilePin TweakPack { get; set; }
             public RepoPin K1cp { get; set; }
-            public RepoPin K2cp { get; set; }
+            public ArchivePin K2cp { get; set; }
         }
 
         private static Manifest _pins;
@@ -94,7 +112,7 @@ namespace KotorAccessibilityInstaller
         public static FilePin Tslrcm => Current.Tslrcm;
         public static FilePin TweakPack => Current.TweakPack;
         public static RepoPin K1cp => Current.K1cp;
-        public static RepoPin K2cp => Current.K2cp;
+        public static ArchivePin K2cp => Current.K2cp;
 
         private static Manifest Current
         {

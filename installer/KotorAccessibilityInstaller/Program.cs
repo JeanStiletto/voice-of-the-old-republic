@@ -223,7 +223,8 @@ namespace KotorAccessibilityInstaller
             {
                 Logger.Info("Showing update dialog");
                 bool spatialOn = IsSpatialAudioOn(modeTarget, detectedGamePath);
-                var updateForm = new UpdateAvailableForm(modeTarget, installedVersion, latestVersion, spatialOn);
+                var updateForm = new UpdateAvailableForm(modeTarget, installedVersion, latestVersion, spatialOn,
+                                                         DescribeAllGames());
                 Application.Run(updateForm);
 
                 switch (updateForm.UserChoice)
@@ -257,7 +258,7 @@ namespace KotorAccessibilityInstaller
                     displayVersion = displayVersion.Substring(0, displayVersion.Length - 2);
 
                 bool spatialOn = IsSpatialAudioOn(modeTarget, detectedGamePath);
-                var form = new InstalledOptionsForm(modeTarget, displayVersion, spatialOn);
+                var form = new InstalledOptionsForm(modeTarget, displayVersion, spatialOn, DescribeAllGames());
                 Application.Run(form);
 
                 switch (form.UserChoice)
@@ -287,6 +288,54 @@ namespace KotorAccessibilityInstaller
             {
                 InstallFlow.RunFullInstallFlow(detectedGamePath, pathArg, latestVersion, localKpatchPath);
             }
+        }
+
+        /// <summary>
+        /// One line per game for the maintenance dialogs: installed and at which
+        /// version, present but not modded, or not found at all.
+        ///
+        /// <para>These dialogs used to describe a single game — whichever one
+        /// <c>modeTarget</c> resolved to — so with both games on the machine the
+        /// other one was simply invisible, and a KOTOR 2 owner could not tell
+        /// whether the mod was in it. Every game gets a line now, including the
+        /// ones with nothing to say, because "KOTOR 2: not installed" is the
+        /// answer the user is looking for just as often as a version number.</para>
+        /// </summary>
+        private static string DescribeAllGames()
+        {
+            var sb = new StringBuilder();
+            foreach (var target in GameTarget.All)
+            {
+                string path = GamePathDetector.Detect(target);
+                string state;
+
+                if (path == null)
+                {
+                    state = InstallerLocale.Get("GameState_GameNotFound");
+                }
+                else if (!IsModInstalledAt(path))
+                {
+                    state = InstallerLocale.Get("GameState_ModNotInstalled");
+                }
+                else
+                {
+                    string version = RegistryManager.GetRegisteredVersion(target);
+                    state = version != null
+                        ? InstallerLocale.Format("GameState_ModInstalled_Format", TrimVersion(version))
+                        : InstallerLocale.Get("GameState_ModInstalledUnknownVersion");
+                }
+
+                sb.AppendLine(InstallerLocale.Format("GameState_Line_Format", target.DisplayName, state));
+            }
+            return sb.ToString().TrimEnd();
+        }
+
+        /// <summary>Drop trailing ".0" groups so 0.6.4.0 reads as 0.6.4.</summary>
+        private static string TrimVersion(string version)
+        {
+            while (version.EndsWith(".0") && version.IndexOf('.') != version.LastIndexOf('.'))
+                version = version.Substring(0, version.Length - 2);
+            return version;
         }
 
         /// <summary>Our runtime DLL sitting in the game folder is what "installed" means.</summary>

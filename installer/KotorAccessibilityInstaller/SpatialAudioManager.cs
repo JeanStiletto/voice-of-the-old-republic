@@ -43,6 +43,15 @@ namespace KotorAccessibilityInstaller
             OpenAlSoftLicenseName,
         };
 
+        /// <summary>
+        /// The same list, for the uninstaller. Exposed because "which files did
+        /// we put there" is a question removal has to answer too, and a second
+        /// hand-maintained copy in UninstallFlow is exactly how a file gets left
+        /// behind — as the licence files and aldrv DLL were, surviving a
+        /// disable-then-uninstall on a real install.
+        /// </summary>
+        public static IReadOnlyList<string> DeployedFiles => DeployedFileNames;
+
         public sealed class Result
         {
             public bool Success { get; init; }

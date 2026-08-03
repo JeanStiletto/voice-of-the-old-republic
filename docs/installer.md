@@ -204,11 +204,28 @@ mod setup without it.
 **KOTOR 2 Community Patch (K2CP) v1.6.2** — the K1CP sibling
 (same GitHub org), curated community bugfixes on top of TSLRCM.
 
-- Source: GitHub `KOTORCommunityPatches/TSL_Community_Patch`. `tslpatchdata/`
-  is in the repo tree and — unlike K1CP — the `.gitattributes` has **no
-  export-ignore**, so the plain master tarball is complete. No GitHub releases
-  or tags exist; pinned commit `4850a44` ("Admin update", 2025-09-26, the
-  v1.6.2 release point) in `Config.K2cpPinnedRef`.
+- Source: **DeadlyStream file 1280** (`K2CP_v1.6.2.zip`, 80,523,859 bytes),
+  fetched with the same guest scrape as TSLRCM and the Tweak Pack. Pinned in
+  `sources.json`.
+- ~~Source: GitHub `KOTORCommunityPatches/TSL_Community_Patch`, whose
+  `.gitattributes` has no export-ignore so the tarball is complete.~~
+  **WRONG, corrected 2026-08-03.** The `.gitattributes` statement is true and
+  the conclusion did not follow: **the payload is not in that repo at all.** At
+  the pinned commit the entire repository is 13 files and `tslpatchdata/`
+  contains exactly two — `changes.ini` and `info.rtf`. The 713 files K2CP
+  installs (221 `.mdl`, 221 `.mdx`, 95 `.wok`, 85 `.tpc`, 45 `.uti`, 9 `.mod`,
+  6 `.2da`, …) ship only in the DeadlyStream archive. Verified against the git
+  tree API, not just the tarball.
+- **How it failed, and why it went unnoticed:** a TSLPatcher `changes.ini` both
+  edits files already in the game and installs new files out of
+  `tslpatchdata`. Fetching from the repo gave HoloPatcher the edit
+  instructions with no files to copy, so the edits applied, the installs
+  silently did nothing, and the run exited successfully with one warning buried
+  in the log. The install looked like it worked. `K2cpInstaller` now refuses to
+  run a payload with fewer than 10 files rather than let that recur quietly.
+- The repo commit `4850a44` ("Admin update", 2025-09-26) is still recorded in
+  `sources.json` for provenance — it matches the archive's release date — but
+  is not fetched.
 - Installer: TSLPatcher-style (`INSTALL.exe` bundled); K2CP has *not*
   migrated to HoloPatcher yet, but HoloPatcher drives any `tslpatchdata/`
   payload headlessly, same as our K1 flow.

@@ -105,7 +105,7 @@ namespace KotorAccessibilityInstaller
         private async void UninstallButton_Click(object sender, EventArgs e)
         {
             var result = MessageBox.Show(
-                InstallerLocale.Get("Uninstall_Confirm_Text"),
+                InstallerLocale.Format("Uninstall_Confirm_Format", _target.DisplayName, _target.ExeName),
                 InstallerLocale.Get("Uninstall_Confirm_Title"),
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Warning);

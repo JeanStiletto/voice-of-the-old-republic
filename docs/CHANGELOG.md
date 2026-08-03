@@ -47,6 +47,13 @@ and add the German in parentheses if it genuinely aids clarity.
 - If the installer cannot confirm that TSLRCM installed, it now asks you instead of assuming. The Community Patch and Tweak Pack must sit on top of TSLRCM, and a silent wrong assumption would have skipped both without saying so.
 - KOTOR 2's mods install in the order the community's own build documents: TSLRCM, then the Tweak Pack, then the Community Patch.
 
+<h3>Installer — KOTOR 2 fixes:</h3>
+
+- The KOTOR 2 Community Patch now actually installs. It was being fetched from its GitHub repository, which holds only the instruction file and none of the 713 files the patch installs — those ship exclusively in its DeadlyStream archive. The result was an install that applied the patch's edits to existing game files, silently copied nothing, and reported success with a single warning. It now downloads the real archive, and refuses to run at all if the payload looks empty rather than half-installing again.
+- After installing, the game now launches through Steam instead of directly, so it no longer complains that it must be started from Steam. The installer looks up Steam's own record of where each game lives, but was reading the 32-bit corner of the registry while Steam writes to the 64-bit one — so it never found either game and always fell back to launching the executable. This affected KOTOR 1 as well.
+- The Steam Workshop page for the translated text can be reopened. Steam sometimes opens the wrong view, and closing that page previously left you waiting for a subscription you had no way to reach. The waiting screen now has its own button for it and explains that you need to press Subscribe on that page.
+- The opening screen now lists both games and what state each one is in — installed with its version, present but unmodded, or not found. It previously described only one game, so with both installed the other was invisible.
+
 <h3>Installer — still working years from now:</h3>
 
 - When a mod can no longer be downloaded automatically, the installer now walks you through downloading it yourself and takes over again from there. It says what actually went wrong — a mod that has simply been updated since this installer was built reads differently from a failed download — opens the official page in your browser, and then offers the file in one press if it is already in your Downloads folder. Everything after you hand over the file is automatic, exactly as before. This matters because the alternative was a dead end: the installer verifies a fingerprint on files it downloads on its own, and once a mod updates, that fingerprint stops matching. A file you fetched from the official page yourself needs no such check.

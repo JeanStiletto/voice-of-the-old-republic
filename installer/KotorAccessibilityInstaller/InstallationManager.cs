@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using KPatchCore.Applicators;
 using KPatchCore.Managers;
@@ -28,11 +29,27 @@ namespace KotorAccessibilityInstaller
         private const string LoaderDllName = "dinput8.dll";
 
         // WAV samples shipped into <game>/Override/ for the engine's
-        // ResLoader to pick up by bare resref. Mirrored as the
-        // OverrideAssetNames list on PerformUninstall so removal stays
-        // in sync.
+        // ResLoader to pick up by bare resref. Uninstall removes
+        // AllOverrideAssetNamesEverInstalled, not this list — see below.
         private static readonly string[] OverrideAssets = { "acc_boost.wav", "acc_turret_loop.wav", "acc_turret_lock.wav", "acc_turret_tick.wav", "acc_steer_ok.wav" };
         public static IReadOnlyList<string> OverrideAssetNames => OverrideAssets;
+
+        // Override assets earlier versions shipped and current ones do not.
+        // acc_steer_l / acc_steer_r were the discrete directional steering ticks,
+        // retired when the steering magnet replaced that guide (see the csproj).
+        //
+        // They matter because removal is driven by the list of what we install
+        // TODAY, so anything we ever shipped and then stopped shipping becomes
+        // permanent litter: no uninstall will ever mention it again. Both files
+        // were still sitting in a real KOTOR 1 and KOTOR 2 Override folder after
+        // a clean uninstall. Same shape as the renamed uninstaller exe and the
+        // pre-dsoal ini backup in UninstallFlow — when something is dropped from
+        // the install set, it has to be added here in the same change.
+        private static readonly string[] LegacyOverrideAssets = { "acc_steer_l.wav", "acc_steer_r.wav" };
+
+        /// <summary>Every Override file we have ever installed — what uninstall must remove.</summary>
+        public static IReadOnlyList<string> AllOverrideAssetNamesEverInstalled =>
+            new List<string>(OverrideAssets).Concat(LegacyOverrideAssets).ToList();
 
         public InstallationManager(GameTarget target, string gameDir)
         {

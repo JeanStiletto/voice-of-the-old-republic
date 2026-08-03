@@ -68,7 +68,9 @@
     "K2Mods_NoTslrcm_Text": "TSLRCM is not installed, so K2CP and the Tweak Pack were skipped to preserve the correct install order. Install TSLRCM first, then run this installer again to add them.",
     "K2Mods_NewGameHint": "Important: start a NEW game. Savegames from the unmodded game are not compatible with TSLRCM.",
     "K2Lang_Offer_Text": "TSLRCM's text content is English-only, so your game's text is now English. The TSLRCM team provides official localized versions on the Steam Workshop.\n\nFetch the localized text now? Steam will open the Workshop page — press its Subscribe button there. This installer waits for the download, verifies the text file, and copies it into the game. Afterwards you must UNSUBSCRIBE again on the same page; the installer will remind you.",
-    "K2Lang_Waiting": "Waiting for the Steam Workshop download. Press Subscribe on the Workshop page that just opened in Steam...",
+    "K2Lang_Waiting": "Waiting for the Steam Workshop download.\n\nSteam should have opened the Workshop page for the localized TSLRCM text. Press its Subscribe button — that is what starts the download. If no page opened, or Steam showed something else, press \"Open the Workshop page again\" below.",
+    "K2Lang_ReopenPageButton": "Open the Workshop page again",
+    "K2Lang_PageOpenFailed_Format": "Steam could not be opened. Open this address by hand: {0}",
     "K2Lang_WaitingHeartbeat_Format": "Still waiting for the Workshop download ({0} sec). If you have not yet, press Subscribe on the Workshop page in Steam...",
     "K2Lang_Done_Text": "The localized text was copied into the game (the English file was backed up as dialog.tlk.english.bak).\n\nIMPORTANT: unsubscribe from the TSLRCM Workshop item now — go back to the Workshop page in Steam and press Unsubscribe — so the Workshop copy does not conflict with the installed mods.",
     "K2Lang_Failed_Format": "Fetching the localized text did not complete: {0}\n\nThe game keeps English text for now. Manual route: subscribe to the TSLRCM Workshop item for your language, copy dialog.tlk from steamapps\\workshop\\content\\208580\\<item> into the game folder, then unsubscribe.",
@@ -192,6 +194,13 @@
 
     "InstalledOptions_Body_Format": "Voice of the Old Republic v{0} is installed and up to date.\n\nSpatial audio (dsoal): {1}\n\nChoose an action:\n- Reinstall: re-runs the full installer to refresh all files.\n- Toggle spatial audio: switch between modified (HRTF + EAX) and vanilla audio. Restart the game after toggling.\n- Collect logs for beta test: build an archive in your Downloads folder containing the newest patch log and crash dump, ready to send to the developer.\n- Close: do nothing and exit.",
     "InstalledOptions_BodyNoAudio_Format": "Voice of the Old Republic v{0} is installed and up to date.\n\nChoose an action:\n- Reinstall: re-runs the full installer to refresh all files.\n- Collect logs for beta test: build an archive in your Downloads folder containing the newest patch log and crash dump, ready to send to the developer.\n- Close: do nothing and exit.",
+
+    "GameState_Heading": "Status of your games:",
+    "GameState_Line_Format": "- {0}: {1}",
+    "GameState_ModInstalled_Format": "mod installed, version {0}",
+    "GameState_ModInstalledUnknownVersion": "mod installed, version unknown",
+    "GameState_ModNotInstalled": "game found, mod not installed",
+    "GameState_GameNotFound": "game not found on this PC",
     "InstalledOptions_ReinstallButton": "Reinstall",
 
     "CollectLogs_Button": "Collect logs for beta test",
@@ -224,7 +233,7 @@
     "Uninstall_UninstallButton": "Uninstall",
     "Uninstall_CancelButton": "Cancel",
     "Uninstall_Confirm_Title": "Confirm uninstall",
-    "Uninstall_Confirm_Text": "Are you sure you want to uninstall Voice of the Old Republic?\n\nThis will:\n- Remove KotorPatcher.dll, sqlite3.dll, addresses.db, patch_config.toml, dinput8.dll\n- Remove the patches\\ folder (accessibility.dll + prism.dll)\n- Remove the Add/Remove Programs entry\n\nWhat is NOT touched:\n- K1CP and any other optional mods you chose at install time stay in place\n- Your save games are not modified\n- swkotor.exe stays patched. To get back to vanilla, run Steam's 'Verify integrity of game files' or reinstall from GoG. That will also remove K1CP if you want a clean slate.",
+    "Uninstall_Confirm_Format": "Are you sure you want to remove Voice of the Old Republic from {0}?\n\nThis will:\n- Remove the mod and the speech runtime (the patches folder)\n- Remove the patcher files from the game folder\n- Restore the intro logo movies\n- Restore the game's own movement keybinds\n- Turn off crash-dump capture for {1}\n- Remove the Add/Remove Programs entry\n\nWhat is NOT removed:\n- Community mods you installed here (TSLRCM, the Community Patches, the Tweak Pack) stay in place. Each has its own uninstaller.\n- {1} keeps its engine patches. Steam's 'Verify integrity of game files' restores it.\n- Your save games are untouched.\n\nNote: verifying game files does NOT delete extra files that mods added to the Override folder. For a truly clean game you also have to empty that folder yourself.",
     "Uninstall_StatusRemoving": "Removing mod files...",
     "Uninstall_StatusComplete": "Uninstall complete.",
     "Uninstall_Complete_Title": "Uninstall complete",

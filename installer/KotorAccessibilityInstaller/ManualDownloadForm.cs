@@ -60,6 +60,8 @@ namespace KotorAccessibilityInstaller
             Executable,
             /// <summary>RAR archive — "Rar!\x1a\x07" (RAR4 and RAR5 share the prefix).</summary>
             RarArchive,
+            /// <summary>Zip archive — "PK\x03\x04".</summary>
+            ZipArchive,
         }
 
         public ManualDownloadForm(
@@ -201,9 +203,12 @@ namespace KotorAccessibilityInstaller
             using var dialog = new OpenFileDialog
             {
                 Title = InstallerLocale.Get("ManualDownload_ChooseFileButton"),
-                Filter = _kind == FileKind.Executable
-                    ? "Programs (*.exe)|*.exe|All files (*.*)|*.*"
-                    : "Archives (*.rar)|*.rar|All files (*.*)|*.*",
+                Filter = _kind switch
+                {
+                    FileKind.Executable => "Programs (*.exe)|*.exe|All files (*.*)|*.*",
+                    FileKind.ZipArchive => "Archives (*.zip)|*.zip|All files (*.*)|*.*",
+                    _ => "Archives (*.rar)|*.rar|All files (*.*)|*.*",
+                },
                 CheckFileExists = true,
                 Multiselect = false,
             };
@@ -274,6 +279,8 @@ namespace KotorAccessibilityInstaller
                     FileKind.Executable => head[0] == (byte)'M' && head[1] == (byte)'Z',
                     FileKind.RarArchive => head[0] == (byte)'R' && head[1] == (byte)'a' &&
                                            head[2] == (byte)'r' && head[3] == (byte)'!',
+                    FileKind.ZipArchive => head[0] == (byte)'P' && head[1] == (byte)'K' &&
+                                           head[2] == 0x03 && head[3] == 0x04,
                     _ => true,
                 };
             }
@@ -296,7 +303,12 @@ namespace KotorAccessibilityInstaller
                 string exact = Path.Combine(downloads, _expectedFileName);
                 if (File.Exists(exact) && HasExpectedMagic(exact)) return exact;
 
-                string pattern = _kind == FileKind.Executable ? "*.exe" : "*.rar";
+                string pattern = _kind switch
+                {
+                    FileKind.Executable => "*.exe",
+                    FileKind.ZipArchive => "*.zip",
+                    _ => "*.rar",
+                };
                 FileInfo best = null;
                 foreach (var path in Directory.EnumerateFiles(downloads, pattern))
                 {

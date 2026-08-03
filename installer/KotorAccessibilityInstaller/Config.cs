@@ -140,10 +140,16 @@ namespace KotorAccessibilityInstaller
         // the v1.6.2 DeadlyStream release (both 2025-09-26). Not yet installed by
         // any shipped flow — see K2cpInstaller for the activation gates.
 
+        // Provenance only — the payload is NOT in this repo. See K2cpInstaller.
         public static string K2cpRepoOwner => SourcePins.K2cp.RepoOwner;
         public static string K2cpRepoName => SourcePins.K2cp.RepoName;
         public static string K2cpPinnedRef => SourcePins.K2cp.Ref;
+
         public static string K2cpDisplayVersion => SourcePins.K2cp.DisplayVersion;
+        public static string K2cpDownloadPageUrl => SourcePins.K2cp.PageUrl;
+        public static string K2cpArchiveFileName => SourcePins.K2cp.FileName;
+        public static string K2cpArchiveSha256 => SourcePins.K2cp.Sha256;
+        public static long K2cpArchiveSizeBytes => SourcePins.K2cp.SizeBytes;
 
         /// <summary>
         /// TSLRCM download page on DeadlyStream. TSLRCM has no auto-download

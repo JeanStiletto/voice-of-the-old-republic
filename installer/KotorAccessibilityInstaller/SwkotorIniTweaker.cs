@@ -114,6 +114,100 @@ namespace KotorAccessibilityInstaller
             => ApplySectionPairs(gameDir, target.IniFileName, KeymappingSectionHeader, KeymapTweaks);
 
         /// <summary>
+        /// Remove the mod's movement keybind lines from <c>[Keymapping]</c>, so
+        /// the game falls back to its own <c>keymap.2da</c> defaults (strafe on
+        /// Z/C, camera turn on A/D).
+        ///
+        /// <para>Uninstall path. Deleting the lines is right where writing the
+        /// vanilla values would be wrong: an absent <c>Action281A</c> means "use
+        /// the game's default", which is what an uninstalled mod should leave
+        /// behind, and it stays correct even if the defaults differ from what we
+        /// think they are.</para>
+        ///
+        /// <para>Only the four keys the mod writes are touched. A binding the
+        /// player customised themselves is a different key or a different value,
+        /// and either way is not ours to remove — the cost of that caution is
+        /// that a player who happened to choose our exact layout by hand loses
+        /// it, which is recoverable in the game's own options screen.</para>
+        /// </summary>
+        public static Result RemoveKeymapDefaults(GameTarget target, string gameDir)
+        {
+            var ourKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (key, _) in KeymapTweaks) ourKeys.Add(key);
+
+            return RemoveSectionKeys(gameDir, target.IniFileName, KeymappingSectionHeader, ourKeys,
+                                     onlyWhenValueIs: KeymapTweaks);
+        }
+
+        /// <summary>
+        /// Delete keys from a section, but only where the value is still the one
+        /// we wrote — a line the player has since changed is theirs.
+        /// </summary>
+        private static Result RemoveSectionKeys(
+            string gameDir, string iniFileName, string sectionHeader,
+            HashSet<string> keys, (string Key, string Value)[] onlyWhenValueIs)
+        {
+            string iniPath = Path.Combine(gameDir, iniFileName);
+            if (!File.Exists(iniPath))
+            {
+                // Nothing to undo. Not an error: the player may have deleted the
+                // ini, or the game may never have been launched.
+                return new Result { Success = true, IniPath = iniPath };
+            }
+
+            var expected = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (key, value) in onlyWhenValueIs) expected[key] = value;
+
+            try
+            {
+                var lines = new List<string>(File.ReadAllLines(iniPath));
+                int sectionStart = FindSectionStart(lines, sectionHeader);
+                if (sectionStart < 0)
+                    return new Result { Success = true, IniPath = iniPath };
+
+                int sectionEndExclusive = FindNextSectionStart(lines, sectionStart + 1);
+                int removed = 0;
+
+                for (int i = sectionEndExclusive - 1; i > sectionStart; i--)
+                {
+                    string line = lines[i];
+                    int eq = line.IndexOf('=');
+                    if (eq <= 0) continue;
+
+                    string key = line.Substring(0, eq).Trim();
+                    if (!keys.Contains(key)) continue;
+
+                    string value = line.Substring(eq + 1).Trim();
+                    if (expected.TryGetValue(key, out string ours) &&
+                        !value.Equals(ours, StringComparison.Ordinal))
+                    {
+                        Logger.Info($"  {key}={value} was changed by the player; left alone");
+                        continue;
+                    }
+
+                    lines.RemoveAt(i);
+                    removed++;
+                    Logger.Info($"  {key} removed (game default restored)");
+                }
+
+                if (removed == 0)
+                    return new Result { Success = true, IniPath = iniPath };
+
+                var sb = new StringBuilder();
+                foreach (var line in lines) sb.Append(line).Append("\r\n");
+                File.WriteAllText(iniPath, sb.ToString(), new UTF8Encoding(false));
+
+                Logger.Info($"  {iniFileName}: {removed} key(s) removed from {sectionHeader}");
+                return new Result { Success = true, Changed = removed, IniPath = iniPath };
+            }
+            catch (Exception ex)
+            {
+                Logger.Error($"Failed to remove {sectionHeader} keys from {iniFileName}", ex);
+                return new Result { Success = false, Error = ex.Message, IniPath = iniPath };
+            }
+        }
+
+        /// <summary>
         /// Set <c>EAX</c> under <c>[Sound Options]</c> to 1 or 0. Drives the
         /// optional dsoal spatial-audio toggle, which needs EAX on to get the
         /// environmental reverb that is the whole point of the feature.

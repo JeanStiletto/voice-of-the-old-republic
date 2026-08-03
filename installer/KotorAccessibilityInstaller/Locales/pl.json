@@ -68,7 +68,9 @@
     "K2Mods_NoTslrcm_Text": "TSLRCM nie jest zainstalowany, więc K2CP i Tweak Pack zostały pominięte, aby zachować właściwą kolejność instalacji. Zainstaluj najpierw TSLRCM, a potem uruchom ten instalator ponownie, aby je dodać.",
     "K2Mods_NewGameHint": "Ważne: rozpocznij NOWĄ grę. Zapisy z niezmodyfikowanej gry nie są zgodne z TSLRCM.",
     "K2Lang_Offer_Text": "Zawartość tekstowa TSLRCM jest tylko po angielsku, więc tekst twojej gry jest teraz angielski. Zespół TSLRCM udostępnia oficjalne wersje językowe w Steam Workshop.\n\nPobrać teraz przetłumaczony tekst? Steam otworzy stronę Workshop — naciśnij tam przycisk Subskrybuj. Ten instalator poczeka na pobranie, sprawdzi plik tekstowy i skopiuje go do gry. Potem musisz ponownie ZREZYGNOWAĆ z subskrypcji na tej samej stronie; instalator ci o tym przypomni.",
-    "K2Lang_Waiting": "Czekam na pobranie ze Steam Workshop. Naciśnij Subskrybuj na stronie Workshop, która właśnie otworzyła się w Steamie...",
+    "K2Lang_Waiting": "Oczekiwanie na pobranie ze Steam Workshopu.\n\nSteam powinien otworzyć stronę Workshopu z przetłumaczonym tekstem TSLRCM. Naciśnij tam przycisk Subskrybuj — to on rozpoczyna pobieranie. Jeśli żadna strona się nie otworzyła albo Steam pokazał co innego, naciśnij poniżej „Otwórz stronę Workshopu ponownie”.",
+    "K2Lang_ReopenPageButton": "Otwórz stronę Workshopu ponownie",
+    "K2Lang_PageOpenFailed_Format": "Nie udało się otworzyć Steama. Otwórz ten adres ręcznie: {0}",
     "K2Lang_WaitingHeartbeat_Format": "Nadal czekam na pobranie z Workshop ({0} s). Jeśli jeszcze tego nie zrobiłeś, naciśnij Subskrybuj na stronie Workshop w Steamie...",
     "K2Lang_Done_Text": "Przetłumaczony tekst został skopiowany do gry (angielski plik zapisano jako kopię dialog.tlk.english.bak).\n\nWAŻNE: zrezygnuj teraz z subskrypcji elementu TSLRCM w Workshop — wróć na stronę Workshop w Steamie i naciśnij Anuluj subskrypcję — aby kopia z Workshop nie kolidowała z zainstalowanymi modami.",
     "K2Lang_Failed_Format": "Pobieranie przetłumaczonego tekstu nie zakończyło się: {0}\n\nGra na razie zachowuje tekst angielski. Sposób ręczny: zasubskrybuj element TSLRCM w Workshop dla swojego języka, skopiuj dialog.tlk z steamapps\\workshop\\content\\208580\\<element> do folderu gry, a potem zrezygnuj z subskrypcji.",
@@ -192,6 +194,13 @@
 
     "InstalledOptions_Body_Format": "Voice of the Old Republic v{0} jest zainstalowany i aktualny.\n\nDźwięk przestrzenny (dsoal): {1}\n\nWybierz działanie:\n- Zainstaluj ponownie: uruchamia pełny instalator, aby odświeżyć wszystkie pliki.\n- Przełącz dźwięk przestrzenny: przełącza między zmodyfikowanym (HRTF + EAX) a oryginalnym dźwiękiem. Po przełączeniu uruchom grę ponownie.\n- Zbierz dzienniki do testów beta: tworzy w folderze Pobrane archiwum z najnowszym dziennikiem łatki i zrzutem awaryjnym, gotowe do wysłania autorowi.\n- Zamknij: nic nie rób i wyjdź.",
     "InstalledOptions_BodyNoAudio_Format": "Voice of the Old Republic v{0} jest zainstalowany i aktualny.\n\nWybierz działanie:\n- Zainstaluj ponownie: uruchamia pełny instalator i odświeża wszystkie pliki.\n- Zbierz dzienniki do beta-testów: tworzy w folderze Pobrane archiwum z najnowszym dziennikiem i raportem awarii, gotowe do wysłania deweloperowi.\n- Zamknij: nic nie rób i wyjdź.",
+
+    "GameState_Heading": "Stan twoich gier:",
+    "GameState_Line_Format": "- {0}: {1}",
+    "GameState_ModInstalled_Format": "mod zainstalowany, wersja {0}",
+    "GameState_ModInstalledUnknownVersion": "mod zainstalowany, wersja nieznana",
+    "GameState_ModNotInstalled": "gra znaleziona, mod niezainstalowany",
+    "GameState_GameNotFound": "gra nieznaleziona na tym komputerze",
     "InstalledOptions_ReinstallButton": "Zainstaluj ponownie",
 
     "CollectLogs_Button": "Zbierz dzienniki do testów beta",
@@ -224,7 +233,7 @@
     "Uninstall_UninstallButton": "Odinstaluj",
     "Uninstall_CancelButton": "Anuluj",
     "Uninstall_Confirm_Title": "Potwierdź odinstalowanie",
-    "Uninstall_Confirm_Text": "Czy na pewno chcesz odinstalować Voice of the Old Republic?\n\nSpowoduje to:\n- usunięcie KotorPatcher.dll, sqlite3.dll, addresses.db, patch_config.toml, dinput8.dll\n- usunięcie folderu patches\\ (accessibility.dll + prism.dll)\n- usunięcie wpisu z listy Programy i funkcje\n\nCzego to NIE dotyczy:\n- K1CP i inne mody opcjonalne wybrane przy instalacji pozostaną na miejscu\n- twoje zapisy gry nie zostaną zmienione\n- swkotor.exe pozostanie zmodyfikowany. Aby wrócić do wersji oryginalnej, użyj funkcji Steama „Sprawdź spójność plików gry” albo zainstaluj ponownie z GoG. To usunie także K1CP, jeśli chcesz zacząć od czysta.",
+    "Uninstall_Confirm_Format": "Czy na pewno usunąć Voice of the Old Republic z {0}?\n\nZostanie wykonane:\n- Usunięcie moda i syntezy mowy (folder patches)\n- Usunięcie plików patchera z folderu gry\n- Przywrócenie filmów z logo na starcie\n- Przywrócenie własnych klawiszy ruchu gry\n- Wyłączenie zbierania raportów awarii dla {1}\n- Usunięcie wpisu w Programach i funkcjach\n\nCzego NIE usuwamy:\n- Mody społeczności zainstalowane tutaj (TSLRCM, Community Patche, Tweak Pack) pozostają. Każdy ma własny deinstalator.\n- {1} zachowuje łatki silnika. „Sprawdź spójność plików gry” w Steamie je przywróci.\n- Twoje zapisy gry pozostają nietknięte.\n\nUwaga: sprawdzanie plików NIE usuwa dodatkowych plików, które mody dodały do folderu Override. Aby gra była naprawdę czysta, ten folder trzeba opróżnić samodzielnie.",
     "Uninstall_StatusRemoving": "Usuwam pliki moda...",
     "Uninstall_StatusComplete": "Odinstalowanie zakończone.",
     "Uninstall_Complete_Title": "Odinstalowanie zakończone",

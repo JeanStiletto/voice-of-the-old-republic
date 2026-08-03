@@ -52,6 +52,23 @@
 
     "k2cp": {
         "displayVersion": "v1.6.2",
+        "fileName": "K2CP_v1.6.2.zip",
+        "sha256": "1E6C6A2DC4E956256BFD7D36431E258EE792AD07E6DD326965336CFE96ADFD88",
+        "sizeBytes": 80523859,
+        "pageUrl": "https://deadlystream.com/files/file/1280-kotor-2-community-patch/",
+
+        "_note": [
+            "K2CP comes from DeadlyStream, NOT from GitHub. The repo",
+            "KOTORCommunityPatches/TSL_Community_Patch is where the recipe is",
+            "authored, but the payload is not committed there: at the reference",
+            "commit below the whole repo is 13 files and tslpatchdata/ holds only",
+            "changes.ini and info.rtf. The 713 files K2CP installs ship in this",
+            "archive alone. Fetching from the repo produced an install that",
+            "applied the changes.ini edits, silently installed no files, and",
+            "reported success.",
+            "The commit is kept for provenance only — it matches the archive's",
+            "release date (2025-09-26) and is not fetched."
+        ],
         "repoOwner": "KOTORCommunityPatches",
         "repoName": "TSL_Community_Patch",
         "ref": "4850a441368678ff72f3a173b33366c3c960d95e"

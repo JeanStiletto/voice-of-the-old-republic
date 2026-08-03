@@ -27,23 +27,50 @@ namespace KotorAccessibilityInstaller
                 // The uninstall confirmation text tells the user to verify game
                 // files via Steam or reinstall from GoG to get vanilla back.
 
-                // Remove patcher runtime files from game root.
-                string[] runtimeFiles =
+                // Everything we drop into the game root, in one list.
+                //
+                // kpm_install_state.json is KPatchCore's record of what it
+                // installed and the executable's ORIGINAL hash. Leaving it
+                // behind was the subtlest of the leftovers: the game folder
+                // still claimed our patch was installed after we had removed
+                // it, which is both untrue and something a later install has to
+                // reason about.
+                //
+                var rootFiles = new List<string>
                 {
                     "KotorPatcher.dll",
                     "sqlite3.dll",
                     "addresses.db",
                     "patch_config.toml",
-                    "dinput8.dll"
+                    "dinput8.dll",
+                    "kpm_install_state.json",
                 };
-                foreach (var name in runtimeFiles)
+
+                // The dsoal spatial-audio layer (KOTOR 1 only). Sourced from
+                // SpatialAudioManager rather than re-listed here — a second copy
+                // of that list is how its licence files and aldrv DLL came to
+                // survive a disable-then-uninstall on a real install.
+                rootFiles.AddRange(SpatialAudioManager.DeployedFiles);
+
+                // Artifacts from installer versions that no longer exist. No
+                // current code path writes either name, and both were found in
+                // a real KOTOR 1 folder — the uninstaller is the only thing that
+                // will ever clean them up, so it has to know the old names as
+                // well as the current ones.
+                //   KotorAccessibility_Uninstaller.exe — the pre-rename
+                //     uninstaller (now VoiceOfTheOldRepublic_Uninstaller.exe).
+                //   <ini>.pre-dsoal.bak — a backup an earlier spatial-audio
+                //     toggle wrote; nothing creates it today.
+                rootFiles.Add("KotorAccessibility_Uninstaller.exe");
+                rootFiles.Add(target.IniFileName + ".pre-dsoal.bak");
+
+                foreach (var name in rootFiles)
                 {
                     string p = Path.Combine(gamePath, name);
-                    if (File.Exists(p))
-                    {
-                        Logger.Info($"Removing {name}...");
-                        try { File.Delete(p); } catch (Exception ex) { Logger.Warning($"Could not delete {name}: {ex.Message}"); }
-                    }
+                    if (!File.Exists(p)) continue;
+                    Logger.Info($"Removing {name}...");
+                    try { File.Delete(p); }
+                    catch (Exception ex) { Logger.Warning($"Could not delete {name}: {ex.Message}"); }
                 }
 
                 // Remove the patches/ folder we put accessibility.dll + prism.dll into.
@@ -60,7 +87,7 @@ namespace KotorAccessibilityInstaller
                 // touch the Override folder itself or any file we didn't
                 // ship (users routinely drop their own mods in there).
                 string overrideDir = Path.Combine(gamePath, "Override");
-                foreach (var assetName in InstallationManager.OverrideAssetNames)
+                foreach (var assetName in InstallationManager.AllOverrideAssetNamesEverInstalled)
                 {
                     string assetPath = Path.Combine(overrideDir, assetName);
                     if (File.Exists(assetPath))
@@ -80,6 +107,23 @@ namespace KotorAccessibilityInstaller
                 {
                     Logger.Warning($"Intro restore failed: {introResult.Error}");
                 }
+
+                // Hand the movement keys back to the game's own defaults. The
+                // mod's A/D strafe + Y/C camera layout is the most visible thing
+                // it changes outside its own UI, and leaving it behind meant an
+                // uninstalled mod still had the player's controls rearranged
+                // with nothing left to explain why.
+                Logger.Info("Restoring default movement keybinds...");
+                var keymapResult = SwkotorIniTweaker.RemoveKeymapDefaults(target, gamePath);
+                if (!keymapResult.Success)
+                {
+                    Logger.Warning($"Keymap restore failed: {keymapResult.Error}");
+                }
+
+                // Our crash-dump capture for this game's executable. Set by the
+                // installer, so it is ours to unset — and it would otherwise
+                // keep writing dumps for a game we are no longer part of.
+                WerLocalDumps.Disable(target);
 
                 RegistryManager.Unregister(target);
                 ScheduleUninstallerSelfDelete(gamePath);
