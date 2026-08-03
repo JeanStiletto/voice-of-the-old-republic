@@ -33,6 +33,26 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>Unreleased</h2>
+
+<h3>Installer:</h3>
+
+- The installer now sets up KOTOR 2 completely, not just its community mods. Ticking KOTOR 2 installs the accessibility mod itself, the speech runtime, the loader, the audio cue files, the recommended graphics settings and the movement keybinds — the same set KOTOR 1 has always received. Previously it applied two engine patches and offered TSLRCM, then stopped.
+- KOTOR 2's launch-time logo movies are skipped like KOTOR 1's. KOTOR 2 has no BioWare logo but adds an Obsidian and an Aspyr one, so the list is per game now.
+- The movement keybinds (strafe on A and D, camera turn on Y and C) now apply to KOTOR 2 too. Its key table turned out to use the same entries as KOTOR 1, so the layout is identical in both games.
+- Each game gets its own entry in Add/Remove Programs, and its own crash-dump capture. With both installed, a single shared entry could only ever point at one of them, which also made an installed KOTOR 2 invisible when the installer was run again later.
+- The installer no longer starts while KOTOR 2 is running. Its "is the game running" check only recognised KOTOR 1, so a KOTOR 2 session could be left fighting the installer for the same files.
+- Pressing F5 to update from inside KOTOR 2 now updates KOTOR 2. It previously updated the KOTOR 1 install and relaunched KOTOR 1, whichever game you pressed it in.
+- The installer warns when Steam Workshop content is present for KOTOR 2. Workshop mods override anything installed into the game folder, so they quietly break TSLRCM and the Community Patch; you are asked to unsubscribe before continuing.
+- If the installer cannot confirm that TSLRCM installed, it now asks you instead of assuming. The Community Patch and Tweak Pack must sit on top of TSLRCM, and a silent wrong assumption would have skipped both without saying so.
+- KOTOR 2's mods install in the order the community's own build documents: TSLRCM, then the Tweak Pack, then the Community Patch.
+
+<h3>Installer — still working years from now:</h3>
+
+- When a mod can no longer be downloaded automatically, the installer now walks you through downloading it yourself and takes over again from there. It says what actually went wrong — a mod that has simply been updated since this installer was built reads differently from a failed download — opens the official page in your browser, and then offers the file in one press if it is already in your Downloads folder. Everything after you hand over the file is automatic, exactly as before. This matters because the alternative was a dead end: the installer verifies a fingerprint on files it downloads on its own, and once a mod updates, that fingerprint stops matching. A file you fetched from the official page yourself needs no such check.
+- Mod version pins can now be refreshed without a new installer release. They moved into a small file the installer reads from the project's repository at startup, falling back to its built-in copy when offline. Keeping a years-old installer working no longer needs a new build.
+- HoloPatcher, the tool that installs the community patches, now ships inside the installer instead of being downloaded. It was the one component with no manual alternative — you never see it, so you could not fetch it yourself — and if its download had ever gone away, no community patch would have installed for either game. Adds about 7 MB to the download.
+
 <h2>v0.6.4</h2>
 
 <h3>Polish translation:</h3>

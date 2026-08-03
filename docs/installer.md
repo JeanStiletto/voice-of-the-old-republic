@@ -269,25 +269,100 @@ JCarter426). Rejected outright: everything visual (the large majority of the
 118-mod list), English-only dialogue mods, M4-78 (explicitly incompatible
 with the neocities build).
 
-### K2 installer preparation (implemented 2026-07-27, not yet released)
+### K2 install flow (mods 2026-07-27; full accessibility install 2026-08-03)
 
-Code landed in `installer/KotorAccessibilityInstaller/` ahead of the actual
-KOTOR 2 flow:
+**As of 2026-08-03 the installer installs the accessibility mod into KOTOR 2
+itself**, not just the community mods. What differs per game now lives in one
+place, `GameTarget.cs`, rather than being hard-coded in each install step.
 
-- **Game-version screen** (`GameVersionSelectionForm`) — new step between the
+Per-game facts in `GameTarget`: executable and process name (they are not the
+same question — `GetProcessesByName("swkotor")` does not match a running
+`swkotor2`), ini filename, Steam app id, Add/Remove Programs key, intro-movie
+list, ini defaults, bundled `.kpatch` set, and which vanilla
+`prioritygroups.2da` to fall back on.
+
+The KOTOR 2 deltas that were NOT obvious, all confirmed against the real game:
+
+- **`prioritygroups.2da` has different columns.** KOTOR 2 splits three of them
+  per platform — `volume_pc` / `volume_xbox`, `maxvolumedist_pc` / `_xbox`,
+  `minvolumedist_pc` / `_xbox` — where KOTOR 1 has plain `volume`,
+  `maxvolumedist`, `minvolumedist`. Writing the KOTOR 1 names into the KOTOR 2
+  table is a *silent* failure: the cells come out empty and our cue group lands
+  without its volume or falloff band. `PriorityGroup2da` now maps the
+  `_pc`/`_xbox` suffix away, so one row definition serves both and both
+  platform variants get the same value. The vanilla KOTOR 2 table ships as
+  `Resources/prioritygroups_k2.2da`.
+- **The keybind defaults transfer unchanged.** KOTOR 2's `keymap.2da` carries
+  the same rows under the same ids with the same vanilla defaults —
+  `action281a/b` = ActionLeft/Right (strafe, Z/C), `action284a/b` =
+  CameraRotateLeft/Right (A/D), `action283a/b` = minigame steering (A/D). So
+  the same four ini lines apply to `swkotor2.ini`.
+- **Ini spelling and section differ.** KOTOR 2 writes
+  `DisableVertexBufferObjects` without spaces, and carries `FullScreen` in
+  BOTH `[Display Options]` and `[Graphics Options]` — windowed mode has to be
+  set in both or the surviving one wins. `AllowWindowedMode=1` is absent from
+  the shipped file and is required by the BorderlessFullscreen patch.
+- **`Frame Buffer` is deliberately NOT set on KOTOR 2.** On KOTOR 1 we write
+  `Frame Buffer=0` (the documented fix for crash-after-character-creation and
+  loadscreen faults) and neutralise its side effect — a zero-sized save
+  thumbnail that makes the engine's image scaler divide by zero — with the
+  `save_crash_guard.cpp` detour. That guard is a KOTOR 1 hook whose address
+  resolves to zero on KOTOR 2, so setting `Frame Buffer=0` there would hand
+  KOTOR 2 the divide-by-zero with nothing underneath it, to dodge a
+  driver-era KOTOR 1 bug. KOTOR 2 keeps its shipped `Frame Buffer=1`.
+- **Intro movies: KOTOR 2 has no `biologo.bik`.** Its readable string data
+  references the same `leclogo` and `legal` stems; `ObsidianEnt.bik` and
+  `Aspyr.bik` exist in `Movies/` and are launch-time logos by every other
+  sign, but neither stem could be confirmed in the executable (Steam's wrapper
+  encrypts the code section on disk, so absence there proves nothing). Both are
+  included: the mechanism fails safe, and the uninstaller and in-game toggle
+  put every name back. **Unverified — listen on the first KOTOR 2 launch for
+  whether an Obsidian or Aspyr splash still plays.**
+- **Engine patches install in the SAME transaction as ours.** 4 GB + borderless
+  rewrite `swkotor2.exe`, so applying them in a transaction of their own would
+  change the hash that the accessibility patch's own version gate then reads.
+  This mirrors how KOTOR 1 installs widescreen alongside ours.
+- **No address database is needed for KOTOR 2.** `kotor2.hooks.toml` carries
+  literal addresses, and KPatchCore treats a missing database match as
+  non-fatal (only name-based lookups need one). The `AddressDatabases`
+  directory must still exist, which staging creates.
+
+Other per-game plumbing that landed with it: one Add/Remove Programs entry per
+game (`--game k1|k2` in the uninstall string; a single shared entry could only
+record one InstallLocation, which is why an installed KOTOR 2 used to be
+invisible on a later run), WER crash-dump keys for both executables, a
+running-game guard that checks both process names, and the in-game F5 updater's
+handoff batch now waiting on the game it was injected into and relaunching that
+one (it previously waited on a KOTOR 1 that was not running, updated the KOTOR 1
+install, and launched KOTOR 1).
+
+The dsoal spatial-audio toggle stays KOTOR 1 only and its button is absent
+rather than inert on the KOTOR 2 maintenance dialogs — the pairing with Aspyr's
+audio stack is unverified. Open research item, not a gap.
+
+- **Game-version screen** (`GameVersionSelectionForm`) — step between the
   welcome dialog and the base-components screen. Two checkboxes: KOTOR 1
-  (default on, fully supported) and KOTOR 2 (default off, "in preparation").
-  Next requires at least one checked; zero-checked shows an explanatory
-  MessageBox rather than a silently disabled button (screen-reader reasoning
-  in the class comment).
+  (default on) and KOTOR 2 (default off). Next requires at least one checked;
+  zero-checked shows an explanatory MessageBox rather than a silently disabled
+  button (screen-reader reasoning in the class comment). Each selected game
+  gets its own `MainForm` pass, sequentially, with the game name in the title —
+  a screen-reader user needs the two runs separated, not interleaved. Cost is
+  one extra `.kpatch` download when both are selected.
 - **KOTOR 2 mod-selection flow (`Kotor2ModSelectionForm`)** — the K2
-  counterpart of the K1 optional-mods screen. Checking KOTOR 2 runs the
-  engine patches, then shows one form: detection + patch result as the
-  description, three checkboxes (TSLRCM 1.8.6, K2CP, Tweak Pack), all
-  default-on and labeled highly recommended, plus a footnote explaining the
-  automatic install order and the manual TSLRCM link. The flow then runs:
-  TSLRCM step → `TslrcmDetector` gate → `Kotor2ModsInstallForm` (K2CP +
-  Tweak Pack pipeline) → one spoken per-mod summary box.
+  counterpart of the K1 optional-mods screen, and it runs BEFORE our own
+  install: TSLRCM is a third-party Inno installer that writes freely into the
+  game folder (and replaces `dialog.tlk` outright), so nothing of ours should
+  be sitting there yet. Three checkboxes (TSLRCM 1.8.6, K2CP, Tweak Pack), all
+  default-on. The flow runs: Steam Workshop pre-flight → TSLRCM step → TSLRCM
+  presence gate → `Kotor2ModsInstallForm` (K2CP + Tweak Pack pipeline) → one
+  spoken per-mod summary box.
+- **Steam Workshop pre-flight** — warns when
+  `steamapps/workshop/content/208580/` holds anything, since Workshop items
+  override directory-installed mods and break exactly what we are about to
+  install. Derived from the game path rather than the default library, so it
+  follows a game installed to a secondary Steam library. Detection is
+  deliberately shallow (any content at all is worth the warning); the user
+  chooses whether to continue.
 - **Unattended TSLRCM install (`TslrcmInstallForm`)** — `DeadlyStreamClient`
   scrapes the guest download (cookie + csrfKey two-step), verifies the
   pinned SHA-256 (fail-closed: a changed upstream file routes to the manual
@@ -302,13 +377,18 @@ KOTOR 2 flow:
   notifications at 25% steps; the install phase heartbeats ~15 s and
   disables Cancel (aborting Inno mid-install would leave a half-written mod
   install).
-- **TSLRCM-first gate (`TslrcmDetector`)** — K2CP/Tweak Pack run only when
-  TSLRCM is present: detected via the uninstall registry entry TSLRCM's Inno
-  installer registers (DisplayName contains "Sith Lords Restored Content";
-  both hives × both views scanned). UNVERIFIED assumption flagged in the
-  class: that 1.8.6's Inno script registers an uninstall entry — if not,
-  switch to a file marker. Without TSLRCM, the dependent mods are skipped
-  with a spoken explanation, never installed in the wrong order.
+- **TSLRCM-first gate** — K2CP/Tweak Pack run only when TSLRCM is present.
+  Three signals, strongest first: (1) the silent install verifies *itself* by
+  fingerprinting `dialog.tlk` before and after, so `SilentInstalled` is direct
+  evidence independent of any registry entry; (2) otherwise `TslrcmDetector`'s
+  uninstall registry entry (DisplayName contains "Sith Lords Restored Content";
+  both hives × both views); (3) if neither fires after a wizard handoff, the
+  user is ASKED. That third step exists because the registry route rests on an
+  assumption nobody has confirmed against a real 1.8.6 run — that its Inno
+  script registers an uninstall entry at all. Concluding "not installed" from
+  the absence of a signal we are not sure exists would silently skip K2CP and
+  the Tweak Pack on every install: no error, no prompt, two mods quietly
+  missing, and a player who believes their mod set is complete.
 - **`TweakPackInstaller`** — DeadlyStream scrape of the pinned RAR5 archive,
   SHA-256 verify, extraction via Windows' built-in `tar.exe` (libarchive
   reads RAR5), then one headless HoloPatcher run per component. Components
@@ -318,27 +398,21 @@ KOTOR 2 flow:
   the seven main entries (Kaevee Removal 1+2, Saedhe's Head, Ravager,
   Atton, Kreia-Atris, Trayus Mandalore); the two Extras are excluded by our
   filters (Sith Lord Masks = visual, Gand Awareness = rebalance).
-- **Untested end-to-end as of 2026-07-27**: the scrapes and archive layout
-  were proven live via curl/tar, but the C# flow, the Inno silent switches,
-  the registry detection, and the per-component HoloPatcher runs all still
-  need a real run against a KOTOR 2 Steam Aspyr install. KOTOR-2-only
-  selections exit after this flow.
-- **KOTOR 2 engine patches (wired, analog to the K1 widescreen flow)** —
-  checking KOTOR 2 with a detected install applies Lane's two static kpatches
-  to `swkotor2.exe` before the TSLRCM offer: `4gb-patch` (LAA flag) and
-  `borderless_fullscreen`, bundled as `Resources/4GBPatch.kpatch` +
+- **Untested end-to-end**: the scrapes and archive layout were proven live via
+  curl/tar in July 2026, but the C# flow, the Inno silent switches, the
+  registry detection, and the per-component HoloPatcher runs all still need a
+  real run against a KOTOR 2 Steam Aspyr install.
+- **KOTOR 2 engine patches** — Lane's two static kpatches, `4gb-patch` (LAA
+  flag) and `borderless_fullscreen`, bundled as `Resources/4GBPatch.kpatch` +
   `Resources/BorderlessFullscreen.kpatch` (zipped verbatim from
   `third_party/Kotor-Patch-Manager/Patches/<name>/` — manifest + all hooks
-  variants; KPatchCore selects hooks by exe SHA). Static-only install:
-  `PatcherDllPath = null`, so no runtime DLL, loader, or address DB lands in
-  the KOTOR 2 folder — just the patched exe plus an inert patch_config.toml.
-  Idempotency via the same hash gate as K1 widescreen: an exe whose SHA-256
-  is not declared by the manifests (already patched, 3C-FD'd, unknown build)
-  is skipped with a reason, never force-patched. `swkotor2.ini` gets
-  `AllowWindowedMode=1` + `FullScreen=0` (required by the borderless patch;
-  windowed is the screen-reader baseline). Result is reported as one line
-  inside the preparation dialog. No backup — Steam "Verify integrity"
-  restores vanilla; uninstall does not touch KOTOR 2.
+  variants; KPatchCore selects hooks by exe SHA). They are declared in
+  `GameTarget.Kotor2.BundledPatches` and install in the same transaction as the
+  accessibility patch (see above for why that ordering is load-bearing).
+  Idempotency via the same hash gate as K1 widescreen: an exe whose SHA-256 is
+  not declared by the manifests (already patched, 3C-FD'd, unknown build) is
+  skipped with a reason, never force-patched. No backup — Steam "Verify
+  integrity" restores vanilla.
 - **`K2cpInstaller`** — mirrors `K1cpInstaller` (GitHub tree fetch at pinned
   SHA → headless HoloPatcher), now ACTIVE in
   `ModInstallerCoordinator.BuildKotor2Pipeline()` behind the TSLRCM gate.
@@ -358,11 +432,32 @@ KOTOR 2 flow:
   permission request to mirror (removes the scrape fragility), and the same
   question for the Tweak Pack (also DeadlyStream-hosted; same scrape would
   work).
+- Both hash pins date from 2026-07-27 and have not been re-verified against
+  what DeadlyStream serves today. A stale pin is no longer a dead end (see
+  "Keeping the third-party pins alive" above), but re-hashing them is still the
+  difference between a one-wizard install and a guided manual one. The K1CP and
+  K2CP pinned commits WERE re-verified 2026-08-03 and both still resolve.
 - TSLRCM language handling on a German Steam install — needs a hands-on test
   of the 1.8.6 installer.
-- Steam Workshop pre-flight check: installer should detect a non-empty
-  `steamapps/workshop/content/208580/` and warn the user to unsubscribe
-  before installing anything.
+- ~~Install-order contradiction.~~ **RESOLVED 2026-08-03: TSLRCM → Tweak Pack →
+  K2CP, the kotor.neocities.org order.** It contradicts K2CP's own README
+  ("before anything else, except TSLRCM"), and the community build wins: that
+  is the sequence people actually run end to end and report breakage against,
+  whereas the README describes K2CP in isolation and cannot know what the Tweak
+  Pack does to the same files. Both patch overlapping `.dlg` and `.2da`
+  resources, so K2CP's edits landing last is a real decision.
+- K2CP `.lyt`/`.vis` line-ending audit still not done (K1CP needed CRLF
+  normalisation and KOTOR 2 uses the same parser family).
+- Tweak Pack per-component language vetting still not done — the components
+  ship `.dlg` edits; strref-based, so probably fine, but unverified against a
+  localised TSLRCM install.
+- Whether KOTOR 2's `ObsidianEnt.bik` / `Aspyr.bik` are actually played at
+  launch (see the intro-movie note above) — one launch answers it.
+- Whether the KOTOR 2 sound settings are worth touching at all. Aspyr's build
+  is a modern rebuild with 32 3D voices already configured, so the working
+  assumption is that it needs nothing — but that is an assumption, not a
+  measurement, and no `[Sound Options]` values are written for KOTOR 2 until
+  someone checks. dsoal is not offered there for the same reason.
 - Aspyr quirks that survive even with fixes (per neocities): occasional
   savegame loss, dialogue-skip bug, controller camera offset after workbench
   use. Track in known-issues once the K2 effort starts in earnest.
@@ -428,6 +523,82 @@ After a successful install of a Steam KOTOR copy, the install root contains:
 - **KOTORModSync** — multi-mod orchestrator, single self-contained .exe, HoloPatcher + PyKotor bundled internally. Reads TOML config encoding mod order. Does **not** auto-download; user pre-downloads ZIPs into a folder. The kotor.neocities.org builds ship as KOTORModSync configs. Could be the foundation of our installer (we ship a TOML preset) or a model for what to build.
 - **HoloPatcher** — modern cross-platform reimplementation of TSLPatcher. Drop-in compatible with `tslpatchdata` payloads. Drivable headlessly.
 - **TSLPatcher** — legacy Windows-only original. We probably never invoke it directly.
+
+## Keeping the third-party pins alive (2026-08-03)
+
+The installer downloads mods whose upstreams we don't control. Pinning their
+SHA-256 makes the download safe and makes it expire. Three layers, deliberately
+ordered so the last one needs no maintenance at all.
+
+**The pins never relax.** TSLRCM's installer is 138 MB fetched over a scraped
+DeadlyStream endpoint and then executed elevated. If that scrape ever returns a
+login redirect, an error page saved as a file, or a hijacked upload, the hash is
+the only thing between that and running arbitrary code as administrator.
+Weakening it to "looks like an Inno installer of about the right size" would
+trade a real guarantee for convenience. A mismatch is refused, always.
+
+**Layer 1 — `Resources/sources.json`, served by `SourcePins`.** All pins (hashes,
+sizes, page URLs, pinned commits) moved out of `Config` constants into one JSON
+file. It is embedded in the installer AND read from the repo's `main` branch at
+startup; the remote copy wins when it parses and carries a schema version this
+build understands, and every failure (offline, proxy, 404, malformed, future
+schema) falls back to the embedded copy silently. Refreshing a pin is now an
+edit to one file on `main` — no installer release, no build toolchain.
+`Config`'s members forward to `SourcePins`, so call sites were untouched.
+
+Trust note: the remote file carries hashes that decide what we execute, so it is
+fetched over HTTPS from our own repository — the same trust root as the
+installer binary and the `.kpatch`. It must never point at a host we don't
+control. Anyone able to rewrite that file could already publish a malicious
+release, so it is not a new attack surface.
+
+**Layer 2 — guided manual acquisition (`ManualDownloadForm`). This is the one
+that matters.** A remote pin file only helps while somebody is still maintaining
+the repo; in five years it is likely dead. When automatic acquisition fails, the
+installer explains *specifically* what happened ("the download worked, but the
+file is not the version this installer was built against" vs "the download
+failed: …"), opens the official page in the browser, and takes the file the user
+downloaded — via a file picker, or a one-press button when a plausible file is
+already sitting in Downloads. The install then continues exactly as if we had
+fetched it. **This path cannot go stale**, and it also covers what a pin can't:
+DeadlyStream changing its download flow, or going away.
+
+Why accepting a user-supplied file is not a security downgrade: the hash exists
+to substitute for provenance we don't have when fetching automatically. A file
+the user downloaded from the official page has provenance — theirs. That is the
+same trust as every manual mod install ever done, and better, because we drive
+the rest correctly. The pin is still computed and logged, so a match is visible;
+it is just not a gate. A magic-byte check (MZ / `Rar!`) runs regardless, but as
+a mis-pick check, not a security one — it catches the download page being saved
+instead of the file.
+
+Wired for TSLRCM (`TslrcmInstallForm` takes a `suppliedInstallerPath` that skips
+download and hash) and the Tweak Pack (`ModInstallContext.AskForManualDownload`,
+injected so installers stay free of WinForms). A user-supplied file is never
+deleted — it is theirs, in their Downloads folder.
+
+**Layer 3 — mirroring with permission**, still open. Removes the scrape
+entirely.
+
+### HoloPatcher is bundled, not downloaded (2026-08-03)
+
+It was the most fragile dependency in the pipeline and the only one with no
+manual escape hatch: the user never sees HoloPatcher, so they cannot fetch it by
+hand, and without it **no** TSLPatcher-style mod installs for either game —
+K1CP included. It was also already on a fallback, since the canonical PyKotor
+repo re-tagged without attaching binaries and the pin pointed at NickHugi's
+fork's 2024 release.
+
+Now embedded as `Resources/HoloPatcher.exe` (v1.60-patcher-beta4, 11.3 MB raw;
++7.1 MB on the published single-file installer, 76.5 → 83.6 MB). Licence: the
+LICENSE file at that tag is the plain **GPL-3.0** text — GitHub's repo-level
+"LGPL-3.0" label describes the repository's current state, not that tag. Same
+licence as this project, and we invoke it as a separate process rather than
+linking, so this is mere aggregation. `Resources/HoloPatcher-License.txt` ships
+alongside and `Config.HoloPatcherRepositoryUrl` / `HoloPatcherPinnedTag` are
+kept for attribution and source availability. Bumping it means replacing the
+vendored file — a deliberate, reviewable act rather than an upstream change we
+inherit silently.
 
 ### Open questions
 

@@ -35,6 +35,11 @@ namespace KotorAccessibilityInstaller
 
             InstallerLocale.Initialize(LanguageDetector.DetectLanguage());
 
+            // Third-party mod pins: embedded copy, then the repo's live copy if
+            // it is reachable. Deliberately before any dialog — a stale pin
+            // changes what the mod screens can offer. Never throws.
+            SourcePins.Initialize();
+
             if (!GamePathDetector.IsRunningAsAdmin())
             {
                 Logger.Error("Not running as administrator");
@@ -46,9 +51,10 @@ namespace KotorAccessibilityInstaller
                 return;
             }
 
-            if (GamePathDetector.IsGameRunning())
+            var running = GamePathDetector.RunningGame();
+            if (running != null)
             {
-                Logger.Warning("KOTOR is currently running");
+                Logger.Warning($"{running.DisplayName} is currently running");
                 MessageBox.Show(
                     InstallerLocale.Get("Program_GameRunning_Text"),
                     InstallerLocale.Get("Program_GameRunning_Title"),
@@ -62,6 +68,10 @@ namespace KotorAccessibilityInstaller
             bool autoUpdateMode = false;
             string pathArg = null;
             string localKpatchPath = null;
+            // Which game the maintenance modes act on. Absent means KOTOR 1,
+            // which keeps every uninstall entry written before this flag existed
+            // working unchanged.
+            GameTarget argTarget = null;
 
             for (int i = 0; i < args.Length; i++)
             {
@@ -70,8 +80,25 @@ namespace KotorAccessibilityInstaller
                 else if (arg == "/quiet" || arg == "-quiet" || arg == "--quiet" || arg == "/q" || arg == "-q") quietMode = true;
                 else if (arg == "/auto-update" || arg == "-auto-update" || arg == "--auto-update") autoUpdateMode = true;
                 else if (arg == "--local-kpatch" && i + 1 < args.Length) localKpatchPath = args[++i];
+                else if ((arg == "--game" || arg == "-game" || arg == "/game") && i + 1 < args.Length)
+                {
+                    string id = args[++i];
+                    argTarget = GameTarget.FromId(id);
+                    if (argTarget == null)
+                    {
+                        Logger.Error($"--game '{id}' is not a known game id; expected k1 or k2");
+                        MessageBox.Show(
+                            $"--game '{id}' is not a known game id (expected k1 or k2).",
+                            "Installer",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Error);
+                        return;
+                    }
+                }
                 else if (!arg.StartsWith("/") && !arg.StartsWith("-")) pathArg = args[i];
             }
+
+            GameTarget maintenanceTarget = argTarget ?? GameTarget.Kotor1;
 
             if (localKpatchPath != null)
             {
@@ -90,10 +117,12 @@ namespace KotorAccessibilityInstaller
 
             if (uninstallMode)
             {
-                Logger.Info("Running in uninstall mode");
-                string gamePath = pathArg ?? RegistryManager.GetRegisteredInstallLocation() ?? GamePathDetector.DetectGamePath();
+                Logger.Info($"Running in uninstall mode ({maintenanceTarget.DisplayName})");
+                string gamePath = pathArg
+                    ?? RegistryManager.GetRegisteredInstallLocation(maintenanceTarget)
+                    ?? GamePathDetector.Detect(maintenanceTarget);
 
-                if (string.IsNullOrEmpty(gamePath) || !GamePathDetector.IsValidGamePath(gamePath))
+                if (string.IsNullOrEmpty(gamePath) || !GamePathDetector.IsValidGamePath(maintenanceTarget, gamePath))
                 {
                     if (!quietMode)
                     {
@@ -103,25 +132,35 @@ namespace KotorAccessibilityInstaller
                             MessageBoxButtons.OK,
                             MessageBoxIcon.Error);
                     }
-                    Logger.Error("Uninstall failed: Could not determine KOTOR path");
+                    Logger.Error($"Uninstall failed: Could not determine {maintenanceTarget.DisplayName} path");
                     return;
                 }
 
                 if (quietMode)
                 {
-                    UninstallFlow.PerformUninstall(gamePath);
+                    UninstallFlow.PerformUninstall(maintenanceTarget, gamePath);
                 }
                 else
                 {
-                    Application.Run(new UninstallForm(gamePath));
+                    Application.Run(new UninstallForm(maintenanceTarget, gamePath));
                 }
                 return;
             }
 
-            // Install mode
-            string detectedGamePath = pathArg ?? GamePathDetector.DetectGamePath() ?? GamePathDetector.DefaultGamePath;
-            string installedModPath = Path.Combine(detectedGamePath, "patches", "accessibility.dll");
-            bool modExists = File.Exists(installedModPath);
+            // Install mode.
+            //
+            // Which game the maintenance dialogs act on: an explicit --game wins
+            // (that is how the in-game updater says which copy called it),
+            // otherwise the first game that already has the mod. Without that
+            // second rule a KOTOR-2-only player was invisible to the installer —
+            // it looked only at KOTOR 1, found nothing, and offered a fresh
+            // install every single time. Falls back to KOTOR 1 when neither is
+            // installed, which is the fresh-install path anyway.
+            GameTarget modeTarget = argTarget ?? FirstInstalledTarget() ?? GameTarget.Kotor1;
+
+            string detectedGamePath = pathArg ?? GamePathDetector.Detect(modeTarget)
+                ?? (modeTarget == GameTarget.Kotor1 ? GamePathDetector.DefaultGamePath : null);
+            bool modExists = detectedGamePath != null && IsModInstalledAt(detectedGamePath);
 
             // --auto-update: in-game F5 updater handoff. Skips every Welcome /
             // ModSelection / UpdateAvailable / InstalledOptions dialog and runs
@@ -132,10 +171,11 @@ namespace KotorAccessibilityInstaller
             // existing patch DLL has loaded.
             if (autoUpdateMode)
             {
-                Logger.Info("Auto-update mode active — running headless update");
+                Logger.Info($"Auto-update mode active — running headless update ({modeTarget.DisplayName})");
                 if (!modExists)
                 {
-                    Logger.Error($"--auto-update invoked but no installed mod found at {installedModPath}");
+                    Logger.Error("--auto-update invoked but no installed mod found at " +
+                                 (detectedGamePath ?? "(no game path)"));
                     Environment.ExitCode = 1;
                     return;
                 }
@@ -147,7 +187,7 @@ namespace KotorAccessibilityInstaller
                 // these. Idempotent + best-effort — failure does not block the
                 // update.
                 WerLocalDumps.Enable();
-                Application.Run(new MainForm(detectedGamePath, updateOnly: true, localKpatchPath: localKpatchPath, headless: true));
+                Application.Run(new MainForm(modeTarget, detectedGamePath, updateOnly: true, localKpatchPath: localKpatchPath, headless: true));
                 return;
             }
             bool updateAvailable = false;
@@ -169,7 +209,7 @@ namespace KotorAccessibilityInstaller
 
             if (modExists)
             {
-                installedVersion = RegistryManager.GetRegisteredVersion();
+                installedVersion = RegistryManager.GetRegisteredVersion(modeTarget);
                 Logger.Info($"Installed version (from registry): {installedVersion ?? "unknown"}");
 
                 if (installedVersion != null && latestVersion != null)
@@ -182,15 +222,15 @@ namespace KotorAccessibilityInstaller
             if (modExists && updateAvailable)
             {
                 Logger.Info("Showing update dialog");
-                bool spatialOn = SpatialAudioManager.IsEnabled(detectedGamePath);
-                var updateForm = new UpdateAvailableForm(installedVersion, latestVersion, spatialOn);
+                bool spatialOn = IsSpatialAudioOn(modeTarget, detectedGamePath);
+                var updateForm = new UpdateAvailableForm(modeTarget, installedVersion, latestVersion, spatialOn);
                 Application.Run(updateForm);
 
                 switch (updateForm.UserChoice)
                 {
                     case UpdateChoice.UpdateOnly:
                         Logger.Info("User chose to update mod only");
-                        Application.Run(new MainForm(detectedGamePath, updateOnly: true, language: LanguageDetector.DetectLanguage(), localKpatchPath: localKpatchPath));
+                        Application.Run(new MainForm(modeTarget, detectedGamePath, updateOnly: true, language: LanguageDetector.DetectLanguage(), localKpatchPath: localKpatchPath));
                         break;
 
                     case UpdateChoice.FullInstall:
@@ -216,8 +256,8 @@ namespace KotorAccessibilityInstaller
                 while (displayVersion.EndsWith(".0") && displayVersion.IndexOf('.') != displayVersion.LastIndexOf('.'))
                     displayVersion = displayVersion.Substring(0, displayVersion.Length - 2);
 
-                bool spatialOn = SpatialAudioManager.IsEnabled(detectedGamePath);
-                var form = new InstalledOptionsForm(displayVersion, spatialOn);
+                bool spatialOn = IsSpatialAudioOn(modeTarget, detectedGamePath);
+                var form = new InstalledOptionsForm(modeTarget, displayVersion, spatialOn);
                 Application.Run(form);
 
                 switch (form.UserChoice)
@@ -234,7 +274,7 @@ namespace KotorAccessibilityInstaller
 
                     case UpdateChoice.CollectLogs:
                         Logger.Info("User chose to collect logs for beta-test bundle");
-                        InstallFlow.CollectLogsAndReport(detectedGamePath);
+                        InstallFlow.CollectLogsAndReport(modeTarget, detectedGamePath);
                         break;
 
                     case UpdateChoice.Close:
@@ -248,6 +288,32 @@ namespace KotorAccessibilityInstaller
                 InstallFlow.RunFullInstallFlow(detectedGamePath, pathArg, latestVersion, localKpatchPath);
             }
         }
+
+        /// <summary>Our runtime DLL sitting in the game folder is what "installed" means.</summary>
+        private static bool IsModInstalledAt(string gamePath) =>
+            File.Exists(Path.Combine(gamePath, "patches", "accessibility.dll"));
+
+        /// <summary>
+        /// First game (KOTOR 1 before KOTOR 2) that has the mod installed, or
+        /// null when neither does.
+        /// </summary>
+        private static GameTarget FirstInstalledTarget()
+        {
+            foreach (var target in GameTarget.All)
+            {
+                string path = GamePathDetector.Detect(target);
+                if (path != null && IsModInstalledAt(path)) return target;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// dsoal is bundled for KOTOR 1 only, so its state is never queried for
+        /// KOTOR 2 — SpatialAudioManager validates a swkotor.exe and would answer
+        /// about the wrong game's folder.
+        /// </summary>
+        private static bool IsSpatialAudioOn(GameTarget target, string gamePath) =>
+            target == GameTarget.Kotor1 && gamePath != null && SpatialAudioManager.IsEnabled(gamePath);
 
         /// <summary>
         /// Welcome → Base-components info → Optional-mods checkboxes → Main install.

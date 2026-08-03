@@ -17,13 +17,13 @@ namespace KotorAccessibilityInstaller
     // UninstallForm only needs this half.
     static class UninstallFlow
     {
-        public static void PerformUninstall(string gamePath)
+        public static void PerformUninstall(GameTarget target, string gamePath)
         {
-            Logger.Info($"Uninstalling from: {gamePath}");
+            Logger.Info($"Uninstalling {target.DisplayName} from: {gamePath}");
 
             try
             {
-                // No restore: install no longer creates swkotor.exe.backup.* files.
+                // No restore: install no longer creates <game exe>.backup.* files.
                 // The uninstall confirmation text tells the user to verify game
                 // files via Steam or reinstall from GoG to get vanilla back.
 
@@ -71,18 +71,17 @@ namespace KotorAccessibilityInstaller
                     }
                 }
 
-                // Restore the intro movies we renamed during install. Returns
-                // biologo / leclogo / legal .bik files to their vanilla names
-                // so a vanilla launch plays the BioWare / LucasArts / legal
-                // splash like a fresh install.
+                // Restore the intro movies we renamed during install, so a
+                // vanilla launch plays the publisher / legal splashes like a
+                // fresh install. Per-game list — see GameTarget.
                 Logger.Info("Restoring intro movies...");
-                var introResult = IntroMovieDisabler.RestoreIntros(gamePath);
+                var introResult = IntroMovieDisabler.RestoreIntros(target, gamePath);
                 if (!introResult.Success)
                 {
                     Logger.Warning($"Intro restore failed: {introResult.Error}");
                 }
 
-                RegistryManager.Unregister();
+                RegistryManager.Unregister(target);
                 ScheduleUninstallerSelfDelete(gamePath);
 
                 Logger.Info("Uninstallation complete");

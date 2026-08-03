@@ -36,14 +36,24 @@ namespace KotorAccessibilityInstaller
             catch { return false; }
         }
 
-        internal static bool IsGameRunning()
+        /// <summary>
+        /// The first target whose process is live, or null when neither is.
+        /// Checks both games: <c>GetProcessesByName</c> matches the name exactly,
+        /// so a "swkotor" query does NOT see a running "swkotor2" — which let an
+        /// install proceed against a live KOTOR 2 and fight it for file handles.
+        /// </summary>
+        internal static GameTarget RunningGame()
         {
-            try
+            foreach (var target in GameTarget.All)
             {
-                var processes = Process.GetProcessesByName("swkotor");
-                return processes.Length > 0;
+                try
+                {
+                    if (Process.GetProcessesByName(target.ProcessName).Length > 0)
+                        return target;
+                }
+                catch { /* fall through to the next target */ }
             }
-            catch { return false; }
+            return null;
         }
 
         /// <summary>
@@ -53,56 +63,22 @@ namespace KotorAccessibilityInstaller
         /// 3. Common Steam location under Program Files (x86)
         /// 4. CommonObjectives — Default Steam library path
         /// </summary>
-        public static string DetectGamePath()
+        public static string DetectGamePath() => Detect(GameTarget.Kotor1);
+
+        public static string DetectKotor2GamePath() => Detect(GameTarget.Kotor2);
+
+        /// <summary>
+        /// Locate <paramref name="target"/>'s install. Order: an install we
+        /// registered ourselves, then Steam's own per-app uninstall key, then the
+        /// default Steam library folder.
+        /// </summary>
+        public static string Detect(GameTarget target)
         {
-            string registered = RegistryManager.GetRegisteredInstallLocation();
-            if (IsValidGamePath(registered)) return registered;
+            string registered = RegistryManager.GetRegisteredInstallLocation(target);
+            if (IsValidGamePath(target, registered)) return registered;
 
-            string steamReg = TryReadSteamAppInstallPath();
-            if (IsValidGamePath(steamReg)) return steamReg;
-
-            if (IsValidGamePath(DefaultGamePath)) return DefaultGamePath;
-
-            // Fallback: scan ProgramFiles + ProgramFilesX86 for a swkotor folder.
-            foreach (var root in new[]
-            {
-                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
-                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles)
-            })
-            {
-                if (string.IsNullOrEmpty(root)) continue;
-                string candidate = Path.Combine(root, "Steam", "steamapps", "common", "swkotor");
-                if (IsValidGamePath(candidate)) return candidate;
-            }
-
-            return null;
-        }
-
-        private static string TryReadSteamAppInstallPath()
-        {
-            try
-            {
-                // KOTOR 1 Steam App ID = 32370. Steam writes InstallLocation here.
-                using var key = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry32)
-                    .OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 32370");
-                return key?.GetValue("InstallLocation") as string;
-            }
-            catch { return null; }
-        }
-
-        // ------------------------------------------------------------------
-        // KOTOR 2 detection — used by the game-version screen's preparation
-        // notice today; becomes the KOTOR 2 flow's path detection when that
-        // flow activates. Mirrors the KOTOR 1 chain minus the registry entry
-        // we write ourselves (nothing is registered for KOTOR 2 yet).
-        // ------------------------------------------------------------------
-
-        public const string Kotor2ExeName = "swkotor2.exe";
-
-        public static string DetectKotor2GamePath()
-        {
-            string steamReg = TryReadSteamKotor2InstallPath();
-            if (IsValidKotor2GamePath(steamReg)) return steamReg;
+            string steamReg = TryReadSteamAppInstallPath(target);
+            if (IsValidGamePath(target, steamReg)) return steamReg;
 
             foreach (var root in new[]
             {
@@ -112,51 +88,54 @@ namespace KotorAccessibilityInstaller
             {
                 if (string.IsNullOrEmpty(root)) continue;
                 string candidate = Path.Combine(root, "Steam", "steamapps", "common",
-                    "Knights of the Old Republic II");
-                if (IsValidKotor2GamePath(candidate)) return candidate;
+                                                SteamLibraryFolderName(target));
+                if (IsValidGamePath(target, candidate)) return candidate;
             }
 
             return null;
         }
 
-        private static string TryReadSteamKotor2InstallPath()
+        /// <summary>Folder name Steam installs each game under inside a library.</summary>
+        private static string SteamLibraryFolderName(GameTarget target) =>
+            target == GameTarget.Kotor2 ? "Knights of the Old Republic II" : "swkotor";
+
+        private static string TryReadSteamAppInstallPath(GameTarget target)
         {
             try
             {
-                // KOTOR 2 Steam App ID = 208580 (the Aspyr build).
+                // Steam writes InstallLocation under its per-app uninstall key.
                 using var key = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry32)
-                    .OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 208580");
+                    .OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App " + target.SteamAppId);
                 return key?.GetValue("InstallLocation") as string;
             }
             catch { return null; }
         }
 
-        public static bool IsValidKotor2GamePath(string path)
-        {
-            if (string.IsNullOrEmpty(path)) return false;
-            return File.Exists(Path.Combine(path, Kotor2ExeName));
-        }
+        public static bool IsValidKotor2GamePath(string path) => IsValidGamePath(GameTarget.Kotor2, path);
 
-        public static bool IsValidGamePath(string path)
+        public static bool IsValidGamePath(string path) => IsValidGamePath(GameTarget.Kotor1, path);
+
+        public static bool IsValidGamePath(GameTarget target, string path)
         {
             if (string.IsNullOrEmpty(path)) return false;
-            return File.Exists(Path.Combine(path, GameExeName));
+            return File.Exists(Path.Combine(path, target.ExeName));
         }
 
         /// <summary>
         /// True iff <paramref name="gamePath"/> is the install path Steam has
-        /// registered for KOTOR (App ID 32370). Used by the post-install auto-
-        /// launch to decide between <c>steam://run/32370</c> (preserves Steam
-        /// overlay + cloud saves + non-elevated token) and a direct exe launch.
+        /// registered for this game. Used by the post-install auto-launch to
+        /// decide between the <c>steam://run/&lt;appid&gt;</c> URL (preserves the
+        /// Steam overlay, cloud saves and a non-elevated token) and a direct exe
+        /// launch.
         ///
         /// Returns false for GoG copies, CD re-packs, manually-relocated Steam
         /// installs Steam doesn't know about, and any user-specified custom
-        /// path — in those cases <c>steam://run/32370</c> would either silently
-        /// no-op or launch a different copy than the one we just patched.
+        /// path — in those cases the steam:// URL would either silently no-op or
+        /// launch a different copy than the one we just patched.
         /// </summary>
-        public static bool IsSteamPath(string gamePath)
+        public static bool IsSteamPath(GameTarget target, string gamePath)
         {
-            string steamRegistered = TryReadSteamAppInstallPath();
+            string steamRegistered = TryReadSteamAppInstallPath(target);
             if (string.IsNullOrEmpty(steamRegistered) || string.IsNullOrEmpty(gamePath))
                 return false;
             return string.Equals(NormalizePath(steamRegistered), NormalizePath(gamePath),

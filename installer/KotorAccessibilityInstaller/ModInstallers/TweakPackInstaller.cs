@@ -69,21 +69,57 @@ namespace KotorAccessibilityInstaller.ModInstallers
                 ctx.StatusUpdate?.Invoke(InstallerLocale.Get("ModInstall_TweakDownloading"));
                 ctx.Progress?.Invoke(0);
 
-                using (var ds = new DeadlyStreamClient())
+                // Automatic acquisition first; if it does not work, the user
+                // fetches the archive and we carry on from there. Whichever way
+                // it arrives, everything after this point is identical.
+                string manualReason = null;
+                try
                 {
-                    await ds.DownloadFileAsync(Config.TweakPackDownloadPageUrl, rarPath, (done, total) =>
+                    using (var ds = new DeadlyStreamClient())
                     {
-                        long effectiveTotal = total > 0 ? total : Config.TweakPackArchiveSizeBytes;
-                        ctx.Progress?.Invoke((int)Math.Min(15, done * 15 / Math.Max(1, effectiveTotal)));
-                    });
+                        await ds.DownloadFileAsync(Config.TweakPackDownloadPageUrl, rarPath, (done, total) =>
+                        {
+                            long effectiveTotal = total > 0 ? total : Config.TweakPackArchiveSizeBytes;
+                            ctx.Progress?.Invoke((int)Math.Min(15, done * 15 / Math.Max(1, effectiveTotal)));
+                        });
+                    }
+
+                    string hash = DeadlyStreamClient.ComputeSha256(rarPath);
+                    if (!hash.Equals(Config.TweakPackArchiveSha256, StringComparison.OrdinalIgnoreCase))
+                    {
+                        // Downloaded fine, just not the build we were pinned
+                        // against — almost always an upstream update. Different
+                        // sentence, same recovery.
+                        Logger.Warning($"Tweak Pack hash mismatch: expected {Config.TweakPackArchiveSha256}, got {hash}");
+                        manualReason = InstallerLocale.Get("ManualDownload_Reason_Updated");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warning($"Tweak Pack download failed: {ex.Message}");
+                    manualReason = InstallerLocale.Format("ManualDownload_Reason_Failed_Format", ex.Message);
                 }
 
-                string hash = DeadlyStreamClient.ComputeSha256(rarPath);
-                if (!hash.Equals(Config.TweakPackArchiveSha256, StringComparison.OrdinalIgnoreCase))
+                if (manualReason != null)
                 {
-                    return ModInstallResult.Fail(Id,
-                        $"Downloaded archive failed SHA-256 verification (got {hash}). " +
-                        "The upstream file may have been updated; the pin needs re-verification.");
+                    string supplied = ctx.AskForManualDownload?.Invoke(new ManualDownloadRequest
+                    {
+                        ModDisplayName = "Unofficial TSLRCM Tweak Pack " + Config.TweakPackDisplayVersion,
+                        Reason = manualReason,
+                        PageUrl = Config.TweakPackDownloadPageUrl,
+                        ExpectedFileName = Config.TweakPackArchiveFileName,
+                        Kind = ManualDownloadForm.FileKind.RarArchive,
+                        PinnedSha256 = Config.TweakPackArchiveSha256,
+                    });
+
+                    if (string.IsNullOrEmpty(supplied))
+                        return ModInstallResult.Fail(Id, manualReason);
+
+                    // Copy rather than extract in place: staging is deleted at
+                    // the end of this method, and that must never take the
+                    // user's own download with it.
+                    File.Copy(supplied, rarPath, overwrite: true);
+                    Logger.Info($"Tweak Pack: using the user-supplied archive {supplied}");
                 }
 
                 ctx.StatusUpdate?.Invoke(InstallerLocale.Get("ModInstall_TweakExtracting"));

@@ -7,6 +7,7 @@ namespace KotorAccessibilityInstaller
 {
     public class UninstallForm : Form
     {
+        private readonly GameTarget _target;
         private readonly string _gamePath;
         private Label _titleLabel;
         private Label _statusLabel;
@@ -15,16 +16,20 @@ namespace KotorAccessibilityInstaller
         private Button _cancelButton;
         private ProgressBar _progressBar;
 
-        public UninstallForm(string gamePath)
+        public UninstallForm(GameTarget target, string gamePath)
         {
+            _target = target;
             _gamePath = gamePath;
             InitializeComponents();
-            Logger.Info("UninstallForm initialized");
+            Logger.Info($"UninstallForm initialized ({target.DisplayName})");
         }
 
         private void InitializeComponents()
         {
-            Text = InstallerLocale.Get("Uninstall_Title");
+            // Which game is being removed has to be in the title: with both
+            // installed there are two entries in Add/Remove Programs and no
+            // other way to tell the resulting dialogs apart.
+            Text = InstallerLocale.Get("Uninstall_Title") + " — " + _target.DisplayName;
             Size = new Size(490, 260);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
@@ -32,7 +37,7 @@ namespace KotorAccessibilityInstaller
 
             _titleLabel = new Label
             {
-                Text = InstallerLocale.Get("Uninstall_Heading"),
+                Text = InstallerLocale.Get("Uninstall_Heading") + " — " + _target.DisplayName,
                 Font = new Font(Font.FontFamily, 14, FontStyle.Bold),
                 Location = new Point(20, 20),
                 Size = new Size(440, 30),
@@ -117,7 +122,7 @@ namespace KotorAccessibilityInstaller
                 UpdateStatus(InstallerLocale.Get("Uninstall_StatusRemoving"));
                 _progressBar.Value = 30;
 
-                await Task.Run(() => UninstallFlow.PerformUninstall(_gamePath));
+                await Task.Run(() => UninstallFlow.PerformUninstall(_target, _gamePath));
 
                 _progressBar.Value = 100;
                 UpdateStatus(InstallerLocale.Get("Uninstall_StatusComplete"));

@@ -11,7 +11,7 @@
 //     regex; we keep behaviour identical with simpler code so the binary
 //     stays slim and we don't drag <regex> into the patch DLL).
 //   - On download success, writes a .bat to %TEMP% that waits for
-//     swkotor.exe to exit, runs the installer with --auto-update under
+//     the running game to exit, runs the installer with --auto-update under
 //     the manifest-driven UAC prompt, then relaunches the game via Steam.
 //
 // Lessons baked in from arena's iterations:
@@ -42,6 +42,7 @@
 #include <string>
 #include <thread>
 
+#include "engine_game.h"
 #include "engine_player.h"
 #include "engine_offsets.h"
 #include "hotkeys.h"
@@ -83,9 +84,27 @@ constexpr const char*    kReleaseDownloadUrlFmt =
 // fetch the .kpatch itself via its existing GitHubClient.
 constexpr const char*    kInstallerAsset = "VoiceOfTheOldRepublicInstaller.exe";
 
-// Steam app ID for KOTOR 1 (verified from steamdb.info entry "Star Wars:
-// Knights of the Old Republic"). Used in the relaunch step of the .bat.
-constexpr const char*    kSteamAppId     = "32370";
+// Per-game facts the handoff batch needs. Everything here describes the
+// game we are injected into, NOT a fixed title: the batch waits for that
+// executable to exit, tells the installer which copy to update, and
+// relaunches that game. Before this was per-game, pressing the update
+// hotkey inside KOTOR 2 waited for a KOTOR 1 that was not running (so it
+// waited for nothing), updated the KOTOR 1 install, and launched KOTOR 1.
+//
+// Steam app IDs verified from steamdb.info: 32370 "Star Wars: Knights of
+// the Old Republic", 208580 "STAR WARS Knights of the Old Republic II".
+struct GameHandoff {
+    const char* exeName;
+    const char* steamAppId;
+    const char* installerGameArg;   // --game value the installer parses
+};
+
+GameHandoff CurrentHandoff() {
+    if (acc::game::IsKotor2()) {
+        return { "swkotor2.exe", "208580", "k2" };
+    }
+    return { "swkotor.exe", "32370", "k1" };
+}
 
 // Timeouts in ms. The check is quick (a few hundred bytes); the download
 // is the multi-MB installer.
@@ -411,7 +430,8 @@ bool WriteHandoffBatch(const char* installerPath, char* batchPathOut, size_t out
     }
 
     // The bat lives at %TEMP%\KotorAccessibility_AutoUpdate.bat. It:
-    //   1) Polls tasklist until swkotor.exe has exited (2 s cycle).
+    //   1) Polls tasklist until the game we are injected into has exited
+    //      (2 s cycle).
     //   2) start /wait — runs the installer and waits for it to finish.
     //      The installer's app.manifest demands elevation; Windows shows
     //      a UAC prompt at this point. After acceptance the installer
@@ -422,15 +442,19 @@ bool WriteHandoffBatch(const char* installerPath, char* batchPathOut, size_t out
     //   4) Self-deletes via `(goto) 2>nul & del "%~f0"` — the parens
     //      trick lets cmd unmap the script before delete so the deletion
     //      doesn't race with cmd's read-ahead.
+    const GameHandoff game = CurrentHandoff();
+
     fprintf(fp, "@echo off\r\n");
     fprintf(fp, ":wait\r\n");
-    fprintf(fp, "tasklist /fi \"imagename eq swkotor.exe\" 2>nul | find /i \"swkotor.exe\" >nul\r\n");
+    fprintf(fp, "tasklist /fi \"imagename eq %s\" 2>nul | find /i \"%s\" >nul\r\n",
+            game.exeName, game.exeName);
     fprintf(fp, "if not errorlevel 1 (\r\n");
     fprintf(fp, "    timeout /t 2 /nobreak >nul\r\n");
     fprintf(fp, "    goto wait\r\n");
     fprintf(fp, ")\r\n");
-    fprintf(fp, "start \"\" /wait \"%s\" --auto-update\r\n", installerPath);
-    fprintf(fp, "start \"\" \"steam://rungameid/%s\"\r\n", kSteamAppId);
+    fprintf(fp, "start \"\" /wait \"%s\" --auto-update --game %s\r\n",
+            installerPath, game.installerGameArg);
+    fprintf(fp, "start \"\" \"steam://rungameid/%s\"\r\n", game.steamAppId);
     fprintf(fp, "del \"%s\" >nul 2>&1\r\n", installerPath);
     fprintf(fp, "(goto) 2>nul & del \"%%~f0\"\r\n");
     fclose(fp);

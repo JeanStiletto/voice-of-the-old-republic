@@ -14,8 +14,17 @@ namespace KotorAccessibilityInstaller
         /// <summary>User cancelled the download; nothing to clean up or report.</summary>
         Cancelled,
 
-        /// <summary>Download or hash verification failed; installer exe deleted.</summary>
+        /// <summary>The download itself failed — network, or the scrape broke.</summary>
         DownloadFailed,
+
+        /// <summary>
+        /// Downloaded fine but the SHA-256 did not match the pin, so it was not
+        /// run and was deleted. Kept distinct from <see cref="DownloadFailed"/>
+        /// because it means something different and needs a different sentence:
+        /// nothing is broken, TSLRCM has almost certainly just shipped an update
+        /// this installer predates. <c>FailureReason</c> carries the hash we got.
+        /// </summary>
+        VerificationFailed,
 
         /// <summary>
         /// Downloaded + verified, but no KOTOR 2 path was known so no silent
@@ -62,6 +71,14 @@ namespace KotorAccessibilityInstaller
         private Button _cancelButton;
 
         private readonly string _k2GamePath;
+        /// <summary>
+        /// Installer exe supplied by the user via <see cref="ManualDownloadForm"/>,
+        /// or null for the normal download path. When set, the download and hash
+        /// steps are skipped: the user fetched this file themselves from the
+        /// official page, so their judgment stands in for the pin (see that
+        /// class for the reasoning).
+        /// </summary>
+        private readonly string _suppliedInstallerPath;
         private readonly CancellationTokenSource _cts = new CancellationTokenSource();
         private bool _finished;
         private bool _installPhase;
@@ -76,9 +93,14 @@ namespace KotorAccessibilityInstaller
         /// Detected KOTOR 2 install root, or null when detection failed — then
         /// the form stops after download + verify (<see cref="TslrcmOutcome.DownloadedOnly"/>).
         /// </param>
-        public TslrcmInstallForm(string k2GamePath)
+        /// <param name="suppliedInstallerPath">
+        /// A TSLRCM installer the user downloaded themselves. When non-null the
+        /// form goes straight to the silent install.
+        /// </param>
+        public TslrcmInstallForm(string k2GamePath, string suppliedInstallerPath = null)
         {
             _k2GamePath = k2GamePath;
+            _suppliedInstallerPath = suppliedInstallerPath;
             InitializeComponents();
             Shown += async (s, e) => await RunAsync();
             FormClosing += (s, e) =>
@@ -153,48 +175,67 @@ namespace KotorAccessibilityInstaller
 
         private async Task RunAsync()
         {
-            string dest = Path.Combine(Path.GetTempPath(), Config.TslrcmInstallerFileName);
+            string dest = _suppliedInstallerPath
+                          ?? Path.Combine(Path.GetTempPath(), Config.TslrcmInstallerFileName);
 
-            try
+            if (_suppliedInstallerPath != null)
             {
-                UpdateStatus(InstallerLocale.Get("K2Tslrcm_Downloading"), announce: true);
-
-                using (var ds = new DeadlyStreamClient())
-                {
-                    await ds.DownloadFileAsync(
-                        Config.TslrcmDownloadPageUrl, dest, OnProgress, _cts.Token);
-                }
-
-                UpdateStatus(InstallerLocale.Get("K2Tslrcm_Verifying"), announce: true);
-                string hash = await Task.Run(() => DeadlyStreamClient.ComputeSha256(dest));
-                if (!hash.Equals(Config.TslrcmInstallerSha256, StringComparison.OrdinalIgnoreCase))
-                {
-                    throw new InvalidOperationException(
-                        $"Downloaded file failed SHA-256 verification (got {hash}). " +
-                        "The upstream file may have been updated or replaced; " +
-                        "download manually or wait for an installer update.");
-                }
-                Logger.Info($"TSLRCM installer downloaded and verified: {dest}");
-                InstallerPath = dest;
+                // User-supplied: skip download AND hash. They fetched it from
+                // the official page themselves, which is the provenance the pin
+                // exists to substitute for — see ManualDownloadForm.
+                Logger.Info($"TSLRCM: using the user-supplied installer at {_suppliedInstallerPath}");
+                InstallerPath = _suppliedInstallerPath;
             }
-            catch (OperationCanceledException)
+            else
             {
-                Logger.Info("TSLRCM download cancelled");
-                TryDelete(dest);
-                Outcome = TslrcmOutcome.Cancelled;
-                _finished = true;
-                Close();
-                return;
-            }
-            catch (Exception ex)
-            {
-                Logger.Error("TSLRCM download failed", ex);
-                FailureReason = ex.Message;
-                TryDelete(dest);
-                Outcome = TslrcmOutcome.DownloadFailed;
-                _finished = true;
-                Close();
-                return;
+                try
+                {
+                    UpdateStatus(InstallerLocale.Get("K2Tslrcm_Downloading"), announce: true);
+
+                    using (var ds = new DeadlyStreamClient())
+                    {
+                        await ds.DownloadFileAsync(
+                            Config.TslrcmDownloadPageUrl, dest, OnProgress, _cts.Token);
+                    }
+
+                    UpdateStatus(InstallerLocale.Get("K2Tslrcm_Verifying"), announce: true);
+                    string hash = await Task.Run(() => DeadlyStreamClient.ComputeSha256(dest));
+                    if (!hash.Equals(Config.TslrcmInstallerSha256, StringComparison.OrdinalIgnoreCase))
+                    {
+                        // Reported separately from a download failure: this
+                        // almost always means TSLRCM shipped an update, not that
+                        // anything is broken, and the user gets a different
+                        // sentence and a working way forward.
+                        Logger.Warning($"TSLRCM hash mismatch: expected {Config.TslrcmInstallerSha256}, got {hash}");
+                        FailureReason = hash;
+                        TryDelete(dest);
+                        Outcome = TslrcmOutcome.VerificationFailed;
+                        _finished = true;
+                        Close();
+                        return;
+                    }
+                    Logger.Info($"TSLRCM installer downloaded and verified: {dest}");
+                    InstallerPath = dest;
+                }
+                catch (OperationCanceledException)
+                {
+                    Logger.Info("TSLRCM download cancelled");
+                    TryDelete(dest);
+                    Outcome = TslrcmOutcome.Cancelled;
+                    _finished = true;
+                    Close();
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error("TSLRCM download failed", ex);
+                    FailureReason = ex.Message;
+                    TryDelete(dest);
+                    Outcome = TslrcmOutcome.DownloadFailed;
+                    _finished = true;
+                    Close();
+                    return;
+                }
             }
 
             if (_k2GamePath == null)

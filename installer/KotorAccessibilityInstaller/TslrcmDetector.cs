@@ -9,12 +9,17 @@ namespace KotorAccessibilityInstaller
     /// Mod ..."). Scans both registry views and both hives because Inno's
     /// PrivilegesRequired setting decides where the key lands.
     ///
-    /// Used to gate K2CP / Tweak Pack ordering: they must install AFTER
-    /// TSLRCM. A miss is treated as "not installed" — the gate then skips the
-    /// dependent mods rather than risking the wrong order. UNVERIFIED
-    /// assumption (flagged for the first live test): that TSLRCM 1.8.6's Inno
-    /// script does register an uninstall entry; if it turns out not to, switch
-    /// detection to a file marker in the game folder.
+    /// <para>Used to gate K2CP / Tweak Pack ordering: they must install AFTER
+    /// TSLRCM.</para>
+    ///
+    /// <para>UNVERIFIED assumption, still: that TSLRCM 1.8.6's Inno script
+    /// registers an uninstall entry at all. Nobody has watched a real 1.8.6 run
+    /// do it. The caller therefore does NOT treat a miss here as proof of
+    /// absence — <see cref="InstallFlow"/> prefers the silent installer's own
+    /// dialog.tlk fingerprint verification, and asks the user when neither
+    /// signal is available. Without that, a wrong assumption here would
+    /// silently skip K2CP and the Tweak Pack on every install: no error, no
+    /// prompt, two mods quietly missing.</para>
     /// </summary>
     public static class TslrcmDetector
     {

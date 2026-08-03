@@ -13,6 +13,7 @@ namespace KotorAccessibilityInstaller
     public class MainForm : Form
     {
         private string _gamePath;
+        private readonly GameTarget _target;
         private readonly bool _updateOnly;
         private readonly bool _headless;
         private readonly string _language;
@@ -31,8 +32,9 @@ namespace KotorAccessibilityInstaller
         private CheckBox _launchCheckBox;
         private CheckBox _readmeCheckBox;
 
-        public MainForm(string detectedGamePath, bool updateOnly = false, string language = null, ModSelection modSelection = null, string localKpatchPath = null, bool headless = false)
+        public MainForm(GameTarget target, string detectedGamePath, bool updateOnly = false, string language = null, ModSelection modSelection = null, string localKpatchPath = null, bool headless = false)
         {
+            _target = target;
             _gamePath = detectedGamePath;
             _updateOnly = updateOnly;
             _headless = headless;
@@ -42,7 +44,7 @@ namespace KotorAccessibilityInstaller
             _modSelection = modSelection;
             _localKpatchPath = localKpatchPath;
             InitializeComponents();
-            Logger.Info($"MainForm initialized (updateOnly: {updateOnly}, headless: {headless}, language: {language ?? "none"}, modSelection: {modSelection?.ToString() ?? "none"}, localKpatch: {localKpatchPath ?? "none"})");
+            Logger.Info($"MainForm initialized (game: {target.Id}, updateOnly: {updateOnly}, headless: {headless}, language: {language ?? "none"}, modSelection: {modSelection?.ToString() ?? "none"}, localKpatch: {localKpatchPath ?? "none"})");
         }
 
         // In headless mode (--auto-update from the in-game updater), auto-trigger
@@ -62,7 +64,13 @@ namespace KotorAccessibilityInstaller
 
         private void InitializeComponents()
         {
-            Text = InstallerLocale.Get(_updateOnly ? "Main_TitleUpdater" : "Main_TitleInstaller");
+            // The game name rides the title rather than getting its own localized
+            // string: with both games selected this form runs twice, and "which
+            // one am I looking at" has to be the first thing a screen reader says.
+            string title = InstallerLocale.Get(_updateOnly ? "Main_TitleUpdater" : "Main_TitleInstaller")
+                           + " — " + _target.DisplayName;
+
+            Text = title;
             Size = new Size(520, 360);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
@@ -70,7 +78,7 @@ namespace KotorAccessibilityInstaller
 
             _titleLabel = new Label
             {
-                Text = InstallerLocale.Get(_updateOnly ? "Main_TitleUpdater" : "Main_TitleInstaller"),
+                Text = title,
                 Font = new Font(Font.FontFamily, 14, FontStyle.Bold),
                 Location = new Point(20, 20),
                 Size = new Size(470, 30),
@@ -94,7 +102,7 @@ namespace KotorAccessibilityInstaller
 
             _pathTextBox = new TextBox
             {
-                Text = _gamePath ?? GamePathDetector.DefaultGamePath,
+                Text = _gamePath ?? string.Empty,
                 Location = new Point(20, 155),
                 Size = new Size(370, 25),
                 ReadOnly = true
@@ -198,7 +206,7 @@ namespace KotorAccessibilityInstaller
 
         private void ValidatePath()
         {
-            bool isValid = GamePathDetector.IsValidGamePath(_pathTextBox.Text);
+            bool isValid = GamePathDetector.IsValidGamePath(_target, _pathTextBox.Text);
             bool wasEnabled = _installButton.Enabled;
             _installButton.Enabled = isValid;
 
@@ -263,7 +271,7 @@ namespace KotorAccessibilityInstaller
             string downloadedKpatch = null;
             string latestVersion = null;
             string holoPatcherPath = null;
-            var installationManager = new InstallationManager(_gamePath);
+            var installationManager = new InstallationManager(_target, _gamePath);
 
             using var githubClient = new GitHubClient();
 
@@ -390,7 +398,7 @@ namespace KotorAccessibilityInstaller
                 // stability boost.
                 UpdateStatus(InstallerLocale.Get("Main_StatusTweakingIni"));
                 UpdateProgress(87);
-                var iniResult = await Task.Run(() => SwkotorIniTweaker.ApplyAccessibilityDefaults(_gamePath));
+                var iniResult = await Task.Run(() => SwkotorIniTweaker.ApplyAccessibilityDefaults(_target, _gamePath));
                 if (!iniResult.Success)
                 {
                     Logger.Warning($"Stability tweaks failed: {iniResult.Error}");
@@ -401,7 +409,7 @@ namespace KotorAccessibilityInstaller
                 // we never clobber bindings a returning player has customised.
                 if (!_updateOnly)
                 {
-                    var keymapResult = await Task.Run(() => SwkotorIniTweaker.ApplyKeymapDefaults(_gamePath));
+                    var keymapResult = await Task.Run(() => SwkotorIniTweaker.ApplyKeymapDefaults(_target, _gamePath));
                     if (!keymapResult.Success)
                     {
                         Logger.Warning($"Keymap defaults failed: {keymapResult.Error}");
@@ -418,7 +426,7 @@ namespace KotorAccessibilityInstaller
                 // IntroMovieDisabler doc comment for the engine path split.
                 UpdateStatus(InstallerLocale.Get("Main_StatusDisablingIntros"));
                 UpdateProgress(88);
-                var introResult = await Task.Run(() => IntroMovieDisabler.DisableIntros(_gamePath));
+                var introResult = await Task.Run(() => IntroMovieDisabler.DisableIntros(_target, _gamePath));
                 if (!introResult.Success)
                 {
                     Logger.Warning($"Intro disable failed: {introResult.Error}");
@@ -430,14 +438,12 @@ namespace KotorAccessibilityInstaller
                 var modResults = new List<ModInstallResult>();
                 if (_modSelection != null && AnyOptionalSelected(_modSelection))
                 {
-                    // HoloPatcher download — only fetch when at least one optional mod
-                    // is selected. Same GitHub-release flow as the .kpatch download
-                    // above; cached in temp for this install run only.
+                    // HoloPatcher is bundled, so this only unpacks it — and only
+                    // when at least one optional mod actually needs it.
                     UpdateStatus(InstallerLocale.Get("Main_StatusDownloadingHoloPatcher"));
                     UpdateProgress(88);
-                    holoPatcherPath = await HoloPatcherProvider.DownloadAsync(
-                        githubClient,
-                        p => UpdateProgress(88 + (p * 2 / 100))); // 88..90 slot for HoloPatcher download
+                    holoPatcherPath = await HoloPatcherProvider.ProvideAsync(
+                        p => UpdateProgress(88 + (p * 2 / 100))); // 88..90 slot
 
                     UpdateStatus(InstallerLocale.Get("Main_StatusInstallingMods"));
                     UpdateProgress(90);
@@ -456,7 +462,7 @@ namespace KotorAccessibilityInstaller
                 UpdateStatus(InstallerLocale.Get("Main_StatusRegistering"));
                 UpdateProgress(95);
                 string registeredVersion = latestVersion ?? "1.0.0";
-                RegistryManager.Register(_gamePath, registeredVersion, uninstallerPath);
+                RegistryManager.Register(_target, _gamePath, registeredVersion, uninstallerPath);
 
                 UpdateProgress(100);
                 UpdateStatus(InstallerLocale.Get(_updateOnly ? "Main_StatusUpdateComplete" : "Main_StatusInstallComplete"));
@@ -622,22 +628,22 @@ namespace KotorAccessibilityInstaller
         {
             try
             {
-                string exePath = Path.Combine(_gamePath, GamePathDetector.GameExeName);
+                string exePath = Path.Combine(_gamePath, _target.ExeName);
                 if (!File.Exists(exePath)) return;
 
-                // steam://run/32370 launches whatever copy Steam has registered
-                // for KOTOR, which is NOT necessarily _gamePath — GoG installs,
+                // steam://run/<appid> launches whatever copy Steam has registered
+                // for the game, which is NOT necessarily _gamePath — GoG installs,
                 // CD re-packs, manually-relocated Steam folders, and any
                 // user-specified custom path are unknown to Steam. Only take
                 // the steam:// route when _gamePath matches Steam's registered
                 // install (then we get the overlay, cloud saves, and a non-
                 // elevated launch). Otherwise launch the patched exe directly.
-                bool useSteamUrl = GamePathDetector.IsSteamPath(_gamePath);
-                Logger.Info($"Launching KOTOR: {exePath} (steam-route={useSteamUrl})");
+                bool useSteamUrl = GamePathDetector.IsSteamPath(_target, _gamePath);
+                Logger.Info($"Launching {_target.DisplayName}: {exePath} (steam-route={useSteamUrl})");
 
                 if (useSteamUrl)
                 {
-                    var psi = new ProcessStartInfo("steam://run/32370") { UseShellExecute = true };
+                    var psi = new ProcessStartInfo($"steam://run/{_target.SteamAppId}") { UseShellExecute = true };
                     try
                     {
                         Process.Start(psi);
@@ -645,7 +651,7 @@ namespace KotorAccessibilityInstaller
                     }
                     catch (Exception steamEx)
                     {
-                        Logger.Warning($"Could not launch via steam:// URL ({steamEx.Message}); falling back to swkotor.exe");
+                        Logger.Warning($"Could not launch via steam:// URL ({steamEx.Message}); falling back to {_target.ExeName}");
                     }
                 }
 
@@ -653,7 +659,7 @@ namespace KotorAccessibilityInstaller
             }
             catch (Exception ex)
             {
-                Logger.Error("Failed to launch KOTOR", ex);
+                Logger.Error($"Failed to launch {_target.DisplayName}", ex);
             }
         }
     }

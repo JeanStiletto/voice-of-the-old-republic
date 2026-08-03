@@ -31,14 +31,23 @@ namespace KotorAccessibilityInstaller.ModInstallers
         /// Pipeline for a KOTOR 2 install directory, run by
         /// <see cref="Kotor2ModsInstallForm"/> AFTER the TSLRCM step: the
         /// caller gates on TSLRCM presence (installed this run or detected)
-        /// so the community-mandated order TSLRCM → K2CP → Tweak Pack holds.
+        /// so TSLRCM is always first.
+        ///
+        /// <para>Order after that is TSLRCM → Tweak Pack → K2CP, which is the
+        /// order the kotor.neocities.org build documents. It contradicts K2CP's
+        /// own README ("before anything else, except TSLRCM"), and we follow the
+        /// community build: it is the sequence people actually run end to end
+        /// and report breakage against, whereas the README describes K2CP in
+        /// isolation and cannot know what the Tweak Pack does to the same
+        /// files. Both mods patch overlapping .dlg and .2da resources, so this
+        /// is a real ordering, not a formality — K2CP's edits land on top.</para>
         /// </summary>
         public static IReadOnlyList<IModInstaller> BuildKotor2Pipeline()
         {
             return new List<IModInstaller>
             {
-                new K2cpInstaller(),
                 new TweakPackInstaller(),
+                new K2cpInstaller(),
             };
         }
 
@@ -53,7 +62,8 @@ namespace KotorAccessibilityInstaller.ModInstallers
             string gameDir,
             string holoPatcherExePath,
             Action<int> overallProgress,
-            Action<string> statusUpdate)
+            Action<string> statusUpdate,
+            Func<ManualDownloadRequest, string> askForManualDownload = null)
         {
             var results = new List<ModInstallResult>();
             if (selection == null)
@@ -103,6 +113,7 @@ namespace KotorAccessibilityInstaller.ModInstallers
                         overallProgress?.Invoke(slotStart + (clamped * slotWidth / 100));
                     },
                     StatusUpdate = statusUpdate,
+                    AskForManualDownload = askForManualDownload,
                 };
 
                 var result = await installer.InstallAsync(ctx);

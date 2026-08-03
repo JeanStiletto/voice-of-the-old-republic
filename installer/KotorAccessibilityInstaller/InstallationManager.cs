@@ -16,6 +16,7 @@ namespace KotorAccessibilityInstaller
     public class InstallationManager
     {
         private readonly string _gameDir;
+        private readonly GameTarget _target;
 
         // Names of resources embedded in the installer assembly.
         // The KPatchCore.PatchApplicator expects `AddressDatabases/` next to the
@@ -33,8 +34,9 @@ namespace KotorAccessibilityInstaller
         private static readonly string[] OverrideAssets = { "acc_boost.wav", "acc_turret_loop.wav", "acc_turret_lock.wav", "acc_turret_tick.wav", "acc_steer_ok.wav" };
         public static IReadOnlyList<string> OverrideAssetNames => OverrideAssets;
 
-        public InstallationManager(string gameDir)
+        public InstallationManager(GameTarget target, string gameDir)
         {
+            _target = target ?? throw new ArgumentNullException(nameof(target));
             _gameDir = gameDir ?? throw new ArgumentNullException(nameof(gameDir));
         }
 
@@ -75,15 +77,14 @@ namespace KotorAccessibilityInstaller
             // inside ApplyKPatch so that relative lookup hits the dir we just
             // populated above.
 
-            // Stage the downloaded accessibility .kpatch alongside the bundled
-            // widescreen .kpatch. PatchRepository picks both up; ApplyKPatch
-            // installs both in one PatchApplicator call.
+            // Stage the downloaded accessibility .kpatch alongside this game's
+            // bundled third-party patches. PatchRepository picks them all up;
+            // ApplyKPatch installs the eligible ones in one PatchApplicator call.
             string stagedKpatch = Path.Combine(patchesDir, Path.GetFileName(kpatchSourcePath));
             File.Copy(kpatchSourcePath, stagedKpatch, overwrite: true);
 
-            ExtractEmbeddedResource(
-                Config.WidescreenKPatchAssetName,
-                Path.Combine(patchesDir, Config.WidescreenKPatchAssetName));
+            foreach (var (assetName, _) in _target.BundledPatches)
+                ExtractEmbeddedResource(assetName, Path.Combine(patchesDir, assetName));
 
             Logger.Info($"Staged patcher runtime into: {stagingRoot}");
             return stagingRoot;
@@ -95,7 +96,7 @@ namespace KotorAccessibilityInstaller
         /// </summary>
         public PatchApplicator.InstallResult ApplyKPatch(string stagingRoot)
         {
-            string gameExe = Path.Combine(_gameDir, "swkotor.exe");
+            string gameExe = Path.Combine(_gameDir, _target.ExeName);
             string patcherDll = Path.Combine(stagingRoot, "bin", "KotorPatcher.dll");
             string patchesDir = Path.Combine(stagingRoot, "patches");
 
@@ -112,25 +113,30 @@ namespace KotorAccessibilityInstaller
 
             var patchIds = new List<string> { Config.PatchId };
 
-            // Widescreen is optional and only ships hashes for the three vanilla
-            // 1.0.3 builds. An install is one transaction, so including it on an
-            // executable it does not declare fails the shared version gate and
-            // takes our patch down with it -- which is how a Russian-translation
-            // install (its own relinked executable) ended up unable to install
-            // the mod at all. Include it only when this executable is one it
-            // claims, and carry on without it otherwise: widescreen is a
-            // nice-to-have, the accessibility patch is the point.
+            // The bundled patches are optional and each ships hashes for only the
+            // builds it was made for (KOTOR 1's widescreen covers the three vanilla
+            // 1.0.3 builds; KOTOR 2's two cover the Aspyr Steam and GOG builds). An
+            // install is one transaction, so including one on an executable it does
+            // not declare fails the shared version gate and takes our patch down
+            // with it -- which is how a Russian-translation install (its own
+            // relinked executable) ended up unable to install the mod at all.
+            // Include each only when this executable is one it claims, and carry on
+            // without it otherwise: these are nice-to-haves, the accessibility patch
+            // is the point.
             //
-            // Deliberately NOT solved with a version-mismatch override: widescreen
-            // writes to the executable, and forcing that onto a build whose
-            // addresses it was never built for is the one thing worth refusing.
-            if (IsWidescreenSupported(repository, gameExe, out string widescreenSkipReason))
+            // The same gate also keeps re-installs idempotent. These patches rewrite
+            // the executable, so once applied its SHA-256 is no longer a declared
+            // build and the patch is skipped rather than force-applied over itself.
+            //
+            // Deliberately NOT solved with a version-mismatch override: they write
+            // to the executable, and forcing that onto a build whose addresses they
+            // were never built for is the one thing worth refusing.
+            foreach (var (_, patchId) in _target.BundledPatches)
             {
-                patchIds.Add(Config.WidescreenPatchId);
-            }
-            else
-            {
-                Logger.Info($"Skipping widescreen patch: {widescreenSkipReason}");
+                if (IsPatchSupportedForExe(repository, patchId, gameExe, out string skipReason))
+                    patchIds.Add(patchId);
+                else
+                    Logger.Info($"Skipping bundled patch '{patchId}': {skipReason}");
             }
 
             Logger.Info($"Installing [{string.Join(", ", patchIds)}] into {gameExe}...");
@@ -158,9 +164,6 @@ namespace KotorAccessibilityInstaller
                 try { Directory.SetCurrentDirectory(previousCwd); } catch { /* best-effort */ }
             }
         }
-
-        private static bool IsWidescreenSupported(PatchRepository repository, string gameExe, out string reason)
-            => IsPatchSupportedForExe(repository, Config.WidescreenPatchId, gameExe, out reason);
 
         /// <summary>
         /// Whether a staged patch declares support for this exact executable.
@@ -200,92 +203,6 @@ namespace KotorAccessibilityInstaller
             reason = $"this {Path.GetFileName(gameExe)} (SHA-256 {hash.Substring(0, 16)}...) is not one of the " +
                      $"{entry.Data.Manifest.SupportedVersions.Count} builds it supports";
             return false;
-        }
-
-        /// <summary>
-        /// Applies Lane's static engine patches for KOTOR 2 — 4 GB Large
-        /// Address Aware flag + borderless fullscreen — to <c>swkotor2.exe</c>.
-        /// The instance must have been constructed with the KOTOR 2 install
-        /// root. Both patches are pure static byte patches with no DLL
-        /// payload, so no patcher runtime, loader, or address database lands
-        /// in the KOTOR 2 folder: the applicator writes the bytes and emits a
-        /// patch_config.toml that is inert without a loader. No backup — a
-        /// Steam "Verify integrity of game files" restores the vanilla exe.
-        ///
-        /// Returns null with <paramref name="skipReason"/> set when the
-        /// current exe's SHA-256 is not one the patch manifests declare —
-        /// which covers both "already patched by a previous run" (re-running
-        /// stays idempotent instead of failing the original-bytes check) and
-        /// genuinely unknown builds (3C-FD'd, repacked, future Aspyr update).
-        /// </summary>
-        public PatchApplicator.InstallResult ApplyKotor2StaticPatches(out string skipReason)
-        {
-            skipReason = null;
-            string gameExe = Path.Combine(_gameDir, GamePathDetector.Kotor2ExeName);
-            string stagingRoot = Path.Combine(Path.GetTempPath(), $"kotor_acc_k2patch_{Guid.NewGuid():N}");
-
-            try
-            {
-                string patchesDir = Path.Combine(stagingRoot, "patches");
-                Directory.CreateDirectory(patchesDir);
-                // PatchApplicator hard-fails when AddressDatabases/ is missing
-                // next to the executing assembly (which resolves relative to
-                // CWD in a single-file app — see StagePatcherRuntime). An empty
-                // dir satisfies it: no db matches the K2 SHA and the applicator
-                // treats that as skippable for literal-address static hooks.
-                Directory.CreateDirectory(Path.Combine(stagingRoot, "AddressDatabases"));
-
-                ExtractEmbeddedResource(Config.K2FourGbKPatchAssetName,
-                    Path.Combine(patchesDir, Config.K2FourGbKPatchAssetName));
-                ExtractEmbeddedResource(Config.K2BorderlessKPatchAssetName,
-                    Path.Combine(patchesDir, Config.K2BorderlessKPatchAssetName));
-
-                var repository = new PatchRepository(patchesDir);
-                var scanResult = repository.ScanPatches();
-                if (!scanResult.Success)
-                {
-                    return new PatchApplicator.InstallResult
-                    {
-                        Success = false,
-                        Error = $"Failed to scan staged K2 patches dir: {scanResult.Error}"
-                    };
-                }
-
-                // Same hash gate as the K1 widescreen patch: only apply to an
-                // exe the manifests declare. Both manifests list the same two
-                // K2 hashes (Steam Aspyr + GOG Aspyr), so checking one is
-                // checking both.
-                if (!IsPatchSupportedForExe(repository, Config.K2FourGbPatchId, gameExe, out skipReason))
-                {
-                    Logger.Info($"Skipping KOTOR 2 engine patches: {skipReason}");
-                    return null;
-                }
-
-                Logger.Info($"Installing [{Config.K2FourGbPatchId}, {Config.K2BorderlessPatchId}] into {gameExe}...");
-                var applicator = new PatchApplicator(repository);
-
-                string previousCwd = Directory.GetCurrentDirectory();
-                try
-                {
-                    Directory.SetCurrentDirectory(stagingRoot);
-                    return applicator.InstallPatches(new PatchApplicator.InstallOptions
-                    {
-                        GameExePath = gameExe,
-                        PatchIds = new List<string> { Config.K2FourGbPatchId, Config.K2BorderlessPatchId },
-                        // Static-only install: no runtime DLL to deploy.
-                        PatcherDllPath = null,
-                        CreateBackup = false
-                    });
-                }
-                finally
-                {
-                    try { Directory.SetCurrentDirectory(previousCwd); } catch { /* best-effort */ }
-                }
-            }
-            finally
-            {
-                CleanupStaging(stagingRoot);
-            }
         }
 
         /// <summary>
@@ -416,7 +333,7 @@ namespace KotorAccessibilityInstaller
             bool fromExisting = File.Exists(target);
             byte[] source = fromExisting
                 ? File.ReadAllBytes(target)
-                : ReadEmbeddedResourceBytes("prioritygroups.2da");
+                : ReadEmbeddedResourceBytes(_target.VanillaPriorityGroupResource);
 
             byte[] result = PriorityGroup2da.AppendAccGroup(source);
             if (ReferenceEquals(result, source))

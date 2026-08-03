@@ -6,42 +6,32 @@ using System.Text;
 namespace KotorAccessibilityInstaller
 {
     /// <summary>
-    /// In-place editor for <c>swkotor.ini</c> that applies the community-recommended
+    /// In-place editor for the game's ini that applies the community-recommended
     /// stability tweaks alongside our screen-reader compatibility setting, and (on a
     /// full install only) the mod's recommended movement keybinds.
     ///
-    /// Targets the <c>[Graphics Options]</c> and <c>[Keymapping]</c> sections.
     /// Preserves all other sections, keys, ordering, comments, and trailing
     /// whitespace. Idempotent — re-running the installer doesn't double-up.
     ///
-    /// Stability tweaks (sourced from the neocities full build's "Misc. Basegame
+    /// Which keys land where is per-game and lives in <see cref="GameTarget.IniDefaults"/>;
+    /// KOTOR 2 spells one of them differently and needs another in two sections.
+    /// Stability rationale (sourced from the neocities full build's "Misc. Basegame
     /// Issues &amp; Fixes" section and our own accessibility-investigation.md):
     /// <list type="bullet">
     ///   <item><c>V-Sync=1</c> — fixes "character stuck after combat" engine bug on 60 Hz monitors</item>
-    ///   <item><c>Frame Buffer=0</c> — fixes "crash after character creation" + occasional loadscreen crashes</item>
-    ///   <item><c>Disable Vertex Buffer Objects=1</c> — stability tweak for some GPU/driver combinations</item>
+    ///   <item><c>Frame Buffer=0</c> — fixes "crash after character creation" + occasional loadscreen crashes (KOTOR 1 only; see <see cref="GameTarget.Kotor1"/>)</item>
+    ///   <item>vertex-buffer objects disabled — stability tweak for some GPU/driver combinations</item>
     ///   <item><c>FullScreen=0</c> — screen-reader compatibility (exclusive fullscreen breaks NVDA/JAWS)</item>
+    ///   <item><c>AllowWindowedMode=1</c> — required by Lane's BorderlessFullscreen patch (KOTOR 2)</item>
     /// </list>
     /// </summary>
     public static class SwkotorIniTweaker
     {
-        private const string IniFileName = "swkotor.ini";
-        private const string Kotor2IniFileName = "swkotor2.ini";
-        private const string GraphicsSectionHeader = "[Graphics Options]";
         private const string KeymappingSectionHeader = "[Keymapping]";
         private const string SoundSectionHeader = "[Sound Options]";
 
-        // Exact key spellings the engine reads. Case-sensitive on the engine side.
-        private static readonly (string Key, string Value)[] Tweaks =
-        {
-            ("V-Sync", "1"),
-            ("Frame Buffer", "0"),
-            ("Disable Vertex Buffer Objects", "1"),
-            ("FullScreen", "0"),
-        };
-
         // Movement-keybind defaults for mod users. Values are the engine's
-        // InputIndices (the decimal codes swkotor.ini stores), and they encode the
+        // InputIndices (the decimal codes the ini stores), and they encode the
         // *physical* key position — so 76 is the bottom-left letter key (labelled Y
         // on a German keyboard, Z on a US keyboard) regardless of layout.
         //
@@ -52,6 +42,10 @@ namespace KotorAccessibilityInstaller
         //   Action284 = CameraRotateLeft/Right    = camera turn      (vanilla A/D)
         // Action283 (MGActionLeft/Right = minigame steering) is left on A/D so the
         // swoop/turret minigames are unaffected.
+        //
+        // Shared by both games: KOTOR 2's keymap.2da carries the same four rows
+        // under the same ids with the same vanilla defaults (action281a/b = Z/C,
+        // action284a/b = A/D, action283a/b = A/D), so one table serves both.
         private static readonly (string Key, string Value)[] KeymapTweaks =
         {
             ("Action281A", "51"),  // strafe left  = A
@@ -70,40 +64,54 @@ namespace KotorAccessibilityInstaller
             public string IniPath { get; init; }
         }
 
-        // KOTOR 2 settings required by Lane's BorderlessFullscreen patch (its
-        // manifest: "Requires AllowWindowedMode=1 and Fullscreen=0") — and
-        // windowed mode is our screen-reader baseline on KOTOR 1 too
-        // (exclusive fullscreen breaks NVDA/JAWS focus).
-        private static readonly (string Key, string Value)[] Kotor2Tweaks =
+        /// <summary>
+        /// Apply <paramref name="target"/>'s stability + accessibility defaults to
+        /// its ini. Missing keys are appended to their section; a missing section is
+        /// appended at end of file. Entries are grouped by section and each section
+        /// is edited in one pass, so a target that touches two sections still reads
+        /// and writes the file once per section rather than per key.
+        ///
+        /// The per-section results are folded into one: success only if every
+        /// section succeeded, with the counts summed and the first error kept.
+        /// </summary>
+        public static Result ApplyAccessibilityDefaults(GameTarget target, string gameDir)
         {
-            ("AllowWindowedMode", "1"),
-            ("FullScreen", "0"),
+            var bySection = new Dictionary<string, List<(string Key, string Value)>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (section, key, value) in target.IniDefaults)
+            {
+                if (!bySection.TryGetValue(section, out var list))
+                    bySection[section] = list = new List<(string, string)>();
+                list.Add((key, value));
+            }
+
+            Result folded = null;
+            foreach (var kvp in bySection)
+            {
+                var r = ApplySectionPairs(gameDir, target.IniFileName, kvp.Key, kvp.Value.ToArray());
+                folded = folded == null ? r : Combine(folded, r);
+            }
+
+            return folded ?? new Result { Success = true, IniPath = Path.Combine(gameDir, target.IniFileName) };
+        }
+
+        private static Result Combine(Result a, Result b) => new Result
+        {
+            Success = a.Success && b.Success,
+            Error = a.Error ?? b.Error,
+            Changed = a.Changed + b.Changed,
+            AlreadyCorrect = a.AlreadyCorrect + b.AlreadyCorrect,
+            Added = a.Added + b.Added,
+            IniPath = a.IniPath,
         };
 
         /// <summary>
-        /// Apply the stability tweaks to <c>&lt;gameDir&gt;/swkotor.ini</c>. Reads the
-        /// file, modifies the relevant keys inside <c>[Graphics Options]</c>, writes
-        /// it back. Missing keys are appended to the section. Missing section is
-        /// appended at end of file.
-        /// </summary>
-        public static Result ApplyAccessibilityDefaults(string gameDir)
-            => ApplySectionPairs(gameDir, IniFileName, GraphicsSectionHeader, Tweaks);
-
-        /// <summary>
         /// Apply the mod's movement keybinds (strafe on A/D, camera turn on Y/C) to
-        /// the <c>[Keymapping]</c> section of <c>&lt;gameDir&gt;/swkotor.ini</c>.
+        /// the <c>[Keymapping]</c> section of the target's ini.
         /// Full-install only — the caller must skip this on the update path so a
         /// returning player's customised bindings are never overwritten.
         /// </summary>
-        public static Result ApplyKeymapDefaults(string gameDir)
-            => ApplySectionPairs(gameDir, IniFileName, KeymappingSectionHeader, KeymapTweaks);
-
-        /// <summary>
-        /// Apply the windowed-mode settings the BorderlessFullscreen patch needs
-        /// to <c>&lt;k2GameDir&gt;/swkotor2.ini</c>.
-        /// </summary>
-        public static Result ApplyKotor2WindowedDefaults(string k2GameDir)
-            => ApplySectionPairs(k2GameDir, Kotor2IniFileName, GraphicsSectionHeader, Kotor2Tweaks);
+        public static Result ApplyKeymapDefaults(GameTarget target, string gameDir)
+            => ApplySectionPairs(gameDir, target.IniFileName, KeymappingSectionHeader, KeymapTweaks);
 
         /// <summary>
         /// Set <c>EAX</c> under <c>[Sound Options]</c> to 1 or 0. Drives the
@@ -114,8 +122,13 @@ namespace KotorAccessibilityInstaller
         /// defaults, which is why it takes a parameter. SpatialAudioManager used
         /// to carry its own copy of the section-walk for this one key.
         /// </summary>
+        /// <remarks>
+        /// KOTOR 1 only: dsoal is not offered for KOTOR 2 (its audio stack is
+        /// Aspyr's rebuild and the pairing is unverified), so this deliberately
+        /// takes no target.
+        /// </remarks>
         public static Result ApplyEaxSetting(string gameDir, bool enable)
-            => ApplySectionPairs(gameDir, IniFileName, SoundSectionHeader,
+            => ApplySectionPairs(gameDir, GameTarget.Kotor1.IniFileName, SoundSectionHeader,
                                  new[] { ("EAX", enable ? "1" : "0") });
 
         /// <summary>
@@ -239,7 +252,7 @@ namespace KotorAccessibilityInstaller
             }
             catch (Exception ex)
             {
-                Logger.Error("Failed to apply stability tweaks to swkotor.ini", ex);
+                Logger.Error($"Failed to apply {sectionHeader} settings to {iniFileName}", ex);
                 return new Result
                 {
                     Success = false,

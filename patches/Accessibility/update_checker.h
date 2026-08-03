@@ -17,7 +17,7 @@
 //      HandleF5(), which either announces the current state or kicks the
 //      download task.
 //   4. On download success, writes a .bat to %TEMP% that:
-//        - waits for swkotor.exe to exit
+//        - waits for the game we are injected into to exit
 //        - launches the installer with `--auto-update` (app.manifest
 //          handles UAC elevation)
 //        - relaunches the game via Steam URL

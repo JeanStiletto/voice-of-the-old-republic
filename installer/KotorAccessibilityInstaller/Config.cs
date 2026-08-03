@@ -59,22 +59,33 @@ namespace KotorAccessibilityInstaller
         /// </summary>
         public const string UninstallerExeName = "VoiceOfTheOldRepublic_Uninstaller.exe";
 
+        // =====================================================================
+        // Third-party mod pins
+        // =====================================================================
+        // These now live in Resources/sources.json and are served by SourcePins,
+        // which reads the embedded copy and then lets the copy on the repo's
+        // main branch override it. That is what makes a pin refreshable by
+        // editing one file rather than cutting an installer release — see
+        // SourcePins for the full rationale and the trust note.
+        //
+        // The members below forward to SourcePins so the call sites did not all
+        // have to change. Edit sources.json, NOT these.
+
         // ---------------------------------------------------------------------
         // K1CP (KOTOR 1 Community Patch) — source pin
         // ---------------------------------------------------------------------
         // We pull from the GitHub repo's source tarball at a pinned commit SHA
         // rather than `master`. This avoids surprise regressions if K1CP cuts
-        // a bad commit between our releases; bumping requires editing this
-        // constant and re-cutting an installer release.
+        // a bad commit between our releases.
         //
-        // Current pin: 2026-02-09 commit, which IS the v1.10.1 release point
+        // Shipped pin: 2026-02-09 commit, which IS the v1.10.1 release point
         // (DeadlyStream uploaded 2 days later on 2026-02-11 with the same
         // tslpatchdata content). See docs/installer.md for the recipe.
 
-        public const string K1cpRepoOwner = "KOTORCommunityPatches";
-        public const string K1cpRepoName = "K1_Community_Patch";
-        public const string K1cpPinnedRef = "4778ae5e2f5facc2bb6449cf7ffa3720e35a5b0f";
-        public const string K1cpDisplayVersion = "v1.10.1";
+        public static string K1cpRepoOwner => SourcePins.K1cp.RepoOwner;
+        public static string K1cpRepoName => SourcePins.K1cp.RepoName;
+        public static string K1cpPinnedRef => SourcePins.K1cp.Ref;
+        public static string K1cpDisplayVersion => SourcePins.K1cp.DisplayVersion;
 
         // ---------------------------------------------------------------------
         // KOTOR 2 engine patches (Lane's static kpatches)
@@ -106,21 +117,20 @@ namespace KotorAccessibilityInstaller
         /// </summary>
         public const string Kotor2WorkshopAppId = "208580";
 
-        public const string TweakPackDownloadPageUrl =
-            "https://deadlystream.com/files/file/296-unofficial-tslrcm-tweak-pack/";
-        public const string TweakPackArchiveFileName = "tweakpack.rar";
-        public const string TweakPackDisplayVersion = "v1.3";
+        public static string TweakPackDownloadPageUrl => SourcePins.TweakPack.PageUrl;
+        public static string TweakPackArchiveFileName => SourcePins.TweakPack.FileName;
+        public static string TweakPackDisplayVersion => SourcePins.TweakPack.DisplayVersion;
 
         /// <summary>
-        /// SHA-256 of the Tweak Pack archive as downloaded 2026-07-27.
-        /// Same fail-closed rule as the TSLRCM pin: a changed upstream file is
-        /// not installed until this constant is bumped and re-verified.
+        /// SHA-256 of the Tweak Pack archive. Fail-closed: a changed upstream
+        /// file is not installed until this is re-verified and bumped in
+        /// sources.json. The user can still install it via the guided manual
+        /// download, where they supply the file themselves.
         /// </summary>
-        public const string TweakPackArchiveSha256 =
-            "E98C94D53DFCCADDF6753AA58662E1AFD1D6EBB0241F66C8000BA0FF3A2F13B5";
+        public static string TweakPackArchiveSha256 => SourcePins.TweakPack.Sha256;
 
         /// <summary>Archive size in bytes (progress fallback).</summary>
-        public const long TweakPackArchiveSizeBytes = 1366051;
+        public static long TweakPackArchiveSizeBytes => SourcePins.TweakPack.SizeBytes;
 
         // ---------------------------------------------------------------------
         // K2CP (KOTOR 2 Community Patch) — source pin
@@ -130,10 +140,10 @@ namespace KotorAccessibilityInstaller
         // the v1.6.2 DeadlyStream release (both 2025-09-26). Not yet installed by
         // any shipped flow — see K2cpInstaller for the activation gates.
 
-        public const string K2cpRepoOwner = "KOTORCommunityPatches";
-        public const string K2cpRepoName = "TSL_Community_Patch";
-        public const string K2cpPinnedRef = "4850a441368678ff72f3a173b33366c3c960d95e";
-        public const string K2cpDisplayVersion = "v1.6.2";
+        public static string K2cpRepoOwner => SourcePins.K2cp.RepoOwner;
+        public static string K2cpRepoName => SourcePins.K2cp.RepoName;
+        public static string K2cpPinnedRef => SourcePins.K2cp.Ref;
+        public static string K2cpDisplayVersion => SourcePins.K2cp.DisplayVersion;
 
         /// <summary>
         /// TSLRCM download page on DeadlyStream. TSLRCM has no auto-download
@@ -142,73 +152,62 @@ namespace KotorAccessibilityInstaller
         /// mirror exists the installer points the user at this page. The
         /// page's Download button serves the file to guests without an account.
         /// </summary>
-        public const string TslrcmDownloadPageUrl =
-            "https://deadlystream.com/files/file/578-tsl-restored-content-mod/";
+        public static string TslrcmDownloadPageUrl => SourcePins.Tslrcm.PageUrl;
 
         /// <summary>
-        /// Filename DeadlyStream serves for the TSLRCM 1.8.6 installer
+        /// Filename DeadlyStream serves for the TSLRCM installer
         /// (Content-Disposition on the download response), reused as the local
         /// temp filename.
         /// </summary>
-        public const string TslrcmInstallerFileName = "tslrcm2022.exe";
+        public static string TslrcmInstallerFileName => SourcePins.Tslrcm.FileName;
 
         /// <summary>
-        /// SHA-256 of the TSLRCM 1.8.6 installer exe as downloaded from
-        /// DeadlyStream on 2026-07-27. The scraped download is verified against
-        /// this before we run the exe — the file comes from a third-party site
-        /// over a scraped endpoint, so run nothing that doesn't match. If
-        /// TSLRCM ships an update, verification fails closed and the user is
-        /// pointed at the manual browser download; bump this constant (and
-        /// re-verify) to adopt the new file.
+        /// SHA-256 of the TSLRCM installer exe. The scraped download is verified
+        /// against this before we RUN the exe, elevated — the file comes from a
+        /// third-party site over a scraped endpoint with no human in the loop,
+        /// so nothing that doesn't match is executed. Never relax this to make a
+        /// download work.
+        ///
+        /// <para>If TSLRCM ships an update, verification fails closed and the
+        /// user is offered the guided manual download instead — which is safe
+        /// precisely because they fetch the file themselves. Adopt the new
+        /// version by re-hashing it in sources.json.</para>
         /// </summary>
-        public const string TslrcmInstallerSha256 =
-            "94C99C4807DA4B304DE6E0EFED1BE55E0F43D13CC5A274582ED3323AC0E2F1A6";
+        public static string TslrcmInstallerSha256 => SourcePins.Tslrcm.Sha256;
 
         /// <summary>
         /// Size of the TSLRCM installer in bytes (progress fallback when the
-        /// server omits Content-Length). Same capture as the hash above.
+        /// server omits Content-Length).
         /// </summary>
-        public const long TslrcmInstallerSizeBytes = 137947655;
+        public static long TslrcmInstallerSizeBytes => SourcePins.Tslrcm.SizeBytes;
 
         /// <summary>
         /// HoloPatcher binary filename used at install time to drive
-        /// TSLPatcher-style mod installs headlessly (K1CP and similar).
-        /// Extracted from <see cref="HoloPatcherAssetName"/> in the system
-        /// temp dir; cached for the install run only.
+        /// TSLPatcher-style mod installs headlessly (K1CP, K2CP, Tweak Pack).
+        /// Doubles as the embedded-resource name; staged for the install run
+        /// only.
         /// </summary>
         public const string HoloPatcherExeName = "HoloPatcher.exe";
 
         /// <summary>
-        /// Upstream GitHub repo whose releases hold the HoloPatcher Windows
-        /// binary. The canonical OpenKotOR/PyKotor repo (formerly
-        /// OldRepublicDevs/PyKotor) re-tagged v1.80-patcher in 2025 but
-        /// attached no binary assets, so we pull from NickHugi/PyKotor —
+        /// Provenance of the bundled HoloPatcher, kept for attribution and for
+        /// the licence's source-availability requirement. Not a download
+        /// location any more — the binary is embedded (see
+        /// <see cref="ModInstallers.HoloPatcherProvider"/> for why).
+        ///
+        /// <para>The canonical OpenKotOR/PyKotor repo (formerly
+        /// OldRepublicDevs/PyKotor) re-tagged v1.80-patcher in 2025 but attached
+        /// no binary assets, so the vendored build comes from NickHugi/PyKotor —
         /// the last upstream point with a real HoloPatcher_Windows_x64.zip.
+        /// Being on a fork's four-year-old release, with no manual fallback
+        /// available to the user, is exactly why it is bundled now.</para>
         /// </summary>
         public const string HoloPatcherRepositoryUrl = "https://github.com/NickHugi/PyKotor";
 
-        /// <summary>
-        /// Pinned release tag on <see cref="HoloPatcherRepositoryUrl"/>.
-        /// We pin (rather than resolving "latest") because that repo's
-        /// "latest" release is the Holocron Toolset, not HoloPatcher.
-        /// </summary>
+        /// <summary>Release tag the vendored binary was taken from.</summary>
         public const string HoloPatcherPinnedTag = "v1.60-patcher-beta4";
 
         /// <summary>Display version surfaced in logs/UI.</summary>
         public const string HoloPatcherDisplayVersion = "v1.60-beta4";
-
-        /// <summary>
-        /// Asset filename on the GitHub release. Upstream ships HoloPatcher
-        /// as a per-platform zip; we extract <see cref="HoloPatcherExeName"/>
-        /// out of <see cref="HoloPatcherExePathInsideZip"/>.
-        /// </summary>
-        public const string HoloPatcherAssetName = "HoloPatcher_Windows_x64.zip";
-
-        /// <summary>
-        /// Path inside <see cref="HoloPatcherAssetName"/> at which the
-        /// HoloPatcher.exe lives. The zip wraps the exe in a top-level
-        /// folder matching the asset name.
-        /// </summary>
-        public const string HoloPatcherExePathInsideZip = "HoloPatcher_Windows_x64/HoloPatcher.exe";
     }
 }

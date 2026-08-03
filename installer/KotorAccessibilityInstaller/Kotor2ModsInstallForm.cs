@@ -90,11 +90,8 @@ namespace KotorAccessibilityInstaller
             try
             {
                 UpdateStatus(InstallerLocale.Get("Main_StatusDownloadingHoloPatcher"));
-                using (var gh = new GitHubClient())
-                {
-                    holoPatcherPath = await HoloPatcherProvider.DownloadAsync(
-                        gh, p => UpdateProgress(p / 10)); // 0..10 covers the driver download
-                }
+                holoPatcherPath = await HoloPatcherProvider.ProvideAsync(
+                    p => UpdateProgress(p / 10)); // 0..10 covers staging the driver
                 // A null holoPatcherPath is not fatal here: each installer
                 // reports "HoloPatcher.exe not available" per-mod, which lands
                 // in the summary with a clear cause.
@@ -106,7 +103,8 @@ namespace KotorAccessibilityInstaller
                     _k2GamePath,
                     holoPatcherPath,
                     p => UpdateProgress(10 + p * 90 / 100),
-                    msg => UpdateStatus(msg));
+                    msg => UpdateStatus(msg),
+                    AskForManualDownload);
 
                 UpdateProgress(100);
             }
@@ -122,6 +120,31 @@ namespace KotorAccessibilityInstaller
 
             _finished = true;
             Close();
+        }
+
+        /// <summary>
+        /// Host side of <see cref="ModInstallContext.AskForManualDownload"/>:
+        /// shows the dialog and returns what the user supplied. Marshalled onto
+        /// the UI thread because installers call it from their async bodies.
+        ///
+        /// <para>Shown as a modal child of this form rather than via
+        /// Application.Run — this form owns the message loop already, and a
+        /// second one would deadlock.</para>
+        /// </summary>
+        private string AskForManualDownload(ManualDownloadRequest request)
+        {
+            if (InvokeRequired)
+                return (string)Invoke(new Func<ManualDownloadRequest, string>(AskForManualDownload), request);
+
+            using var dialog = new ManualDownloadForm(
+                request.ModDisplayName,
+                request.Reason,
+                request.PageUrl,
+                request.ExpectedFileName,
+                request.Kind,
+                request.PinnedSha256);
+            dialog.ShowDialog(this);
+            return dialog.SelectedFilePath;
         }
 
         private void UpdateProgress(int value)

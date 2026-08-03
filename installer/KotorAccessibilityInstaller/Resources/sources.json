@@ -1,0 +1,59 @@
+{
+    "schemaVersion": 1,
+    "updated": "2026-08-03",
+
+    "_comment": [
+        "Pins for the third-party mods the installer downloads. This file is BOTH",
+        "embedded in the installer (the always-available fallback) and read from",
+        "the repo at install time, so a pin can be refreshed by editing this file",
+        "on the main branch — no installer release, no build toolchain.",
+        "",
+        "Editing checklist when an upstream mod updates:",
+        "  1. Download the new file from its pageUrl by hand.",
+        "  2. Hash it:  certutil -hashfile <file> SHA256",
+        "  3. Update sha256, sizeBytes and displayVersion here. Commit to main.",
+        "  4. Bump 'updated'. Installers in the field pick it up on their next run.",
+        "",
+        "The hashes are load-bearing: the installer downloads these files without",
+        "a human in the loop and runs the TSLRCM one elevated, so a mismatch is",
+        "refused rather than warned about. Never relax a hash to make a download",
+        "work — if a file legitimately changed, re-hash it here. If you cannot",
+        "verify it, leave the pin alone: the installer already falls back to a",
+        "guided manual download, which is safe because the user fetches the file",
+        "themselves and vouches for it.",
+        "",
+        "GitHub-hosted mods pin a commit SHA rather than a file hash. Those do not",
+        "rot the same way — a pinned commit stays fetchable as long as the repo",
+        "exists — but bump them when you want a newer upstream fix."
+    ],
+
+    "tslrcm": {
+        "displayVersion": "1.8.6",
+        "fileName": "tslrcm2022.exe",
+        "sha256": "94C99C4807DA4B304DE6E0EFED1BE55E0F43D13CC5A274582ED3323AC0E2F1A6",
+        "sizeBytes": 137947655,
+        "pageUrl": "https://deadlystream.com/files/file/578-tsl-restored-content-mod/"
+    },
+
+    "tweakPack": {
+        "displayVersion": "v1.3",
+        "fileName": "tweakpack.rar",
+        "sha256": "E98C94D53DFCCADDF6753AA58662E1AFD1D6EBB0241F66C8000BA0FF3A2F13B5",
+        "sizeBytes": 1366051,
+        "pageUrl": "https://deadlystream.com/files/file/296-unofficial-tslrcm-tweak-pack/"
+    },
+
+    "k1cp": {
+        "displayVersion": "v1.10.1",
+        "repoOwner": "KOTORCommunityPatches",
+        "repoName": "K1_Community_Patch",
+        "ref": "4778ae5e2f5facc2bb6449cf7ffa3720e35a5b0f"
+    },
+
+    "k2cp": {
+        "displayVersion": "v1.6.2",
+        "repoOwner": "KOTORCommunityPatches",
+        "repoName": "TSL_Community_Patch",
+        "ref": "4850a441368678ff72f3a173b33366c3c960d95e"
+    }
+}

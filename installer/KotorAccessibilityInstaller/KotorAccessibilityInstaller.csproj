@@ -79,6 +79,10 @@
          Override (or this bundled vanilla if absent) — see
          InstallationManager.InstallPriorityGroup / PriorityGroup2da. -->
     <EmbeddedResource Include="Resources\prioritygroups.2da" />
+    <!-- The KOTOR 2 vanilla table, extracted from that game's data/2da.bif. It
+         cannot share the KOTOR 1 file: KOTOR 2 splits volume and the two
+         distance columns per platform (volume_pc / volume_xbox and so on). -->
+    <EmbeddedResource Include="Resources\prioritygroups_k2.2da" />
     <!-- 7zr.exe: official standalone 7-Zip console (reduced, .7z only) from
          7-zip.org. Used by LogCollector to compress the beta-test log bundle
          with LZMA2 — a 158 MB crash dump deflates to ~67 MB but LZMA2-packs to
@@ -86,6 +90,21 @@
          at collect time and shelled out to. LGPL; license bundled alongside. -->
     <EmbeddedResource Include="Resources\7zr.exe" />
     <EmbeddedResource Include="Resources\7zip-License.txt" />
+    <!-- HoloPatcher v1.60-patcher-beta4 (NickHugi/PyKotor), the headless driver
+         for every TSLPatcher-style mod we install: K1CP, K2CP, Tweak Pack.
+         Bundled rather than downloaded because it is the only third-party
+         payload with no manual fallback — the user never sees it, so they
+         cannot fetch it by hand if its release goes away, and without it no
+         TSLPatcher mod installs for either game. GPL-3.0, same as this project,
+         invoked as a separate process; licence text ships alongside and the
+         source stays at the upstream repo. ~11 MB. -->
+    <EmbeddedResource Include="Resources\HoloPatcher.exe" />
+    <EmbeddedResource Include="Resources\HoloPatcher-License.txt" />
+    <!-- Pins for the third-party mods we download (hashes, sizes, pinned
+         commits). Embedded as the always-available fallback; SourcePins also
+         reads the copy on the repo's main branch so a pin can be refreshed
+         without cutting an installer release. -->
+    <EmbeddedResource Include="Resources\sources.json" />
     <!-- HoloPatcher is NOT bundled. It's downloaded from upstream
          NickHugi/PyKotor @ pinned tag at install time (see HoloPatcherProvider). -->
   </ItemGroup>

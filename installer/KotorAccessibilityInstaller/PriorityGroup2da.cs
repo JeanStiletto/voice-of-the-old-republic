@@ -204,7 +204,30 @@ namespace KotorAccessibilityInstaller
             return true;
         }
 
-        // Appends one row (dictionary keyed by column name) to the parsed table.
+        // Per-platform column suffixes. KOTOR 2's prioritygroups.2da splits three
+        // of KOTOR 1's columns per target platform — volume_pc / volume_xbox,
+        // maxvolumedist_pc / _xbox, minvolumedist_pc / _xbox — while priority,
+        // maxplaying, interrupt, fadetime and playbackvariance stay unsuffixed.
+        //
+        // Mapping the suffix away rather than keeping a per-game column table
+        // means the row definitions above stay the single description of what
+        // our groups ARE, and both platform variants get the same value. That
+        // matters because writing the KOTOR 1 names into the KOTOR 2 table is
+        // not a loud failure: the cells simply come out empty, and the group
+        // lands without its volume or falloff band.
+        private static readonly string[] PlatformSuffixes = { "_pc", "_xbox" };
+
+        private static string LogicalColumn(string column)
+        {
+            foreach (var suffix in PlatformSuffixes)
+            {
+                if (column.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                    return column.Substring(0, column.Length - suffix.Length);
+            }
+            return column;
+        }
+
+        // Appends one row (dictionary keyed by logical column name) to the parsed table.
         private static void AppendRow(Table t, Dictionary<string, string> row)
         {
             int newIdx = t.RowCount;
@@ -212,14 +235,19 @@ namespace KotorAccessibilityInstaller
 
             foreach (var c in t.Cols)
             {
-                if (c.Equals("label", StringComparison.OrdinalIgnoreCase))
-                {
-                    // Row label column is empty for every row -> the shared
-                    // empty string at data offset 0.
-                    t.Offsets.Add(0);
-                    continue;
-                }
-                row.TryGetValue(c, out string? val);
+                // No special case for the "label" column: it is absent from the
+                // row definitions, so it falls through to the empty-cell path
+                // below and gets a real empty string appended to the data block.
+                //
+                // It used to point at data offset 0 on the assumption that a
+                // shared empty string lived there. It does not — offset 0 is
+                // where row 0's first cell starts, so every appended row came
+                // out labelled "Unmaskable_Sound", a duplicate of vanilla group
+                // 0's name. Harmless in practice (our groups are found by the
+                // sentinel FadeTime, never by name) but wrong, and a duplicate
+                // name is exactly the sort of thing a label-based lookup
+                // elsewhere would trip over.
+                row.TryGetValue(LogicalColumn(c), out string? val);
                 val ??= "";  // unknown column -> empty cell (defensive, forward-compat)
                 int off = data.Count;
                 data.AddRange(Encoding.ASCII.GetBytes(val));

@@ -5,8 +5,8 @@ using System.IO;
 namespace KotorAccessibilityInstaller
 {
     /// <summary>
-    /// Rename the three launch-time intro <c>.bik</c> files
-    /// (<c>biologo</c>, <c>leclogo</c>, <c>legal</c>) so the engine's
+    /// Rename the launch-time intro <c>.bik</c> files aside (the per-game list
+    /// is <see cref="GameTarget.IntroMovieFiles"/>) so the engine's
     /// <c>PlayMoviesAsync</c> queue fails to open them and falls through to
     /// the main menu. Cuts ~10–20 s off cold start and — more importantly —
     /// eliminates the "alt-tab during intro causes the engine to restart the
@@ -35,17 +35,6 @@ namespace KotorAccessibilityInstaller
         private const string MoviesSubdir = "Movies";
         private const string DisabledSuffix = ".disabled";
 
-        // The three known launch-time intro filenames. Verified against the
-        // swkotor.exe string table (offset 0x0034ECF0): the three literals
-        // sit together in the .data segment and are the only files referenced
-        // by PlayMoviesAsync.
-        private static readonly string[] IntroFiles =
-        {
-            "biologo.bik",
-            "leclogo.bik",
-            "legal.bik",
-        };
-
         public sealed class Result
         {
             public bool Success { get; init; }
@@ -61,8 +50,8 @@ namespace KotorAccessibilityInstaller
         /// renamed → counted as AlreadyDone. Original file missing entirely →
         /// counted as Missing (not an error; e.g. a previous user removal).
         /// </summary>
-        public static Result DisableIntros(string gameDir)
-            => MoveIntros(gameDir, disable: true);
+        public static Result DisableIntros(GameTarget target, string gameDir)
+            => MoveIntros(target, gameDir, disable: true);
 
         /// <summary>
         /// Reverse <see cref="DisableIntros"/>. Renames
@@ -70,8 +59,8 @@ namespace KotorAccessibilityInstaller
         /// Used by the uninstaller so removal returns the install to vanilla.
         /// Counts already-restored / both-present cases gracefully.
         /// </summary>
-        public static Result RestoreIntros(string gameDir)
-            => MoveIntros(gameDir, disable: false);
+        public static Result RestoreIntros(GameTarget target, string gameDir)
+            => MoveIntros(target, gameDir, disable: false);
 
         /// <summary>
         /// The rename, in whichever direction. Disable moves
@@ -91,7 +80,7 @@ namespace KotorAccessibilityInstaller
         /// A per-file failure is collected and reported without aborting the
         /// other two, so one locked file cannot leave the set half-renamed.
         /// </summary>
-        private static Result MoveIntros(string gameDir, bool disable)
+        private static Result MoveIntros(GameTarget target, string gameDir, bool disable)
         {
             string moviesDir = Path.Combine(gameDir, MoviesSubdir);
             if (!Directory.Exists(moviesDir))
@@ -114,7 +103,7 @@ namespace KotorAccessibilityInstaller
             int missing = 0;
             var errors = new List<string>();
 
-            foreach (var name in IntroFiles)
+            foreach (var name in target.IntroMovieFiles)
             {
                 string plain    = Path.Combine(moviesDir, name);
                 string disabled = plain + DisabledSuffix;

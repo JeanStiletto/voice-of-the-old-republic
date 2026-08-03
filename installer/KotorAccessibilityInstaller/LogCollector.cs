@@ -26,7 +26,7 @@ namespace KotorAccessibilityInstaller
             public string Error;
         }
 
-        public static Result Collect(string gamePath)
+        public static Result Collect(GameTarget target, string gamePath)
         {
             var result = new Result();
             try
@@ -93,7 +93,7 @@ namespace KotorAccessibilityInstaller
                         result.IncludedInstallerLog = true;
                     }
 
-                    WriteSystemInfo(Path.Combine(staging, "system-info.txt"), gamePath);
+                    WriteSystemInfo(Path.Combine(staging, "system-info.txt"), target, gamePath);
 
                     if (result.LogCount == 0 && result.DumpCount == 0 && !result.IncludedInstallerLog)
                     {
@@ -298,19 +298,24 @@ namespace KotorAccessibilityInstaller
             return Path.Combine(profile, "Downloads");
         }
 
-        private static void WriteSystemInfo(string path, string gamePath)
+        private static void WriteSystemInfo(string path, GameTarget target, string gamePath)
         {
             var sb = new StringBuilder();
             sb.AppendLine("Voice of the Old Republic — beta-test log bundle");
             sb.AppendLine($"Captured: {DateTime.Now:yyyy-MM-dd HH:mm:ss zzz}");
             sb.AppendLine();
-            sb.AppendLine($"Installed mod version: {RegistryManager.GetRegisteredVersion() ?? "(unknown)"}");
+            sb.AppendLine($"Game:                 {target.DisplayName}");
+            sb.AppendLine($"Installed mod version: {RegistryManager.GetRegisteredVersion(target) ?? "(unknown)"}");
             sb.AppendLine($"Game install path:    {gamePath}");
-            sb.AppendLine($"Game exe present:     {File.Exists(Path.Combine(gamePath, "swkotor.exe"))}");
+            sb.AppendLine($"Game exe present:     {File.Exists(Path.Combine(gamePath, target.ExeName))}");
             sb.AppendLine($"OS:                   {Environment.OSVersion}");
             sb.AppendLine($"CLR:                  {Environment.Version}");
             sb.AppendLine($"64-bit OS:            {Environment.Is64BitOperatingSystem}");
             sb.AppendLine($"Locale (UI):          {System.Globalization.CultureInfo.CurrentUICulture.Name}");
+            // Which mod pins were in play: a report of "the mod download failed"
+            // reads very differently depending on whether the pins were the
+            // embedded ones or a refreshed remote set.
+            sb.AppendLine($"Mod source pins:      {SourcePins.Origin}");
             sb.AppendLine();
 
             string dumpsDir = Path.Combine(
@@ -349,7 +354,8 @@ namespace KotorAccessibilityInstaller
             }
             sb.AppendLine();
 
-            sb.AppendLine($"WER LocalDumps for swkotor.exe: {(WerLocalDumps.IsEnabled() ? "ENABLED" : "NOT ENABLED")}");
+            foreach (var t in GameTarget.All)
+                sb.AppendLine($"WER LocalDumps for {t.ExeName}: {(WerLocalDumps.IsEnabled(t) ? "ENABLED" : "NOT ENABLED")}");
 
             File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
         }
@@ -357,31 +363,55 @@ namespace KotorAccessibilityInstaller
 
     /// <summary>
     /// Configures Windows Error Reporting to drop a minidump under
-    /// %LOCALAPPDATA%\CrashDumps when swkotor.exe crashes. Without this, beta
+    /// %LOCALAPPDATA%\CrashDumps when the game crashes. Without this, beta
     /// testers' machines will not capture any .dmp file and the LogCollector
     /// has nothing to bundle. Idempotent; requires elevation (the installer
     /// already runs as admin).
+    ///
+    /// <para>WER keys this per executable name, so both games need their own —
+    /// a key for swkotor.exe captures nothing when swkotor2.exe faults. The
+    /// no-argument overloads cover both, since the install path enables dump
+    /// capture before it knows which games the user picked.</para>
     /// </summary>
     public static class WerLocalDumps
     {
-        private const string KeyPath =
-            @"SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\swkotor.exe";
+        private const string KeyRoot =
+            @"SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps";
 
+        private static string KeyPathFor(GameTarget target) => $@"{KeyRoot}\{target.ExeName}";
+
+        /// <summary>True when dump capture is configured for EVERY game.</summary>
         public static bool IsEnabled()
+        {
+            foreach (var target in GameTarget.All)
+                if (!IsEnabled(target)) return false;
+            return true;
+        }
+
+        public static bool IsEnabled(GameTarget target)
         {
             try
             {
-                using var key = Registry.LocalMachine.OpenSubKey(KeyPath);
+                using var key = Registry.LocalMachine.OpenSubKey(KeyPathFor(target));
                 return key != null;
             }
             catch { return false; }
         }
 
+        /// <summary>Enable dump capture for every game. True only if all succeeded.</summary>
         public static bool Enable()
+        {
+            bool all = true;
+            foreach (var target in GameTarget.All)
+                all &= Enable(target);
+            return all;
+        }
+
+        public static bool Enable(GameTarget target)
         {
             try
             {
-                using var key = Registry.LocalMachine.CreateSubKey(KeyPath, writable: true);
+                using var key = Registry.LocalMachine.CreateSubKey(KeyPathFor(target), writable: true);
                 if (key == null) return false;
                 key.SetValue("DumpFolder", @"%LOCALAPPDATA%\CrashDumps", RegistryValueKind.ExpandString);
                 key.SetValue("DumpCount", 10, RegistryValueKind.DWord);
@@ -403,12 +433,12 @@ namespace KotorAccessibilityInstaller
                 // Typical size: ~15-50 MB vs ~500 MB+ for the full variant.
                 key.SetValue("DumpType", 0, RegistryValueKind.DWord);
                 key.SetValue("CustomDumpFlags", 0x2141, RegistryValueKind.DWord);
-                Logger.Info("[WerLocalDumps] Enabled crash-dump capture for swkotor.exe");
+                Logger.Info($"[WerLocalDumps] Enabled crash-dump capture for {target.ExeName}");
                 return true;
             }
             catch (Exception ex)
             {
-                Logger.Warning($"[WerLocalDumps] Could not enable: {ex.Message}");
+                Logger.Warning($"[WerLocalDumps] Could not enable for {target.ExeName}: {ex.Message}");
                 return false;
             }
         }
