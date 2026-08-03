@@ -16,6 +16,12 @@
     "Welcome_GameDescription": "Le mod patche votre copie Steam ou GoG de Knights of the Old Republic.\n\nSi vous ne possédez pas encore KOTOR, vous pouvez l'acheter sur Steam ou GoG. Sinon, cliquez sur Suivant pour choisir ce qui sera installé.",
     "Welcome_OpenSteamPage": "Ouvrir KOTOR sur Steam",
     "Welcome_OpenGogPage": "Ouvrir KOTOR sur GoG",
+
+    "GameLinks_Title": "Jeux introuvables",
+    "GameLinks_Description": "Le mod modifie votre copie Steam ou GoG. L'un des jeux sélectionnés est introuvable sur ce PC — vous pouvez l'acheter ou l'installer ci-dessous, puis appuyer sur Continuer.",
+    "GameLinks_NotFound_Format": "{0} est introuvable sur ce PC :",
+    "GameLinks_SteamButton_Format": "{0} sur Steam",
+    "GameLinks_GogButton_Format": "{0} sur GoG",
     "Welcome_BackButton": "Retour",
 
     "ModdingInfo_Title": "Composants de base",

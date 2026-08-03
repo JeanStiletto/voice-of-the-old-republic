@@ -16,6 +16,12 @@
     "Welcome_GameDescription": "Мод изменяет вашу копию Knights of the Old Republic из Steam или GoG.\n\nЕсли у вас ещё нет KOTOR, её можно купить в Steam или GoG. Иначе нажмите «Далее», чтобы выбрать состав установки.",
     "Welcome_OpenSteamPage": "Открыть KOTOR в Steam",
     "Welcome_OpenGogPage": "Открыть KOTOR в GoG",
+
+    "GameLinks_Title": "Игры не найдены",
+    "GameLinks_Description": "Мод изменяет вашу копию из Steam или GoG. Одна из выбранных игр на этом ПК не найдена — ниже можно купить или установить её, затем нажмите «Далее».",
+    "GameLinks_NotFound_Format": "{0} не найдена на этом ПК:",
+    "GameLinks_SteamButton_Format": "{0} в Steam",
+    "GameLinks_GogButton_Format": "{0} в GoG",
     "Welcome_BackButton": "Назад",
 
     "ModdingInfo_Title": "Основные компоненты",

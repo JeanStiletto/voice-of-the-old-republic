@@ -35,6 +35,22 @@ namespace KotorAccessibilityInstaller
             return key;
         }
 
+        /// <summary>
+        /// Convert the locale files' <c>\n</c> line breaks to <c>\r\n</c>.
+        ///
+        /// <para>Required for any multiline <see cref="System.Windows.Forms.TextBox"/>:
+        /// it only breaks lines on <c>\r\n</c> and renders a lone <c>\n</c> as
+        /// nothing, so an entire bulleted list of actions collapses onto one
+        /// line. MessageBox and Label both handle <c>\n</c> fine, which is why
+        /// the locale files use it and why the problem only appears when a
+        /// Label is upgraded to a focusable TextBox — which is exactly how it
+        /// got introduced.</para>
+        ///
+        /// <para>Idempotent: an existing <c>\r\n</c> is not doubled.</para>
+        /// </summary>
+        public static string NormalizeLineBreaks(string text) =>
+            text == null ? null : text.Replace("\r\n", "\n").Replace("\n", "\r\n");
+
         public static string Format(string key, params object[] args)
         {
             string template = Get(key);

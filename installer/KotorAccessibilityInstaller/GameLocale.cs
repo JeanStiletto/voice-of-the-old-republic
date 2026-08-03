@@ -40,6 +40,35 @@ namespace KotorAccessibilityInstaller
     /// </summary>
     public static class GameLocaleDetector
     {
+        /// <summary>
+        /// The game locale corresponding to an installer UI language code
+        /// ("de", "fr", …), or <see cref="GameLocale.Unknown"/> for one with no
+        /// counterpart.
+        ///
+        /// <para>Used where the game's own <c>dialog.tlk</c> cannot be trusted to
+        /// say what the user wants — after TSLRCM has replaced it with an
+        /// English one, the file reports English no matter what the player
+        /// reads. The language they chose to run the installer in is a
+        /// statement of intent rather than a leftover of what some other mod
+        /// wrote, and it keeps working when someone simply wants to switch.</para>
+        /// </summary>
+        public static GameLocale FromInstallerLanguage(string languageCode)
+        {
+            if (string.IsNullOrWhiteSpace(languageCode)) return GameLocale.Unknown;
+
+            return languageCode.Trim().ToLowerInvariant() switch
+            {
+                "en" => GameLocale.English,
+                "fr" => GameLocale.French,
+                "de" => GameLocale.German,
+                "it" => GameLocale.Italian,
+                "es" => GameLocale.Spanish,
+                "pl" => GameLocale.Polish,
+                "ru" => GameLocale.Russian,
+                _ => GameLocale.Unknown,
+            };
+        }
+
         // Keep these in lockstep with TlkLooksCyrillic in
         // patches/Accessibility/core_dllmain.cpp. If the installer and the DLL
         // ever disagree about what language an install is, the user gets an

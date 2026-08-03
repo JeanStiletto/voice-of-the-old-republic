@@ -166,6 +166,15 @@ namespace KotorAccessibilityInstaller
             {
                 Logger.Info($"{(reopened ? "Reopening" : "Opening")} Workshop page: {pageUrl}");
                 Process.Start(new ProcessStartInfo { FileName = pageUrl, UseShellExecute = true });
+
+                // Steam takes the foreground and buries this window behind its
+                // own. For a sighted user that is a nuisance; for a screen
+                // reader it means the dialog explaining what to do next, and the
+                // button to reopen the page, simply are not there any more —
+                // reported as "the Workshop page was open but the dialog waiting
+                // on it was not". Claw focus back once Steam has settled.
+                ReclaimForeground();
+
                 if (reopened)
                     UpdateStatus(InstallerLocale.Get("K2Lang_Waiting"), announce: true);
             }
@@ -174,6 +183,47 @@ namespace KotorAccessibilityInstaller
                 Logger.Warning($"Could not open the Workshop page: {ex.Message}");
                 UpdateStatus(InstallerLocale.Format("K2Lang_PageOpenFailed_Format", pageUrl), announce: true);
             }
+        }
+
+        /// <summary>
+        /// Bring this window back in front of Steam, shortly after Steam has
+        /// been asked to open a page.
+        ///
+        /// <para>Windows only lets the foreground process hand focus over, and
+        /// Steam is not going to. Briefly setting TopMost is the standard way
+        /// for an installer to get its own dialog back in front; it is dropped
+        /// again immediately so the window does not sit permanently above
+        /// everything the user might switch to.</para>
+        ///
+        /// <para>Delayed rather than immediate: Steam raises its window a moment
+        /// after the protocol handler returns, so activating right away just
+        /// loses the race.</para>
+        /// </summary>
+        private void ReclaimForeground()
+        {
+            var timer = new System.Windows.Forms.Timer { Interval = 1200 };
+            timer.Tick += (s, e) =>
+            {
+                timer.Stop();
+                timer.Dispose();
+                try
+                {
+                    if (IsDisposed || Disposing) return;
+                    TopMost = true;
+                    Activate();
+                    BringToFront();
+                    TopMost = false;
+                    // Re-announce so a screen reader picks the window up again;
+                    // regaining focus silently would leave the user unsure which
+                    // window they are in.
+                    ScreenReaderAnnouncer.Announce(_statusLabel, _statusLabel.Text);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warning($"Could not bring the Workshop dialog back to the front: {ex.Message}");
+                }
+            };
+            timer.Start();
         }
 
         private async Task RunAsync()

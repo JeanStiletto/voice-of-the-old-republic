@@ -70,12 +70,13 @@ namespace KotorAccessibilityInstaller
                 ReadOnly = true,
                 ScrollBars = ScrollBars.Vertical,
                 TabStop = true,
-                Text = (string.IsNullOrEmpty(gameStates)
+                Text = InstallerLocale.NormalizeLineBreaks(
+                       (string.IsNullOrEmpty(gameStates)
                             ? string.Empty
                             : InstallerLocale.Get("GameState_Heading") + "\n" + gameStates + "\n\n")
                        + (offerSpatialAudio
                             ? InstallerLocale.Format("InstalledOptions_Body_Format", installedVersion, audioStateLabel)
-                            : InstallerLocale.Format("InstalledOptions_BodyNoAudio_Format", installedVersion)),
+                            : InstallerLocale.Format("InstalledOptions_BodyNoAudio_Format", installedVersion))),
                 Location = new Point(20, 60),
                 Size = new Size(660, 250),
             };

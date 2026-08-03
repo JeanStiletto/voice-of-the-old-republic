@@ -43,6 +43,10 @@ namespace KotorAccessibilityInstaller
         /// <summary>Human-facing name for dialogs and summaries.</summary>
         public string DisplayName { get; private init; }
 
+        /// <summary>Store pages, offered when this game is selected but not found.</summary>
+        public string StorePageSteam { get; private init; }
+        public string StorePageGog { get; private init; }
+
         /// <summary>
         /// Add/Remove Programs key name. Each game gets its own entry: they are
         /// separate installs in separate folders that can be added and removed
@@ -110,6 +114,8 @@ namespace KotorAccessibilityInstaller
             IniFileName = "swkotor.ini",
             SteamAppId = "32370",
             DisplayName = "KOTOR 1",
+            StorePageSteam = "https://store.steampowered.com/app/32370/",
+            StorePageGog = "https://www.gog.com/game/star_wars_knights_of_the_old_republic",
             RegistryKeyName = "KotorAccessibility",
             VanillaPriorityGroupResource = "prioritygroups.2da",
 
@@ -162,6 +168,8 @@ namespace KotorAccessibilityInstaller
             IniFileName = "swkotor2.ini",
             SteamAppId = "208580",
             DisplayName = "KOTOR 2",
+            StorePageSteam = "https://store.steampowered.com/app/208580/",
+            StorePageGog = "https://www.gog.com/game/star_wars_knights_of_the_old_republic_ii_the_sith_lords",
             RegistryKeyName = "KotorAccessibility_K2",
             VanillaPriorityGroupResource = "prioritygroups_k2.2da",
 

@@ -104,8 +104,8 @@ namespace KotorAccessibilityInstaller
                 ScrollBars = ScrollBars.Vertical,
                 Location = new Point(20, 60),
                 Size = new Size(620, 200),
-                Text = InstallerLocale.Format(
-                    "ManualDownload_Body_Format", modDisplayName, reason, _expectedFileName, _pageUrl),
+                Text = InstallerLocale.NormalizeLineBreaks(InstallerLocale.Format(
+                    "ManualDownload_Body_Format", modDisplayName, reason, _expectedFileName, _pageUrl)),
                 TabStop = true
             };
             body.AccessibleName = InstallerLocale.Format("ManualDownload_Title_Format", modDisplayName);

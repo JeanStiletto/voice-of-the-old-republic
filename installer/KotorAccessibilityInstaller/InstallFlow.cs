@@ -39,6 +39,24 @@ namespace KotorAccessibilityInstaller
                 return;
             }
 
+            // Now that we know which games the user wants, offer store links for
+            // any of them that isn't on this PC — and skip the screen entirely
+            // when they are all present. Deliberately after the selection: a
+            // "where to buy" page shown before the user has chosen a game can
+            // only guess which game to advertise, and the old one always guessed
+            // KOTOR 1.
+            var missingGames = new List<GameTarget>();
+            if (gameVersionForm.Selection.Kotor1 && GamePathDetector.Detect(GameTarget.Kotor1) == null)
+                missingGames.Add(GameTarget.Kotor1);
+            if (gameVersionForm.Selection.Kotor2 && GamePathDetector.Detect(GameTarget.Kotor2) == null)
+                missingGames.Add(GameTarget.Kotor2);
+
+            if (!GameStoreLinksForm.ShowIfNeeded(missingGames))
+            {
+                Logger.Info("Installation cancelled from the game-store-links screen");
+                return;
+            }
+
             string k2Path = null;
             if (gameVersionForm.Selection.Kotor2)
             {
@@ -53,7 +71,7 @@ namespace KotorAccessibilityInstaller
                 // just expressed differently: they run inside MainForm, but
                 // still after nothing of ours is at risk — they are
                 // HoloPatcher payloads that only touch game data.
-                RunKotor2ModFlow(k2Path);
+                RunKotor2ModFlow(k2Path, welcomeForm.SelectedLanguage);
             }
 
             string resolvedK1Path = null;
@@ -146,7 +164,12 @@ namespace KotorAccessibilityInstaller
         /// transaction of their own would change the executable hash that the
         /// accessibility patch's own version gate then reads.
         /// </summary>
-        internal static void RunKotor2ModFlow(string k2Path)
+        /// <param name="installerLanguage">
+        /// The language the user picked for the installer itself. Decides which
+        /// localized TSLRCM text is offered — see the harvest block for why the
+        /// game's own dialog.tlk cannot answer that question.
+        /// </param>
+        internal static void RunKotor2ModFlow(string k2Path, string installerLanguage)
         {
             string statusLine = k2Path != null
                 ? InstallerLocale.Format("K2Prep_Detected_Format", k2Path)
@@ -164,10 +187,12 @@ namespace KotorAccessibilityInstaller
             // install. Ask before, not after.
             if (k2Path != null && !ConfirmNoWorkshopContent(k2Path)) return;
 
-            // Detect the game's language BEFORE TSLRCM runs: the English-only
-            // TSLRCM replaces dialog.tlk, after which the original language is
-            // no longer readable from the install.
-            GameLocale k2Locale = k2Path != null ? GameLocaleDetector.Detect(k2Path) : GameLocale.Unknown;
+            // For the record only. The game's own language stops being a usable
+            // signal the moment TSLRCM replaces dialog.tlk with its English one,
+            // which is why the harvest below keys off the installer's language
+            // instead — but knowing what the game WAS is worth having in the log.
+            if (k2Path != null)
+                Logger.Info($"KOTOR 2 text language before TSLRCM: {GameLocaleDetector.Detect(k2Path)}");
 
             var summary = new StringBuilder();
             summary.AppendLine(InstallerLocale.Get("ModInstall_SummaryHeading"));
@@ -233,9 +258,25 @@ namespace KotorAccessibilityInstaller
             // dialog.tlk it replaces) and BEFORE the K2CP / Tweak Pack
             // pipeline (which appends strings to dialog.tlk; replacing the
             // file afterwards would orphan their strrefs).
-            if (selectionForm.InstallTslrcm && tslrcmPresent && k2Path != null &&
-                k2Locale != GameLocale.English && k2Locale != GameLocale.Unknown &&
-                WorkshopTlkHarvestForm.TryGetWorkshopItem(k2Locale, out string workshopItemId))
+            //
+            // Which language to offer is decided by the language the user chose
+            // for the INSTALLER, not by reading the game's dialog.tlk.
+            //
+            // Reading the game was a trap that closed the moment it mattered:
+            // TSLRCM replaces dialog.tlk with an English one, so from the second
+            // run onwards the game reads as English and the offer disappeared
+            // forever. A user whose game was German, who installed TSLRCM, and
+            // who then wanted their German text back could never be offered it
+            // again — the one situation the feature exists for. It also made the
+            // offer impossible for anyone who simply wants to switch language.
+            //
+            // The installer's own language is a statement of what the user reads
+            // in, which is a better answer to "which text do you want" than the
+            // current state of a file another mod overwrote.
+            var harvestLocale = GameLocaleDetector.FromInstallerLanguage(installerLanguage);
+            if (tslrcmPresent && k2Path != null &&
+                harvestLocale != GameLocale.English && harvestLocale != GameLocale.Unknown &&
+                WorkshopTlkHarvestForm.TryGetWorkshopItem(harvestLocale, out string workshopItemId))
             {
                 const string harvestName = "dialog.tlk (Workshop)";
                 var offer = MessageBox.Show(
@@ -246,7 +287,7 @@ namespace KotorAccessibilityInstaller
 
                 if (offer == DialogResult.Yes)
                 {
-                    var harvestForm = new WorkshopTlkHarvestForm(k2Path, k2Locale, workshopItemId);
+                    var harvestForm = new WorkshopTlkHarvestForm(k2Path, harvestLocale, workshopItemId);
                     Application.Run(harvestForm);
 
                     if (harvestForm.Success)

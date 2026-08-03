@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.Windows.Forms;
@@ -8,8 +8,6 @@ namespace KotorAccessibilityInstaller
     public class WelcomeForm : Form
     {
         // KOTOR 1 store pages; both work regardless of regional locale.
-        private const string KotorSteamPageUrl = "https://store.steampowered.com/app/32370/";
-        private const string KotorGogPageUrl = "https://www.gog.com/en/game/star_wars_knights_of_the_old_republic";
 
         private ComboBox _languageComboBox;
         private Label _titleLabel;
@@ -20,8 +18,6 @@ namespace KotorAccessibilityInstaller
 
         private Label _gameTitleLabel;
         private Label _gameDescriptionLabel;
-        private Button _openSteamPageButton;
-        private Button _openGogPageButton;
         private Button _backButton;
         private Button _installButton;
 
@@ -126,20 +122,10 @@ namespace KotorAccessibilityInstaller
                 TextAlign = ContentAlignment.TopLeft
             };
 
-            _openSteamPageButton = new Button { Location = new Point(20, 185), Size = new Size(220, 35) };
-            _openSteamPageButton.Click += (s, e) =>
-            {
-                Logger.Info($"Opening KOTOR Steam page: {KotorSteamPageUrl}");
-                Process.Start(new ProcessStartInfo(KotorSteamPageUrl) { UseShellExecute = true });
-            };
-
-            _openGogPageButton = new Button { Location = new Point(250, 185), Size = new Size(220, 35) };
-            _openGogPageButton.Click += (s, e) =>
-            {
-                Logger.Info($"Opening KOTOR GoG page: {KotorGogPageUrl}");
-                Process.Start(new ProcessStartInfo(KotorGogPageUrl) { UseShellExecute = true });
-            };
-
+            // The store links used to live here. They moved to
+            // GameStoreLinksForm, which runs AFTER the game-selection screen:
+            // offering somewhere to buy a game before asking which game the user
+            // wants is the wrong order, and this page only ever offered KOTOR 1.
             _backButton = new Button { Location = new Point(20, 245), Size = new Size(140, 35) };
             _backButton.Click += (s, e) => ShowPage1();
 
@@ -152,7 +138,7 @@ namespace KotorAccessibilityInstaller
 
             _page2.Controls.AddRange(new Control[]
             {
-                _gameTitleLabel, _gameDescriptionLabel, _openSteamPageButton, _openGogPageButton, _backButton, _installButton
+                _gameTitleLabel, _gameDescriptionLabel, _backButton, _installButton
             });
 
             Controls.Add(_page1);
@@ -218,8 +204,6 @@ namespace KotorAccessibilityInstaller
 
             _gameTitleLabel.Text = InstallerLocale.Get("Welcome_GameTitle");
             _gameDescriptionLabel.Text = InstallerLocale.Get("Welcome_GameDescription");
-            _openSteamPageButton.Text = InstallerLocale.Get("Welcome_OpenSteamPage");
-            _openGogPageButton.Text = InstallerLocale.Get("Welcome_OpenGogPage");
             _backButton.Text = InstallerLocale.Get("Welcome_BackButton");
             _installButton.Text = InstallerLocale.Get("Welcome_NextButton");
 
