@@ -19,6 +19,7 @@
 
 #include "log.h"
 #include "menus_internal.h"
+#include "strings.h"
 #include "menus_pending.h"   // QueueButtonByIdActivate defers the activate
 #include "engine_offsets.h"
 #include "engine_panels.h"   // HasVtable
@@ -39,6 +40,22 @@ constexpr int kSaveLoadLbGamesId    =  0;
 constexpr int kSaveLoadBtnDeleteId  = 11;
 constexpr int kSaveLoadBtnBackId    = 12;
 constexpr int kSaveLoadBtnSaveLoadId = 14;
+
+// KOTOR 2's GUI authoring width. Every _p.gui in its gui.bif declares
+// MAIN_PNL as 800x600 and the engine stretches that to the window.
+constexpr int kKotor2GuiAuthoringWidth = 800;
+
+// See menus_internal.h for why this exists and when it is a no-op.
+int acc::menus::detail::ScaleGuiThresholdPx(int guiPx) {
+    if (!acc::game::IsKotor2()) return guiPx;
+    HWND hwnd = GetActiveWindow();
+    if (!hwnd) return guiPx;
+    RECT rc = {0, 0, 0, 0};
+    if (!GetClientRect(hwnd, &rc)) return guiPx;
+    int clientW = rc.right - rc.left;
+    if (clientW <= kKotor2GuiAuthoringWidth) return guiPx;
+    return (int)((long long)guiPx * clientW / kKotor2GuiAuthoringWidth);
+}
 
 // Center pixel of a control's hit area. Returns false on null control,
 // unreadable control, or degenerate extent (zero/negative width/height —
@@ -452,13 +469,45 @@ bool acc::menus::detail::IsClassSelectionIcon(void* panel, void* control) {
 // doesn't surface stale entries from the previous run. First-write
 // wins — once an entry is locked, subsequent updates are ignored so the
 // engine's transient class_label revert can't corrupt a settled value.
+// `text` is the composed announce: the class name off class_label, plus the
+// class blurb off LBL_DESC when the panel had one. Sized for both — the
+// German blurbs run to about 200 characters.
 struct ClassLabelCacheEntry {
     void* panel;
     void* icon;
-    char  text[64];
+    char  text[acc::menus::detail::kAnnounceTextMax];
 };
 static constexpr int kClassLabelCacheSize = 8;
 static ClassLabelCacheEntry g_classLabelCache[kClassLabelCacheSize];
+
+// The class-description label's authored text, snapshotted at panel-walk
+// time. classsel.gui ships LBL_DESC with a placeholder — empty on KOTOR 1,
+// the literal "This is just a test line." repeated on KOTOR 2 — and the
+// engine overwrites it with the real class description on hover. Comparing
+// against the snapshot is how we tell "the engine has written something" from
+// "this is still the .gui default", without hard-coding either placeholder.
+// One slot: only one class-selection panel exists at a time.
+static void* g_classDescBaselinePanel = nullptr;
+static char  g_classDescBaseline[384] = {0};
+
+void acc::menus::detail::ClassDescBaselineCapture(void* panel, const char* text) {
+    if (!panel) return;
+    g_classDescBaselinePanel = panel;
+    if (text) {
+        strncpy_s(g_classDescBaseline, text, _TRUNCATE);
+    } else {
+        g_classDescBaseline[0] = '\0';
+    }
+}
+
+bool acc::menus::detail::ClassDescIsEngineWritten(void* panel, const char* text) {
+    if (!text || text[0] == '\0') return false;
+    // No snapshot for this panel: we never saw its authored state, so we
+    // cannot tell content from placeholder. Stay quiet rather than risk
+    // speaking "This is just a test line." at the user.
+    if (panel != g_classDescBaselinePanel) return false;
+    return strcmp(text, g_classDescBaseline) != 0;
+}
 
 const char* acc::menus::detail::ClassLabelCacheLookup(void* panel, void* icon) {
     for (int i = 0; i < kClassLabelCacheSize; ++i) {
@@ -468,6 +517,36 @@ const char* acc::menus::detail::ClassLabelCacheLookup(void* panel, void* icon) {
         }
     }
     return nullptr;
+}
+
+// Compose what the user hears for one class icon: the class name, followed by
+// the blurb the engine renders beneath it, when there is one. Both call sites
+// (the extractor's cache-fill and the outgoing-icon prefill) go through here
+// so the cached string is identical whichever path wins the race.
+//
+// Reading LBL_DESC has to happen at the same instant class_label is read —
+// by the time a chain step announces an icon, both labels already hold the
+// NEXT icon's text.
+void acc::menus::detail::ComposeClassAnnounce(void* panel, const char* name,
+                                              char* outBuf, size_t bufSize) {
+    if (!outBuf || bufSize < 2) return;
+    outBuf[0] = '\0';
+    if (!name || name[0] == '\0') return;
+    strncpy_s(outBuf, bufSize, name, _TRUNCATE);
+    if (!panel) return;
+
+    void* descLabel = acc::menus::detail::FindControlById(panel,
+                                                          kClassSelDescLabelId);
+    if (!descLabel) return;
+    char desc[acc::menus::detail::kAnnounceTextMax] = {0};
+    if (!acc::engine::ReadLabelText(descLabel, desc, sizeof(desc))) return;
+    if (!ClassDescIsEngineWritten(panel, desc)) return;
+
+    char composed[acc::menus::detail::kAnnounceTextMax];
+    snprintf(composed, sizeof(composed),
+             acc::strings::Get(acc::strings::Id::FmtClassNameWithDescription),
+             name, desc);
+    strncpy_s(outBuf, bufSize, composed, _TRUNCATE);
 }
 
 void acc::menus::detail::ClassLabelCacheStore(void* panel, void* icon, const char* text) {

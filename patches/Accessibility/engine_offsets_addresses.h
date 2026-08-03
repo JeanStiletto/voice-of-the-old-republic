@@ -151,7 +151,17 @@ const uintptr_t kVtableCSWGuiAbilitiesCharGen          = acc::addr::Pick(0x00759
 // Signature per SARIF (k1_win_gog_swkotor.exe.xml SYMBOL @ 0x006f6bb0):
 //   int __thiscall GetAbilityPointCost(int param_1)
 // Callee-pops 4 bytes (BYTES_PURGED=4).
-const uintptr_t kAddrCSWGuiAbilitiesCharGenGetCost = acc::addr::R(0x006f6bb0);
+//
+// KOTOR 2 0x00913570, from the panel's own plus handler 0x00912d40 (the
+// message-0x30 arm of HandleInputEvent 0x00912640). That handler calls it
+// with `*(int*)(panel + 0x484c + selected*4)` — the focused ability's
+// CURRENT VALUE, not its index — and subtracts the result from the
+// remaining-points int at panel+0x4848 before incrementing the value.
+// That is the exact call shape the KOTOR 1 paragraph above had to be
+// corrected into, so the two agree on the parameter's meaning as well as
+// on the address.
+const uintptr_t kAddrCSWGuiAbilitiesCharGenGetCost =
+    acc::addr::Pick(0x006f6bb0, 0x00913570);
 
 // CSWGuiSkillsCharGen vtable (chargen skills panel). Member layout is
 // documented in engine_offsets_fields.h.
@@ -167,7 +177,16 @@ const uintptr_t kVtableCSWGuiSkillsCharGen           = acc::addr::Pick(0x0075999
 // Signature per SARIF (SYMBOL @ 0x006f4b60):
 //   int __thiscall IsClassSkill(ushort param_1)
 // Callee-pops 4 bytes (param is widened to dword on the stack).
-const uintptr_t kAddrCSWGuiSkillsCharGenIsClassSkill = acc::addr::R(0x006f4b60);
+//
+// KOTOR 2 0x009103a0, reached from its OnEnterPointsButton 0x0090f610,
+// which calls it as `IsClassSkill(*(ushort*)(panel + 0x4CEC))` — the
+// selected-skill index — and branches the CLASSSKL_LBL strref on the
+// result (38152 vs 38153, the "class skill" / "cross-class skill" pair).
+// The body is the same predicate KOTOR 1 has: a direct class-skill lookup
+// first, then a loop over the creature's classes returning 1 on the first
+// hit, 0 otherwise. Same one-ushort-arg thiscall shape.
+const uintptr_t kAddrCSWGuiSkillsCharGenIsClassSkill =
+    acc::addr::Pick(0x006f4b60, 0x009103a0);
 
 // CSWGuiSkillsCharGen::OnEnterPointsButton — engine handler that
 // populates description_list_box with the description for the given
@@ -181,7 +200,16 @@ const uintptr_t kAddrCSWGuiSkillsCharGenIsClassSkill = acc::addr::R(0x006f4b60);
 // Signature per SARIF (SYMBOL @ 0x006f4bf0):
 //   void __thiscall OnEnterPointsButton(CSWGuiControl* param_1)
 // Callee-pops 4 bytes.
-const uintptr_t kAddrCSWGuiSkillsCharGenOnEnterPointsButton = acc::addr::R(0x006f4bf0);
+//
+// KOTOR 2 0x0090f610 — the event-0 handler the panel ctor 0x0090c6a0
+// registers on every value button. Body matches KOTOR 1's landmark for
+// landmark: it walks all eight buttons testing
+// `param_1 == panel + 0x1928 + i*0x1D0`, stores the hit index into
+// selected_skill (panel+0x4CEC), recolours the matched row and resets the
+// others, then repaints CLASSSKL_LBL and the description. Its event-1
+// twin 0x0090f9f0 is the mouse-leave that just clears the highlight bit.
+const uintptr_t kAddrCSWGuiSkillsCharGenOnEnterPointsButton =
+    acc::addr::Pick(0x006f4bf0, 0x0090f610);
 
 // CSWGuiAbilitiesCharGen::OnEnterPointsButton — twin of the Skills panel's
 // OnEnterPointsButton (0x006f4bf0). Populates description_listbox with the
@@ -197,7 +225,16 @@ const uintptr_t kAddrCSWGuiSkillsCharGenOnEnterPointsButton = acc::addr::R(0x006
 // Signature per SARIF (SYMBOL @ 0x006f70e0):
 //   void __thiscall OnEnterPointsButton(CSWGuiControl* param_1)
 // Callee-pops 4 bytes.
-const uintptr_t kAddrCSWGuiAbilitiesCharGenOnEnterPointsButton = acc::addr::R(0x006f70e0);
+//
+// KOTOR 2 0x00913180 — the event-0 handler its ctor 0x00910490 registers
+// on every value button, and the exact twin of the Skills one above: six
+// `param_1 == panel + 0x1550 + i*0x1D0` tests, index stored into
+// selected_ability (panel+0x487C), then the modifier text and the
+// description repaint. The plus handler 0x00912d40 calls it back directly
+// with `panel + 0x1550 + selected*0x1D0` after a value change, which is
+// the same "refresh the focused row" contract we rely on.
+const uintptr_t kAddrCSWGuiAbilitiesCharGenOnEnterPointsButton =
+    acc::addr::Pick(0x006f70e0, 0x00913180);
 
 // CSWGuiFeatsCharGen vtable (chargen feats panel). Member layout and the four
 // parallel feat lists are documented in engine_offsets_fields.h.

@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstring>
 
+#include "engine_game.h"   // IsKotor2 — per-game cursor-warp hit-test shim
 #include "engine_offsets.h"
 #include "engine_reads.h"
 #include "log.h"
@@ -66,7 +67,22 @@ int IndexFromButton(const PanelDesc& d, void* panel, void* control) {
     return i;
 }
 
+// KOTOR 1 ONLY, same shape as the class-icon column shim in menus_chain.cpp:
+// KOTOR 1's abchrgen/skchrgen hit-test resolves one row ABOVE the value
+// button's own extent, so the warp has to aim a full row-pitch low or the
+// engine's OnEnterPointsButton populates the description listbox for the
+// wrong row. KOTOR 2 has no such shift — its warps land on the row's own
+// LBL (which spans the value button) and every logged description matched
+// the focused row (patch-20260803-095222.log).
+//
+// The K2 exit used to happen by accident, via the `pitch > 100` reject in
+// RowPitchFromButtonExtents: K2 stretches its single 800x600 layout to the
+// window, so the authored 41-unit pitch measures 123 px at 2880x1800. That
+// is a bare pixel constant standing in for a per-game fact — at a window
+// narrow enough to keep the pitch under 100 the compensation would have
+// come back and shifted every K2 row by one. Gate on the game instead.
 int RowPitchForCursorWarp(const PanelDesc& d, void* panel, void* control) {
+    if (acc::game::IsKotor2()) return 0;
     if (IndexFromButton(d, panel, control) < 0) return 0;
     return RowPitchFromButtonExtents(panel, d.buttonsOffset);
 }

@@ -126,7 +126,10 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
 namespace acc::menus {
 
 namespace {
-char s_lastSpoken[2][256] = {{0}, {0}};
+// Sized with the announce buffers: SpeakIfChanged compares the WHOLE stored
+// string, so a snapshot shorter than the text it guards would report two
+// different lines as identical whenever they share a long prefix.
+char s_lastSpoken[2][acc::menus::detail::kAnnounceTextMax] = {{0}, {0}};
 }
 
 void MarkSpoken(int channel, const char* text) {
@@ -892,7 +895,7 @@ void DrainPendingAnnounce() {
         }
     }
 
-    char text[256];
+    char text[acc::menus::detail::kAnnounceTextMax];
     const char* source = acc::menus::extract::FromControl(
         control, text, sizeof(text), panel);
     if (source) {
@@ -907,6 +910,28 @@ void DrainPendingAnnounce() {
     // Containers carrying real text returned via the FromControl success path,
     // so this drops only contentless containers, never a navigable control.
     if (isListBoxContainer) return;
+
+    // Chargen class icon with a cold label cache. The icon's class name is
+    // only readable once the panel's own OnEnterButton has written
+    // class_label, which happens a beat AFTER the panel-open SetActiveControl
+    // that queued this announce — so FromControl legitimately has nothing yet.
+    // KOTOR 2 loses that race every time: entering Klassenauswahl spoke
+    // "control 11" and the anchored icon's name was never heard until the user
+    // navigated back onto it (patch-20260803-102731.log). KOTOR 1 happened to
+    // win it, which is why AnnounceControl already had this guard and the
+    // drain did not.
+    //
+    // Not a silenced fallback: the value arrives a tick later and the focus
+    // monitor speaks it then (it has not primed its last-seen control here),
+    // which is the queue-don't-drop behaviour the rule asks for. Keyed on the
+    // drain's own panel, not g_currentPanel.
+    if (acc::menus::detail::IsClassSelectionIcon(panel, control)) {
+        acclog::Write("Announce",
+                      "class-icon %p deferred: label cache cold, focus "
+                      "monitor will speak it once the engine fills class_label",
+                      control);
+        return;
+    }
 
     // No extractable text: announce a "control N" placeholder. Bypasses
     // SpeakIfChanged dedup deliberately (memory:

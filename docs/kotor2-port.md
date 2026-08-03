@@ -6,6 +6,245 @@ result especially — but whose cost estimate predates the RTTI finding below.
 
 ## WHERE TO RESUME (read this first)
 
+**Character-creation batch, round 3 — IMPLEMENTED 2026-08-03 (sixteenth
+session). Built green, applied to both games, awaiting test.** Round 2's
+test (`patch-20260803-102731.log`) confirmed the Attribute and Fähigkeiten
+chains clean (9 and 11 entries, every row "Stärke, 8" / "Computerkenntn.,
+0", no stray "1", no sibling fallbacks anywhere in 8227 lines) and class
+selection walking left to right one icon per press. Three items left:
+
+- **The last "control N" in chargen: `DrainPendingAnnounce` was missing the
+  class-icon guard that `AnnounceControl` already had.** An icon's name is
+  only readable once the panel's own OnEnterButton has written class_label,
+  which happens a beat AFTER the panel-open SetActiveControl that queued the
+  announce. KOTOR 1 wins that race (its log speaks "Männlich: Gauner"
+  directly); KOTOR 2 loses it every time and spoke "control 11", after
+  which the anchored icon's name was never heard until the user navigated
+  back onto it. Deferring is not a silenced fallback — the focus monitor
+  speaks the name a tick later, since the drain never primes its last-seen
+  control. Keyed on the drain's own panel, not `g_currentPanel`.
+- **Portrait cycling: the stem's digits are not a position.** K2 adds a
+  fourth head family 'h' (P_MAL_H / P_FEM_H — rows 45/60 male, 58/59
+  female) which fell through to the raw-resref branch ("Porträt:
+  po_pmhh02"), and its variant digits are shuffled relative to row order:
+  the five dark-skinned males are rows 28..32 spelling 06, 08, 10, 07, 09,
+  so cycling sounded random. Replaced `kPortraitByRow` (which was also
+  silently off by one against K1's real 2da — row 24 is po_pmhc2, not
+  po_pmhc3; harmless only because the live `GetPortrait` read always won)
+  with per-game `PortraitRow` tables of the forpc=1 rows and a
+  `PortraitVariantRank` that numbers each portrait within its own (gender,
+  family) group. K1's digits already equal its ranks, so its wording is
+  unchanged; an unknown row (portrait mods) still falls back to the stem
+  digits. Cycle order verified from the log: ids 60, 45, 32 … 18 wrapping,
+  exactly the forpc=1 && sex=0 set with the forpc=0 row 22 skipped.
+  **Open: `PortraitRaceTypeH` ships as a neutral "Typ H" / "type H"
+  placeholder** — a/b/c carry ethnic readings, 'h' has none, and inventing
+  one would be a claim we cannot check. Awaiting a name from the user.
+- **NEW FEATURE — class descriptions after the class name.** Both games
+  number LBL_DESC **id 5** in their own classsel .gui (K1 `classsel.gui`,
+  K2 `classsel_p.gui`), so one `kClassSelDescLabelId` serves both and no
+  per-game field offset was needed — the by-.gui-id method again. The
+  engine fills it on hover in the same OnEnterButton pass that sets
+  class_label, so it is captured at that same moment and cached per icon,
+  then spoken as a follow-up line by the chain step. Two shapes worth
+  keeping: (a) it is stored ALONGSIDE the name, never concatenated — every
+  `FromControl` caller passes a 256-byte buffer and the German blurb alone
+  runs past 200 chars, so a composed string would have overflowed and
+  killed the whole extraction; (b) both games author LBL_DESC with a
+  placeholder (empty on K1, the literal "This is just a test line."
+  repeated on K2), so `WalkAndCaptureOnFirstSight` snapshots the authored
+  text before any hover and `ClassDescIsEngineWritten` compares against it.
+  That is what tells content from default without hard-coding either
+  placeholder, and it fails closed — no snapshot, no description.
+  **Unverified offline: that the engine writes LBL_DESC at all.** The
+  placeholder guard means the failure mode is silence, not garbage, and
+  the composed string shows in the `ClassSelection cache+speak` log line.
+- **The 256-byte announce buffer was hiding a bug, not just clipping.**
+  Nine per-kind extraction steps ended in `if (len + 1 <= bufSize)
+  memcpy(...)` and simply reported "no text" when it did not fit — so the
+  CALLER'S buffer size decided whether a control had a NAME, not merely how
+  much of it you heard. Two probe call sites pass 64 bytes and only test
+  the return value (`FindAdjacentArrow`, `SquashCycleFlankers`), so any
+  control whose label ran past 63 characters read as text-less to them and
+  could be squashed out of the chain outright. All nine now go through
+  `EmitText`, which truncates — the same failure every snprintf path in the
+  ladder already had. The announce buffers themselves moved to a shared
+  `acc::menus::detail::kAnnounceTextMax` (1024), including the focus
+  monitor's snapshot and `SpeakIfChanged`'s two dedup slots — both of which
+  COMPARE against their stored string, so a short snapshot would have
+  reported two long lines as identical whenever they shared a prefix. That
+  is what let the class description be part of the announce string instead
+  of a separate follow-up utterance.
+
+**Character-creation batch, round 2 — IMPLEMENTED 2026-08-03 (fifteenth
+session; zero Ghidra, all six defects resolved offline from the round-1 test
+log + the two games' own .gui files). Built green, applied to both games,
+awaiting test.** The user's report after round 1: Left/Right on an Attribut
+or Fähigkeit changes the value silently; a stray "1" entry sits between the
+last rows of both Attribute and Fähigkeiten; class-choice and portrait
+navigation skip entries, need repeated presses, or announce silence; the
+portrait names are mangled. Evidence: `patch-20260803-095222.log` (K2, 3019
+lines, no faults) plus `abchrgen_p.gui` / `skchrgen_p.gui` / `custpnl_p.gui`
+/ `classsel_p.gui` / `portcust_p.gui` out of each game's gui.bif.
+
+- **ROOT CAUSE FOR THREE OF THE FOUR REPORTS — KOTOR 2 pushes every chargen
+  wizard step without firing `CSWGuiPanel::SetActiveControl`.** abchrgen_p,
+  skchrgen_p and portcust_p all open straight out of the parent step-list's
+  button handler, so `g_currentPanel` stayed latched on custpnl_p for the
+  whole visit while the routing layer correctly drove the chain off the
+  manager's foreground panel. The log says it plainly: `Routing:
+  fg=1D497390 current=1D3E3030 (using fg)` on every tick of the Attribute
+  screen, and no `Menus.PanelWalk: panel=1D497390` line anywhere.
+  `g_currentPanel` is the only thing three separate consumers keyed on:
+  - `WalkAndCaptureOnFirstSight` never ran, so `CaptureLabels` never bound
+    `ability_labels[i]` onto `ability_buttons[i]` — the rows spoke a bare
+    "8" instead of "Stärke, 8". Fixed by calling the walk from
+    `RebindChain` as well; it self-guards on a last-panel latch, so on
+    KOTOR 1 (where SetActiveControl already ran) it is an immediate no-op.
+  - The focused-control monitor's `g_chainPanel != g_currentPanel` gate
+    returned early for the whole visit, which is why twelve `Menus.Cycle`
+    dispatches and twelve `FireActivate` calls produced zero
+    `AnnounceValueChange` lines — the silent +/- the user reported. The
+    gate's existing CSWGuiPortraitCharGen bypass was that same bug, patched
+    one vtable at a time; it now asks the manager for its foreground panel,
+    which is the invariant the special case was approximating.
+  - `TrySiblingLabel` resolved BOTH of its callees against `g_currentPanel`
+    instead of the caller-supplied owner. So `IsCycleFlankerArrow` looked
+    for a value button on custpnl_p, found none beside a ± stepper, and let
+    the sibling-label fallback fire; `FindSiblingLabel` then captioned the
+    stepper with whichever of custpnl_p's **LBL_NUM1..6 step numbers**
+    lined up vertically. That is the stray "1" — geometry confirms it
+    exactly: at 2880x1800 LBL_NUM1 sits at (1526,1107), INT_PLUS at
+    (1363,948) and WIS_PLUS at (1363,1071) are the only two steppers inside
+    the scaled 50-unit vertical reach whose nearest candidate is the
+    numbered label rather than its empty LBL_n twin, and those are the only
+    two entries that leaked (chain indices 4 and 6, on both panels).
+    `TrySiblingLabel` now takes FromControl's already-resolved `owner`.
+- **Class selection: the cursor-warp column shim is a KOTOR 1 fact.**
+  K1's classsel.gui hit-test resolves one column RIGHT of each icon's own
+  extent — `patch-20260731-140902.log` shows every warp aiming centre+87
+  and every one reporting `after == target`. K2 has no such shift, so the
+  K1 compensation overshot by exactly one column
+  (`MoveMouseToPosition(1257,769) target=<SEL2> after=<SEL3>`), the engine
+  bounced focus back to the selected icon, and the per-icon class-label
+  cache filled for whichever icon the cursor actually hit — hence skipped
+  entries, repeated presses, and silence on the focused one.
+  `ComputeClassIconClickOffset` is now K1-only.
+- **Same class of shim, same fix, one screen over:** the Attribute/Skills
+  row-pitch warp compensation was exiting on K2 only by ACCIDENT, via a
+  bare `pitch > 100` reject that K2's stretched 41-unit authored pitch (123
+  px at 2880x1800) happened to trip. At a window narrow enough to keep the
+  pitch under 100 it would have come back and shifted every row by one.
+  `RowPitchForCursorWarp` is now gated on the game, not on a pixel count.
+  **This is the third instance of the round-1 lesson: a bare pixel constant
+  is a K1 assumption.** Grep for new ones whenever geometry code is added.
+- **Chain reading order within a row.** classsel.gui stores BTN_SEL6 before
+  BTN_SEL5, and the y-sort's stability then walked the six icons
+  1,2,3,4,6,5 (true on both games). `ChainEntry` gained a `geometricOrder`
+  flag and the sort a left-to-right secondary key — applied only between
+  panel-direct controls, so listbox blocks and virtual rows (whose order is
+  the engine's, not the geometry's) are untouched.
+- **Portrait names: K2 numbers its variants with a zero-padded TWO-digit
+  field and mixes case.** `po_PMHC06` where K1 has `po_pmhc3`. The parser
+  read a single char at [7], so every K2 portrait announced as variant
+  "0"; an exact-case compare would additionally have dropped the parse for
+  the upper-case rows. Now case-insensitive with a multi-digit variant
+  read, so id 24 reads "männlich hellhäutig 6". The static
+  `kPortraitByRow` fallback table is K1's row order (K2's row 24 is
+  po_PMHC06, K1's is po_pmhc3) and went K1-only — on K2 a failed live read
+  now falls through to the numeric id rather than naming the wrong
+  portrait. No better source exists: neither game's portraits.2da carries
+  a display name, and appearance.2da only has model labels
+  ("P_MAL_C_MED_02").
+- Test items for the next K2 round: Attribute and Fähigkeiten rows speak
+  "Stärke, 8" / "Computer benutzen, 0" (name + value, not bare value); no
+  "1" entry anywhere in either chain; Left/Right on a row speaks the new
+  value plus remaining points; the first row is announced on panel open
+  without pressing Up; class selection walks the six icons left to right,
+  one press per icon, each speaking its own class; portrait cycling speaks
+  "Porträt: männlich hellhäutig 6"-style names. K1 regression: one full
+  chargen pass — the class-icon warp shim, the attribute row-pitch shim,
+  the chain sort and the sibling-label panel source all changed.
+
+**Character-creation batch — IMPLEMENTED 2026-08-03 (fourteenth session; six
+Ghidra rounds + a gui.bif mine, driven by a chargen test round the user ran
+end to end). Built green, applied to both games, awaiting test.** The user's
+report was: unnamed controls all over Attribute and Fähigkeiten, and the
+feats screen's OK button speaking "0 hat die Gruppe verlassen" and doing
+nothing. Three unrelated causes, one of them a class of bug we had not hit
+before. The witness ledger:
+
+- **The Attribute and Fähigkeiten panels were never ported at all.** Every
+  offset in both `CSWGuiAbilitiesCharGen` and `CSWGuiSkillsCharGen` was
+  still `Todo(...)`, and all four of their addresses still plain `R()`
+  (which is 0 on K2). Both vtables were Pick'd, so `IsPanel` said yes and
+  every consumer then read poison: `CaptureLabels` bound nothing, so a row
+  spoke its bare value ("8") instead of "Stärke, 8"; the suffix and the
+  description read no-op'd; `SyncSelected*` never fired. The descriptions
+  the user did hear came from the engine's own hover echo, which our
+  listbox silencer also failed to recognise — working by accident.
+- **All twelve numbers resolved offline**, each with three independent
+  witnesses (ctor tag binding, dtor vector-iterator size+count, and the
+  engine's own `panel + base + i*stride` arithmetic inside
+  OnEnterPointsButton), plus a fourth from the live log's chain pointers.
+  Full reasoning inline at the declarations. Abilities: labels 0xDA0,
+  buttons 0x1550, selected 0x487C, LB_DESC 0x70, remaining 0x738.
+  Skills: labels 0xEE8, buttons 0x1928, selected 0x4CEC, LB_DESC 0x70,
+  remaining 0x738. Control sizes: label 0x148, button 0x1D0. Addresses:
+  abilities OnEnterPointsButton 0x00913180 / GetCost 0x00913570, skills
+  OnEnterPointsButton 0x0090F610 / IsClassSkill 0x009103A0.
+  `kAbilitiesCharGenModifierValueOffset` went Kotor1Only — K2 has no
+  LBL_ABILITY_MOD, it shows six per-row LBL_BONUS_* labels instead.
+- **The feats panel's three button ids were KOTOR 1 literals.** K2's
+  ftchrgen_p.gui renumbers everything and each id lands on a different
+  button (K1 9/11/12 = Recommended/Accept/Back, K2 9/10/11 =
+  Back/Accept/Recommended). K1's BTN_BACK id 12 is K2's **LB_FEATS, a
+  listbox** — read as a button it walked off the CSWGuiButton layout, the
+  gui_string read faulted, and the str_ref fallback resolved a garbage
+  dword into "<CUSTOM0> hat die Gruppe verlassen." Enter then fired the
+  listbox. Now two per-game tables, each in its game's on-screen
+  left-to-right order (the two games mirror the row).
+- **NEW CLASS OF BUG — KOTOR 2's control extents are in SCREEN pixels.**
+  KOTOR 1 ships one .gui variant per resolution and hands us the authored
+  extents verbatim (mainmenu8x6.gui's BTN_NEWGAME centre is 485,292 and
+  that is exactly what the chain logs). KOTOR 2 stretches a single 800x600
+  layout to the window and stores the RESULT — at the user's 2880x1800
+  that is 3.6x horizontally. `menus_focus_k2.cpp` already recorded this for
+  the cursor warp, but nobody swept the chain code for the consequence:
+  **every pixel threshold measured off a KOTOR 1 .gui is wrong on K2, and
+  wrong by a factor that changes with the player's resolution.**
+  `SquashCycleFlankers`' 80-unit reach is why all twelve chargen +/-
+  steppers (27 authored units away, 97 at this resolution) leaked into the
+  chain as "control 12" … "control 34". New
+  `acc::menus::detail::ScaleGuiThresholdPx` (menus_internal, next to
+  `GetControlCenter` whose units it converts) scales at the point of
+  comparison from the window's own client width — self-calibrating to any
+  resolution, an exact no-op on K1.
+  **The sweep found two more sites, both in menus_extract.cpp**, and they
+  matter more than the chain one: `IsCycleFlankerArrow`'s 5/80 pair, and
+  `FindSiblingLabel`'s 5/50/80 triple — the latter being *the* generic
+  "what is this control called" path. An unscaled 50-unit vertical reach
+  rejects any caption more than ~14 authored units from its widget on K2,
+  so that constant alone was silently turning named controls into
+  "control N" across the whole UI, not just chargen. All three sites now
+  route through the helper. The options sub-screens' 130-unit spinner
+  reach (108 authored → ~389) is fixed by the same change and had not been
+  reported yet.
+  **Lesson to carry: a bare pixel constant is a K1 assumption.** The three
+  known sites are converted; grep for new ones whenever geometry code is
+  added, and prefer deriving reaches from the controls' own extents.
+- Test items for the next K2 round: Attribute rows speak "Stärke, 8" not
+  "8"; "Modifikator -1, Preis 1" follows; description follows; no "control
+  N" anywhere on Attribute or Fähigkeiten; Left/Right on a row changes
+  THAT row's value (the cursor-warp row-pitch compensation is KOTOR 1
+  empirical and unverified on K2 — if + raises the row above, that branch
+  is the suspect, and the per-tick `SyncSelected*` should already be
+  masking it); Fähigkeiten rows speak name + "Preis 1"/"Preis 2"; feats
+  screen's three buttons speak Abbrechen / OK / Empfohlen in that order
+  and OK commits. K1 regression: one full chargen pass (Attribute,
+  Fähigkeiten, Talente) — the offsets went Pick, the feats tables were
+  restructured, and both chain thresholds now route through a helper.
+
 **Equipment-screen batch — IMPLEMENTED 2026-08-03 (thirteenth session; four
 Ghidra rounds + a gui.bif mine, driven by the FIRST combined test round).
 Built green, applied to both games, awaiting the combined test.** This batch

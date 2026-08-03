@@ -100,7 +100,7 @@ namespace acc::menus::monitors {
 
 namespace {
 void* s_focusMonitorControl = nullptr;
-char  s_focusMonitorText[256] = {0};
+char  s_focusMonitorText[acc::menus::detail::kAnnounceTextMax] = {0};
 }
 
 void AnnounceControl(void* control) {
@@ -131,7 +131,7 @@ void AnnounceControl(void* control) {
         }
     }
 
-    char text[256];
+    char text[acc::menus::detail::kAnnounceTextMax];
     // Pass the chain panel so the extraction is identical to
     // MonitorFocusedControl's (which also passes g_chainPanel). FromControl's
     // panel-scoped enrichment — notably the InGameLevelUp "nicht verfügbar"
@@ -195,25 +195,35 @@ void AnnounceControl(void* control) {
 namespace {
 
 void MonitorFocusedControl() {
-    // Eager rebind for the chargen portrait-selection panel. CSWGuiPortrait-
-    // CharGen is pushed by its parent sub-menu ("Eigener Charakter") WITHOUT
-    // firing OnSetActiveControl, so the chain stays bound to the parent until
-    // the user's first arrow press. HandleNavStep then rebinds AND steps in a
-    // single call, so the first Down lands on index 1 ("OK") and the initially-
-    // anchored portrait (index 0) is never announced — the user had to press
-    // Up to hear it. Rebinding here the moment the panel is foreground lets the
-    // focus monitor below announce the anchored portrait on open, before any
-    // keypress. Scoped to this one vtable: it's the only panel known to open
-    // without an OnSetActiveControl focus event. A no-op once bound (fg ==
-    // g_chainPanel) so it never re-anchors while the user navigates the panel.
+    // Eager rebind for the chargen wizard steps. Each of these panels is
+    // pushed by its parent sub-menu ("Eigener Charakter") WITHOUT firing
+    // OnSetActiveControl, so the chain stays bound to the parent until the
+    // user's first arrow press. HandleNavStep then rebinds AND steps in a
+    // single call, so the first Down lands on index 1 and the initially-
+    // anchored entry (index 0) is never announced — the user had to press
+    // Up to hear it. Rebinding here the moment the panel is foreground lets
+    // the focus monitor below announce the anchored entry on open, before
+    // any keypress. A no-op once bound (fg == g_chainPanel) so it never
+    // re-anchors while the user navigates the panel.
+    //
+    // Deliberately an explicit vtable list rather than "any fg that isn't
+    // the chain panel": the drill router in menus_dispatch retargets the
+    // chain AWAY from fg on purpose when the user has Entered a sub-screen
+    // from the in-game strip, and a blanket rebind here would fight it every
+    // tick. PortraitCharGen was the first of these found; Abilities and
+    // Skills joined it from the KOTOR 2 chargen round (their index-0 row —
+    // Stärke / Computer benutzen — was silent on open).
     if (void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr)) {
         void* fg = GetForegroundPanel(mgr);
         if (fg && fg != acc::menus::chain::g_chainPanel) {
             void* vt = nullptr;  // guarded: fg may already be torn down
-            if (acc::engine::TryReadPtr(fg, 0, &vt) &&
-                reinterpret_cast<uintptr_t>(vt) ==
-                    kVtableCSWGuiPortraitCharGen) {
-                acc::menus::chain::RebindChain(fg);
+            if (acc::engine::TryReadPtr(fg, 0, &vt)) {
+                uintptr_t vtaddr = reinterpret_cast<uintptr_t>(vt);
+                if (vtaddr == kVtableCSWGuiPortraitCharGen ||
+                    vtaddr == kVtableCSWGuiAbilitiesCharGen ||
+                    vtaddr == kVtableCSWGuiSkillsCharGen) {
+                    acc::menus::chain::RebindChain(fg);
+                }
             }
         }
     }
@@ -224,28 +234,31 @@ void MonitorFocusedControl() {
         return;
     }
     if (acc::menus::chain::g_chainPanel != g_currentPanel) {
-        // CSWGuiPortraitCharGen is pushed by the parent chargen sub-menu
-        // (Eigener Charakter) without firing our OnSetActiveControl hook,
-        // so g_currentPanel stays on the parent and the gate would
-        // suppress text-change re-announce on every cycle. Bypass the
-        // gate when the chain panel itself is a PortraitCharGen — its
-        // chain rebind is the authoritative signal that we're on it.
-        // Without this, the user has to nav-down + nav-up to refocus
-        // and force a fresh AnnounceControl just to hear the cycled
-        // value.
+        // g_currentPanel is written only from OnSetActiveControl, so it goes
+        // stale for every panel the engine pushes without firing a focus
+        // event — CSWGuiPortraitCharGen on both games, and on KOTOR 2 the
+        // whole chargen wizard (abchrgen_p, skchrgen_p) as well, all pushed
+        // straight out of the parent step-list's button handler. The gate
+        // then suppressed the text-change re-announce for the entire visit:
+        // on KOTOR 2 that is why Left/Right on an Attribut or Fähigkeit
+        // silently changed the value (patch-20260803-095222.log — twelve
+        // Menus.Cycle dispatches, twelve FireActivate calls, zero
+        // AnnounceValueChange lines).
+        //
+        // The real invariant the old PortraitCharGen special-case was
+        // approximating: the chain is authoritative when it is bound to the
+        // panel the user is actually looking at. Ask the manager for its
+        // foreground panel — the same source the routing layer picks the
+        // chain panel from — instead of naming one vtable.
         void* chainPanel = acc::menus::chain::g_chainPanel;
         if (!chainPanel) return;
-        void* vt = nullptr;  // guarded: the chain can outlive its panel
-        if (!acc::engine::TryReadPtr(chainPanel, 0, &vt) ||
-            reinterpret_cast<uintptr_t>(vt) !=
-                kVtableCSWGuiPortraitCharGen) {
-            return;
-        }
+        void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+        if (!mgr || GetForegroundPanel(mgr) != chainPanel) return;
     }
     void* focused = acc::menus::chain::g_chain[acc::menus::chain::g_chainIndex].control;
     if (!focused) return;
 
-    char text[256];
+    char text[acc::menus::detail::kAnnounceTextMax];
     const char* source = acc::menus::extract::FromControl(
         focused, text, sizeof(text), acc::menus::chain::g_chainPanel);
     if (!source) return;

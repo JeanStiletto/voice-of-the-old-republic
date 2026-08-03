@@ -50,10 +50,61 @@
 
 namespace acc::menus::detail {
 
+// Buffer size every announce path allocates for a control's spoken text.
+//
+// It was 256 for years, which was not merely a clipping limit: several
+// per-kind extraction steps used to bail out ("this control has no name")
+// rather than truncate when their text did not fit, so the CALLER'S buffer
+// size decided whether a control was announceable at all. EmitText in
+// menus_extract.cpp now truncates instead, and this constant is sized so
+// nothing the game renders gets clipped in the first place — the longest
+// real string is a chargen class name plus its description, a bit over 250
+// characters in German. Cheap: these are stack buffers on paths that run at
+// most once per keypress, plus one static snapshot in the focus monitor.
+constexpr size_t kAnnounceTextMax = 1024;
+
 bool IsChainNavigable(void* control);
 bool IsClassSelectionIcon(void* panel, void* control);
 const char* ClassLabelCacheLookup(void* panel, void* icon);
 void ClassLabelCacheStore(void* panel, void* icon, const char* text);
+
+// Compose "class name" + the engine's class blurb into one announce string.
+// Must be called at the moment class_label is read — both labels hold the
+// NEXT icon's text by the time a chain step announces this one.
+void ComposeClassAnnounce(void* panel, const char* name,
+                          char* outBuf, size_t bufSize);
+
+// Class-description placeholder discrimination. classsel.gui authors
+// LBL_DESC with a placeholder that the engine replaces on hover; Capture
+// snapshots the authored text at panel-walk time (before any hover) and
+// IsEngineWritten answers "is this the engine's class description, or still
+// the .gui default?" for whatever is in the label now.
+void ClassDescBaselineCapture(void* panel, const char* text);
+bool ClassDescIsEngineWritten(void* panel, const char* text);
+
+// Convert a distance measured in .gui authoring units into the units
+// GetControlCenter below actually returns on the running game.
+//
+// The two games differ here and it is easy to miss, because KOTOR 1 needs
+// no conversion at all: it ships one .gui variant per resolution and hands
+// us the authored extents verbatim — mainmenu8x6.gui declares BTN_NEWGAME's
+// centre at 485,292 and that is exactly what the chain logs. KOTOR 2
+// stretches its single 800x600 layout to the window and stores the RESULT
+// in the extents (the same fact menus_focus_k2.cpp records for the cursor
+// warp), so at 2880x1800 every distance is 3.6x the authored one.
+//
+// Consequence: any bare pixel threshold in this codebase is a KOTOR 1
+// assumption. Every one of them was measured off a KOTOR 1 .gui file, and
+// on KOTOR 2 they are wrong by a factor that changes with the player's
+// resolution. That is what leaked all twelve chargen +/- steppers into the
+// chain as "control 12" … "control 34" (patch-20260803-011930.log): they
+// sit 27 authored units from their value button, 97 at that resolution,
+// past SquashCycleFlankers' 80-unit reach.
+//
+// Returns `guiPx` unchanged on KOTOR 1, and on KOTOR 2 whenever the window
+// is unreadable — never shrinking a threshold, so a failed read can only
+// preserve the pre-existing behaviour.
+int ScaleGuiThresholdPx(int guiPx);
 
 // Screen-center of a control's extent, false on degenerate extents.
 // Used by FindSiblingLabel / IsCycleFlankerArrow in menus_extract.cpp

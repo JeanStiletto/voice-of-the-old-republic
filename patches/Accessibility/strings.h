@@ -673,7 +673,19 @@ enum class Id : int {
     PortraitRaceAsian,
     PortraitRaceDark,
     PortraitRaceLight,
+    // PortraitRaceTypeH — KOTOR 2 adds a fourth head family (P_MAL_H /
+    // P_FEM_H, portraits.2da rows 45/60 male and 58/59 female). Unlike
+    // a/b/c it carries no readable ethnic sense, so this is a deliberately
+    // neutral placeholder ("Typ H") rather than an invented description.
+    PortraitRaceTypeH,
     FmtPortraitDescription,
+
+    // FmtClassNameWithDescription — chargen class icon. Composes the class
+    // name off class_label with the blurb the engine renders beneath it
+    // (classsel .gui LBL_DESC, id 5 on both games). Two `%s`: name,
+    // description. A sentence break rather than the usual ", " suffix
+    // comma — the description is a full sentence, often several.
+    FmtClassNameWithDescription,
 
     // ---- Party selection portrait status suffix. Appended (with leading
     //      ", ") to the companion name when speaking a portrait in the

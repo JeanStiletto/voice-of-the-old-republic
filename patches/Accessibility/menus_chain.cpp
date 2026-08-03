@@ -14,6 +14,7 @@
 #include "engine_manager.h"
 #include "engine_rebase.h"
 
+#include "engine_game.h"     // IsKotor2 — per-game cursor-warp hit-test shims
 #include "engine_offsets.h"
 #include "engine_panels.h"
 #include "engine_player.h"   // PartyTableIsNPCAvailable / *Selectable /
@@ -26,6 +27,7 @@
 #include "menus_credits.h"
 #include "menus_equipstats.h"
 #include "menus_extract.h"
+#include "menus_focus.h"     // WalkAndCaptureOnFirstSight — see RebindChain
 #include "menus_internal.h"
 #include "menus_inventory.h"
 #include "menus_modsettings.h"
@@ -40,6 +42,7 @@ using namespace acc::engine;  // IdentifyPanel, PanelKind, kInput*, etc.
 using acc::menus::detail::IsChainNavigable;
 using acc::menus::detail::IsClassSelectionIcon;
 using acc::menus::detail::GetControlCenter;
+using acc::menus::detail::ScaleGuiThresholdPx;
 
 namespace acc::menus::chain {
 
@@ -313,6 +316,11 @@ void* FindAdjacentArrow(void* panel, void* focused, bool toRight) {
     void* best = nullptr;
     int bestDx = 0x7fffffff;
 
+    // Same-row tolerance. The arrows are centred on their value button, so
+    // this only has to absorb rounding — but on KOTOR 2 the rounding is
+    // multiplied by the GUI stretch along with everything else.
+    const int kSameRowDy = ScaleGuiThresholdPx(5);
+
     int n = list->size > 256 ? 256 : list->size;
     for (int i = 0; i < n; ++i) {
         void* c = list->data[i];
@@ -321,7 +329,7 @@ void* FindAdjacentArrow(void* panel, void* focused, bool toRight) {
 
         int cx, cy;
         if (!GetControlCenter(c, cx, cy)) continue;
-        if (cy - focusCy > 5 || focusCy - cy > 5) continue;
+        if (cy - focusCy > kSameRowDy || focusCy - cy > kSameRowDy) continue;
 
         int dx = toRight ? (cx - focusCx) : (focusCx - cx);
         if (dx <= 0) continue;
@@ -394,10 +402,15 @@ void AppendChainEntry(void* control, int sortCy = kSortByOwnCy) {
     if (!IsChainNavigable(control))       return;
     int cx, cy;
     if (!GetControlCenter(control, cx, cy)) return;
+    bool ownCy = (sortCy == kSortByOwnCy);
     g_chain[g_chainCount++] = {
         control, cx, cy,
-        (sortCy == kSortByOwnCy) ? cy : sortCy,
-        /*textOnly=*/false
+        ownCy ? cy : sortCy,
+        /*textOnly=*/false, /*virtualKind=*/0,
+        // Only panel-direct controls (the default sortCy) are ordered
+        // geometrically; a caller-supplied sortCy means this is a listbox
+        // row whose block order must survive the sort untouched.
+        /*geometricOrder=*/ownCy
     };
 }
 
@@ -408,7 +421,10 @@ void AppendChainTextOnly(void* control, void* panel) {
     if (!acc::menus::extract::FromControl(control, tmp, sizeof(tmp), panel)) return;
     int cx, cy;
     if (!GetControlCenter(control, cx, cy)) return;
-    g_chain[g_chainCount++] = { control, cx, cy, cy, /*textOnly=*/true };
+    g_chain[g_chainCount++] = {
+        control, cx, cy, cy,
+        /*textOnly=*/true, /*virtualKind=*/0, /*geometricOrder=*/true
+    };
 }
 
 // Panel-aware chain filter: in CSWGuiPortraitCharGen we anchor the chain
@@ -948,16 +964,29 @@ if (IdentifyPanel(panel) == PanelKind::StatusSummary) {
 }
 }
 
-// Insertion sort by sortCy ascending. Stable; the n^2 is cheap int compares
-// and runs once per rebind (panel open / content change), not per tick,
-// so it stays well within budget even at a full kMaxChainEntries chain.
+// Reading-order comparator: y first, then x — but the x tiebreak applies
+// only when BOTH entries are geometrically ordered (see
+// ChainEntry::geometricOrder). Listbox rows and virtual rows share a single
+// sortCy by design and keep their insertion order, so mixing an x compare
+// into their block would scramble it.
+bool ChainEntryPrecedes(const ChainEntry& a, const ChainEntry& b) {
+    if (a.sortCy != b.sortCy) return a.sortCy < b.sortCy;
+    if (!a.geometricOrder || !b.geometricOrder) return false;
+    return a.cx < b.cx;
+}
+
+// Insertion sort in reading order (ChainEntryPrecedes). Stable; the n^2 is
+// cheap int compares and runs once per rebind (panel open / content change),
+// not per tick, so it stays well within budget even at a full
+// kMaxChainEntries chain.
 //
 // Stability is load-bearing, not incidental: every row of one listbox shares
-// a single sortCy, so their relative order is decided purely by the order
+// a single sortCy AND is flagged non-geometric, so the comparator never
+// separates them and their relative order is decided purely by the order
 // AppendListBoxChildren walked them — i.e. the engine's own row order.
 void SortChainBySortCy() {
 for (int i = 1; i < g_chainCount; ++i) {
-    for (int j = i; j > 0 && g_chain[j].sortCy < g_chain[j-1].sortCy; --j) {
+    for (int j = i; j > 0 && ChainEntryPrecedes(g_chain[j], g_chain[j-1]); --j) {
         ChainEntry tmp = g_chain[j];
         g_chain[j]   = g_chain[j-1];
         g_chain[j-1] = tmp;
@@ -980,9 +1009,17 @@ void SquashCycleFlankers(void* panel) {
     // arrows (the user cycles the value with Left/Right) drop out of Up/Down
     // nav instead of speaking "control N". Gated by kind so chargen and
     // every other panel keep the conservative 80 px reach.
-    const int kSquashDxMax =
+    //
+    // Both reaches, and the same-row tolerance below, are quoted in .gui
+    // authoring units — they were measured off KOTOR 1's .gui files — so
+    // they go through ScaleGuiThresholdPx to survive KOTOR 2's stretched
+    // extents. Without that the chargen steppers (27 authored units apart,
+    // 97 at 2880x1800) and the options spinners (108 authored, ~389) both
+    // fall outside the reach and announce as "control N".
+    const int kSquashDxMax = ScaleGuiThresholdPx(
         acc::engine::IsMainMenuOptionsSubScreen(IdentifyPanel(panel))
-            ? 130 : 80;
+            ? 130 : 80);
+    const int kSquashDyMax = ScaleGuiThresholdPx(5);
     int writeIdx = 0;
     for (int i = 0; i < g_chainCount; ++i) {
         char tmp[64];
@@ -998,7 +1035,7 @@ void SquashCycleFlankers(void* panel) {
             if (j == i) continue;
             int dy = g_chain[j].cy - g_chain[i].cy;
             if (dy < 0) dy = -dy;
-            if (dy > 5) continue;
+            if (dy > kSquashDyMax) continue;
             int dx = g_chain[j].cx - g_chain[i].cx;
             if (dx < 0) dx = -dx;
             if (dx == 0 || dx > kSquashDxMax) continue;
@@ -1044,8 +1081,21 @@ if (IdentifyPanel(panel) == PanelKind::InGameEquip) {
 
 // Column pitch between chargen class-selection icons, same purpose as
 // ComputeEquipSlotClickOffset above.
+//
+// KOTOR 1 ONLY. The compensation exists because KOTOR 1's classsel.gui
+// hit-test resolves one column to the RIGHT of each icon's own extent:
+// warping to BTN_SEL2's centre (x=189) hovers BTN_SEL1, so the warp has to
+// aim at x=276 to land on BTN_SEL2 (patch-20260731-140902.log: every
+// MoveMouseToPosition on that panel is centre + 87 and every one reports
+// `after == target`). KOTOR 2 has no such shift — the same log line on K2
+// reads `MoveMouseToPosition(1257,769) target=<SEL2> after=<SEL3>`, i.e.
+// the K1 compensation overshoots by exactly one column, which is why class
+// selection there skipped icons, needed repeated presses, and left the
+// per-icon class-label cache populated for whichever icon the cursor
+// actually hit (so the focused one announced as silence).
 void ComputeClassIconClickOffset(void* panel) {
 g_classIconClickOffsetX = 0;
+if (acc::game::IsKotor2()) return;
 {
     void** pVt = panel ? *reinterpret_cast<void***>(panel) : nullptr;
     if (reinterpret_cast<uintptr_t>(pVt) ==
@@ -1120,6 +1170,23 @@ void RebindChain(void* panel) {
     g_chainIndex  = 0;
     g_chainCount  = 0;
     if (!panel) return;
+
+    // First-sight walk + cycle-category capture, normally driven by
+    // OnSetActiveControl. A panel can reach the user's foreground without
+    // the engine ever firing SetActiveControl on it — KOTOR 2 pushes every
+    // chargen wizard step (abchrgen_p, skchrgen_p, portcust_p) straight out
+    // of the parent step-list's button handler, so the walk never ran and
+    // the routing layer logged "fg=<step> current=<parent>" for the whole
+    // visit. The visible cost was the Attribute / Fähigkeiten rows speaking
+    // a bare "8" instead of "Stärke, 8": CaptureLabels lives at the end of
+    // this walk and binds ability_labels[i] onto ability_buttons[i].
+    //
+    // Placed ahead of the control walk below so the capture is in the cache
+    // before this rebind's own FromControl calls (squash + chain dump) read
+    // it. Idempotent — WalkAndCaptureOnFirstSight self-guards on a
+    // last-panel latch, so on KOTOR 1 (where SetActiveControl already ran
+    // for this panel) it is an immediate no-op.
+    acc::menus::focus::WalkAndCaptureOnFirstSight(panel);
 
     auto* list = reinterpret_cast<CExoArrayList*>(
         reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);

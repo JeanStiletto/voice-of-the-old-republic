@@ -53,6 +53,18 @@ struct ChainEntry {
     // root (kVirtualMod_SettingsRoot). Real-control behaviour is the
     // common case so the field is zero-init in every existing call site.
     int   virtualKind;
+    // True when this entry's reading order is purely geometric: a control
+    // the panel owns directly, positioned by its .gui extent. The y-sort
+    // gives these a left-to-right secondary key so same-row clusters walk
+    // in visual order — chargen's class-selection strip lays its six icons
+    // out on one row but stores BTN_SEL6 before BTN_SEL5 in controls[], so
+    // insertion order alone walked them 1,2,3,4,6,5.
+    //
+    // False for the two entry families whose order is NOT geometric and
+    // must stay as inserted: listbox rows (one block per listbox, ordered
+    // by the engine's own row order — see sortCy above) and virtual rows
+    // (synthetic sortCy, cx often 0 or meaningless).
+    bool  geometricOrder;
 };
 
 // Virtual-entry kind tags. 0 is reserved for "real engine control".

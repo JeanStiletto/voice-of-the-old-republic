@@ -1,9 +1,13 @@
 // First-sight / focus-capture seam, lifted out of menus.cpp by the Phase-1
 // structure pass (refactoring candidate 1).
 //
-// Everything here is driven by exactly one caller: OnSetActiveControl in
-// menus.cpp, which fires on every real focus change. The functions split
-// that hook's work into the four things it does on a focus event:
+// Everything here is driven by OnSetActiveControl in menus.cpp, which fires
+// on every real focus change. The functions split that hook's work into the
+// four things it does on a focus event:
+//
+// One exception: RebindChain also calls WalkAndCaptureOnFirstSight, because
+// a panel can become the user's foreground WITHOUT the engine ever firing
+// SetActiveControl on it — see the comment at that call site.
 //
 //   * PrefillClassIconCacheOnTransition — pump the chargen class-label
 //     cache with the OUTGOING icon before the engine overwrites it.

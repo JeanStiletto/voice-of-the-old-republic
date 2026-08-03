@@ -193,7 +193,9 @@ const char* Get(Id id) {
         case Id::PortraitRaceAsian:    return "asiatique";
         case Id::PortraitRaceDark:     return "\xE0 peau fonc\xE9""e";
         case Id::PortraitRaceLight:    return "\xE0 peau claire";
+        case Id::PortraitRaceTypeH:    return "type H";
         case Id::FmtPortraitDescription: return "%s %s %d";
+        case Id::FmtClassNameWithDescription: return "%s. %s";
 
         case Id::FmtPartyPortraitInTeam:    return "%s, dans l'\xE9quipe";
         case Id::FmtPartyPortraitAvailable: return "%s, disponible";

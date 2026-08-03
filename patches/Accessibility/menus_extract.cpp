@@ -21,6 +21,7 @@
 #include "menus_extract.h"
 
 #include "engine_area.h"        // GetObjectDisplayNameByHandle
+#include "engine_game.h"        // IsKotor2 — K1-only portraits.2da row table
 #include "engine_manager.h"
 #include "engine_offsets.h"
 #include "engine_panels.h"
@@ -47,6 +48,8 @@ using acc::menus::detail::IsClassSelectionIcon;
 using acc::menus::detail::ClassLabelCacheLookup;
 using acc::menus::detail::ClassLabelCacheStore;
 using acc::menus::detail::GetControlCenter;
+using acc::menus::detail::ScaleGuiThresholdPx;
+using acc::menus::detail::kAnnounceTextMax;
 
 namespace acc::menus::extract {
 
@@ -63,27 +66,102 @@ typedef uint32_t (__thiscall* PFN_CSWCCreatureGetPortraitId)(void*);
 typedef void* (__thiscall* PFN_CSWCCreatureGetPortrait)(
     void* this_, void* outBuf, int side);
 
-// portraits.2da row → baseresref. Indices 0..31 cover the chargen PC
-// rows (5 variants × 3 race codes × 2 genders, with two interleaved
-// non-PC rows — 12 = po_pt3m3, 13 = po_pcarth — left as nullptr because
-// the chargen filter (forpc=1) skips them and they aren't reachable
-// via the cycle. Companion rows 32+ (po_pbastila, po_phk47, etc.) are
-// also unreachable.
+// The chargen-selectable rows of each game's portraits.2da, in row order —
+// which IS the order the engine's Left/Right cycle visits them (confirmed in
+// patch-20260803-102731.log: cycling male portraits on KOTOR 2 walked ids
+// 60, 45, 32, 31, 30 … 18 and wrapped, exactly the forpc=1 && sex=0 set with
+// the forpc=0 row 22 skipped).
 //
-// Order derived from the data section of build/2da-extracted/portraits.2da
-// (string offsets monotonic in row order). Verified in-game:
-// portrait_id=24 is reached when cycling male portraits and matches
-// "po_pmhc3" (parsed → "männlich hellhäutig 3" / "male light-skinned 3").
-constexpr const char* kPortraitByRow[32] = {
-    "po_pfha1", "po_pfha2", "po_pfha3", "po_pfha4", "po_pfha5",  //  0..4
-    "po_pfhc1", "po_pfhc2", "po_pfhc3", "po_pfhc4", "po_pfhc5",  //  5..9
-    "po_pfhb1", "po_pfhb2",                                       // 10..11
-    nullptr, nullptr,                                             // 12..13 (T3, Carth)
-    "po_pfhb3", "po_pfhb4", "po_pfhb5",                          // 14..16
-    "po_pmha1", "po_pmha2", "po_pmha3", "po_pmha4", "po_pmha5",  // 17..21
-    "po_pmhc1", "po_pmhc2", "po_pmhc3", "po_pmhc4", "po_pmhc5",  // 22..26
-    "po_pmhb1", "po_pmhb2", "po_pmhb3", "po_pmhb4", "po_pmhb5",  // 27..31
+// We keep only what the announce needs: the row id, the gender letter and
+// the head-family letter of the baseresref stem (`po_p[mf]h[abch]NN`). The
+// point of the table is the VARIANT NUMBER. The stem's own digits are not a
+// position — KOTOR 2's five light-skinned male portraits are rows 23..27
+// spelling 01, 06, 03, 04, 07, and its five dark-skinned males are 06, 08,
+// 10, 07, 09 — so announcing the digit made the cycle sound shuffled, which
+// is what the user reported. Ranking the row inside its (gender, family)
+// group turns those into 1..5 in the order the user actually walks them.
+// On KOTOR 1 the digits already equal the ranks, so its wording is
+// unchanged.
+//
+// A row the table doesn't know (portrait mods) falls back to the stem's
+// digits at the use site, so a modded install degrades to the old wording
+// rather than to a wrong number.
+struct PortraitRow {
+    unsigned char row;     // portraits.2da row == CSWCCreature::GetPortraitId
+    char          gender;  // 'm' | 'f'
+    char          family;  // 'a' | 'b' | 'c' | 'h'  (K2 only ships 'h')
 };
+
+// KOTOR 1: rows 1..12 and 15..32 (13 = po_pt3m3 and 14 = po_pcarth are
+// forpc=0). Transcribed from build/2da-extracted/portraits.2da.
+constexpr PortraitRow kPortraitRowsK1[] = {
+    { 1,'f','a'}, { 2,'f','a'}, { 3,'f','a'}, { 4,'f','a'}, { 5,'f','a'},
+    { 6,'f','c'}, { 7,'f','c'}, { 8,'f','c'}, { 9,'f','c'}, {10,'f','c'},
+    {11,'f','b'}, {12,'f','b'}, {15,'f','b'}, {16,'f','b'}, {17,'f','b'},
+    {18,'m','a'}, {19,'m','a'}, {20,'m','a'}, {21,'m','a'}, {22,'m','a'},
+    {23,'m','c'}, {24,'m','c'}, {25,'m','c'}, {26,'m','c'}, {27,'m','c'},
+    {28,'m','b'}, {29,'m','b'}, {30,'m','b'}, {31,'m','b'}, {32,'m','b'},
+};
+
+// KOTOR 2: same shape plus the two TSL-only head families (P_MAL_H /
+// P_FEM_H, rows 45/60 and 58/59), and one fewer Asian male (row 22
+// po_PMHA03 is forpc=0). Transcribed from
+// build/k2-2da-extracted/portraits.2da.
+constexpr PortraitRow kPortraitRowsK2[] = {
+    { 1,'f','a'}, { 2,'f','a'}, { 3,'f','a'}, { 4,'f','a'}, { 5,'f','a'},
+    { 6,'f','c'}, { 7,'f','c'}, { 8,'f','c'}, { 9,'f','c'}, {10,'f','c'},
+    {11,'f','b'}, {12,'f','b'}, {15,'f','b'}, {16,'f','b'}, {17,'f','b'},
+    {18,'m','a'}, {19,'m','a'}, {20,'m','a'}, {21,'m','a'},
+    {23,'m','c'}, {24,'m','c'}, {25,'m','c'}, {26,'m','c'}, {27,'m','c'},
+    {28,'m','b'}, {29,'m','b'}, {30,'m','b'}, {31,'m','b'}, {32,'m','b'},
+    {45,'m','h'}, {58,'f','h'}, {59,'f','h'}, {60,'m','h'},
+};
+
+// 1-based position of `row` inside its own (gender, family) group, or 0 when
+// the row isn't one this game's table knows.
+int PortraitVariantRank(uint32_t row) {
+    const PortraitRow* table = acc::game::IsKotor2() ? kPortraitRowsK2
+                                                     : kPortraitRowsK1;
+    int count = acc::game::IsKotor2()
+                    ? (int)(sizeof(kPortraitRowsK2) / sizeof(kPortraitRowsK2[0]))
+                    : (int)(sizeof(kPortraitRowsK1) / sizeof(kPortraitRowsK1[0]));
+    int self = -1;
+    for (int i = 0; i < count; ++i) {
+        if (table[i].row == row) { self = i; break; }
+    }
+    if (self < 0) return 0;
+    int rank = 1;
+    for (int i = 0; i < self; ++i) {
+        if (table[i].gender == table[self].gender &&
+            table[i].family == table[self].family) {
+            ++rank;
+        }
+    }
+    return rank;
+}
+
+// Hand `text` back to the caller, TRUNCATING when it does not fit. Returns
+// false only when there is genuinely nothing to say.
+//
+// Every per-kind step used to do this as `if (len + 1 <= bufSize) memcpy(...)`
+// — which meant a caller's buffer size decided whether a control HAS a name,
+// not merely how much of it you hear. The two probe call sites pass 64 bytes
+// and only test the return value (FindAdjacentArrow, SquashCycleFlankers), so
+// any control whose label ran past 63 characters read as text-less to them
+// and could be squashed out of the chain entirely. Truncation is the right
+// failure: the rest of the ladder (every snprintf path) already truncates.
+bool EmitText(char* outBuf, size_t bufSize, const char* text) {
+    if (!outBuf || bufSize < 2 || !text || text[0] == '\0') return false;
+    strncpy_s(outBuf, bufSize, text, _TRUNCATE);
+    return outBuf[0] != '\0';
+}
+
+// ASCII-only tolower. <cctype>'s is locale-sensitive and takes an int; the
+// resrefs we classify are pure ASCII stems, and KOTOR 2's portraits.2da
+// mixes case within one column ("po_pmha01" beside "po_PMHA05").
+char AsciiLower(char c) {
+    return (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c;
+}
 
 // Cycle-category cache. Cycle widgets render as `[◀] value [▶]`; on each
 // activation the engine rewrites the middle button's CExoString to the
@@ -156,8 +234,10 @@ bool IsCycleFlankerArrow(void* panel, void* control) {
         reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
     if (!list || !list->data || list->size <= 0) return false;
 
-    constexpr int kSameRowDyTol = 5;
-    constexpr int kMaxDxPx      = 80;  // matches FindAdjacentArrow's reach
+    // .gui authoring units — see ScaleGuiThresholdPx in menus_internal.h
+    // for why a bare pixel constant is a KOTOR 1 assumption.
+    const int kSameRowDyTol = ScaleGuiThresholdPx(5);
+    const int kMaxDxPx      = ScaleGuiThresholdPx(80);  // FindAdjacentArrow's reach
 
     int n = list->size > 256 ? 256 : list->size;
     for (int i = 0; i < n; ++i) {
@@ -224,9 +304,16 @@ const char* FindSiblingLabel(void* panel, void* control,
     // left-aligned label vs centered slider). Search expanded vs the
     // original same-row-left + above-only set so InGameMenu-style
     // captioned icons (label below the button) also match.
-    constexpr int kSameRowDyTol  = 5;
-    constexpr int kVertDyMax     = 50;
-    constexpr int kVertDxMax     = 80;
+    //
+    // All three are .gui authoring units and go through
+    // ScaleGuiThresholdPx — see menus_internal.h. This is the site where
+    // getting it wrong is most expensive: a label that falls outside the
+    // box is a control that speaks as "control N" instead of by name, and
+    // on KOTOR 2 an unscaled 50-unit vertical reach rejects any caption
+    // more than ~14 authored units from its widget.
+    const int kSameRowDyTol  = ScaleGuiThresholdPx(5);
+    const int kVertDyMax     = ScaleGuiThresholdPx(50);
+    const int kVertDxMax     = ScaleGuiThresholdPx(80);
 
     int n = list->size > 256 ? 256 : list->size;
     for (int i = 0; i < n; ++i) {
@@ -1025,9 +1112,7 @@ const char* TryPartyPortrait(void* control, char* outBuf, size_t bufSize,
             } else {
                 // Format overflowed — fall back to bare name so
                 // the user still hears the companion.
-                size_t nlen = strnlen(name, sizeof(name));
-                if (nlen + 1 <= bufSize) {
-                    memcpy(outBuf, name, nlen + 1);
+                if (EmitText(outBuf, bufSize, name)) {
                     source = "party-portrait";
                 }
             }
@@ -1171,9 +1256,7 @@ const char* TrySpeculativeVtableRead(void* control, char* outBuf,
             }
         }
         if (got) {
-            size_t tlen = strnlen(text, sizeof(text));
-            if (tlen > 0 && tlen + 1 <= bufSize) {
-                memcpy(outBuf, text, tlen + 1);
+            if (EmitText(outBuf, bufSize, text)) {
                 source = ov.tag;
                 // Trace: chain rebind / step / fingerprint all visit the
                 // same control multiple times per arrow press; collapse
@@ -1296,9 +1379,7 @@ const char* TryInGameMenuIcon(void* control, void* owner,
                 if (strref != 0xFFFFFFFFu) {
                     char tlkText[256];
                     if (LookupTlk(strref, tlkText, sizeof(tlkText))) {
-                        size_t tlen = strnlen(tlkText, sizeof(tlkText));
-                        if (tlen > 0 && tlen + 1 <= bufSize) {
-                            memcpy(outBuf, tlkText, tlen + 1);
+                        if (EmitText(outBuf, bufSize, tlkText)) {
                             source = "perkind-tlk";
                             gotTlk = true;
                             acclog::Write("Menus.PerKind", "InGameMenu TLK control=%p "
@@ -1318,9 +1399,7 @@ const char* TryInGameMenuIcon(void* control, void* owner,
                         fallback = acc::strings::Get(
                             acc::strings::Id::EquipMenuName);
                     }
-                    size_t nlen = strlen(fallback);
-                    if (nlen + 1 <= bufSize) {
-                        memcpy(outBuf, fallback, nlen + 1);
+                    if (EmitText(outBuf, bufSize, fallback)) {
                         source = "perkind-literal";
                         acclog::Write("Menus.PerKind", "InGameMenu literal control=%p "
                                       "guiId=%d strref=%u -> \"%s\"",
@@ -1533,9 +1612,7 @@ const char* TryInGameMapArrow(void* control, void* owner,
         }
         if (sid != acc::strings::Id::Count_) {
             const char* lit = acc::strings::Get(sid);
-            size_t llen = strlen(lit);
-            if (llen > 0 && llen + 1 <= bufSize) {
-                memcpy(outBuf, lit, llen + 1);
+            if (EmitText(outBuf, bufSize, lit)) {
                 source = "perkind-map";
                 acclog::Write("Menus.PerKind", "InGameMap control=%p kind=%s -> \"%s\"",
                               control, tag, outBuf);
@@ -1638,9 +1715,7 @@ const char* TryWorkbenchSlot(void* control, void* owner,
                 }
                 if (sid != acc::strings::Id::Count_) {
                     const char* lit = acc::strings::Get(sid);
-                    size_t llen = strlen(lit);
-                    if (llen > 0 && llen + 1 <= bufSize) {
-                        memcpy(outBuf, lit, llen + 1);
+                    if (EmitText(outBuf, bufSize, lit)) {
                         source = "perkind-workbench-slot";
                         acclog::Trace("Menus.PerKind",
                                       "WorkbenchUpgrade control=%p id=%d cat=%d cval=%d "
@@ -1745,9 +1820,7 @@ const char* TryClassSelectionIcon(void* control, void* owner,
     if (IsClassSelectionIcon(owner, control)) {
         const char* cached = ClassLabelCacheLookup(owner, control);
         if (cached && cached[0] != '\0') {
-            size_t clen = strnlen(cached, 64);
-            if (clen + 1 <= bufSize) {
-                memcpy(outBuf, cached, clen + 1);
+            if (EmitText(outBuf, bufSize, cached)) {
                 source = "perkind-classsel";
             }
         } else {
@@ -1775,21 +1848,30 @@ const char* TryClassSelectionIcon(void* control, void* owner,
                 void* classLabel =
                     reinterpret_cast<unsigned char*>(owner) +
                     kClassSelectionClassLabelOffset;
-                char text[256];
+                char name[256];
                 if (ExtractTextOrStrRefIndirect(classLabel,
                                                 kLabelTextOffset,
                                                 kLabelStrRefOffset,
                                                 kLabelTextObjectOffset,
-                                                text, sizeof(text)) &&
-                    text[0] != '\0') {
-                    size_t tlen = strnlen(text, sizeof(text));
-                    if (tlen + 1 <= bufSize) {
+                                                name, sizeof(name)) &&
+                    name[0] != '\0') {
+                    // Append the class blurb the engine writes into LBL_DESC
+                    // in the same OnEnterButton pass that set class_label —
+                    // "Jedi-Wächter" alone says nothing about what the class
+                    // plays like, and the description is on screen for
+                    // sighted players. It has to be captured HERE rather
+                    // than read at announce time for exactly the reason
+                    // class_label is: by the time the chain step announces an
+                    // icon, both labels already hold the NEXT icon's text.
+                    char text[kAnnounceTextMax];
+                    acc::menus::detail::ComposeClassAnnounce(
+                        owner, name, text, sizeof(text));
+                    if (EmitText(outBuf, bufSize, text)) {
                         ClassLabelCacheStore(owner, control, text);
-                        memcpy(outBuf, text, tlen + 1);
                         source = "perkind-classsel";
                         acclog::Write("Menus.PerKind",
                                       "ClassSelection cache+speak control=%p "
-                                      "-> \"%s\"", control, outBuf);
+                                      "-> \"%s\"", control, text);
                     }
                 }
             }
@@ -1898,47 +1980,76 @@ const char* TryPortraitCharGenArrow(void* control, void* owner,
                 // Pick the source: live resref from engine if non-empty,
                 // else the static row → baseresref table for the rows we
                 // know are correct.
-                const char* mappedResref = nullptr;
-                if (liveResref[0] != '\0') {
-                    mappedResref = liveResref;
-                } else if (portraitId < 32 && kPortraitByRow[portraitId]) {
-                    mappedResref = kPortraitByRow[portraitId];
-                }
+                const char* mappedResref =
+                    (liveResref[0] != '\0') ? liveResref : nullptr;
 
-                // Parse the regular chargen pattern: "po_p[mf]h[abc]\d".
+                // Parse the chargen stem: "po_p[mf]h[abch]\d+".
                 // Index map:
                 //   [0..3] = "po_p"
                 //   [4]    = gender ('m'|'f')
                 //   [5]    = 'h'
-                //   [6]    = race code ('a'|'b'|'c')
-                //   [7]    = variant digit '1'..'5'
+                //   [6]    = head family ('a'|'b'|'c', plus 'h' on K2)
+                //   [7..]  = variant digits (ignored — see below)
+                //
+                // Three per-game shape differences, all found on the KOTOR 2
+                // chargen rounds: K2 numbers the variants with a ZERO-PADDED
+                // TWO-DIGIT field ("po_pmhc06" vs K1's "po_pmhc3"), spells
+                // several stems in upper case ("po_PMHC06"), and adds a
+                // FOURTH head family 'h' (P_MAL_H / P_FEM_H, four rows).
+                // Reading a single char at [7] turned every K2 portrait into
+                // variant "0", an exact-case compare would have dropped the
+                // upper-case rows, and the unknown 'h' fell through to the
+                // raw-resref branch — the user heard "Porträt: po_pmhh02".
+                //
+                // The variant number comes from PortraitVariantRank, not
+                // from the stem: see the PortraitRow tables for why the
+                // stem's own digits are not a position. The digits are the
+                // fallback for rows no table knows (portrait mods).
                 char description[128] = {0};
                 bool parsedPattern = false;
-                if (mappedResref &&
-                    mappedResref[0] == 'p' && mappedResref[1] == 'o' &&
-                    mappedResref[2] == '_' && mappedResref[3] == 'p' &&
-                    mappedResref[5] == 'h' &&
-                    (mappedResref[4] == 'm' || mappedResref[4] == 'f') &&
-                    (mappedResref[6] == 'a' || mappedResref[6] == 'b' ||
-                     mappedResref[6] == 'c') &&
-                    mappedResref[7] >= '0' && mappedResref[7] <= '9') {
-                    auto genderId = (mappedResref[4] == 'f')
-                        ? acc::strings::Id::PortraitGenderFemale
-                        : acc::strings::Id::PortraitGenderMale;
-                    acc::strings::Id raceId = acc::strings::Id::Count_;
-                    switch (mappedResref[6]) {
-                        case 'a': raceId = acc::strings::Id::PortraitRaceAsian; break;
-                        case 'b': raceId = acc::strings::Id::PortraitRaceDark;  break;
-                        case 'c': raceId = acc::strings::Id::PortraitRaceLight; break;
-                    }
-                    if (raceId != acc::strings::Id::Count_) {
-                        snprintf(description, sizeof(description),
-                                 acc::strings::Get(
-                                     acc::strings::Id::FmtPortraitDescription),
-                                 acc::strings::Get(genderId),
-                                 acc::strings::Get(raceId),
-                                 (int)(mappedResref[7] - '0'));
-                        parsedPattern = true;
+                if (mappedResref && strnlen(mappedResref, 16) >= 8) {
+                    char gender = AsciiLower(mappedResref[4]);
+                    char family = AsciiLower(mappedResref[6]);
+                    if (AsciiLower(mappedResref[0]) == 'p' &&
+                        AsciiLower(mappedResref[1]) == 'o' &&
+                        mappedResref[2] == '_' &&
+                        AsciiLower(mappedResref[3]) == 'p' &&
+                        (gender == 'm' || gender == 'f') &&
+                        AsciiLower(mappedResref[5]) == 'h' &&
+                        (family == 'a' || family == 'b' ||
+                         family == 'c' || family == 'h') &&
+                        mappedResref[7] >= '0' && mappedResref[7] <= '9') {
+                        int variant = PortraitVariantRank(portraitId);
+                        if (variant == 0) {
+                            // Unknown row: fall back to the stem's own
+                            // digits. Leading zeros drop out for free
+                            // ("06" → 6), and the resref is a NUL-terminated
+                            // CResRef copy so the loop always stops.
+                            for (int i = 7;
+                                 mappedResref[i] >= '0' && mappedResref[i] <= '9';
+                                 ++i) {
+                                variant = variant * 10 + (mappedResref[i] - '0');
+                            }
+                        }
+                        auto genderId = (gender == 'f')
+                            ? acc::strings::Id::PortraitGenderFemale
+                            : acc::strings::Id::PortraitGenderMale;
+                        acc::strings::Id familyId = acc::strings::Id::Count_;
+                        switch (family) {
+                            case 'a': familyId = acc::strings::Id::PortraitRaceAsian; break;
+                            case 'b': familyId = acc::strings::Id::PortraitRaceDark;  break;
+                            case 'c': familyId = acc::strings::Id::PortraitRaceLight; break;
+                            case 'h': familyId = acc::strings::Id::PortraitRaceTypeH; break;
+                        }
+                        if (familyId != acc::strings::Id::Count_) {
+                            snprintf(description, sizeof(description),
+                                     acc::strings::Get(
+                                         acc::strings::Id::FmtPortraitDescription),
+                                     acc::strings::Get(genderId),
+                                     acc::strings::Get(familyId),
+                                     variant);
+                            parsedPattern = true;
+                        }
                     }
                 }
 
@@ -2004,21 +2115,35 @@ const char* TryPortraitCharGenArrow(void* control, void* owner,
 //    engages. Without the suppression the nearest plain label would
 //    paint both flankers (e.g. "Stärke" for the + and the -),
 //    defeating both the chain squash and FindAdjacentArrow.
-const char* TrySiblingLabel(void* control, char* outBuf, size_t bufSize) {
+//
+//    `owner` is FromControl's ResolveOwnerPanel result — the panel that
+//    actually holds this control — NOT the g_currentPanel global this
+//    used to read. Those two diverge whenever a panel is pushed without
+//    firing CSWGuiPanel::SetActiveControl, which is the norm for KOTOR
+//    2's chargen wizard steps: g_currentPanel stayed on custpnl_p (the
+//    step list) while the user navigated abchrgen_p / skchrgen_p. Both
+//    callees then answered about the WRONG panel — IsCycleFlankerArrow
+//    found no value button beside a ± stepper so the suppression never
+//    engaged, and FindSiblingLabel captioned the stepper with whichever
+//    of custpnl_p's LBL_NUM1..6 step numbers happened to line up. That
+//    is the stray "1" entry the KOTOR 2 chargen Attribute and
+//    Fähigkeiten chains grew between their 4th, 5th and 6th rows
+//    (patch-20260803-095222.log, chain indices 4 and 6 on both panels).
+const char* TrySiblingLabel(void* control, void* owner,
+                            char* outBuf, size_t bufSize) {
     const char* source = nullptr;
     // Liveness-filtered — both callees walk panel+kPanelControlsOffset, and a
     // module load leaves g_currentPanel pointing at a freed panel (crash
     // analysed 2026-08-02, swkotor2.exe.51156.dmp: opening Equipment right
     // after an area transition faulted on data[0] of the reused block).
-    void* panel = CurrentPanelIfLive();
+    // ResolveOwnerPanel already applied that filter to `owner`.
+    void* panel = owner;
     if (panel && IsChainNavigable(control) &&
         !IsCycleFlankerArrow(panel, control)) {
         char label[256];
         if (FindSiblingLabel(panel, control,
                              label, sizeof(label))) {
-            size_t llen = strnlen(label, sizeof(label));
-            if (llen > 0 && llen + 1 <= bufSize) {
-                memcpy(outBuf, label, llen + 1);
+            if (EmitText(outBuf, bufSize, label)) {
                 source = "siblinglabel-fallback";
                 // Trace: fired for every chain entry on every arrow press,
                 // resolves to the same (control, label) tuple in tight bursts.
@@ -2189,7 +2314,7 @@ const char* FromControl(void* control,
     if (!source) source = TryWorkbenchSlot(control, owner, outBuf, bufSize);
     if (!source) source = TryClassSelectionIcon(control, owner, outBuf, bufSize);
     if (!source) source = TryPortraitCharGenArrow(control, owner, outBuf, bufSize);
-    if (!source) source = TrySiblingLabel(control, outBuf, bufSize);
+    if (!source) source = TrySiblingLabel(control, owner, outBuf, bufSize);
 
 
     if (source && !IsToggle(control)) {

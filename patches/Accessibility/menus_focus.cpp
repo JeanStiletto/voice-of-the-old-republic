@@ -244,13 +244,18 @@ void acc::menus::focus::PrefillClassIconCacheOnTransition(void* panel, void* new
     if (ClassLabelCacheLookup(panel, outgoing) != nullptr) return;
     void* classLabel = reinterpret_cast<unsigned char*>(panel) +
                        kClassSelectionClassLabelOffset;
-    char text[256];
+    char name[256];
     if (ExtractTextOrStrRefIndirect(classLabel,
                                     kLabelTextOffset,
                                     kLabelStrRefOffset,
                                     kLabelTextObjectOffset,
-                                    text, sizeof(text)) &&
-        text[0] != '\0') {
+                                    name, sizeof(name)) &&
+        name[0] != '\0') {
+        // Compose the description in the same breath. The cache is
+        // first-write-wins, so a prefill that stored the name alone would
+        // lock the entry and the blurb could never be added later.
+        char text[acc::menus::detail::kAnnounceTextMax];
+        acc::menus::detail::ComposeClassAnnounce(panel, name, text, sizeof(text));
         ClassLabelCacheStore(panel, outgoing, text);
         acclog::Write("Menus.PerKind",
                       "ClassSelection prefill outgoing=%p -> \"%s\"",
@@ -332,6 +337,25 @@ void acc::menus::focus::WalkAndCaptureOnFirstSight(void* panel) {
     // and would otherwise resolve to "0" as the category. Bind the
     // skill_labels[i] text in instead.
     acc::menus::chargen_skills::CaptureLabelsIfApplicable(panel);
+
+    // Chargen class-selection panel: snapshot LBL_DESC's authored text
+    // before the user hovers anything. Both games ship it with a
+    // placeholder (empty on KOTOR 1, "This is just a test line." repeated
+    // on KOTOR 2) and fill in the real class description on hover, so this
+    // snapshot is what lets the announce tell content from default. This
+    // walk is the last moment that is guaranteed to precede the engine's
+    // first OnEnterButton.
+    if (acc::engine::HasVtable(panel, kVtableCSWGuiClassSelection)) {
+        void* descLabel = acc::menus::detail::FindControlById(panel, kClassSelDescLabelId);
+        char desc[384] = {0};
+        if (descLabel) {
+            acc::engine::ReadLabelText(descLabel, desc, sizeof(desc));
+        }
+        acc::menus::detail::ClassDescBaselineCapture(panel, desc);
+        acclog::Write("Menus.PerKind",
+                      "ClassSelection LBL_DESC baseline label=%p text=\"%.120s\"",
+                      descLabel, desc);
+    }
 }
 
 // First focus into a new panel: speak its title once. The focused

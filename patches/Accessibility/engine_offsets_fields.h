@@ -318,6 +318,14 @@ const size_t    kClassSelCharSize                = acc::off::Pick(0x25c, 0x26c);
 const int       kClassSelectionsCount            = acc::off::Same(6);
 const size_t    kClassSelectionClassLabelOffset  = acc::off::Pick(0x1254, 0x12d0);
 
+// LBL_DESC — the short class blurb the engine writes beneath the class name
+// on hover, alongside class_label. Reached by .gui ID rather than by panel
+// offset: both games number it 5 in their own classsel .gui (K1
+// classsel.gui, K2 classsel_p.gui, both mined from their gui.bif), so one
+// constant serves both and no per-game field offset is needed. Same method
+// as the in-game menu icons — see the note in docs/kotor2-port.md.
+const int       kClassSelDescLabelId             = 5;
+
 // CSWGuiPortraitCharGen (chargen "Porträtauswahl" panel). Verified against
 // k1_win_gog_swkotor.exe.xml SYMBOL @ 0x00759ea8 + STRUCTURE size 0x1240.
 //
@@ -414,12 +422,34 @@ constexpr size_t kResRefSize                     = 16;
 // tab cluster). With selected_ability stuck at 0, every Left/Right press
 // modifies STR. We mirror chain focus into the field on every chain
 // rebind / step so +/- targets the focused row.
-const size_t    kAbilitiesCharGenLabelsArrayOffset     = acc::off::Todo(0x110c);
-const size_t    kAbilitiesCharGenButtonsArrayOffset    = acc::off::Todo(0x188c);
-const size_t    kAbilitiesCharGenSelectedAbilityOffset = acc::off::Todo(0x3dec);
-const int       kAbilitiesCharGenAbilityCount          = acc::off::Todo(6);
-const size_t    kCSWGuiLabelSize                       = acc::off::Todo(0x140);
-const size_t    kCSWGuiButtonSize                      = acc::off::Todo(0x1c4);
+// KOTOR 2 (all four, plus both control sizes below, resolved 2026-08-03).
+// The panel keeps KOTOR 1's shape exactly — same six members in the same
+// order, same struct order STR/DEX/CON/WIS/INT/CHA — so only the numbers
+// moved. Three independent witnesses agree on every one of them:
+//
+//   1. The ctor 0x00910490 binds each .gui tag to a member:
+//      STR_LBL → panel+0xDA0, STR_POINTS_BTN → panel+0x1550,
+//      LB_DESC → panel+0x70, REMAINING_SELECTIONS_LBL → panel+0x738,
+//      COST_POINTS_LBL → panel+0xB10; its tail writes selected = 0 at
+//      panel+0x487C.
+//   2. The dtor 0x00912220 destroys both arrays with vector iterators
+//      that spell out element size and count: (0xDA0, 0x148, 6) labels
+//      and (0x1550, 0x1D0, 6) buttons. Labels + 6*0x148 == buttons,
+//      the same adjacency KOTOR 1 has (0x110c + 6*0x140 == 0x188c).
+//   3. OnEnterPointsButton 0x00913180 walks the buttons as
+//      `panel + 0x1550 + i*0x1D0` and stores the hit index into
+//      panel+0x487C — i.e. the engine's own arithmetic, not ours.
+//
+// The live log agrees too: in patch-20260803-011930.log the six chain
+// value buttons sit 0x1D0 apart starting 0x1550 past the panel base.
+const size_t    kAbilitiesCharGenLabelsArrayOffset     = acc::off::Pick(0x110c, 0xda0);
+const size_t    kAbilitiesCharGenButtonsArrayOffset    = acc::off::Pick(0x188c, 0x1550);
+const size_t    kAbilitiesCharGenSelectedAbilityOffset = acc::off::Pick(0x3dec, 0x487c);
+const size_t    kCSWGuiLabelSize                       = acc::off::Pick(0x140, 0x148);
+const size_t    kCSWGuiButtonSize                      = acc::off::Pick(0x1c4, 0x1d0);
+// Six abilities in both games — the count is a rules constant, not a
+// layout one, and both ctors loop `for (i = 0; i < 6; ++i)`.
+const int       kAbilitiesCharGenAbilityCount          = acc::off::Same(6);
 
 // CSWGuiSkillsCharGen (chargen "Fähigkeiten" panel — step 3 of Eigener
 // Charakter). Same shape as CSWGuiAbilitiesCharGen — three info-pair
@@ -441,15 +471,30 @@ const size_t    kCSWGuiButtonSize                      = acc::off::Todo(0x1c4);
 // Skill order matches struct order matches visual top-to-bottom (no
 // swap as on the Attribute panel): Computer, Demolitions, Stealth,
 // Awareness, Persuade, Repair, Security, Treat Injury.
-const size_t    kSkillsCharGenLabelsArrayOffset      = acc::off::Todo(0xfcc);
-const size_t    kSkillsCharGenButtonsArrayOffset     = acc::off::Todo(0x19cc);
-const size_t    kSkillsCharGenSelectedSkillOffset    = acc::off::Todo(0x49bc);
-const int       kSkillsCharGenSkillCount             = acc::off::Todo(8);
-const size_t    kSkillsCharGenRemainingValueOffset   = acc::off::Todo(0x70c);
-const size_t    kSkillsCharGenCostValueOffset        = acc::off::Todo(0xc0c);
+// KOTOR 2 (2026-08-03), by the same three-witness method as the Attribute
+// panel above and with the same result — identical shape, moved numbers:
+//   ctor 0x0090c6a0        COMPUTER_USE_LBL → panel+0xEE8,
+//                          COMPUTER_USE_POINTS_BTN → panel+0x1928,
+//                          LB_DESC → panel+0x70,
+//                          REMAINING_SELECTIONS_LBL → panel+0x738,
+//                          COST_POINTS_LBL → panel+0xB10, and its tail
+//                          indexes the buttons through panel+0x4CEC.
+//   dtor 0x0090e440        (0xEE8, 0x148, 8) labels, (0x1928, 0x1D0, 8)
+//                          buttons — again exactly adjacent.
+//   OnEnterPointsButton    0x0090f610 matches `panel + 0x1928 + i*0x1D0`
+//                          and stores the index into panel+0x4CEC.
+// Live log: the eight chain value buttons sit 0x1D0 apart from 0x1928.
+const size_t    kSkillsCharGenLabelsArrayOffset      = acc::off::Pick(0xfcc, 0xee8);
+const size_t    kSkillsCharGenButtonsArrayOffset     = acc::off::Pick(0x19cc, 0x1928);
+const size_t    kSkillsCharGenSelectedSkillOffset    = acc::off::Pick(0x49bc, 0x4cec);
+// Eight chargen skills in both games (both ctors loop i < 8).
+const int       kSkillsCharGenSkillCount             = acc::off::Same(8);
+const size_t    kSkillsCharGenRemainingValueOffset   = acc::off::Pick(0x70c, 0x738);
+const size_t    kSkillsCharGenCostValueOffset        = acc::off::Pick(0xc0c, 0xb10);
 
-// description_list_box offset within CSWGuiSkillsCharGen (per SARIF).
-const size_t    kSkillsCharGenDescriptionListBoxOffset      = acc::off::Todo(0x6c);
+// description_list_box offset within CSWGuiSkillsCharGen (per SARIF;
+// KOTOR 2 from its ctor's LB_DESC binding).
+const size_t    kSkillsCharGenDescriptionListBoxOffset      = acc::off::Pick(0x6c, 0x70);
 
 // Three info-pair labels on this panel that aren't in the chain (they're
 // CSWGuiLabels, not buttons) but carry per-row state the user needs:
@@ -466,13 +511,22 @@ const size_t    kSkillsCharGenDescriptionListBoxOffset      = acc::off::Todo(0x6
 //   +0xE8C  modifier VALUE          ("0", "-1", "+4"). D&D modifier of
 //           the focused ability at its current value. Engine pre-formats
 //           the sign so we pass through unmodified.
-const size_t    kAbilitiesCharGenRemainingValueOffset = acc::off::Todo(0x70c);
-const size_t    kAbilitiesCharGenCostValueOffset      = acc::off::Todo(0xc0c);
-const size_t    kAbilitiesCharGenModifierValueOffset  = acc::off::Todo(0xe8c);
+//
+// KOTOR 2 renumbers the first two (ctor 0x00910490 tag bindings) and drops
+// the third: abchrgen_p.gui has no LBL_ABILITY_MOD at all, because K2
+// shows the modifier as six per-row LBL_BONUS_STR..CHA labels instead of
+// one label for the focused ability. Nothing reads the constant today —
+// AnnounceChainStepSuffix computes the modifier itself from the value —
+// so the K2 layout is recorded here rather than ported. Kotor1Only, not
+// Todo: there is no K2 answer to find.
+const size_t    kAbilitiesCharGenRemainingValueOffset = acc::off::Pick(0x70c, 0x738);
+const size_t    kAbilitiesCharGenCostValueOffset      = acc::off::Pick(0xc0c, 0xb10);
+const size_t    kAbilitiesCharGenModifierValueOffset  = acc::off::Kotor1Only(0xe8c);
 
 // description_listbox offset within CSWGuiAbilitiesCharGen (per SARIF) —
-// same +0x6c as the Skills panel.
-const size_t    kAbilitiesCharGenDescriptionListBoxOffset      = acc::off::Todo(0x6c);
+// same +0x6c as the Skills panel, and on KOTOR 2 the same +0x70 as its
+// Skills panel (both ctors bind LB_DESC to panel+0x70).
+const size_t    kAbilitiesCharGenDescriptionListBoxOffset      = acc::off::Pick(0x6c, 0x70);
 
 // CSWGuiFeatsCharGen (chargen "Talente" panel — step 5 of Eigener Charakter,
 // also reused at level-up). Verified against k1_win_gog_swkotor.exe.xml

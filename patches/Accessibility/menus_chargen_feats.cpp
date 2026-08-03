@@ -28,11 +28,21 @@ namespace acc::menus::chargen_feats {
 
 namespace {
 
-// .gui-time button IDs from ftchrgen.gui (stable across localisations —
-// they're baked into the resource at build time).
-constexpr int kBtnRecommendedId = 9;
-constexpr int kBtnAcceptId      = 11;  // "OK"
-constexpr int kBtnBackId        = 12;  // "Abbrechen"
+// .gui-time button IDs. Stable across localisations — they're baked into
+// the resource at build time — but NOT across games: KOTOR 2's
+// ftchrgen_p.gui renumbers every control, and each of the three KOTOR 1
+// ids lands on a different button there (K1 9/11/12 =
+// Recommended/Accept/Back; K2 9/10/11 = Back/Accept/Recommended).
+//
+// Worse, K1's BTN_BACK id 12 is K2's LB_FEATS — a LISTBOX. Reading a
+// listbox as a button walks off the end of the CSWGuiButton layout, so
+// its gui_string read faulted and the str_ref fallback resolved whatever
+// dword happened to sit at the button str_ref offset: the row spoke
+// "<CUSTOM0> hat die Gruppe verlassen." and Enter fired the listbox
+// instead of the accept button (patch-20260803-011930.log).
+//
+// Mined from both games' own gui.bif copies 2026-08-03.
+const int kBtnBackId = acc::game::IsKotor2() ? 9 : 12;  // "Abbrechen" (Esc)
 
 // 2D cursor model — Up/Down moves between rows (feat chains), Left/Right
 // moves between cells within a chain (root → successor → master). Empty
@@ -56,15 +66,26 @@ struct ButtonRow {
     acc::strings::Id    labelId;   // localised spoken fallback
 };
 
-constexpr ButtonRow kButtonRows[] = {
-    { kBtnRecommendedId, "BTN_RECOMMENDED",
-      acc::strings::Id::ChargenBtnRecommended },
-    { kBtnAcceptId,      "BTN_ACCEPT",
-      acc::strings::Id::ChargenBtnAccept },
-    { kBtnBackId,        "BTN_BACK",
-      acc::strings::Id::ChargenBtnBack },
+// Both tables are in on-screen left-to-right order, which is the order
+// Down steps through them — and the same order the generic chain produces
+// on the sibling Attribute / Fähigkeiten panels of the same game, so the
+// three chargen screens stay consistent with each other. The two games
+// lay the row out mirrored: K1 is Empfohlen / OK / Abbrechen, K2 is
+// Abbrechen / OK / Empfohlen. Ids are literals rather than the per-game
+// consts above precisely because each table is one game's answer.
+constexpr ButtonRow kButtonRowsK1[] = {
+    {  9, "BTN_RECOMMENDED", acc::strings::Id::ChargenBtnRecommended },
+    { 11, "BTN_ACCEPT",      acc::strings::Id::ChargenBtnAccept },
+    { 12, "BTN_BACK",        acc::strings::Id::ChargenBtnBack },
 };
-constexpr int kButtonRowCount = sizeof(kButtonRows) / sizeof(kButtonRows[0]);
+constexpr ButtonRow kButtonRowsK2[] = {
+    {  9, "BTN_BACK",        acc::strings::Id::ChargenBtnBack },
+    { 10, "BTN_ACCEPT",      acc::strings::Id::ChargenBtnAccept },
+    { 11, "BTN_RECOMMENDED", acc::strings::Id::ChargenBtnRecommended },
+};
+constexpr int kButtonRowCount = sizeof(kButtonRowsK1) / sizeof(kButtonRowsK1[0]);
+const ButtonRow* const kButtonRows =
+    acc::game::IsKotor2() ? kButtonRowsK2 : kButtonRowsK1;
 
 constexpr int kMaxChartRows = 256;
 ChartRow s_chartRows[kMaxChartRows];

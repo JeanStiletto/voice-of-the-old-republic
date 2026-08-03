@@ -13,7 +13,10 @@
 // would manipulate the listbox's selection_index but the listbox has a
 // single child). It gets its own input handler that builds a flat
 // row-major cursor over non-empty chart cells + 3 trailing button
-// virtual-entries (Empfohlen / OK / Abbrechen), navigated with K/L.
+// virtual-entries, navigated with K/L. The three are ordered as the panel
+// lays them out left to right, which the two games mirror: KOTOR 1 is
+// Empfohlen / OK / Abbrechen, KOTOR 2 Abbrechen / OK / Empfohlen. Their
+// .gui ids are per game — see the tables in the .cpp.
 //
 // Engine state changes we drive from the keyboard:
 //   * On per-cell focus: SetSelectedSkill(featId) + OnEnterFeat(featId)
