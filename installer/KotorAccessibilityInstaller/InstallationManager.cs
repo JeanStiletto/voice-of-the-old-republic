@@ -394,19 +394,39 @@ namespace KotorAccessibilityInstaller
             }
         }
 
+        /// <summary>
+        /// Delete the staging directory, retrying briefly.
+        ///
+        /// <para>KPatchCore opens the address database with SQLite and the file
+        /// handle outlives the install call, so the first delete reliably fails
+        /// with "kotor1_0_3.db is being used by another process" and the whole
+        /// directory is orphaned. Ten of them had accumulated in %TEMP% on a
+        /// real machine — several MB each, every run. A short retry lets the
+        /// handle close.</para>
+        /// </summary>
         public void CleanupStaging(string stagingRoot)
         {
-            try
+            if (string.IsNullOrEmpty(stagingRoot) || !Directory.Exists(stagingRoot)) return;
+
+            for (int attempt = 1; attempt <= 5; attempt++)
             {
-                if (Directory.Exists(stagingRoot))
+                try
                 {
                     Directory.Delete(stagingRoot, recursive: true);
                     Logger.Info($"Cleaned up staging dir: {stagingRoot}");
+                    return;
                 }
-            }
-            catch (Exception ex)
-            {
-                Logger.Warning($"Could not clean up staging dir: {ex.Message}");
+                catch (Exception ex) when (attempt < 5)
+                {
+                    Logger.Info($"Staging dir still locked ({ex.GetType().Name}); retrying in {attempt * 400} ms");
+                    System.Threading.Thread.Sleep(attempt * 400);
+                }
+                catch (Exception ex)
+                {
+                    // Genuinely stuck. A leftover temp directory is untidy, not
+                    // harmful, and must never fail an otherwise good install.
+                    Logger.Warning($"Could not clean up staging dir {stagingRoot}: {ex.Message}");
+                }
             }
         }
 

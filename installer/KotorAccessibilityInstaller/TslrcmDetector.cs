@@ -12,19 +12,40 @@ namespace KotorAccessibilityInstaller
     /// <para>Used to gate K2CP / Tweak Pack ordering: they must install AFTER
     /// TSLRCM.</para>
     ///
-    /// <para>UNVERIFIED assumption, still: that TSLRCM 1.8.6's Inno script
-    /// registers an uninstall entry at all. Nobody has watched a real 1.8.6 run
-    /// do it. The caller therefore does NOT treat a miss here as proof of
-    /// absence — <see cref="InstallFlow"/> prefers the silent installer's own
-    /// dialog.tlk fingerprint verification, and asks the user when neither
-    /// signal is available. Without that, a wrong assumption here would
-    /// silently skip K2CP and the Tweak Pack on every install: no error, no
-    /// prompt, two mods quietly missing.</para>
+    /// <para>RESOLVED 2026-08-03, by reading a real 1.8.6 install's Inno log
+    /// and then the registry it wrote. TSLRCM does register an uninstall entry:
+    /// <c>HKLM\SOFTWARE\...\Uninstall\the sith lords restored content mod_is1</c>,
+    /// in the 32-bit view. What it does NOT do is put the mod's full name in
+    /// <c>DisplayName</c> — that value is the terse <c>"tslrcm 1.8.6"</c>. This
+    /// detector matched DisplayName against "Sith Lords Restored Content" and so
+    /// reported "not installed" for an install that was sitting right there.
+    /// The descriptive name lives in the KEY name, so both are matched now, and
+    /// against either wording.</para>
+    ///
+    /// <para>The caller still does not treat a miss here as proof of absence —
+    /// see <see cref="InstallFlow"/>. Being wrong in that direction silently
+    /// skips K2CP and the Tweak Pack, which is the one failure worth extra
+    /// belt-and-braces.</para>
     /// </summary>
     public static class TslrcmDetector
     {
         private const string UninstallKeyPath =
             @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall";
+
+        /// <summary>
+        /// Matched case-insensitively against both the uninstall key's name and
+        /// its DisplayName. Two spellings because the two fields disagree: the
+        /// key is named for the mod, the DisplayName for its abbreviation.
+        /// </summary>
+        private static readonly string[] Needles =
+        {
+            "sith lords restored content",
+            "tslrcm",
+        };
+
+        private static bool Matches(string value) =>
+            value != null && Array.Exists(Needles,
+                n => value.IndexOf(n, StringComparison.OrdinalIgnoreCase) >= 0);
 
         public static bool IsInstalled()
         {
@@ -42,13 +63,17 @@ namespace KotorAccessibilityInstaller
                         {
                             try
                             {
+                                if (Matches(subKeyName))
+                                {
+                                    Logger.Info($"TSLRCM detected via uninstall key name: \"{subKeyName}\" ({hive}/{view})");
+                                    return true;
+                                }
+
                                 using var sub = uninstall.OpenSubKey(subKeyName);
                                 string displayName = sub?.GetValue("DisplayName") as string;
-                                if (displayName != null &&
-                                    displayName.IndexOf("Sith Lords Restored Content",
-                                        StringComparison.OrdinalIgnoreCase) >= 0)
+                                if (Matches(displayName))
                                 {
-                                    Logger.Info($"TSLRCM detected via uninstall entry: \"{displayName}\" ({hive}/{view})");
+                                    Logger.Info($"TSLRCM detected via DisplayName: \"{displayName}\" ({hive}/{view})");
                                     return true;
                                 }
                             }

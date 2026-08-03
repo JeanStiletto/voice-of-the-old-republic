@@ -179,13 +179,11 @@ namespace KotorAccessibilityInstaller
                 // Three signals, strongest first.
                 //
                 // 1. The silent install verifies ITSELF: TslrcmInstallForm
-                //    fingerprints dialog.tlk before and after and only reports
-                //    SilentInstalled when the file actually changed. That is
-                //    direct evidence the mod landed, and it does not depend on
-                //    whether Inno wrote a registry entry.
+                //    checks dialog.tlk and, when that is unchanged, Setup's own
+                //    log — so a reinstall over an existing TSLRCM reports
+                //    success rather than a scary false failure.
                 // 2. Otherwise the uninstall entry, which is all we have after
-                //    the visible wizard — and which rests on an assumption
-                //    about TSLRCM's Inno script nobody has confirmed.
+                //    the visible wizard.
                 // 3. If neither fires, ASK. The alternative is to conclude
                 //    "not installed" from the absence of a signal we are not
                 //    sure exists, and then silently skip K2CP and the Tweak
@@ -196,7 +194,7 @@ namespace KotorAccessibilityInstaller
                 if (outcome == TslrcmOutcome.SilentInstalled)
                 {
                     tslrcmPresent = true;
-                    Logger.Info("TSLRCM present: verified by the silent install's dialog.tlk fingerprint");
+                    Logger.Info("TSLRCM present: verified by the silent install");
                 }
                 else if (TslrcmDetector.IsInstalled())
                 {
@@ -220,7 +218,9 @@ namespace KotorAccessibilityInstaller
                 }
 
                 summary.AppendLine(tslrcmPresent
-                    ? InstallerLocale.Format("ModInstall_SummaryOk_Format", tslrcmName)
+                    ? InstallerLocale.Format(
+                        _tslrcmWasAlreadyInstalled ? "ModInstall_SummaryAlready_Format"
+                                                   : "ModInstall_SummaryOk_Format", tslrcmName)
                     : InstallerLocale.Format("ModInstall_SummaryFailed_Format", tslrcmName, "(not installed)"));
             }
             else
@@ -340,6 +340,13 @@ namespace KotorAccessibilityInstaller
         /// form's outcome so the caller can tell a self-verified silent install
         /// from a wizard handoff whose result only the user knows.
         /// </summary>
+        /// <summary>
+        /// Set by <see cref="RunTslrcmInstall"/> when Setup reported success
+        /// without changing anything, i.e. TSLRCM was already there. Only
+        /// affects the wording of the summary line.
+        /// </summary>
+        private static bool _tslrcmWasAlreadyInstalled;
+
         private static TslrcmOutcome RunTslrcmInstall(string k2Path)
         {
             string statusLine = k2Path != null
@@ -348,6 +355,7 @@ namespace KotorAccessibilityInstaller
 
             var form = new TslrcmInstallForm(k2Path);
             Application.Run(form);
+            _tslrcmWasAlreadyInstalled = form.AlreadyInstalled;
 
             switch (form.Outcome)
             {

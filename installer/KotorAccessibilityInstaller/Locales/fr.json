@@ -154,6 +154,7 @@
     "ModInstall_K2cpProgress_Format": "K2CP : {0}",
     "ModInstall_SummaryHeading": "Mods optionnels :",
     "ModInstall_SummaryOk_Format": "  OK  {0}",
+    "ModInstall_SummaryAlready_Format": "  {0} : déjà installé — rien à changer",
     "ModInstall_SummarySkipped_Format": "  --  {0} (ignoré)",
     "ModInstall_SummaryFailed_Format": "  ÉCHEC  {0} : {1}",
     "Main_StatusInstallComplete": "Installation terminée.",

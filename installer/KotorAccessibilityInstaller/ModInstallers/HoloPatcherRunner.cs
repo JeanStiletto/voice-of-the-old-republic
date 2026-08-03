@@ -15,6 +15,30 @@ namespace KotorAccessibilityInstaller.ModInstallers
     /// </summary>
     internal static class HoloPatcherRunner
     {
+        /// <summary>
+        /// Lines from HoloPatcher's stdout that describe HoloPatcher's own
+        /// innards rather than the mod install, and must not be spoken to the
+        /// user as progress.
+        ///
+        /// <para>The one that made this necessary: <c>"warning: defusedxml is
+        /// not available but recommended due to security concerns"</c>, printed
+        /// three times on every single invocation. It is a note about a Python
+        /// hardening library missing from the PyInstaller build — nothing to do
+        /// with the mod, nothing the user can act on. Forwarded verbatim it
+        /// became "K2CP: warning: ... security concerns", which reads exactly
+        /// like the mod failed to install a file, and was reported as a bug
+        /// against K2CP twice.</para>
+        ///
+        /// <para>Filtered from the STATUS LINE only. Everything still goes to
+        /// the log verbatim — the point is that the user hears what concerns
+        /// them, not that we hide what happened.</para>
+        /// </summary>
+        private static readonly string[] InternalNoiseMarkers =
+        {
+            "defusedxml",
+            "DEBUG(charset_normalizer)",
+        };
+
         // Forward HoloPatcher stdout lines as status updates at most this often.
         // Lower = more responsive, more screen-reader interruption. Higher = more
         // perceived stall during a verbose install phase.
@@ -70,6 +94,7 @@ namespace KotorAccessibilityInstaller.ModInstallers
 
                     string line = e.Data.Trim();
                     if (line.Length == 0) return;
+                    if (IsInternalNoise(line)) return;
 
                     long now = Environment.TickCount64;
                     if (now - Interlocked.Read(ref lastForwardTicks) < ForwardThrottleMs)
@@ -87,6 +112,18 @@ namespace KotorAccessibilityInstaller.ModInstallers
                     if (e.Data == null) return;
                     lock (stderrBuffer) stderrBuffer.AppendLine(e.Data);
                 };
+
+                // Local function rather than a field: this is about what we show
+                // the user, and it belongs next to the code that shows it.
+                static bool IsInternalNoise(string line)
+                {
+                    foreach (var marker in InternalNoiseMarkers)
+                    {
+                        if (line.IndexOf(marker, StringComparison.OrdinalIgnoreCase) >= 0)
+                            return true;
+                    }
+                    return false;
+                }
 
                 proc.Start();
                 proc.BeginOutputReadLine();

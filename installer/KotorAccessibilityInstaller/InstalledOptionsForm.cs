@@ -33,7 +33,15 @@ namespace KotorAccessibilityInstaller
         {
             bool offerSpatialAudio = target == GameTarget.Kotor1;
 
-            Text = InstallerLocale.Get("Program_UpToDate_Title") + " — " + target.DisplayName;
+            // No game name in the title. This screen lists the state of BOTH
+            // games, so naming one of them was actively wrong: the heading is
+            // also the buttons' accessible description, so "Reinstall" announced
+            // itself as "... KOTOR 1. Status of your games: ..." — claiming a
+            // single game and then immediately describing two.
+            //
+            // The remaining per-game action is the log bundle, which follows
+            // `target`; Reinstall re-runs the whole flow and asks which games.
+            Text = InstallerLocale.Get("Program_UpToDate_Title");
             Size = new Size(700, 420);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;

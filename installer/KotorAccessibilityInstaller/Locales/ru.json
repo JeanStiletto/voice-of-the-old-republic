@@ -161,6 +161,7 @@
     "ModInstall_K2cpProgress_Format": "K2CP: {0}",
     "ModInstall_SummaryHeading": "Дополнительные моды:",
     "ModInstall_SummaryOk_Format": "  ОК  {0}",
+    "ModInstall_SummaryAlready_Format": "  {0}: уже установлено — менять нечего",
     "ModInstall_SummarySkipped_Format": "  --  {0} (пропущено)",
     "ModInstall_SummaryFailed_Format": "  СБОЙ  {0}: {1}",
     "Main_StatusInstallComplete": "Установка завершена.",

@@ -89,6 +89,14 @@ namespace KotorAccessibilityInstaller
         public string InstallerPath { get; private set; }
         public string FailureReason { get; private set; }
 
+        /// <summary>
+        /// True when Setup succeeded but changed nothing, i.e. TSLRCM was
+        /// already there. The install counts as successful either way; the flag
+        /// exists so the summary can say "already installed" rather than
+        /// claiming a fresh install the user did not get.
+        /// </summary>
+        public bool AlreadyInstalled { get; private set; }
+
         /// <param name="k2GamePath">
         /// Detected KOTOR 2 install root, or null when detection failed — then
         /// the form stops after download + verify (<see cref="TslrcmOutcome.DownloadedOnly"/>).
@@ -317,14 +325,36 @@ namespace KotorAccessibilityInstaller
             }
 
             var tlkAfter = FingerprintDialogTlk();
-            if (tlkBefore == tlkAfter)
+            if (tlkBefore != tlkAfter)
             {
-                throw new InvalidOperationException(
-                    "TSLRCM setup exited with code 0 but dialog.tlk is unchanged — " +
-                    $"the install may not have run (log: {log}).");
+                Logger.Info($"TSLRCM silent install complete; dialog.tlk {tlkBefore} -> {tlkAfter}");
+                return;
             }
 
-            Logger.Info($"TSLRCM silent install complete; dialog.tlk {tlkBefore} -> {tlkAfter}");
+            // dialog.tlk did not change. That has two very different causes, and
+            // treating them alike reported a perfectly good install as failed:
+            //
+            //   a) Setup did nothing (the thing this check exists to catch).
+            //   b) TSLRCM was ALREADY installed, so Setup rewrote the same file
+            //      byte for byte. Re-running the installer over an existing
+            //      install is a normal thing to do and it is not an error.
+            //
+            // Inno's own log distinguishes them: it ends with "Installation
+            // process succeeded." only when it actually ran the file entries.
+            // That is direct evidence about what Setup did, where the tlk
+            // fingerprint is only an inference from one of its side effects, so
+            // it wins when the two disagree.
+            if (InnoLogReportsSuccess(log))
+            {
+                Logger.Info("TSLRCM silent install: dialog.tlk unchanged, but Setup's own log reports " +
+                            "success — TSLRCM was already installed and has been reinstalled in place.");
+                AlreadyInstalled = true;
+                return;
+            }
+
+            throw new InvalidOperationException(
+                "TSLRCM setup exited with code 0 but dialog.tlk is unchanged and its own log does " +
+                $"not report success — the install did not run (log: {log}).");
         }
 
         /// <summary>
@@ -332,6 +362,26 @@ namespace KotorAccessibilityInstaller
         /// TSLRCM always replaces the file, so this distinguishes a real
         /// install from a setup exe that exited 0 without doing anything.
         /// </summary>
+        /// <summary>
+        /// Whether Inno's log ends with its success line. Read as UTF-8 with a
+        /// permissive fallback — the log is Inno's, not ours, and an encoding
+        /// surprise must not turn into a failed install.
+        /// </summary>
+        private static bool InnoLogReportsSuccess(string logPath)
+        {
+            try
+            {
+                if (!File.Exists(logPath)) return false;
+                string text = File.ReadAllText(logPath);
+                return text.Contains("Installation process succeeded", StringComparison.OrdinalIgnoreCase);
+            }
+            catch (Exception ex)
+            {
+                Logger.Warning($"Could not read Setup's log at {logPath}: {ex.Message}");
+                return false;
+            }
+        }
+
         private string FingerprintDialogTlk()
         {
             try
