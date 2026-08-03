@@ -25,6 +25,17 @@ namespace KotorAccessibilityInstaller
         [STAThread]
         static void Main(string[] args)
         {
+            // Whatever happens — success, cancel at any dialog, or an
+            // unhandled throw — the log ends up on disk. Main has a dozen
+            // early returns, and relying on each one to remember to flush is
+            // how a run that only produced warnings ended up leaving nothing
+            // behind to diagnose.
+            try { RunMain(args); }
+            finally { Logger.Flush(); }
+        }
+
+        private static void RunMain(string[] args)
+        {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 

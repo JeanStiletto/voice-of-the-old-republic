@@ -233,6 +233,44 @@ namespace KotorAccessibilityInstaller
         /// stable size (Steam finished writing it). Returns null on cancel
         /// (FailureReason stays null) or timeout (FailureReason set).
         /// </summary>
+        /// <summary>
+        /// Whether Steam's own workshop bookkeeping mentions this item yet.
+        ///
+        /// <para>Steam keeps <c>steamapps/workshop/appworkshop_&lt;appid&gt;.acf</c>
+        /// with a <c>WorkshopItemsInstalled</c> block listing every subscribed
+        /// item id. A subscription Steam has accepted and started puts the id in
+        /// there; a Subscribe press that never reached the client leaves the
+        /// block empty. That is the difference between "wait, it is coming" and
+        /// "nothing is going to happen", and it is not visible from the content
+        /// folder — which stays absent in both cases.</para>
+        ///
+        /// <para>Deliberately a substring test rather than a KeyValues parse: we
+        /// only need to know whether the id is mentioned, and a parser for
+        /// Valve's format would be a lot of surface area for a heartbeat
+        /// message. Errs toward "Steam has it" on any read failure, so a locked
+        /// or unreadable file never produces a false accusation.</para>
+        /// </summary>
+        private bool SteamKnowsWorkshopItem()
+        {
+            try
+            {
+                // <lib>/steamapps/common/<game> -> <lib>/steamapps
+                var steamapps = Directory.GetParent(_k2GamePath)?.Parent;
+                if (steamapps == null) return true;
+
+                string acf = Path.Combine(steamapps.FullName, "workshop",
+                                          $"appworkshop_{Config.Kotor2WorkshopAppId}.acf");
+                if (!File.Exists(acf)) return false;
+
+                return File.ReadAllText(acf).Contains(_itemId, StringComparison.Ordinal);
+            }
+            catch (Exception ex)
+            {
+                Logger.Warning($"Could not read Steam's workshop manifest: {ex.Message}");
+                return true;
+            }
+        }
+
         private async Task<string> WaitForWorkshopTlkAsync(string itemDir)
         {
             long started = Environment.TickCount64;
@@ -287,8 +325,21 @@ namespace KotorAccessibilityInstaller
                 {
                     lastAnnounce = now;
                     int elapsedSec = (int)((now - started) / 1000);
+
+                    // Say WHICH kind of waiting this is. Steam records every
+                    // subscribed item in appworkshop_<appid>.acf, so we can tell
+                    // "Steam has not taken the subscription" apart from "Steam is
+                    // downloading". Without that the heartbeat counted seconds
+                    // identically in both cases — and a subscription Steam never
+                    // acted on looked exactly like a slow 335 MB download, with
+                    // nothing to do but wait for a timeout that would never
+                    // resolve.
+                    bool steamHasItem = SteamKnowsWorkshopItem();
                     UpdateStatus(
-                        InstallerLocale.Format("K2Lang_WaitingHeartbeat_Format", elapsedSec),
+                        InstallerLocale.Format(
+                            steamHasItem ? "K2Lang_WaitingHeartbeat_Format"
+                                         : "K2Lang_NotSubscribedHeartbeat_Format",
+                            elapsedSec),
                         announce: true);
                 }
 

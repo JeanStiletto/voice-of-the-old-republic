@@ -6,11 +6,26 @@ using System.Windows.Forms;
 namespace KotorAccessibilityInstaller
 {
     /// <summary>
-    /// Simple logger that buffers installation progress and optionally writes to file.
+    /// Buffers installation progress and writes it to the user's Desktop.
+    ///
+    /// <para><b>The log is always written, at the end of every run.</b> It used
+    /// to be written only if the user said yes to a prompt — and that prompt was
+    /// only offered when something had called <see cref="Error(string)"/>. A run
+    /// that succeeded with warnings therefore produced no log at all, which is
+    /// exactly the run you need one for: a warning is the symptom you cannot
+    /// reproduce from the outside. Diagnosing a real "K2CP warned about
+    /// something" report took a repo audit because of this.</para>
+    ///
+    /// <para>The previous run is kept as <c>.previous.log</c>. One fixed
+    /// filename meant every run overwrote the last, so an uninstall could
+    /// destroy the install log that explained why it was needed. Two files is
+    /// enough to cover "it broke, then I tried again" without turning the
+    /// Desktop into an archive.</para>
     /// </summary>
     public static class Logger
     {
         private static readonly string LogPath;
+        private static readonly string PreviousLogPath;
         private static readonly StringBuilder LogBuffer = new StringBuilder();
         private static bool _hasErrors = false;
 
@@ -18,6 +33,7 @@ namespace KotorAccessibilityInstaller
         {
             string desktop = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
             LogPath = Path.Combine(desktop, "KotorAccessibility_Install.log");
+            PreviousLogPath = Path.Combine(desktop, "KotorAccessibility_Install.previous.log");
         }
 
         public static string GetLogPath() => LogPath;
@@ -47,8 +63,22 @@ namespace KotorAccessibilityInstaller
             Console.WriteLine(logLine);
         }
 
+        /// <summary>
+        /// Write the buffered log, rotating the last one aside first. Safe to
+        /// call repeatedly — later calls in a run simply rewrite the same file
+        /// with more content, and rotation only happens on the first.
+        /// </summary>
         public static void Flush()
         {
+            try
+            {
+                RotateOnce();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to rotate previous log: {ex.Message}");
+            }
+
             try
             {
                 var fullLog = new StringBuilder();
@@ -71,8 +101,32 @@ namespace KotorAccessibilityInstaller
             }
         }
 
+        private static bool _rotated;
+
+        /// <summary>
+        /// Move an existing log to <c>.previous.log</c>, once per process.
+        /// </summary>
+        private static void RotateOnce()
+        {
+            if (_rotated) return;
+            _rotated = true;
+
+            if (!File.Exists(LogPath)) return;
+            File.Copy(LogPath, PreviousLogPath, overwrite: true);
+        }
+
+        /// <summary>
+        /// Write the log unconditionally, then offer to open it when something
+        /// went wrong. The save is no longer the user's decision — the file is
+        /// small, it lives on the Desktop under a predictable name, and a
+        /// missing log costs far more than an unwanted one.
+        /// </summary>
         public static bool AskAndSave(bool alwaysAsk = false)
         {
+            Flush();
+
+            // Nothing failed: the log is on disk if it is ever wanted, and there
+            // is no reason to interrupt a successful install to say so.
             if (!alwaysAsk && !_hasErrors) return false;
 
             string message = _hasErrors
@@ -85,12 +139,7 @@ namespace KotorAccessibilityInstaller
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Question);
 
-            if (result == DialogResult.Yes)
-            {
-                Flush();
-                return true;
-            }
-            return false;
+            return result == DialogResult.Yes;
         }
 
         public static void OpenLogFile()

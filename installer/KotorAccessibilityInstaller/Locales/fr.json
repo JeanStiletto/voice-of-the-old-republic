@@ -72,6 +72,7 @@
     "K2Lang_ReopenPageButton": "Rouvrir la page Workshop",
     "K2Lang_PageOpenFailed_Format": "Steam n'a pas pu être ouvert. Ouvrez cette adresse manuellement : {0}",
     "K2Lang_WaitingHeartbeat_Format": "Toujours en attente du téléchargement du Workshop ({0} sec). Si ce n'est pas fait, appuyez sur S'abonner sur la page du Workshop dans Steam...",
+    "K2Lang_NotSubscribedHeartbeat_Format": "Attente de {0} secondes — Steam n'a pas démarré ce téléchargement. Aucun abonnement n'est encore enregistré. Appuyez sur « Rouvrir la page Workshop », vérifiez que le bouton indique Se désabonner (et non S'abonner), et regardez la page Téléchargements de Steam au cas où le téléchargement serait en pause.",
     "K2Lang_Done_Text": "Le texte localisé a été copié dans le jeu (le fichier anglais a été sauvegardé sous dialog.tlk.english.bak).\n\nIMPORTANT : désabonnez-vous maintenant de l'élément Workshop de TSLRCM — retournez sur la page du Workshop dans Steam et appuyez sur Se désabonner — pour que la copie du Workshop n'entre pas en conflit avec les mods installés.",
     "K2Lang_Failed_Format": "La récupération du texte localisé ne s'est pas terminée : {0}\n\nLe jeu garde le texte anglais pour l'instant. Méthode manuelle : abonnez-vous à l'élément Workshop TSLRCM de votre langue, copiez dialog.tlk depuis steamapps\\workshop\\content\\208580\\<élément> vers le dossier du jeu, puis désabonnez-vous.",
     "K2Tslrcm_Downloading": "Téléchargement de TSLRCM depuis deadlystream.com (environ 138 Mo)...",
