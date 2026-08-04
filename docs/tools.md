@@ -169,6 +169,20 @@ Lane's KOTOR 1 RE bundle from the Google Drive folder linked from his DeadlyStre
 - **Solution file:** `KotOR_IO.sln`
 - **Layout:** `KotOR_IO/` (the library), `KIOTest/`, `test8/`
 - **Formats supported:** 2DA, GFF, TLK, ERF/RIM, BIF/KEY (per upstream description)
+- **Note:** `KotOR_IO.csproj` targets .NET Framework 4.5.2 and references `System.Windows.Forms`, so it cannot be `ProjectReference`d from our net10.0 tools. Consumers compile the handful of source files they need directly (see `tools/kotorsave/kotorsave.csproj`).
+
+## kotorsave (savegame inspector — ours)
+
+**`tools/kotorsave/`** — read-only CLI for pulling persisted object state out of a KOTOR savegame. Built for beta-test triage: a patch log shows what the engine reports at runtime, but only the save shows how an object got into that state.
+- **Build:** `dotnet build tools/kotorsave/kotorsave.csproj` (output at `tools/kotorsave/bin/Debug/net10.0/kotorsave.exe`)
+- **Save layout it walks:** `SAVEGAME.sav` (ERF) → `<module>.sav` (ERF) → `<area>.git` (GFF). `savenfo.res` beside it holds the save's name/area/playtime.
+- **Usage:**
+  - `kotorsave <save>` — save metadata plus the modules it still carries state for (the engine drops a module's state once you leave the planet).
+  - `kotorsave <save> --module kas_m24aa` — summarise every entry in the module's `Door List`, with a plain-language verdict on whether the engine will still offer an Open action.
+  - `kotorsave <save> --module kas_m24aa --tag kas24_forcefield` — dump every field of one object, nested lists expanded.
+  - `--list "Placeable List"` switches to another GFF list; the error path prints the lists actually present.
+- **`<save>`** is either the save directory or the `SAVEGAME.sav` inside it.
+- **Writes nothing** — deliberately, so a diagnostic run can never damage a save a tester sent us. Repairing a save is a separate job; `build/saveedit/` is the (gitignored, one-off) precedent for the write side.
 
 ## jq (SARIF query)
 
