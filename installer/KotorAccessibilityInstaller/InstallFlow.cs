@@ -184,8 +184,11 @@ namespace KotorAccessibilityInstaller
             }
 
             // Subscribed Workshop items override everything we are about to
-            // install. Ask before, not after.
-            if (k2Path != null && !ConfirmNoWorkshopContent(k2Path)) return;
+            // install. Ask before, not after — except for the localized TSLRCM
+            // item this run may be about to use, which is resolved just below.
+            var preflightLocale = GameLocaleDetector.FromInstallerLanguage(installerLanguage);
+            WorkshopTslrcmForm.TryGetWorkshopItem(preflightLocale, out string preflightItemId);
+            if (k2Path != null && !ConfirmNoWorkshopContent(k2Path, preflightItemId)) return;
 
             // For the record only. The game's own language stops being a usable
             // signal the moment the English TSLRCM replaces dialog.tlk, so the
@@ -540,9 +543,16 @@ namespace KotorAccessibilityInstaller
         ///
         /// Returns false when the user chose to stop.
         /// </summary>
-        private static bool ConfirmNoWorkshopContent(string k2Path)
+        /// <param name="expectedItemId">
+        /// The localized TSLRCM item this run intends to install, or null. It is
+        /// excluded from the check: warning "unsubscribe from everything" and
+        /// then immediately asking the user to subscribe to that very item reads
+        /// as the installer contradicting itself. Every OTHER subscribed item is
+        /// still a genuine conflict and still warned about.
+        /// </param>
+        private static bool ConfirmNoWorkshopContent(string k2Path, string expectedItemId)
         {
-            string workshopDir = FindWorkshopContentDir(k2Path);
+            string workshopDir = FindWorkshopContentDir(k2Path, expectedItemId);
             if (workshopDir == null) return true;
 
             Logger.Warning($"Steam Workshop content present for KOTOR 2: {workshopDir}");
@@ -566,7 +576,7 @@ namespace KotorAccessibilityInstaller
         /// (<c>steamapps/common/&lt;game&gt;</c>) so it follows a game installed to a
         /// secondary Steam library rather than assuming the default one.
         /// </summary>
-        private static string FindWorkshopContentDir(string k2Path)
+        private static string FindWorkshopContentDir(string k2Path, string expectedItemId)
         {
             try
             {
@@ -578,9 +588,15 @@ namespace KotorAccessibilityInstaller
                 string workshop = Path.Combine(steamapps.FullName, "workshop", "content",
                                                Config.Kotor2WorkshopAppId);
                 if (!Directory.Exists(workshop)) return null;
-                return Directory.EnumerateFileSystemEntries(workshop).GetEnumerator().MoveNext()
-                    ? workshop
-                    : null;
+
+                foreach (var entry in Directory.EnumerateFileSystemEntries(workshop))
+                {
+                    if (expectedItemId != null &&
+                        Path.GetFileName(entry).Equals(expectedItemId, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    return workshop;
+                }
+                return null;
             }
             catch (Exception ex)
             {
