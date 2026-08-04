@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -188,9 +188,9 @@ namespace KotorAccessibilityInstaller
             if (k2Path != null && !ConfirmNoWorkshopContent(k2Path)) return;
 
             // For the record only. The game's own language stops being a usable
-            // signal the moment TSLRCM replaces dialog.tlk with its English one,
-            // which is why the harvest below keys off the installer's language
-            // instead — but knowing what the game WAS is worth having in the log.
+            // signal the moment the English TSLRCM replaces dialog.tlk, so the
+            // routing below keys off the installer's language instead — but
+            // knowing what the game WAS is worth having in the log.
             if (k2Path != null)
                 Logger.Info($"KOTOR 2 text language before TSLRCM: {GameLocaleDetector.Detect(k2Path)}");
 
@@ -198,8 +198,29 @@ namespace KotorAccessibilityInstaller
             summary.AppendLine(InstallerLocale.Get("ModInstall_SummaryHeading"));
             const string tslrcmName = "TSLRCM 1.8.6";
 
+            // WHICH TSLRCM this user gets. Non-English players take the
+            // localized Steam Workshop edition; everyone else takes the English
+            // DeadlyStream installer.
+            //
+            // This is not a preference, it is the only correct answer for them.
+            // The DeadlyStream exe is English-only and ships a full English
+            // dialog.tlk that replaces the player's — turning a German game's
+            // entire text English, losing a translation that was already right.
+            // The localized editions exist only as Workshop items, ship no text
+            // table at all, and embed their new strings in the content files, so
+            // they leave the player's table alone. See WorkshopTslrcmForm.
+            var tslrcmLocale = GameLocaleDetector.FromInstallerLanguage(installerLanguage);
+            bool useLocalizedTslrcm =
+                k2Path != null &&
+                tslrcmLocale != GameLocale.English && tslrcmLocale != GameLocale.Unknown &&
+                WorkshopTslrcmForm.TryGetWorkshopItem(tslrcmLocale, out _);
+
             bool tslrcmPresent;
-            if (selectionForm.InstallTslrcm)
+            if (selectionForm.InstallTslrcm && useLocalizedTslrcm)
+            {
+                tslrcmPresent = RunLocalizedTslrcmInstall(k2Path, tslrcmLocale, summary, tslrcmName);
+            }
+            else if (selectionForm.InstallTslrcm)
             {
                 // Three signals, strongest first.
                 //
@@ -252,73 +273,6 @@ namespace KotorAccessibilityInstaller
             {
                 tslrcmPresent = TslrcmDetector.IsInstalled();
                 summary.AppendLine(InstallerLocale.Format("ModInstall_SummarySkipped_Format", tslrcmName));
-            }
-
-            // Localized-text harvest — must run AFTER TSLRCM (whose English
-            // dialog.tlk it replaces) and BEFORE the K2CP / Tweak Pack
-            // pipeline (which appends strings to dialog.tlk; replacing the
-            // file afterwards would orphan their strrefs).
-            //
-            // Which language to offer is decided by the language the user chose
-            // for the INSTALLER, not by reading the game's dialog.tlk.
-            //
-            // Reading the game was a trap that closed the moment it mattered:
-            // TSLRCM replaces dialog.tlk with an English one, so from the second
-            // run onwards the game reads as English and the offer disappeared
-            // forever. A user whose game was German, who installed TSLRCM, and
-            // who then wanted their German text back could never be offered it
-            // again — the one situation the feature exists for. It also made the
-            // offer impossible for anyone who simply wants to switch language.
-            //
-            // The installer's own language is a statement of what the user reads
-            // in, which is a better answer to "which text do you want" than the
-            // current state of a file another mod overwrote.
-            var harvestLocale = GameLocaleDetector.FromInstallerLanguage(installerLanguage);
-            if (tslrcmPresent && k2Path != null &&
-                harvestLocale != GameLocale.English && harvestLocale != GameLocale.Unknown &&
-                WorkshopTlkHarvestForm.TryGetWorkshopItem(harvestLocale, out string workshopItemId))
-            {
-                const string harvestName = "dialog.tlk (Workshop)";
-                var offer = MessageBox.Show(
-                    InstallerLocale.Get("K2Lang_Offer_Text"),
-                    InstallerLocale.Get("K2Prep_Title"),
-                    MessageBoxButtons.YesNo,
-                    MessageBoxIcon.Question);
-
-                if (offer == DialogResult.Yes)
-                {
-                    var harvestForm = new WorkshopTlkHarvestForm(k2Path, harvestLocale, workshopItemId);
-                    Application.Run(harvestForm);
-
-                    if (harvestForm.Success)
-                    {
-                        MessageBox.Show(
-                            InstallerLocale.Get("K2Lang_Done_Text"),
-                            InstallerLocale.Get("K2Prep_Title"),
-                            MessageBoxButtons.OK,
-                            MessageBoxIcon.Information);
-                        summary.AppendLine(InstallerLocale.Format("ModInstall_SummaryOk_Format", harvestName));
-                    }
-                    else if (harvestForm.FailureReason != null)
-                    {
-                        MessageBox.Show(
-                            InstallerLocale.Format("K2Lang_Failed_Format", harvestForm.FailureReason),
-                            InstallerLocale.Get("K2Prep_Title"),
-                            MessageBoxButtons.OK,
-                            MessageBoxIcon.Warning);
-                        summary.AppendLine(InstallerLocale.Format("ModInstall_SummaryFailed_Format",
-                            harvestName, harvestForm.FailureReason));
-                    }
-                    else
-                    {
-                        summary.AppendLine(InstallerLocale.Format("ModInstall_SummarySkipped_Format", harvestName));
-                    }
-                }
-                else
-                {
-                    Logger.Info("User declined localized-text harvest");
-                    summary.AppendLine(InstallerLocale.Format("ModInstall_SummarySkipped_Format", harvestName));
-                }
             }
 
             if (selectionForm.Selection.K2cp || selectionForm.Selection.TweakPack)
@@ -381,6 +335,79 @@ namespace KotorAccessibilityInstaller
         /// form's outcome so the caller can tell a self-verified silent install
         /// from a wizard handoff whose result only the user knows.
         /// </summary>
+        /// <summary>
+        /// TSLRCM for a non-English player: the localized Steam Workshop
+        /// edition, copied into the game folder.
+        ///
+        /// <para>The user subscribes in Steam's own UI (the one manual step we
+        /// cannot automate — the items are UGC-depot hosted, so there is no
+        /// anonymous download), we copy the content out, and we tell them to
+        /// unsubscribe. Unsubscribing is what makes this safe: while the item
+        /// stays subscribed, the game reads it from a separate folder whose
+        /// files hard-conflict with directory-installed mods. Once copied and
+        /// unsubscribed, they are ordinary game files that K2CP and the Tweak
+        /// Pack patch normally.</para>
+        ///
+        /// <para>Returns whether TSLRCM ended up installed.</para>
+        /// </summary>
+        private static bool RunLocalizedTslrcmInstall(
+            string k2Path, GameLocale locale, StringBuilder summary, string tslrcmName)
+        {
+            WorkshopTslrcmForm.TryGetWorkshopItem(locale, out string itemId);
+            Logger.Info($"TSLRCM: taking the localized Workshop edition for {locale} (item {itemId})");
+
+            var offer = MessageBox.Show(
+                InstallerLocale.Format("K2Lang_Offer_Text", locale.ToString()),
+                InstallerLocale.Get("K2Prep_Title"),
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question);
+
+            if (offer != DialogResult.Yes)
+            {
+                // Declining the localized edition means declining TSLRCM. We do
+                // NOT quietly fall back to the English one: that would replace
+                // their text table with English, which is the outcome this whole
+                // path exists to avoid, and doing it as an unrequested fallback
+                // would be the worst way to arrive there.
+                Logger.Info("User declined the localized TSLRCM; TSLRCM not installed");
+                summary.AppendLine(InstallerLocale.Format("ModInstall_SummarySkipped_Format", tslrcmName));
+                return TslrcmDetector.IsInstalled();
+            }
+
+            var form = new WorkshopTslrcmForm(k2Path, locale, itemId);
+            Application.Run(form);
+
+            if (form.Success)
+            {
+                MessageBox.Show(
+                    InstallerLocale.Get("K2Lang_Done_Text"),
+                    InstallerLocale.Get("K2Prep_Title"),
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                summary.AppendLine(InstallerLocale.Format("ModInstall_SummaryOk_Format", tslrcmName));
+                return true;
+            }
+
+            if (form.FailureReason != null)
+            {
+                MessageBox.Show(
+                    InstallerLocale.Format("K2Lang_Failed_Format", form.FailureReason),
+                    InstallerLocale.Get("K2Prep_Title"),
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                summary.AppendLine(InstallerLocale.Format("ModInstall_SummaryFailed_Format",
+                    tslrcmName, form.FailureReason));
+            }
+            else
+            {
+                summary.AppendLine(InstallerLocale.Format("ModInstall_SummarySkipped_Format", tslrcmName));
+            }
+
+            // An earlier install may still be there even though this attempt
+            // did not complete.
+            return TslrcmDetector.IsInstalled();
+        }
+
         /// <summary>
         /// Set by <see cref="RunTslrcmInstall"/> when Setup reported success
         /// without changing anything, i.e. TSLRCM was already there. Only

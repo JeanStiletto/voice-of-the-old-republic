@@ -47,6 +47,12 @@ and add the German in parentheses if it genuinely aids clarity.
 - If the installer cannot confirm that TSLRCM installed, it now asks you instead of assuming. The Community Patch and Tweak Pack must sit on top of TSLRCM, and a silent wrong assumption would have skipped both without saying so.
 - KOTOR 2's mods install in the order the community's own build documents: TSLRCM, then the Tweak Pack, then the Community Patch.
 
+<h3>Installer — KOTOR 2 in your own language:</h3>
+
+- If you play KOTOR 2 in German, French, Italian, Spanish or Russian, the installer now installs the translated version of the Restored Content Mod instead of the English one, and your game's text stays in your language. Previously it installed the English version, which replaces the game's entire text file — so a German game became an English game, losing a translation that was already correct.
+- The translated versions are only published on the Steam Workshop, so the installer opens the page for your language and you press Subscribe; it then waits for the download, copies the files into the game, and tells you when to unsubscribe again. Unsubscribing matters: files left subscribed are loaded separately by the game and clash with the other mods instead of combining with them. Once copied in, the community patches can patch them normally and add their own text to your language's file.
+- One thing the translated versions leave out: corrected descriptions for four mine types, where the original game overstates their damage and difficulty. The mines behave exactly the same, and the descriptions are the same ones an unmodded game shows — the correction only exists in English, because it lives in the English text file.
+
 <h3>Installer — KOTOR 2 fixes:</h3>
 
 - The KOTOR 2 Community Patch now actually installs. It was being fetched from its GitHub repository, which holds only the instruction file and none of the 713 files the patch installs — those ship exclusively in its DeadlyStream archive. The result was an install that applied the patch's edits to existing game files, silently copied nothing, and reported success with a single warning. It now downloads the real archive, and refuses to run at all if the payload looks empty rather than half-installing again.

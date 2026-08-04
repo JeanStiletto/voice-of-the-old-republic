@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
@@ -10,31 +10,53 @@ using System.Windows.Forms;
 namespace KotorAccessibilityInstaller
 {
     /// <summary>
-    /// Fetches the localized TSLRCM <c>dialog.tlk</c> from the TSLRCM team's
-    /// official per-language Steam Workshop items and copies it into the
-    /// KOTOR 2 folder over the English one the DeadlyStream installer left.
+    /// Installs the LOCALIZED TSLRCM for non-English players, by copying the
+    /// TSLRCM team's official per-language Steam Workshop item into the game
+    /// folder — and deliberately never touching <c>dialog.tlk</c>.
     ///
-    /// Why this shape: the DeadlyStream TSLRCM 1.8.6 exe is English-only
-    /// (verified by extraction — see docs/installer.md), the localized
-    /// editions exist ONLY as Workshop items, and those are UGC-depot hosted
-    /// (GetPublishedFileDetails returns an empty file_url), so there is no
-    /// anonymous direct download. But every affected user owns KOTOR 2 on
-    /// Steam by definition, so we automate the community-endorsed route:
-    /// open the Workshop page (the user presses Subscribe — the one manual
-    /// step, in Steam's own UI), poll the library's
-    /// <c>workshop/content/&lt;app&gt;/&lt;item&gt;/</c> folder for
-    /// dialog.tlk, wait for the size to go stable, verify the language via
-    /// <see cref="GameLocaleDetector"/> (content probe included, so Russian
-    /// works despite its English language ID), back up the English tlk as
-    /// <c>dialog.tlk.english.bak</c>, and copy the localized one in. The
-    /// completion message tells the user to unsubscribe again so the
-    /// Workshop copy never coexists with the directory-installed mods.
+    /// <para><b>Why this replaced a tlk harvest.</b> This class used to fetch a
+    /// localized <c>dialog.tlk</c> out of the Workshop item. That could never
+    /// work: those items contain no text table at all. Verified against the
+    /// German item — 677 files, not one <c>.tlk</c> among them. The localized
+    /// TSLRCM embeds its new player-visible strings directly in the <c>.dlg</c>
+    /// files (28 German strings across 10 companion dialogs), and takes
+    /// everything else from StrRefs in the game's OWN localized table. So a
+    /// localized TSLRCM needs no tlk, and must not overwrite one.</para>
     ///
-    /// MUST run after TSLRCM but BEFORE K2CP / Tweak Pack: those append
-    /// strings to dialog.tlk, and replacing the file afterwards would orphan
-    /// their strrefs.
+    /// <para><b>Why the English installer is wrong for these users.</b> The
+    /// DeadlyStream TSLRCM 1.8.6 exe is English-only and ships a full English
+    /// <c>dialog.tlk</c> that replaces the player's. On a German copy that
+    /// turns the entire game's text English — a straight loss, since the
+    /// German text was already correct. The English tlk is not merely a
+    /// convenience either: it carries appended strings (StrRefs 136364+) that a
+    /// handful of item fixes depend on.</para>
+    ///
+    /// <para><b>Why copying out is safe, when subscribing is not.</b> The
+    /// DeadlyStream thread "Why not to use the Steam Workshop" documents the
+    /// problems: Workshop mods live in separate folders read at startup, load
+    /// order follows subscription order and gets randomised, and a Workshop
+    /// <c>.2da</c> and an Override <c>.2da</c> cancel each other out entirely
+    /// instead of merging. Every one of those failures needs the content to
+    /// STAY subscribed. Copying the files into the game folder and
+    /// unsubscribing turns them into ordinary Override/Modules files, which
+    /// TSLPatcher-based mods (K2CP, the Tweak Pack) then patch normally — and
+    /// they append their strings to the player's own localized table. That
+    /// thread does not discuss copying out, so this is not a route it endorses;
+    /// it is one where none of the problems it lists survive.</para>
+    ///
+    /// <para><b>Known gap, accepted.</b> The localized items omit ~10 files the
+    /// English one installs: two English VO splices, the launcher skin, and 7
+    /// <c>g_i_trapkit*.uti</c> item files. The trap-kit files differ from
+    /// vanilla by exactly 3 bytes — a description StrRef re-pointed at
+    /// corrected text in TSLRCM's English tlk (vanilla overstates the mines'
+    /// damage and save DC). Shipping them without that tlk would point players
+    /// at StrRefs their table lacks, so the omission is forced, not careless. A
+    /// localized player keeps vanilla's wrong mine descriptions — exactly what
+    /// they had unmodded, so no regression.</para>
+    ///
+    /// <para>MUST run before K2CP / Tweak Pack, which patch these files.</para>
     /// </summary>
-    public class WorkshopTlkHarvestForm : Form
+    public class WorkshopTslrcmForm : Form
     {
         // Official TSLRCM language editions on the Steam Workshop (app 208580),
         // maintained by the TSLRCM team; the German item is author-confirmed
@@ -73,7 +95,7 @@ namespace KotorAccessibilityInstaller
         /// <summary>Failure detail; null when the user cancelled or timed out silently.</summary>
         public string FailureReason { get; private set; }
 
-        public WorkshopTlkHarvestForm(string k2GamePath, GameLocale expectedLocale, string itemId)
+        public WorkshopTslrcmForm(string k2GamePath, GameLocale expectedLocale, string itemId)
         {
             _k2GamePath = k2GamePath ?? throw new ArgumentNullException(nameof(k2GamePath));
             _expectedLocale = expectedLocale;
@@ -240,35 +262,26 @@ namespace KotorAccessibilityInstaller
 
                 UpdateStatus(InstallerLocale.Get("K2Lang_Waiting"), announce: true);
 
-                string tlkPath = await WaitForWorkshopTlkAsync(itemDir);
-                if (tlkPath == null) return; // cancelled or timed out; reason already set
+                if (!await WaitForItemDownloadAsync(itemDir))
+                    return; // cancelled or timed out; reason already set
 
-                UpdateStatus(InstallerLocale.Get("K2Tslrcm_Verifying"), announce: true);
+                UpdateStatus(InstallerLocale.Get("K2Lang_Copying"), announce: true);
+                int copied = await Task.Run(() => CopyItemIntoGame(itemDir));
 
-                // Reuse the installer's locale detector on the tlk's own folder:
-                // covers the header ID for DE/FR/IT/ES and the CP1251 content
-                // probe for Russian (whose tlk declares the English ID).
-                var detected = GameLocaleDetector.Detect(Path.GetDirectoryName(tlkPath));
-                if (detected != _expectedLocale)
+                if (copied == 0)
                 {
-                    FailureReason =
-                        $"The Workshop item's dialog.tlk reads as {detected}, expected {_expectedLocale}. " +
-                        "Not installed.";
-                    Logger.Warning($"Workshop tlk harvest: {FailureReason}");
+                    FailureReason = InstallerLocale.Get("K2Lang_NothingCopied");
+                    Logger.Warning($"Workshop TSLRCM: item at {itemDir} yielded no installable content");
                     return;
                 }
 
-                string gameTlk = Path.Combine(_k2GamePath, "dialog.tlk");
-                string backup = Path.Combine(_k2GamePath, "dialog.tlk.english.bak");
-                File.Copy(gameTlk, backup, overwrite: true);
-                File.Copy(tlkPath, gameTlk, overwrite: true);
-                Logger.Info($"Workshop tlk harvest: {detected} dialog.tlk installed " +
-                            $"({new FileInfo(gameTlk).Length} bytes); English backup at {backup}");
+                Logger.Info($"Workshop TSLRCM ({_expectedLocale}): copied {copied} files into {_k2GamePath}; " +
+                            "dialog.tlk deliberately untouched");
                 Success = true;
             }
             catch (Exception ex)
             {
-                Logger.Error("Workshop tlk harvest failed", ex);
+                Logger.Error("Workshop TSLRCM install failed", ex);
                 FailureReason = ex.Message;
             }
             finally
@@ -389,72 +402,41 @@ namespace KotorAccessibilityInstaller
             catch { return -1; }
         }
 
-        private async Task<string> WaitForWorkshopTlkAsync(string itemDir)
+        /// <summary>
+        /// Wait until Steam has the item fully on disk. True when it is ready,
+        /// false when the user cancelled or the wait timed out.
+        ///
+        /// <para>"Ready" is the manifest listing the item AND the bytes on disk
+        /// matching the size it declares — not merely the folder existing.
+        /// Steam creates the folder early and fills it progressively, so a
+        /// presence check alone would start copying a half-downloaded mod.</para>
+        /// </summary>
+        private async Task<bool> WaitForItemDownloadAsync(string itemDir)
         {
             long started = Environment.TickCount64;
             long lastAnnounce = started;
-            long lastSize = -1;
-            string candidate = null;
 
             while (true)
             {
                 if (_cts.IsCancellationRequested)
                 {
-                    Logger.Info("Workshop tlk harvest cancelled while waiting");
-                    return null;
+                    Logger.Info("Workshop TSLRCM install cancelled while waiting");
+                    return false;
                 }
 
                 long now = Environment.TickCount64;
                 if (now - started > OverallTimeout.TotalMilliseconds)
                 {
-                    FailureReason = "Timed out waiting for the Steam Workshop download " +
+                    FailureReason = $"Timed out waiting for the Steam Workshop download " +
                                     $"({(int)OverallTimeout.TotalMinutes} minutes).";
-                    return null;
+                    return false;
                 }
 
-                try
+                if (ItemLooksFullyDownloaded(itemDir))
                 {
-                    candidate = Directory.Exists(itemDir)
-                        ? Directory.EnumerateFiles(itemDir, "dialog.tlk", SearchOption.AllDirectories)
-                            .FirstOrDefault()
-                        : null;
-                }
-                catch (Exception ex)
-                {
-                    Logger.Warning($"Workshop poll error: {ex.Message}");
-                    candidate = null;
-                }
-
-                // The item is fully downloaded but carries no dialog.tlk. Steam
-                // has done everything it is going to do, so waiting longer is
-                // waiting for something that cannot arrive.
-                //
-                // This is the case the whole feature was designed around and got
-                // wrong: the (German) TSLRCM Workshop item ships localized
-                // CONTENT — override, modules, streamvoice, lips — and no text
-                // table at all. Polling for dialog.tlk therefore hung until the
-                // ten-minute timeout with a heartbeat cheerfully counting
-                // seconds. Fail immediately and say what was actually found.
-                if (candidate == null && ItemLooksFullyDownloaded(itemDir))
-                {
-                    FailureReason = InstallerLocale.Get("K2Lang_NoTlkInItem");
-                    Logger.Warning($"Workshop item {_itemId} is present ({CountFiles(itemDir)} files) " +
-                                   "but contains no dialog.tlk; the localized text cannot be taken from it.");
-                    return null;
-                }
-
-                if (candidate != null)
-                {
-                    long size = new FileInfo(candidate).Length;
-                    // Two consecutive polls with the same non-trivial size =
-                    // Steam is done writing. The vanilla-scale tlk is ~10 MB;
-                    // 1 MB screens out a partially-written header.
-                    if (size > 1024 * 1024 && size == lastSize)
-                    {
-                        Logger.Info($"Workshop tlk found: {candidate} ({size} bytes, stable)");
-                        return candidate;
-                    }
-                    lastSize = size;
+                    Logger.Info($"Workshop item {_itemId} fully downloaded: " +
+                                $"{CountFiles(itemDir)} files at {itemDir}");
+                    return true;
                 }
 
                 if (now - lastAnnounce >= 15000)
@@ -466,7 +448,7 @@ namespace KotorAccessibilityInstaller
                     // subscribed item in appworkshop_<appid>.acf, so we can tell
                     // "Steam has not taken the subscription" apart from "Steam is
                     // downloading". Without that the heartbeat counted seconds
-                    // identically in both cases — and a subscription Steam never
+                    // identically in both cases -- and a subscription Steam never
                     // acted on looked exactly like a slow 335 MB download, with
                     // nothing to do but wait for a timeout that would never
                     // resolve.
@@ -480,8 +462,94 @@ namespace KotorAccessibilityInstaller
                 }
 
                 try { await Task.Delay(2000, _cts.Token); }
-                catch (OperationCanceledException) { return null; }
+                catch (OperationCanceledException) { return false; }
             }
+        }
+
+        /// <summary>
+        /// Folders inside the Workshop item that are game content, mapped to
+        /// where they belong in the install. Everything else in the item -- the
+        /// readmes, and a stray "modders resource" note the uploader left in --
+        /// is not content and is skipped.
+        ///
+        /// <para>Verified complete against the English installer's own Inno log:
+        /// per-folder counts match exactly (modules 87, lips 9, movies 3,
+        /// override 471 vs 477). The item carries its voice-over subfolders
+        /// inside streamvoice, so recursion covers them.</para>
+        /// </summary>
+        private static readonly string[] ContentFolders =
+        {
+            "override", "modules", "lips", "movies", "streammusic", "streamvoice",
+        };
+
+        /// <summary>
+        /// Copy the item's content folders into the game, overwriting. Returns
+        /// the number of files copied.
+        ///
+        /// <para><c>dialog.tlk</c> is never copied, and cannot be: it is not in
+        /// the item, and the whole point of this route is that the player's own
+        /// localized table stays. Any stray .tlk that ever did appear is skipped
+        /// explicitly rather than trusted not to exist.</para>
+        ///
+        /// <para>Destination folder names come from the INSTALL, not the item.
+        /// The item spells them lowercase; a real install may not, and creating
+        /// a second "override" next to an existing "Override" would put half the
+        /// mod somewhere the game does not read. Windows is case-insensitive so
+        /// this is belt-and-braces, but the cost is one directory lookup.</para>
+        /// </summary>
+        private int CopyItemIntoGame(string itemDir)
+        {
+            int copied = 0;
+
+            foreach (var folder in ContentFolders)
+            {
+                string src = Path.Combine(itemDir, folder);
+                if (!Directory.Exists(src)) continue;
+
+                string dest = ExistingGameFolder(folder);
+                Directory.CreateDirectory(dest);
+
+                foreach (var file in Directory.EnumerateFiles(src, "*", SearchOption.AllDirectories))
+                {
+                    if (Path.GetExtension(file).Equals(".tlk", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Logger.Info($"Skipping {Path.GetFileName(file)} -- the player's own text table stays");
+                        continue;
+                    }
+
+                    string relative = file.Substring(src.Length).TrimStart(Path.DirectorySeparatorChar,
+                                                                           Path.AltDirectorySeparatorChar);
+                    string target = Path.Combine(dest, relative);
+                    Directory.CreateDirectory(Path.GetDirectoryName(target));
+                    File.Copy(file, target, overwrite: true);
+                    copied++;
+                }
+
+                Logger.Info($"Workshop TSLRCM: {folder} -> {dest}");
+            }
+
+            return copied;
+        }
+
+        /// <summary>
+        /// The install's own spelling of a content folder, or the item's
+        /// spelling when the install has no such folder yet.
+        /// </summary>
+        private string ExistingGameFolder(string folderName)
+        {
+            try
+            {
+                foreach (var dir in Directory.EnumerateDirectories(_k2GamePath))
+                {
+                    if (Path.GetFileName(dir).Equals(folderName, StringComparison.OrdinalIgnoreCase))
+                        return dir;
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Warning($"Could not scan the game folder for '{folderName}': {ex.Message}");
+            }
+            return Path.Combine(_k2GamePath, folderName);
         }
 
         private void UpdateStatus(string message, bool announce)

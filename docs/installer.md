@@ -169,7 +169,67 @@ mod setup without it.
   (the (German) item was updated 2022-09 and author-confirmed as 1.8.6) —
   but Workshop distribution conflicts with directory-installed mods (K2CP,
   Tweak Pack), which is exactly what the neocities build prohibits mixing.
-- Localized-text solution (implemented in `WorkshopTlkHarvestForm`,
+- **Localization — REWRITTEN 2026-08-04. Non-English players get the localized
+  Workshop edition, not the English installer.** The old plan below (install
+  English TSLRCM, then harvest a localized `dialog.tlk` out of the Workshop
+  item) rested on a premise that is simply false, and is kept only as a record
+  of what was tried.
+
+  What the files actually show, verified against the German item (485551190,
+  677 files, 335,023,091 bytes — byte-exact against Steam's manifest):
+
+  - **The localized items contain no `dialog.tlk` at all.** Not one `.tlk`
+    anywhere. There was never a text table to harvest.
+  - **They embed their new player-visible strings directly in the `.dlg`
+    files** — 28 German strings across 10 companion dialogs (`atton.dlg`,
+    `kreia.dlg`, …), e.g. `[Atton ist bewußtlos, du kannst jetzt nicht mit ihm
+    reden.]`. Everything else comes from StrRefs in the game's own localized
+    table. So a localized TSLRCM needs no tlk and must not overwrite one.
+  - **The English DeadlyStream edition does the opposite**: it ships a full
+    English `dialog.tlk` that replaces the player's. On a German copy that
+    turns the whole game's text English — pure loss, since the German text was
+    already right. Its tlk is not merely a convenience either: it appends
+    strings (StrRefs 136364+) that item fixes depend on.
+  - **Completeness**: comparing the English installer's own Inno log against
+    the item, per-folder counts match exactly (modules 87/87, lips 9/9, movies
+    3/3, kaevee 48/48; override 471 vs 477). Only 16 files differ, and 15 are
+    things we do not want: `dialog.tlk`, `unins000.exe`, the 5-file launcher
+    skin, and 2 English VO splices.
+  - **The one real gap, accepted**: 7 `g_i_trapkit*.uti` files. Each differs
+    from vanilla by exactly 3 bytes — a description StrRef re-pointed at
+    corrected text in TSLRCM's English tlk (vanilla overstates the mines'
+    damage and save DC; e.g. stun mine "DC25" → "DC20", plasma "60pts" →
+    "42pts"). Shipping them without that tlk would point players at StrRefs
+    their table lacks, so the localized teams' omission is forced, not
+    careless. A localized player keeps vanilla's wrong mine descriptions —
+    exactly what they had unmodded, so no regression. Recovering them would
+    mean downloading the 138 MB English installer for 7 files that would then
+    break the descriptions rather than fix them.
+
+  **Why copying out is safe where subscribing is not.** The DeadlyStream thread
+  "Why not to use the Steam Workshop"
+  (`https://deadlystream.com/topic/7321-why-not-to-use-the-steam-workshop/`)
+  documents the problems: Workshop mods live in separate folders read at
+  startup, load order follows subscription order and gets randomised by updates
+  or reinstalls, and a Workshop `.2da` and an Override `.2da` cancel each other
+  out entirely rather than merging. Every one of those needs the content to STAY
+  subscribed. Copying the files into the game folder and unsubscribing turns
+  them into ordinary Override/Modules files, which TSLPatcher-based mods (K2CP,
+  Tweak Pack) then patch normally — appending their strings to the player's own
+  localized table. That thread does not discuss copying out, so this is not a
+  route it endorses; it is one where none of the problems it lists survive.
+
+  Implemented in `WorkshopTslrcmForm` (was `WorkshopTlkHarvestForm`): open the
+  page, user subscribes, wait until Steam's manifest lists the item AND the
+  bytes on disk match the size it declares, copy `override` / `modules` /
+  `lips` / `movies` / `streammusic` / `streamvoice` into the install (skipping
+  any `.tlk` explicitly), tell the user to unsubscribe. Routing lives in
+  `InstallFlow.RunLocalizedTslrcmInstall` and keys off the installer's chosen
+  language. Declining does NOT fall back to the English edition — arriving at an
+  English text table as an unrequested fallback is the one outcome this path
+  exists to prevent.
+
+- ~~Localized-text solution (implemented in `WorkshopTlkHarvestForm`,
   community-endorsed "subscribe and copy the tlk out" route): no anonymous
   direct download exists (GetPublishedFileDetails returns an empty
   `file_url` — UGC-depot hosted, ~335 MB for the German item), but every
@@ -189,7 +249,9 @@ mod setup without it.
   swap is the complete localization story. Re-run caveat: once English
   TSLRCM is installed, the original language is no longer detectable from
   the install — the harvest offer only appears in the same run that
-  installed TSLRCM.
+  installed TSLRCM.~~ **(Superseded — see above. The premise was wrong: those
+  items ship no `dialog.tlk`. The re-run caveat is also gone, since routing now
+  keys off the installer's language rather than reading the game's table.)**
 - **Auto-download problem: no GitHub presence, no API-friendly host.** This is
   the one essential mod without a clean scripted download path. Options, in
   preference order: (1) ask the TSLRCM team (zbyl2 et al.) for permission to
