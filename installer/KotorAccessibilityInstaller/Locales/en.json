@@ -79,6 +79,7 @@
     "K2Lang_PageOpenFailed_Format": "Steam could not be opened. Open this address by hand: {0}",
     "K2Lang_WaitingHeartbeat_Format": "Still waiting for the Workshop download ({0} sec). If you have not yet, press Subscribe on the Workshop page in Steam...",
     "K2Lang_NotSubscribedHeartbeat_Format": "Waiting {0} seconds — Steam has not started this download. It has no record of the subscription yet. Press \"Open the Workshop page again\", make sure the button there says Unsubscribe (not Subscribe), and check Steam's Downloads page in case the download is paused.",
+    "K2Lang_NoTlkInItem": "The Steam Workshop item downloaded completely, but it contains no text file (dialog.tlk) — it ships the translated content only. The game text cannot be switched this way, so nothing was changed.",
     "K2Lang_Done_Text": "The localized text was copied into the game (the English file was backed up as dialog.tlk.english.bak).\n\nIMPORTANT: unsubscribe from the TSLRCM Workshop item now — go back to the Workshop page in Steam and press Unsubscribe — so the Workshop copy does not conflict with the installed mods.",
     "K2Lang_Failed_Format": "Fetching the localized text did not complete: {0}\n\nThe game keeps English text for now. Manual route: subscribe to the TSLRCM Workshop item for your language, copy dialog.tlk from steamapps\\workshop\\content\\208580\\<item> into the game folder, then unsubscribe.",
     "K2Tslrcm_Downloading": "Downloading TSLRCM from deadlystream.com (about 138 MB)...",

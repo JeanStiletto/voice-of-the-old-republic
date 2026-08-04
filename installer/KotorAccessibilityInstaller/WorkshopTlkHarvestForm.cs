@@ -321,6 +321,74 @@ namespace KotorAccessibilityInstaller
             }
         }
 
+        /// <summary>
+        /// Whether Steam has finished with this item: its folder exists, Steam's
+        /// manifest lists it, and the bytes on disk match the size the manifest
+        /// claims. The size comparison is what makes this safe to act on — a
+        /// half-downloaded item is smaller, so we never call a download finished
+        /// while it is still arriving.
+        /// </summary>
+        private bool ItemLooksFullyDownloaded(string itemDir)
+        {
+            try
+            {
+                if (!Directory.Exists(itemDir)) return false;
+                if (!SteamKnowsWorkshopItem()) return false;
+
+                long declared = DeclaredItemSize();
+                if (declared <= 0) return false;
+
+                long onDisk = 0;
+                foreach (var f in Directory.EnumerateFiles(itemDir, "*", SearchOption.AllDirectories))
+                    onDisk += new FileInfo(f).Length;
+
+                return onDisk >= declared;
+            }
+            catch (Exception ex)
+            {
+                Logger.Warning($"Could not size up the Workshop item: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// The item's <c>size</c> from Steam's manifest, or 0 if not stated.
+        /// Read with a narrow regex rather than a KeyValues parser: one number
+        /// out of a file we do not own does not justify one.
+        /// </summary>
+        private long DeclaredItemSize()
+        {
+            try
+            {
+                var steamapps = Directory.GetParent(_k2GamePath)?.Parent;
+                if (steamapps == null) return 0;
+
+                string acf = Path.Combine(steamapps.FullName, "workshop",
+                                          $"appworkshop_{Config.Kotor2WorkshopAppId}.acf");
+                if (!File.Exists(acf)) return 0;
+
+                // "485551190" { "size" "335023091" ... }
+                var match = System.Text.RegularExpressions.Regex.Match(
+                    File.ReadAllText(acf),
+                    "\"" + System.Text.RegularExpressions.Regex.Escape(_itemId) +
+                    "\"\\s*\\{[^}]*?\"size\"\\s*\"(\\d+)\"",
+                    System.Text.RegularExpressions.RegexOptions.Singleline);
+
+                return match.Success && long.TryParse(match.Groups[1].Value, out long size) ? size : 0;
+            }
+            catch (Exception ex)
+            {
+                Logger.Warning($"Could not read the Workshop item's declared size: {ex.Message}");
+                return 0;
+            }
+        }
+
+        private static int CountFiles(string dir)
+        {
+            try { return Directory.GetFiles(dir, "*", SearchOption.AllDirectories).Length; }
+            catch { return -1; }
+        }
+
         private async Task<string> WaitForWorkshopTlkAsync(string itemDir)
         {
             long started = Environment.TickCount64;
@@ -355,6 +423,24 @@ namespace KotorAccessibilityInstaller
                 {
                     Logger.Warning($"Workshop poll error: {ex.Message}");
                     candidate = null;
+                }
+
+                // The item is fully downloaded but carries no dialog.tlk. Steam
+                // has done everything it is going to do, so waiting longer is
+                // waiting for something that cannot arrive.
+                //
+                // This is the case the whole feature was designed around and got
+                // wrong: the (German) TSLRCM Workshop item ships localized
+                // CONTENT — override, modules, streamvoice, lips — and no text
+                // table at all. Polling for dialog.tlk therefore hung until the
+                // ten-minute timeout with a heartbeat cheerfully counting
+                // seconds. Fail immediately and say what was actually found.
+                if (candidate == null && ItemLooksFullyDownloaded(itemDir))
+                {
+                    FailureReason = InstallerLocale.Get("K2Lang_NoTlkInItem");
+                    Logger.Warning($"Workshop item {_itemId} is present ({CountFiles(itemDir)} files) " +
+                                   "but contains no dialog.tlk; the localized text cannot be taken from it.");
+                    return null;
                 }
 
                 if (candidate != null)
