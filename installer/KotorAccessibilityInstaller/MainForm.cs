@@ -605,7 +605,8 @@ namespace KotorAccessibilityInstaller
         }
 
         private static bool AnyOptionalSelected(ModSelection selection) =>
-            selection != null && (selection.K1cp || selection.RestoredCutContent || selection.CompanionAndSwoopUpgrades);
+            selection != null && (selection.K1cp || selection.RestoredCutContent ||
+                                  selection.SwoopUpgrades || selection.ThematicCompanionsK1);
 
         private void OpenReadme()
         {

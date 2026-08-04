@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using System.IO.Compression;
 using System.Threading.Tasks;
 
 namespace KotorAccessibilityInstaller.ModInstallers
@@ -49,7 +48,7 @@ namespace KotorAccessibilityInstaller.ModInstallers
         /// also carries INSTALL.exe (TSLPatcher itself) and a readme, both of
         /// which we ignore — HoloPatcher drives the payload directly.
         /// </summary>
-        private const string ArchiveTslpatchdataDir = "tslpatchdata";
+        private const string ArchiveTslpatchdataDir = TslpatchdataZip.DirName;
 
         public string Id => "k2cp";
         public string DisplayName => $"KOTOR 2 Community Patch ({Config.K2cpDisplayVersion})";
@@ -128,7 +127,7 @@ namespace KotorAccessibilityInstaller.ModInstallers
                 ctx.Progress?.Invoke(50);
 
                 string tslpatchdataDir = Path.Combine(stagingRoot, ArchiveTslpatchdataDir);
-                await Task.Run(() => ExtractTslpatchdata(zipPath, stagingRoot));
+                await Task.Run(() => TslpatchdataZip.Extract(zipPath, stagingRoot, "K2CP"));
 
                 if (!Directory.Exists(tslpatchdataDir))
                 {
@@ -194,43 +193,7 @@ namespace KotorAccessibilityInstaller.ModInstallers
             }
         }
 
-        /// <summary>
-        /// Extract just the <c>tslpatchdata/</c> folder out of the archive into
-        /// <paramref name="destRoot"/>. INSTALL.exe (TSLPatcher itself), the
-        /// readme and the Source folder are skipped: we drive the payload with
-        /// HoloPatcher and never run a bundled patcher exe.
-        ///
-        /// <para>Entry paths are resolved against the destination and rejected
-        /// if they escape it — a zip from a third-party site should not be
-        /// trusted to stay inside its own folder.</para>
-        /// </summary>
-        private static void ExtractTslpatchdata(string zipPath, string destRoot)
-        {
-            string fullDest = Path.GetFullPath(destRoot);
-            using var archive = ZipFile.OpenRead(zipPath);
-
-            foreach (var entry in archive.Entries)
-            {
-                string normalized = entry.FullName.Replace('\\', '/');
-                if (!normalized.StartsWith(ArchiveTslpatchdataDir + "/", StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                string target = Path.GetFullPath(Path.Combine(destRoot, normalized.Replace('/', Path.DirectorySeparatorChar)));
-                if (!target.StartsWith(fullDest + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-                {
-                    Logger.Warning($"K2CP archive entry escapes the staging dir; skipped: {entry.FullName}");
-                    continue;
-                }
-
-                if (normalized.EndsWith("/", StringComparison.Ordinal))
-                {
-                    Directory.CreateDirectory(target);
-                    continue;
-                }
-
-                Directory.CreateDirectory(Path.GetDirectoryName(target));
-                entry.ExtractToFile(target, overwrite: true);
-            }
-        }
+        // The zip -> tslpatchdata extraction lives in TslpatchdataZip, shared
+        // with ThematicCompanionsInstaller.
     }
 }

@@ -46,6 +46,7 @@ and add the German in parentheses if it genuinely aids clarity.
 - The installer warns when Steam Workshop content is present for KOTOR 2. Workshop mods override anything installed into the game folder, so they quietly break TSLRCM and the Community Patch; you are asked to unsubscribe before continuing.
 - If the installer cannot confirm that TSLRCM installed, it now asks you instead of assuming. The Community Patch and Tweak Pack must sit on top of TSLRCM, and a silent wrong assumption would have skipped both without saying so.
 - KOTOR 2's mods install in the order the community's own build documents: TSLRCM, then the Tweak Pack, then the Community Patch.
+- New optional mod on both mod screens: Thematic Companions, one checkbox per game. It gives each companion stats, feats and starting gear that fit their background instead of the values the games reuse from elsewhere. It is a balance mod rather than a bugfix, so it is the one box that starts unchecked — tick it per game if you want it, and start a new game afterwards, since it only affects a fresh character. It works on every language version: the mod writes no text at all, only creature stats.
 
 <h3>Installer — KOTOR 2 in your own language:</h3>
 

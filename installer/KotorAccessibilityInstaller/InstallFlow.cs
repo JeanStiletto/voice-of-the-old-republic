@@ -274,17 +274,44 @@ namespace KotorAccessibilityInstaller
             }
             else
             {
-                tslrcmPresent = TslrcmDetector.IsInstalled();
+                // The user unticked TSLRCM, which in practice means "it is
+                // already there". The registry answers that for the English
+                // DeadlyStream edition and CANNOT answer it for the localized
+                // Workshop edition, which registers nothing — so on a miss we
+                // ask rather than concluding absence from a signal that does
+                // not exist for half our users. Silently skipping their mods is
+                // exactly the failure the install path above already refuses to
+                // risk; this branch just never inherited that reasoning.
+                if (TslrcmDetector.IsInstalled())
+                {
+                    tslrcmPresent = true;
+                }
+                else
+                {
+                    int patchedModules = TslrcmDetector.CountPatchedModules(k2Path);
+                    Logger.Info($"TSLRCM not in the registry; asking the user " +
+                                $"({patchedModules} patched module file(s) found)");
+
+                    tslrcmPresent = MessageBox.Show(
+                        InstallerLocale.Format("K2Tslrcm_AskAlreadyInstalled_Format", patchedModules),
+                        InstallerLocale.Get("K2Prep_Title"),
+                        MessageBoxButtons.YesNo,
+                        MessageBoxIcon.Question) == DialogResult.Yes;
+                    Logger.Info($"TSLRCM presence answered by the user: {tslrcmPresent}");
+                }
+
                 summary.AppendLine(InstallerLocale.Format("ModInstall_SummarySkipped_Format", tslrcmName));
             }
 
-            if (selectionForm.Selection.K2cp || selectionForm.Selection.TweakPack)
+            if (selectionForm.Selection.K2cp || selectionForm.Selection.TweakPack ||
+                selectionForm.Selection.ThematicCompanionsK2)
             {
                 if (k2Path == null || !tslrcmPresent)
                 {
                     // Order gate: without a known install dir, or without
-                    // TSLRCM in place, installing K2CP / Tweak Pack now would
-                    // bake in the wrong order (TSLRCM must come first).
+                    // TSLRCM in place, installing K2CP / Tweak Pack / Thematic
+                    // Companions now would bake in the wrong order (TSLRCM must
+                    // come first, and all three build on it).
                     if (k2Path != null)
                     {
                         MessageBox.Show(
@@ -293,11 +320,15 @@ namespace KotorAccessibilityInstaller
                             MessageBoxButtons.OK,
                             MessageBoxIcon.Warning);
                     }
-                    Logger.Info($"K2CP/Tweak Pack skipped (k2Path={(k2Path ?? "null")}, tslrcmPresent={tslrcmPresent})");
+                    Logger.Info($"K2CP/Tweak Pack/Thematic Companions skipped " +
+                                $"(k2Path={(k2Path ?? "null")}, tslrcmPresent={tslrcmPresent})");
                     if (selectionForm.Selection.K2cp)
                         summary.AppendLine(InstallerLocale.Format("ModInstall_SummarySkipped_Format", "k2cp"));
                     if (selectionForm.Selection.TweakPack)
                         summary.AppendLine(InstallerLocale.Format("ModInstall_SummarySkipped_Format", "tweakpack"));
+                    if (selectionForm.Selection.ThematicCompanionsK2)
+                        summary.AppendLine(InstallerLocale.Format(
+                            "ModInstall_SummarySkipped_Format", "thematic-companions-k2"));
                 }
                 else
                 {

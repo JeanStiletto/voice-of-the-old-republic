@@ -14,8 +14,21 @@ namespace KotorAccessibilityInstaller
         /// <summary>Juhani Dialogue Restoration + Party Conversations on Ebon Hawk.</summary>
         public bool RestoredCutContent { get; init; } = true;
 
-        /// <summary>Thematic KOTOR Companions + Swoop Bike Upgrades.</summary>
-        public bool CompanionAndSwoopUpgrades { get; init; } = true;
+        /// <summary>Swoop Bike Upgrades (KOTOR 1). Not yet wired.</summary>
+        public bool SwoopUpgrades { get; init; } = true;
+
+        /// <summary>
+        /// Thematic Companions, one flag per game because it is one decision per
+        /// game: the two are separate mods by the same authors, each opt-in on
+        /// its own game's mod-selection screen. Unlike every other entry here
+        /// these default to FALSE — see
+        /// <see cref="ModInstallers.ThematicCompanionsInstaller"/> for why a
+        /// balance mod does not get to ride in on an all-on default.
+        /// </summary>
+        public bool ThematicCompanionsK1 { get; init; } = false;
+
+        /// <inheritdoc cref="ThematicCompanionsK1"/>
+        public bool ThematicCompanionsK2 { get; init; } = false;
 
         /// <summary>
         /// KOTOR 2 Community Patch. Set by <see cref="Kotor2ModSelectionForm"/>;
@@ -29,10 +42,16 @@ namespace KotorAccessibilityInstaller
         /// </summary>
         public bool TweakPack { get; init; } = true;
 
+        /// <summary>
+        /// Every grouping that defaults on. Thematic Companions is deliberately
+        /// NOT included: it is opt-in per game, so "all on" means all of the
+        /// recommended set, not literally every flag.
+        /// </summary>
         public static ModSelection AllOn() => new();
 
         public override string ToString() =>
             $"K1cp={K1cp}, RestoredCutContent={RestoredCutContent}, " +
-            $"CompanionAndSwoopUpgrades={CompanionAndSwoopUpgrades}, K2cp={K2cp}, TweakPack={TweakPack}";
+            $"SwoopUpgrades={SwoopUpgrades}, K2cp={K2cp}, TweakPack={TweakPack}, " +
+            $"ThematicCompanionsK1={ThematicCompanionsK1}, ThematicCompanionsK2={ThematicCompanionsK2}";
     }
 }

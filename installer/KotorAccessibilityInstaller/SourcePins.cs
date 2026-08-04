@@ -93,6 +93,27 @@ namespace KotorAccessibilityInstaller
             public string Ref { get; init; }
         }
 
+        /// <summary>
+        /// A mod the author publishes as a GitHub release asset — no scrape, no
+        /// redistribution, and the tag makes the download reproducible. The hash
+        /// is a tamper check rather than a staleness check: a tagged asset does
+        /// not change under us the way a DeadlyStream "latest file" does.
+        /// </summary>
+        public sealed class ReleasePin
+        {
+            public string DisplayVersion { get; init; }
+            public string RepoOwner { get; init; }
+            public string RepoName { get; init; }
+            public string Tag { get; init; }
+            public string AssetName { get; init; }
+            public string Sha256 { get; init; }
+            public long SizeBytes { get; init; }
+            public string PageUrl { get; init; }
+
+            /// <summary>Repo URL in the form <see cref="GitHubClient"/> expects.</summary>
+            public string RepoUrl => $"https://github.com/{RepoOwner}/{RepoName}";
+        }
+
         private sealed class Manifest
         {
             public int SchemaVersion { get; set; }
@@ -101,6 +122,8 @@ namespace KotorAccessibilityInstaller
             public FilePin TweakPack { get; set; }
             public RepoPin K1cp { get; set; }
             public ArchivePin K2cp { get; set; }
+            public ReleasePin ThematicCompanionsK1 { get; set; }
+            public ReleasePin ThematicCompanionsK2 { get; set; }
         }
 
         private static Manifest _pins;
@@ -113,6 +136,8 @@ namespace KotorAccessibilityInstaller
         public static FilePin TweakPack => Current.TweakPack;
         public static RepoPin K1cp => Current.K1cp;
         public static ArchivePin K2cp => Current.K2cp;
+        public static ReleasePin ThematicCompanionsK1 => Current.ThematicCompanionsK1;
+        public static ReleasePin ThematicCompanionsK2 => Current.ThematicCompanionsK2;
 
         private static Manifest Current
         {
@@ -146,7 +171,9 @@ namespace KotorAccessibilityInstaller
                             $"TSLRCM {_pins.Tslrcm?.DisplayVersion}, " +
                             $"Tweak Pack {_pins.TweakPack?.DisplayVersion}, " +
                             $"K1CP {_pins.K1cp?.DisplayVersion}, " +
-                            $"K2CP {_pins.K2cp?.DisplayVersion}");
+                            $"K2CP {_pins.K2cp?.DisplayVersion}, " +
+                            $"Thematic Companions K1 {_pins.ThematicCompanionsK1?.DisplayVersion} / " +
+                            $"K2 {_pins.ThematicCompanionsK2?.DisplayVersion}");
             }
         }
 
@@ -200,7 +227,7 @@ namespace KotorAccessibilityInstaller
                 // A newer installer must not be dragged backwards by an older
                 // manifest, and an older installer must not guess at a schema it
                 // has never seen. Parse() has already rejected the second case.
-                _pins = remote;
+                _pins = FillGapsFromEmbedded(remote, _pins);
                 Origin = $"remote (updated {remote.Updated})";
             }
             catch (Exception ex)
@@ -211,6 +238,33 @@ namespace KotorAccessibilityInstaller
                 Logger.Info($"[SourcePins] Remote pins unavailable ({ex.GetType().Name}: {ex.Message}); " +
                             "using the embedded copy.");
             }
+        }
+
+        /// <summary>
+        /// Take the remote manifest, but keep the embedded value for any pin the
+        /// remote copy does not carry.
+        ///
+        /// <para>The remote file replaces the manifest wholesale, which makes
+        /// "this file predates that mod" and "that mod was deliberately dropped"
+        /// look identical — both are an absent key. The first reading is the one
+        /// that actually happens: ship an installer build that knows a new pin
+        /// before the matching <c>sources.json</c> lands on main, and every user
+        /// in the field would fetch a file that nulls the new pin straight back
+        /// out. Falling back to the embedded value keeps that window harmless,
+        /// and a pin we genuinely want gone is removed by shipping a build that
+        /// no longer embeds it.</para>
+        /// </summary>
+        private static Manifest FillGapsFromEmbedded(Manifest remote, Manifest embedded)
+        {
+            if (embedded == null) return remote;
+
+            remote.Tslrcm ??= embedded.Tslrcm;
+            remote.TweakPack ??= embedded.TweakPack;
+            remote.K1cp ??= embedded.K1cp;
+            remote.K2cp ??= embedded.K2cp;
+            remote.ThematicCompanionsK1 ??= embedded.ThematicCompanionsK1;
+            remote.ThematicCompanionsK2 ??= embedded.ThematicCompanionsK2;
+            return remote;
         }
 
         private static Manifest Parse(string json)

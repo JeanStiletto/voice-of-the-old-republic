@@ -8,8 +8,12 @@ namespace KotorAccessibilityInstaller
     /// KOTOR 2 counterpart of <see cref="ModSelectionForm"/>: shown when the
     /// user checks KOTOR 2 on the game-version screen, after the engine
     /// patches have been applied (their result rides the description text).
-    /// Three checkboxes — TSLRCM, K2CP, Tweak Pack — all on by default and
-    /// labeled highly recommended.
+    /// Four checkboxes: TSLRCM, K2CP and the Tweak Pack are on by default and
+    /// labeled highly recommended; Thematic KOTOR 2 Companions is opt-in and
+    /// starts unchecked, because it is the only one that changes game balance
+    /// rather than fixing something broken. Its KOTOR 1 sibling is a separate
+    /// decision on <see cref="ModSelectionForm"/> — same mod family, one choice
+    /// per game.
     ///
     /// TSLRCM is not an <see cref="ModInstallers.IModInstaller"/> (it is an
     /// exe-installer run, not a HoloPatcher payload), so its choice is exposed
@@ -32,6 +36,9 @@ namespace KotorAccessibilityInstaller
 
         private CheckBox _tweakPackCheckBox;
         private Label _tweakPackDescription;
+
+        private CheckBox _thematicCheckBox;
+        private Label _thematicDescription;
 
         private Label _footnoteLabel;
 
@@ -78,7 +85,7 @@ namespace KotorAccessibilityInstaller
         private void InitializeComponents()
         {
             Text = Config.DisplayName;
-            Size = new Size(660, 600);
+            Size = new Size(660, 680);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
@@ -144,18 +151,33 @@ namespace KotorAccessibilityInstaller
                 TextAlign = ContentAlignment.TopLeft
             };
 
+            // --- Thematic Companions (opt-in; the only unchecked box here) ---
+            _thematicCheckBox = new CheckBox
+            {
+                Location = new Point(20, 405),
+                Size = new Size(620, 25),
+                Font = new Font(Font.FontFamily, 9, FontStyle.Bold),
+                Checked = false
+            };
+            _thematicDescription = new Label
+            {
+                Location = new Point(40, 430),
+                Size = new Size(600, 45),
+                TextAlign = ContentAlignment.TopLeft
+            };
+
             _footnoteLabel = new Label
             {
-                Location = new Point(20, 410),
+                Location = new Point(20, 485),
                 Size = new Size(620, 85),
                 TextAlign = ContentAlignment.TopLeft,
                 Font = new Font(FontFamily.GenericSansSerif, 8, FontStyle.Italic)
             };
 
-            _backButton = new Button { Location = new Point(20, 505), Size = new Size(140, 35) };
+            _backButton = new Button { Location = new Point(20, 580), Size = new Size(140, 35) };
             _backButton.Click += (s, e) => Close();
 
-            _nextButton = new Button { Location = new Point(500, 505), Size = new Size(140, 35) };
+            _nextButton = new Button { Location = new Point(500, 580), Size = new Size(140, 35) };
             _nextButton.Click += (s, e) =>
             {
                 InstallTslrcm = _tslrcmCheckBox.Checked;
@@ -163,9 +185,11 @@ namespace KotorAccessibilityInstaller
                 {
                     K1cp = false,
                     RestoredCutContent = false,
-                    CompanionAndSwoopUpgrades = false,
+                    SwoopUpgrades = false,
+                    ThematicCompanionsK1 = false,
                     K2cp = _k2cpCheckBox.Checked,
-                    TweakPack = _tweakPackCheckBox.Checked
+                    TweakPack = _tweakPackCheckBox.Checked,
+                    ThematicCompanionsK2 = _thematicCheckBox.Checked
                 };
                 Logger.Info($"KOTOR 2 mod selection: Tslrcm={InstallTslrcm}, {Selection}");
                 ProceedWithInstall = true;
@@ -178,6 +202,7 @@ namespace KotorAccessibilityInstaller
                 _tslrcmCheckBox, _tslrcmDescription,
                 _k2cpCheckBox, _k2cpDescription,
                 _tweakPackCheckBox, _tweakPackDescription,
+                _thematicCheckBox, _thematicDescription,
                 _footnoteLabel,
                 _backButton, _nextButton
             });
@@ -200,6 +225,9 @@ namespace KotorAccessibilityInstaller
             _tweakPackCheckBox.Text = InstallerLocale.Get("K2Mods_TweakPackCheckbox");
             _tweakPackDescription.Text = InstallerLocale.Get("K2Mods_TweakPackDescription");
 
+            _thematicCheckBox.Text = InstallerLocale.Get("K2Mods_ThematicCheckbox");
+            _thematicDescription.Text = InstallerLocale.Get("K2Mods_ThematicDescription");
+
             _footnoteLabel.Text = InstallerLocale.Format("K2Mods_Footnote_Format", Config.TslrcmDownloadPageUrl);
 
             _backButton.Text = InstallerLocale.Get("ModSelection_BackButton");
@@ -208,6 +236,7 @@ namespace KotorAccessibilityInstaller
             _tslrcmCheckBox.AccessibleName = $"{_tslrcmCheckBox.Text}. {_tslrcmDescription.Text}";
             _k2cpCheckBox.AccessibleName = $"{_k2cpCheckBox.Text}. {_k2cpDescription.Text}";
             _tweakPackCheckBox.AccessibleName = $"{_tweakPackCheckBox.Text}. {_tweakPackDescription.Text}";
+            _thematicCheckBox.AccessibleName = $"{_thematicCheckBox.Text}. {_thematicDescription.Text}";
 
             string body = $"{_titleLabel.Text}. {_descriptionLabel.Text}";
             AccessibleDescription = body;

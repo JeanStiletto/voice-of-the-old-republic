@@ -12,8 +12,8 @@ namespace KotorAccessibilityInstaller.ModInstallers
     /// <see cref="KPatchCore.Applicators.PatchApplicator.InstallOptions.AllowVersionMismatch"/>
     /// flipped at the .kpatch step.
     ///
-    /// Today only K1CP is wired up; the rest land as additional installers in
-    /// <see cref="BuildPipeline"/> as we implement them.
+    /// Today K1CP and Thematic Companions are wired up; the rest land as
+    /// additional installers in <see cref="BuildPipeline"/> as we implement them.
     /// </summary>
     public static class ModInstallerCoordinator
     {
@@ -22,7 +22,11 @@ namespace KotorAccessibilityInstaller.ModInstallers
             return new List<IModInstaller>
             {
                 new K1cpInstaller(),
-                // TODO: JdrInstaller, PartyConversationsInstaller, ThematicCompanionsInstaller,
+                // Last, and after K1CP on purpose: TSLPatcher GFF edits are
+                // field-level, so applying the stat changes on top keeps K1CP's
+                // own fixes to the same creature files intact.
+                ThematicCompanionsInstaller.ForKotor1(),
+                // TODO: JdrInstaller, PartyConversationsInstaller,
                 // SwoopBikeUpgradesInstaller, WidescreenInstaller.
             };
         }
@@ -41,6 +45,13 @@ namespace KotorAccessibilityInstaller.ModInstallers
         /// isolation and cannot know what the Tweak Pack does to the same
         /// files. Both mods patch overlapping .dlg and .2da resources, so this
         /// is a real ordering, not a formality — K2CP's edits land on top.</para>
+        ///
+        /// <para>Thematic Companions goes last for the same reason it does on
+        /// KOTOR 1: it edits fields on companion <c>.utc</c> files that K2CP and
+        /// the Tweak Pack may also touch, and running last means their fixes
+        /// survive and only the named stat fields change. It also inherits the
+        /// caller's TSLRCM gate, which is exactly right — the mod requires
+        /// TSLRCM.</para>
         /// </summary>
         public static IReadOnlyList<IModInstaller> BuildKotor2Pipeline()
         {
@@ -48,6 +59,7 @@ namespace KotorAccessibilityInstaller.ModInstallers
             {
                 new TweakPackInstaller(),
                 new K2cpInstaller(),
+                ThematicCompanionsInstaller.ForKotor2(),
             };
         }
 

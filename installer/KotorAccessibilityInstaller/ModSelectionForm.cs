@@ -7,12 +7,18 @@ namespace KotorAccessibilityInstaller
     /// <summary>
     /// Screen between the base-components info screen and the main install form.
     /// Originally designed to surface three opt-in mod groupings (K1CP, restored
-    /// cut content, companion + swoop upgrades) as standalone checkboxes. For
-    /// v0.2 only K1CP has a wired installer (see
+    /// cut content, companion + swoop upgrades) as standalone checkboxes. Two
+    /// have wired installers today — K1CP and Thematic Companions (see
     /// <see cref="ModInstallers.ModInstallerCoordinator.BuildPipeline"/>); the
-    /// other two toggles are commented out below until JdrInstaller,
-    /// PartyConversationsInstaller, ThematicCompanionsInstaller, and
-    /// SwoopBikeUpgradesInstaller land.
+    /// remaining toggles are commented out below until JdrInstaller,
+    /// PartyConversationsInstaller and SwoopBikeUpgradesInstaller land.
+    ///
+    /// Thematic Companions is the one checkbox that starts UNCHECKED. Everything
+    /// else here fixes something broken; that one changes game balance, and the
+    /// screen says so rather than relying on the user noticing the checkbox
+    /// state. Its KOTOR 2 sibling is a separate decision on
+    /// <see cref="Kotor2ModSelectionForm"/> — same mod family, one choice per
+    /// game.
     ///
     /// Each checkbox's <see cref="Control.AccessibleName"/> is composed from the
     /// title + description so a screen reader announces both on focus.
@@ -28,8 +34,11 @@ namespace KotorAccessibilityInstaller
         // private CheckBox _cutContentCheckBox;
         // private Label _cutContentDescription;
 
-        // private CheckBox _companionsCheckBox;
-        // private Label _companionsDescription;
+        // private CheckBox _swoopCheckBox;
+        // private Label _swoopDescription;
+
+        private CheckBox _thematicCheckBox;
+        private Label _thematicDescription;
 
         private Label _footnoteLabel;
 
@@ -75,7 +84,7 @@ namespace KotorAccessibilityInstaller
         private void InitializeComponents()
         {
             Text = Config.DisplayName;
-            Size = new Size(640, 420);
+            Size = new Size(640, 470);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
@@ -126,48 +135,66 @@ namespace KotorAccessibilityInstaller
             //     TextAlign = ContentAlignment.TopLeft
             // };
 
-            // --- Companion balance + Swoop upgrades (toggle hidden until installer is wired) ---
-            // _companionsCheckBox = new CheckBox
+            // --- Swoop Bike Upgrades (toggle hidden until installer is wired) ---
+            // _swoopCheckBox = new CheckBox
             // {
             //     Location = new Point(20, 300),
             //     Size = new Size(600, 25),
             //     Font = new Font(Font.FontFamily, 9, FontStyle.Bold),
             //     Checked = true
             // };
-            // _companionsDescription = new Label
+            // _swoopDescription = new Label
             // {
             //     Location = new Point(40, 325),
             //     Size = new Size(580, 55),
             //     TextAlign = ContentAlignment.TopLeft
             // };
 
+            // --- Thematic Companions (opt-in; the only unchecked box here) ---
+            _thematicCheckBox = new CheckBox
+            {
+                Location = new Point(20, 205),
+                Size = new Size(600, 25),
+                Font = new Font(Font.FontFamily, 9, FontStyle.Bold),
+                Checked = false
+            };
+            _thematicDescription = new Label
+            {
+                Location = new Point(40, 230),
+                Size = new Size(580, 40),
+                TextAlign = ContentAlignment.TopLeft
+            };
+
             // --- IT/ES footnote on K1CP ---
             _footnoteLabel = new Label
             {
-                Location = new Point(20, 210),
+                Location = new Point(20, 275),
                 Size = new Size(600, 75),
                 TextAlign = ContentAlignment.TopLeft,
                 Font = new Font(FontFamily.GenericSansSerif, 8, FontStyle.Italic)
             };
 
-            _backButton = new Button { Location = new Point(20, 325), Size = new Size(140, 35) };
+            _backButton = new Button { Location = new Point(20, 365), Size = new Size(140, 35) };
             _backButton.Click += (s, e) => Close();
 
-            _nextButton = new Button { Location = new Point(480, 325), Size = new Size(140, 35) };
+            _nextButton = new Button { Location = new Point(480, 365), Size = new Size(140, 35) };
             _nextButton.Click += (s, e) =>
             {
-                // RestoredCutContent + CompanionAndSwoopUpgrades forced false
-                // because no installer is wired for them yet — keeping them at
+                // RestoredCutContent + SwoopUpgrades forced false because no
+                // installer is wired for them yet — keeping them at
                 // ModSelection's default-true would silently auto-enable those
                 // groupings the moment we add the installers, bypassing user
                 // consent. Re-enable when the toggles return.
-                // K2cp/TweakPack likewise forced false: this form belongs to the
-                // KOTOR 1 flow; Kotor2ModSelectionForm owns those toggles.
+                // K2cp/TweakPack/ThematicCompanionsK2 likewise forced false:
+                // this form belongs to the KOTOR 1 flow; Kotor2ModSelectionForm
+                // owns those toggles.
                 Selection = new ModSelection
                 {
                     K1cp = _k1cpCheckBox.Checked,
                     RestoredCutContent = false,
-                    CompanionAndSwoopUpgrades = false,
+                    SwoopUpgrades = false,
+                    ThematicCompanionsK1 = _thematicCheckBox.Checked,
+                    ThematicCompanionsK2 = false,
                     K2cp = false,
                     TweakPack = false
                 };
@@ -181,7 +208,8 @@ namespace KotorAccessibilityInstaller
                 _titleLabel, _descriptionLabel,
                 _k1cpCheckBox, _k1cpDescription,
                 // _cutContentCheckBox, _cutContentDescription,
-                // _companionsCheckBox, _companionsDescription,
+                // _swoopCheckBox, _swoopDescription,
+                _thematicCheckBox, _thematicDescription,
                 _footnoteLabel,
                 _backButton, _nextButton
             });
@@ -201,8 +229,11 @@ namespace KotorAccessibilityInstaller
             // _cutContentCheckBox.Text = InstallerLocale.Get("ModSelection_CutContentCheckbox");
             // _cutContentDescription.Text = InstallerLocale.Get("ModSelection_CutContentDescription");
 
-            // _companionsCheckBox.Text = InstallerLocale.Get("ModSelection_CompanionsCheckbox");
-            // _companionsDescription.Text = InstallerLocale.Get("ModSelection_CompanionsDescription");
+            // _swoopCheckBox.Text = InstallerLocale.Get("ModSelection_SwoopCheckbox");
+            // _swoopDescription.Text = InstallerLocale.Get("ModSelection_SwoopDescription");
+
+            _thematicCheckBox.Text = InstallerLocale.Get("ModSelection_ThematicCheckbox");
+            _thematicDescription.Text = InstallerLocale.Get("ModSelection_ThematicDescription");
 
             _footnoteLabel.Text = BuildFootnote();
 
@@ -214,8 +245,9 @@ namespace KotorAccessibilityInstaller
             // only reads the checkbox Text and the user has to navigate
             // separately to the descriptive Label.
             _k1cpCheckBox.AccessibleName = $"{_k1cpCheckBox.Text}. {_k1cpDescription.Text}";
+            _thematicCheckBox.AccessibleName = $"{_thematicCheckBox.Text}. {_thematicDescription.Text}";
             // _cutContentCheckBox.AccessibleName = $"{_cutContentCheckBox.Text}. {_cutContentDescription.Text}";
-            // _companionsCheckBox.AccessibleName = $"{_companionsCheckBox.Text}. {_companionsDescription.Text}";
+            // _swoopCheckBox.AccessibleName = $"{_swoopCheckBox.Text}. {_swoopDescription.Text}";
 
             string body = $"{_titleLabel.Text}. {_descriptionLabel.Text}";
             AccessibleDescription = body;

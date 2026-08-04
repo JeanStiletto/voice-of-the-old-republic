@@ -30,7 +30,15 @@ These filters collapse the ~50-mod kotor.neocities.org Spoiler-Free build down t
 
 **Swoop Bike Upgrades** — restores two cut upgrade items (acceleration, obstacle damage reduction) that were referenced by the original swoop racing code but never shipped. Pure 2DA / UTI changes, no dialog, language-agnostic. Low-risk inclusion.
 
-**Thematic KOTOR Companions** *(optional / toggle)* — rebalances companion attributes, skills, feats, powers so each companion has level-appropriate bonuses matching their backstory. Pure mechanics, language-agnostic. Borderline because it diverges from strict vanilla; gate behind a "strict vanilla" vs "vanilla+" toggle in the installer.
+**Thematic Companions** *(optional, SHIPPED 2026-08-04, off by default — both games)* — rebalances companion attributes, skills, feats, powers and starting equipment so each companion has level-appropriate bonuses matching their backstory. Pure mechanics, language-agnostic. Diverges from strict vanilla, so it is the one checkbox on either mod-selection screen that starts unchecked.
+
+- Two sibling mods, one per game, by the same authors (Sniggles & JCarter426), each an independent opt-in: `ModSelectionForm` offers the KOTOR 1 one, `Kotor2ModSelectionForm` the KOTOR 2 one. One `ThematicCompanionsInstaller` drives both; they differ only in pin and install-option index.
+- Source: the authors' own GitHub releases (`JCarter426/KOTOR1-Thematic-Companions` v1.0.1, `JCarter426/KOTOR2-Thematic-Companions` v1.0.3), pinned by tag + asset + SHA-256 in `sources.json`. No DeadlyStream scrape, and nothing redistributed — which also sidesteps the mods' CC BY-NC licence entirely.
+- Both releases ship a **spoiler-free** asset variant; that is the one pinned. The payload is byte-identical to the normal variant — only the bundled documentation differs, and the normal one names characters and story beats to justify each stat change.
+- Language story: **none needed.** Both `changes.ini` files have an empty `[TLKList]`, `[InstallList]`, `[2DAList]` and `[CompileList]` — they are pure GFF field edits on `p_*.utc`. Nothing is written to `dialog.tlk` and no scripts are compiled, so this is the only bundled mod with no English-bleed-through caveat on any locale.
+- Install options: the KOTOR 1 mod has no `namespaces.ini` (single option). The KOTOR 2 one has two and we pass `--namespace-option-index 0` ("Standard"). Index 1 additionally rewrites one late-game encounter to be markedly harder — not something to hand a first-time blind player unannounced. `HoloPatcherRunner` gained an optional index parameter for this.
+- Order: last in both pipelines, after K1CP / K2CP. TSLPatcher GFF edits are field-level, so landing last preserves the community patches' fixes to the same creature files.
+- Verified 2026-08-04 against sandbox game dirs (chitin.key + dialog.tlk + exe + a junction to `data/`, so the real installs were never written to): KOTOR 1 exit 0, 0 errors, 9 `.utc` in Override; KOTOR 2 exit 0, 0 errors, 86 patches, 12 `.utc` in Override. Index 0 and index 1 produce a different `p_visas.utc`, confirming the option flag actually selects rather than being ignored.
 
 **Widescreen / FOV patch** — engine-level fix for KOTOR's hardcoded 4:3 assumptions. Not strictly accessibility-relevant but standard QoL; no language ties. Acceptable to bundle if it's the GitHub-hosted variant (clean license, single binary).
 
@@ -343,10 +351,42 @@ same per-mod vetting we did for K1 restorations before bundling:
 - Bao-Dur Can Wear Heavy Armor (Effix, DeadlyStream) — borderline rebalance
 
 Vanilla+ toggle territory (rebalances, GitHub-hosted, so easy to pull):
-Thematic KOTOR 2 Companions, TSL boss redesign (Snigaroo), TJM (Sniggles /
-JCarter426). Rejected outright: everything visual (the large majority of the
-118-mod list), English-only dialogue mods, M4-78 (explicitly incompatible
-with the neocities build).
+Thematic KOTOR 2 Companions (**shipped 2026-08-04**, see the survivor list),
+TSL boss redesign (Snigaroo), TJM (Sniggles / JCarter426). Rejected outright:
+everything visual (the large majority of the 118-mod list), English-only
+dialogue mods, M4-78 (explicitly incompatible with the neocities build).
+
+#### Reviewed 2026-08-04 and NOT bundled
+
+Three community favourites were assessed together; only the first was adopted.
+Recording the two rejections so they are not re-litigated every time somebody
+recommends them.
+
+- **PartySwap** (DarthTyren, now maintained by Leilukin) — lets two normally
+  gender-exclusive companions coexist in one playthrough. Well established
+  (~51k downloads), HoloPatcher-driven, would install cleanly. Rejected on
+  language: it ships spliced English voice-over to fix gendered pronouns and
+  edits several `.dlg` files with English-authored content, with no translation
+  path — a regression on four of our seven languages. It also carries a
+  dialogue-file conflict surface (`holorec.dlg`, `904kreia.dlg`, `zuka.dlg`).
+  Zero accessibility value: it is a "more content per playthrough" mod.
+- **TSL Expanded Ending** (WildKarrde) — extends the game's final stretch by
+  several short scenes. Fails our own bundle filter ("adds narrative content …
+  out of scope; spoiler risk; usually English-only") on every clause. Two
+  further disqualifiers specific to us: the mod page reports muted cutscene
+  sound effects on the Aspyr builds, which are exactly the builds we target and
+  the one defect class that hits a blind player hardest; and any breakage
+  surfaces after a ~30-hour playthrough at the point where recovery is least
+  practical. If it is ever wanted, it belongs behind a clearly-labelled
+  "changes the ending of the story" opt-in, not in the recommended set.
+- **Full Party Select** (`third_party/Kotor-Patch-Manager/Patches/FullPartySelect`)
+  — **parked, not rejected.** Five NOP bytes disabling the engine's blanking of
+  paired party-select portrait slots, plus one `partyselect_p.gui` for Override;
+  its hooks target both Aspyr builds we support, and we already vendor it, so
+  adoption is cheap. Parked because it is designed as a PartySwap companion
+  patch and mostly pays off with PartySwap installed. Revisit only if the
+  collapsed portrait slots turn out to hurt our party-select narration — that
+  question has not been checked either way.
 
 ### K2 install flow (mods 2026-07-27; full accessibility install 2026-08-03)
 
@@ -595,7 +635,8 @@ After a successful install of a Steam KOTOR copy, the install root contains:
 - **Our own patch** — ships from our GitHub releases; single DLL + loader, no TSLPatcher needed
 - **Patch Manager (KPatchManager)** — our framework; GitHub-hosted, vendored in `third_party/`
 - **K1CP** — needs TSLPatcher-style install; HoloPatcher / PyKotor is the modern headless driver
-- **Swoop Upgrades / Thematic Companions / Widescreen** — mix of Override drop-ins and TSLPatcher; needs per-mod check
+- **Thematic Companions** — done: author-published GitHub release assets, driven through HoloPatcher (see the survivor list)
+- **Swoop Upgrades / Widescreen** — mix of Override drop-ins and TSLPatcher; needs per-mod check
 
 ### Existing user-facing installers (for reference, not necessarily what we ship)
 

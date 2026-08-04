@@ -145,6 +145,22 @@ namespace KotorAccessibilityInstaller
         public static string K2cpRepoName => SourcePins.K2cp.RepoName;
         public static string K2cpPinnedRef => SourcePins.K2cp.Ref;
 
+        // ---------------------------------------------------------------------
+        // Thematic Companions (KOTOR 1 and KOTOR 2) — source pins
+        // ---------------------------------------------------------------------
+        // Two sibling mods by the same authors, one per game, each an author-
+        // published GitHub release asset. Opt-in on both mod-selection screens
+        // and off by default: they change companion stats, and a strict-vanilla
+        // baseline is the safer default for a first blind playthrough.
+        //
+        // Both are pure GFF edits — empty [TLKList], no scripts, no 2DAs — so
+        // they are language-agnostic and install identically on every locale.
+        // The KOTOR 2 one requires TSLRCM; the KOTOR 2 flow already gates its
+        // whole mod pipeline on TSLRCM being present.
+
+        public static SourcePins.ReleasePin ThematicCompanionsK1 => SourcePins.ThematicCompanionsK1;
+        public static SourcePins.ReleasePin ThematicCompanionsK2 => SourcePins.ThematicCompanionsK2;
+
         public static string K2cpDisplayVersion => SourcePins.K2cp.DisplayVersion;
         public static string K2cpDownloadPageUrl => SourcePins.K2cp.PageUrl;
         public static string K2cpArchiveFileName => SourcePins.K2cp.FileName;

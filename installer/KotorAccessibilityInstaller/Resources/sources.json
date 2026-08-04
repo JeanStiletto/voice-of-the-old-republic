@@ -24,7 +24,12 @@
         "",
         "GitHub-hosted mods pin a commit SHA rather than a file hash. Those do not",
         "rot the same way — a pinned commit stays fetchable as long as the repo",
-        "exists — but bump them when you want a newer upstream fix."
+        "exists — but bump them when you want a newer upstream fix.",
+        "",
+        "Mods published as GitHub RELEASE ASSETS pin tag + asset name + hash. A",
+        "tagged asset is effectively immutable, so the hash here is a tamper",
+        "check rather than a version check; bump tag, assetName, sha256 and",
+        "sizeBytes together when adopting a newer release."
     ],
 
     "tslrcm": {
@@ -72,5 +77,50 @@
         "repoOwner": "KOTORCommunityPatches",
         "repoName": "TSL_Community_Patch",
         "ref": "4850a441368678ff72f3a173b33366c3c960d95e"
+    },
+
+    "thematicCompanionsK1": {
+        "_note": [
+            "Thematic KOTOR Companions (Sniggles & JCarter426), the KOTOR 1 one.",
+            "Author-published GitHub release, so no DeadlyStream scrape and no",
+            "redistribution: we fetch the author's own asset at a pinned tag.",
+            "",
+            "The asset is the SPOILER-FREE variant. Both variants carry an",
+            "identical tslpatchdata payload; they differ only in the bundled",
+            "documentation, where the normal one names characters and their",
+            "story arcs to justify each stat change. We never show that document",
+            "and our users are typically first-time players, so the variant that",
+            "cannot spoil anything is the one worth pinning.",
+            "",
+            "No namespaces.ini: single install option, so no option index."
+        ],
+        "displayVersion": "v1.0.1",
+        "repoOwner": "JCarter426",
+        "repoName": "KOTOR1-Thematic-Companions",
+        "tag": "v1.0.1",
+        "assetName": "KOTOR1-Thematic-Companions_v1.0.1_spoiler-free.zip",
+        "sha256": "B8F90EA85065999949431E49372C154A97592D5B9ABA59A9B66E0558ED960031",
+        "sizeBytes": 356878,
+        "pageUrl": "https://deadlystream.com/files/file/2665-thematic-kotor-companions/"
+    },
+
+    "thematicCompanionsK2": {
+        "_note": [
+            "Thematic KOTOR 2 Companions — same authors, same deal as the KOTOR 1",
+            "entry above, including the spoiler-free asset choice.",
+            "",
+            "This one HAS a namespaces.ini with two options. We install index 0",
+            "('Standard' — stats and starting equipment only). Index 1 additionally",
+            "rewrites one late-game encounter to be considerably harder, which is",
+            "not something to hand a blind first-time player unannounced."
+        ],
+        "displayVersion": "v1.0.3",
+        "repoOwner": "JCarter426",
+        "repoName": "KOTOR2-Thematic-Companions",
+        "tag": "v1.0.3",
+        "assetName": "KOTOR2-Thematic-Companions_v1.0.3_spoiler-free.zip",
+        "sha256": "189C817264C3D01CC27D3DE5AC07F87BC9EFAEF137367AA056AD488EC5D27647",
+        "sizeBytes": 373617,
+        "pageUrl": "https://deadlystream.com/files/file/2662-thematic-kotor-2-companions/"
     }
 }

@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using Microsoft.Win32;
 
 namespace KotorAccessibilityInstaller
@@ -21,6 +22,15 @@ namespace KotorAccessibilityInstaller
     /// reported "not installed" for an install that was sitting right there.
     /// The descriptive name lives in the KEY name, so both are matched now, and
     /// against either wording.</para>
+    ///
+    /// <para><b>Structural blind spot (found 2026-08-04).</b> This can only ever
+    /// see the English DeadlyStream edition, because only that one runs an Inno
+    /// installer. Non-English players get the localized Steam Workshop edition
+    /// via <see cref="WorkshopTslrcmForm"/> — a file copy into the game folder
+    /// that registers nothing at all. For those users a registry miss is not
+    /// weak evidence of absence, it is *no* evidence, and our own installer is
+    /// what put them in that state. See <see cref="CountPatchedModules"/> and
+    /// the caller.</para>
     ///
     /// <para>The caller still does not treat a miss here as proof of absence —
     /// see <see cref="InstallFlow"/>. Being wrong in that direction silently
@@ -86,6 +96,42 @@ namespace KotorAccessibilityInstaller
 
             Logger.Info("TSLRCM not detected (no matching uninstall entry).");
             return false;
+        }
+
+        /// <summary>
+        /// How many <c>.mod</c> files sit in the game's <c>Modules</c> folder.
+        ///
+        /// <para>Context for a question we cannot answer from the registry. A
+        /// stock KOTOR 2 ships its modules as <c>.rim</c> / <c>_s.rim</c> pairs;
+        /// <c>.mod</c> files appear when a module-patching mod has run. So a
+        /// large count means *some* substantial mod set is installed — which,
+        /// for the mods this installer offers, in practice means TSLRCM.</para>
+        ///
+        /// <para>Deliberately NOT turned into a boolean here. It cannot tell
+        /// TSLRCM apart from any other module-patching mod, and both ways of
+        /// being wrong hurt: claiming absence silently skips the user's mods,
+        /// claiming presence installs them in the wrong order. It is reported to
+        /// the user as evidence inside the question instead of being used to
+        /// answer the question for them.</para>
+        ///
+        /// <para>Returns 0 for a missing folder or an unreadable one — the
+        /// caller asks either way, so a failure here costs nothing.</para>
+        /// </summary>
+        public static int CountPatchedModules(string gameDir)
+        {
+            if (string.IsNullOrEmpty(gameDir)) return 0;
+
+            try
+            {
+                string modulesDir = Path.Combine(gameDir, "Modules");
+                if (!Directory.Exists(modulesDir)) return 0;
+                return Directory.GetFiles(modulesDir, "*.mod", SearchOption.TopDirectoryOnly).Length;
+            }
+            catch (Exception ex)
+            {
+                Logger.Warning($"TSLRCM probe: could not count .mod files in {gameDir}: {ex.Message}");
+                return 0;
+            }
         }
     }
 }

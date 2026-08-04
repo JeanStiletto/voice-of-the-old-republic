@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -50,13 +51,26 @@ namespace KotorAccessibilityInstaller.ModInstallers
         // competing with real forwarded output.
         private const int HeartbeatMs = 5000;
 
+        /// <param name="namespaceOptionIndex">
+        /// Which entry of the mod's <c>namespaces.ini</c> to install, or null for
+        /// a mod that has no <c>namespaces.ini</c> at all.
+        ///
+        /// <para>A mod with install options presents them as a list the user
+        /// picks from in the GUI; headless, the choice is this index. Leaving it
+        /// off does not mean "no options" — it means "whatever HoloPatcher picks
+        /// by default", which is a silent dependency on upstream key order. Any
+        /// mod with a namespaces.ini should pass its index explicitly, even when
+        /// the wanted option is 0.</para>
+        /// </param>
         public static async Task<(bool Success, string Error)> RunAsync(
             string holoPatcherExe, string gameDir, string tslpatchdataDir,
             Action<string> statusUpdate,
-            string progressFormatKey, string heartbeatFormatKey)
+            string progressFormatKey, string heartbeatFormatKey,
+            int? namespaceOptionIndex = null)
         {
-            // CLI verified against PyKotor master:
-            //   HoloPatcher.exe --game-dir <game> --tslpatchdata <dir> --install [--console]
+            // CLI verified against the HoloPatcher build we ship (--help):
+            //   HoloPatcher.exe --game-dir <game> --tslpatchdata <dir>
+            //                   [--namespace-option-index N] --install [--console]
             // --install starts an unattended install and exits when done.
             // We omit --console so the user doesn't see a stray cmd window pop up;
             // HoloPatcher writes its own installlog.txt next to tslpatchdata.
@@ -72,9 +86,18 @@ namespace KotorAccessibilityInstaller.ModInstallers
             psi.ArgumentList.Add(gameDir);
             psi.ArgumentList.Add("--tslpatchdata");
             psi.ArgumentList.Add(tslpatchdataDir);
+            if (namespaceOptionIndex.HasValue)
+            {
+                psi.ArgumentList.Add("--namespace-option-index");
+                psi.ArgumentList.Add(namespaceOptionIndex.Value.ToString(CultureInfo.InvariantCulture));
+            }
             psi.ArgumentList.Add("--install");
 
-            Logger.Info($"Invoking HoloPatcher: {holoPatcherExe} --game-dir \"{gameDir}\" --tslpatchdata \"{tslpatchdataDir}\" --install");
+            string optionArg = namespaceOptionIndex.HasValue
+                ? $" --namespace-option-index {namespaceOptionIndex.Value}"
+                : string.Empty;
+            Logger.Info($"Invoking HoloPatcher: {holoPatcherExe} --game-dir \"{gameDir}\" " +
+                        $"--tslpatchdata \"{tslpatchdataDir}\"{optionArg} --install");
 
             try
             {
