@@ -31,7 +31,12 @@ namespace KotorAccessibilityInstaller
             // how a run that only produced warnings ended up leaving nothing
             // behind to diagnose.
             try { RunMain(args); }
-            finally { Logger.Flush(); }
+            finally
+            {
+                // Order matters: sweep first so the log records what it removed.
+                InstallationManager.SweepAbandonedStagingDirs();
+                Logger.Flush();
+            }
         }
 
         private static void RunMain(string[] args)

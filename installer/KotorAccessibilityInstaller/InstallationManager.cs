@@ -395,6 +395,52 @@ namespace KotorAccessibilityInstaller
         }
 
         /// <summary>
+        /// Prefix every staging directory this installer creates under %TEMP%.
+        /// </summary>
+        private const string StagingPrefix = "kotor_acc_";
+
+        /// <summary>
+        /// Delete any staging directories left behind, ours or an earlier run's.
+        /// Called once as the process exits.
+        ///
+        /// <para>Needed because <see cref="CleanupStaging"/> cannot always win:
+        /// KPatchCore opens the address database with SQLite and that handle
+        /// lives until the process does, so an in-flight delete of the directory
+        /// holding it fails no matter how long it retries. Three directories had
+        /// accumulated across a session even with retries in place. At exit the
+        /// handle is gone and the delete simply works.</para>
+        ///
+        /// <para>Deleting other runs' directories too is deliberate: they are all
+        /// ours by prefix, and a concurrent installer's files are locked, so the
+        /// delete fails harmlessly rather than pulling the floor out from under
+        /// it.</para>
+        /// </summary>
+        public static void SweepAbandonedStagingDirs()
+        {
+            try
+            {
+                string temp = Path.GetTempPath();
+                foreach (var dir in Directory.EnumerateDirectories(temp, StagingPrefix + "*"))
+                {
+                    try
+                    {
+                        Directory.Delete(dir, recursive: true);
+                        Logger.Info($"Swept leftover staging dir: {dir}");
+                    }
+                    catch
+                    {
+                        // In use by a concurrent run, or still locked. Not worth
+                        // a warning at exit — the next run sweeps it.
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Info($"Staging sweep skipped: {ex.Message}");
+            }
+        }
+
+        /// <summary>
         /// Delete the staging directory, retrying briefly.
         ///
         /// <para>KPatchCore opens the address database with SQLite and the file
