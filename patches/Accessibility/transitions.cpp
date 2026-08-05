@@ -938,6 +938,12 @@ bool IsResrefStyleRoomName(const char* name) {
     if ((name[0] == 'm' || name[0] == 'M') && name[1] >= '0' && name[1] <= '9') {
         return true;
     }
+    // KOTOR 2 rooms are "<module number><suffix>" — "106per10", "103perd".
+    // A leading digit never opens an authored display name, so it is as
+    // strong a noise signal as K1's m+digit. Without this, the first K2
+    // session with working room resolution spoke "103perd" as an area
+    // label (2026-08-05).
+    if (name[0] >= '0' && name[0] <= '9') return true;
     if ((name[0] == 's' || name[0] == 'S') &&
         (name[1] == 't') && (name[2] == 'u') &&
         (name[3] == 'n') && (name[4] == 't')) {
