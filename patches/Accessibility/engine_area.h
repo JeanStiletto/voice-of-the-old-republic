@@ -365,8 +365,12 @@ private:
 
 }  // namespace acc::engine
 
-// CSWSArea::GetRoom — __thiscall. Third arg is an int* outRoomIndex
-// (NULL-passable per PositionWalkable's decomp).
+// CSWSArea::GetRoom — __thiscall. On K1 the third arg is an int*
+// outRoomIndex (NULL-passable per PositionWalkable's decomp). The K2 twin
+// has a FOUR-arg signature — (pos, outAux, inOutRoomIndex) — so callers
+// must go through GetRoomAtIndexed, which selects the matching typedef per
+// game; calling the K2 twin with the K1 shape imbalances the stack (see
+// the PFN_CSWSAreaGetRoomK2 note in engine_area.cpp).
 const uintptr_t kAddrCSWSAreaGetRoom = acc::addr::Pick(0x004BB600, 0x0054b1d0);
 
 // Handle-resolution chain (server-side master object table). The

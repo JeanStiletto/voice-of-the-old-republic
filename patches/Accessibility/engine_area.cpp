@@ -20,6 +20,22 @@ namespace {
 typedef void* (__thiscall* PFN_CSWSAreaGetRoom)(void* this_,
                                                 Vector* pos,
                                                 int* outRoomIndex);
+// KOTOR 2's GetRoom twin grew a parameter (decompiled 2026-08-05 after the
+// fuel-depot door-diag crash): (pos, outAux, inOutRoomIndex). outAux gets a
+// hit detail from the ray intersect (nullable — the engine null-checks it);
+// inOutRoomIndex is read as a try-this-room-first HINT before the full scan
+// and written with the found index. Calling it with the 2-arg K1 shape left
+// the hint slot as stack garbage: usually that garbage pointer faulted in
+// the engine and the SEH catch in GetRoomAtIndexed cleaned up (which is why
+// K2 never resolved a room, every caller saw -1) — but when the garbage
+// happened to be readable the call returned NORMALLY with the stack off by
+// 4 (thiscall callee cleanup: ret 0xC vs 8 pushed), and the wrapper's
+// epilogue restored the caller's saved registers from shifted slots. That
+// corrupted register was the door-diag crash at load on Peragus.
+typedef void* (__thiscall* PFN_CSWSAreaGetRoomK2)(void* this_,
+                                                  Vector* pos,
+                                                  int* outAux,
+                                                  int* inOutRoomIndex);
 typedef void* (__thiscall* PFN_GetObjectArray)(void* this_);
 typedef bool  (__thiscall* PFN_GetGameObject)(void* this_,
                                               uint32_t id,
@@ -159,6 +175,14 @@ void* GetRoomAtIndexed(void* area, const Vector& pos, int& outIndex) {
     if (!area) return nullptr;
     Vector local = pos;
     __try {
+        // Per-game signatures — see the PFN_CSWSAreaGetRoomK2 note above.
+        // outIndex doubles as K2's in/out hint: -1 in (skips the hint
+        // path), found index out, untouched on miss.
+        if (acc::game::IsKotor2()) {
+            auto fn = reinterpret_cast<PFN_CSWSAreaGetRoomK2>(
+                kAddrCSWSAreaGetRoom);
+            return fn(area, &local, nullptr, &outIndex);
+        }
         auto fn = reinterpret_cast<PFN_CSWSAreaGetRoom>(kAddrCSWSAreaGetRoom);
         return fn(area, &local, &outIndex);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
