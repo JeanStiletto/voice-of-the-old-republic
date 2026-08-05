@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <cstring>
 
+#include "engine_game.h"  // IsKotor2 — per-game ini filename
 #include "log.h"
 
 namespace acc::engine_keymap {
@@ -193,9 +194,16 @@ void AddGameVk(int vk) {
     s_gameVks[s_gameVkCount++] = vk;
 }
 
-// Resolve <install>\swkotor.ini from acclog::PatchDir() (=<install>\patches) by
-// stripping the last path component — the same derivation mod_settings_store
-// uses. Returns false (empty out) until the patch dir is known.
+// Resolve the game's config ini from acclog::PatchDir() (=<install>\patches)
+// by stripping the last path component — the same derivation
+// mod_settings_store uses. Returns false (empty out) until the patch dir is
+// known. The filename is per-game: KOTOR 2's is swkotor2.ini, with the SAME
+// [Keymapping] section and Action-number scheme inside (verified against the
+// live install 2026-08-05). The K1 name was hardcoded here until then, so on
+// K2 every load silently fell back to the vanilla defaults — the N-hotkey
+// snap-turn held A (strafe on the recommended layout) instead of the bound
+// turn key, and every other binding-aware consumer (auto-walk cancel, map
+// cursor keys) was equally blind to rebinds.
 bool ResolveIniPath(char* out, size_t cap) {
     const char* patchDir = acclog::PatchDir();
     if (!patchDir || !*patchDir) return false;
@@ -203,7 +211,8 @@ bool ResolveIniPath(char* out, size_t cap) {
     strncpy_s(buf, patchDir, _TRUNCATE);
     char* slash = strrchr(buf, '\\');
     if (slash) *slash = '\0';  // <install>\patches -> <install>
-    _snprintf_s(out, cap, _TRUNCATE, "%s\\swkotor.ini", buf);
+    _snprintf_s(out, cap, _TRUNCATE, "%s\\%s", buf,
+                acc::game::IsKotor2() ? "swkotor2.ini" : "swkotor.ini");
     return true;
 }
 
@@ -472,6 +481,18 @@ int TurnScancode(bool left) {
     int idx = left ? 0 : 1;
     if (s_turnScan[idx] != 0) return s_turnScan[idx];
     return left ? 0x1E : 0x20;  // DIK A / D fallback (vanilla / ini unreadable)
+}
+
+bool ForwardBackwardKeyHeld() {
+    if (!s_gameLoaded) ReloadGameConfig();
+    static const MoveAxis kWalkAxes[] = {MoveAxis::Forward, MoveAxis::Backward};
+    for (MoveAxis axis : kWalkAxes) {
+        const int a = static_cast<int>(axis);
+        for (int i = 0; i < s_axisVkCount[a]; ++i) {
+            if (IsDownVk(s_axisVks[a][i])) return true;
+        }
+    }
+    return false;
 }
 
 bool AnyMovementKeyHeld() {

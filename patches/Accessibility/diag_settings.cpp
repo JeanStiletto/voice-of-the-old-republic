@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "engine_game.h"  // IsKotor2 — per-game ini filename
 #include "log.h"
 
 namespace acc::diag::settings {
@@ -118,9 +119,11 @@ void LogStartupSnapshot() {
     if (fired) return;
     fired = true;
 
+    const char* iniName =
+        acc::game::IsKotor2() ? "swkotor2.ini" : "swkotor.ini";
     char iniPath[MAX_PATH];
-    if (!ResolveInstallRelative("swkotor.ini", iniPath, sizeof(iniPath))) {
-        acclog::Write("Settings.Ini", "could not resolve swkotor.ini path");
+    if (!ResolveInstallRelative(iniName, iniPath, sizeof(iniPath))) {
+        acclog::Write("Settings.Ini", "could not resolve %s path", iniName);
     } else {
         DumpIni(iniPath);
     }

@@ -120,4 +120,11 @@ int TurnScancode(bool left);
 // never regresses below the old hardcoded {W,S,A,D,C,Y} movement check.
 bool AnyMovementKeyHeld();
 
+// True iff a bound forward/backward key is currently held (the walk axes,
+// including the arrow alternates) — deliberately EXCLUDING the turn/strafe
+// buckets. This is the "the player is commanding translation" signal: the
+// droid drive-loop suppression uses it so that pivoting in place (turn keys
+// only, legitimately audible servo) can never read as wall-grinding.
+bool ForwardBackwardKeyHeld();
+
 }  // namespace acc::engine_keymap
