@@ -175,7 +175,7 @@ Relates to [[project_messagebox_close_unpause]] (SetSoundMode(0) on popup close)
 ---
 
 ## rolling_footstep_is_vehicle_only
-_Confirmed dead-end — the Rolling-prefixed footstep functions never fire for humanoid PCs; per-step `fs_*` audio comes from a different path_
+_Confirmed dead-end for HUMANOID footsteps — but the live path for wheeled/floating droid drive loops (see the 2026-08-05 update at the end of this section)_
 
 `CSWCCreature::PlayRollingFootstepSound @0x006107c0`,
 `UpdateRollingFootstepSound @0x00610840`, and
@@ -218,6 +218,30 @@ the "Rolling" name was just a lure. Suppression hook landed at 0x0061a31a
 (engine's own field6_0x20==0 JZ) with `skip_original_bytes = true`.
 See `audio_footstep_suppress.cpp` and the Lay-off 5 entry in
 `docs/navsystem-progress.md`.
+
+**UPDATE 2026-08-05 — the trio IS the droid drive-loop path.** The
+"vehicles / wheeled units" guess above was right, and it matters:
+wheeled/floating droids (footstepsounds.2da rows 8/9 — T3-M4 and
+astromechs FootstepType=8 `fs_wheel_drdslow`, remotes FootstepType=9
+`fs_floatdroid`) get a LOOPING CExoSoundSource at CSWCCreature+0x430
+(K2: +0x448), built by `LoadRollingFootstepSound` from the 2DA `rolling`
+column (looping, 3D, priority 0x13 for the player creature, `pitchoffset`
+cached for the run gait). `UpdateRollingFootstepSound @0x00610840`
+(K2 twin 0x0077FB10) drives it per frame purely off
+`GetCurrentAnimation`: walk anims 0x2712/0x2713/0x276d/0x2795 → Play
+mode 0, run anims 0x2714/0x276e → Play mode 1 (pitch + offset), ANY
+other anim → the idle branch Stops the source and clears
+playing/mode ([+0x438]/[+0x43c]; K2 [+0x450]/[+0x454], factored into
+helper 0x0077FAC0). Because the loop keys off the ANIM, a wall-grinding
+droid never goes silent — fixed by `OnUpdateRollingFootstep`
+(audio_footstep_suppress.cpp), which consumes into the engine's own
+idle/stop branch. Its verdict is STRICTER than the one-shot footstep
+verdict: sustained stuck (>=1.2s) AND a forward/backward key held —
+instantaneous stuck dips during course corrections and pivot turns must
+not cut a continuous loop (first-round lesson, 2026-08-05). K1 hook cut
+0x00610843 → idle 0x00610885; K2 cut 0x0077FB19 → idle 0x0077FB73.
+It never fired on Endar Spire because no wheeled droid was near — the
+2026-05-06 "zero fires" observation, now explained.
 
 ---
 

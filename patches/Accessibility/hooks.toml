@@ -408,6 +408,58 @@ consumed_exit_address = 0x0061a632
 source = "esi"
 type = "pointer"
 
+# CSWCCreature::UpdateRollingFootstepSound @0x00610840 — per-frame updater
+# for the LOOPING drive sound of wheeled/floating droids (footstepsounds.2da
+# rows 8/9: fs_wheel_drdslow for T3-M4/astromechs, fs_floatdroid for
+# remotes). The engine keys the loop purely off the current animation
+# (walk/run anims → keep playing, anything else → idle branch: Stop +
+# clear [this+0x438]/[this+0x43c]), so a wall-grind keeps it audible
+# forever. The handler applies a STRICTER verdict than OnPlayFootstep —
+# sustained stuck + forward/backward key held (see the handler comment);
+# consuming jumps to the engine's OWN idle/stop branch, so the engine does
+# the Stop and the state clear itself and restarts the loop naturally once
+# movement recovers.
+#
+# Cut = the engine's whole null-source early-out, all three instructions,
+# with skip_original_bytes — the same shape as the OnPlayFootstep entry
+# above, and for the same reason. The first attempt (2026-08-05) cut only
+# the MOV and let the framework replay it: the wrapper replays cut bytes
+# AFTER the register restore and BEFORE its TEST EAX consumed-exit check,
+# so a replayed instruction that WRITES EAX overwrites the handler verdict
+# — the TEST saw the (non-null) source pointer, every frame consumed into
+# the stop branch, and droid drive loops were permanently silent. Cut
+# bytes must never write EAX under consumed_exit + replay; owning the
+# branch outright avoids replay entirely.
+#
+#   8b 86 30 04 00 00     MOV EAX, dword ptr [ESI+0x430]   ; source ptr
+#   85 c0                 TEST EAX, EAX
+#   74 65                 JZ 0x006108b2                    ; null -> exit
+#
+# Handler return 0 -> natural resume 0x0061084D, the animation dispatch
+# body. Safe for a NULL source even though the engine's early-out is gone:
+# PlayRollingFootstepSound and the idle branch both re-check [ESI+0x430]
+# themselves (decompiled), so the null path just does one extra
+# GetCurrentAnimation read. Return 1 -> consumed_exit 0x00610885, the
+# idle/stop branch; it writes ECX and EAX before reading either, so the
+# consume path's EAX clobber is harmless. Both destinations sit at
+# identical stack depth to the cut (nothing pushed between). No jump
+# target lands inside the cut (switch table: 0x0061086F / 0x0061087A /
+# 0x00610885; JA -> 0x00610885; the cut's own JZ target 0x006108B2).
+[[hooks]]
+address = 0x00610843
+type = "detour"
+function = "OnUpdateRollingFootstep"
+
+original_bytes = [0x8b, 0x86, 0x30, 0x04, 0x00, 0x00, 0x85, 0xc0, 0x74, 0x65]
+
+skip_original_bytes = true
+exclude_from_restore = ["eax"]
+consumed_exit_address = 0x00610885
+
+[[hooks.parameters]]
+source = "esi"
+type = "pointer"
+
 # CExoSound::SetListenerPosition @0x005d5df0 — Phase 4 lay-off 4 rework.
 # The per-frame camera-driven listener write goes through this function
 # (single xref from CClientExoAppInternal::UpdateSoundEngine at

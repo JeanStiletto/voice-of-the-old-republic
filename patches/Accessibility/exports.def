@@ -42,3 +42,4 @@ EXPORTS
     OnDoorOpen
     OnDoorOpenK2
     OnClientHandleInputEventK2
+    OnUpdateRollingFootstep

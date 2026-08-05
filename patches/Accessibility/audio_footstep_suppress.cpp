@@ -7,6 +7,7 @@
 
 #include "combat.h"          // IsCombatActive — combat bypasses suppression
 #include "engine_area.h"
+#include "engine_keymap.h"   // ForwardBackwardKeyHeld — drive-loop push gate
 #include "engine_offsets.h"
 #include "engine_player.h"
 #include "log.h"
@@ -54,6 +55,7 @@ int       g_sample_head  = 0;   // next write slot
 int       g_sample_count = 0;
 uint64_t  g_last_tick_ms = 0;
 bool      g_was_stuck    = false;
+uint64_t  g_stuck_since_ms = 0;  // entry time of the current stuck episode
 
 // Stuck-direction probe gating: leader-footstep freshness ⇒ walking;
 // 0.5 m over 5 s window ⇒ no progress despite walk-anim. Probe latches
@@ -356,6 +358,11 @@ void TickStuckAnnounce(const Vector& pos, uint64_t now_ms) {
 
 bool WasStuckLastTick() { return g_was_stuck; }
 
+bool StuckSustainedFor(unsigned int min_ms) {
+    if (!g_was_stuck || g_stuck_since_ms == 0) return false;
+    return (GetTickCount64() - g_stuck_since_ms) >= min_ms;
+}
+
 void NoteLeaderFootstep() {
     g_last_leader_footstep_ms = GetTickCount64();
 }
@@ -368,6 +375,7 @@ void Tick() {
         g_sample_head  = 0;
         g_last_tick_ms = 0;
         g_was_stuck = false;
+        g_stuck_since_ms = 0;
         g_progress_checkpoint_ms = 0;
         g_stuck_announced = false;
         g_last_leader_footstep_ms = 0;
@@ -385,6 +393,7 @@ void Tick() {
         g_sample_count = 1;
         g_last_tick_ms = now_ms;
         g_was_stuck = false;
+        g_stuck_since_ms = 0;
         acclog::Write("FootstepSup", "Tick seed pos=(%.3f,%.3f,%.3f)",
                       pos.x, pos.y, pos.z);
         return;
@@ -403,8 +412,15 @@ void Tick() {
     // judged span stays close to the nominal window instead of growing
     // with buffer depth. Falls back to the oldest sample when none is
     // old enough (early after a seed/reset).
+    // Valid samples sit at head-1 (newest, just pushed) back through
+    // head-count; the walk starts at newest-1 and must stop AT the oldest —
+    // i < count, not i <= count. The <= form read one slot past the oldest,
+    // which after a seed/reset is uninitialized or stale from the previous
+    // area; its ancient timestamp passes the age test, so the first verdict
+    // after every area change was judged against a garbage position
+    // (2026-08-04 K2 log: net=95m, span=11 days, stuck latched wrongly).
     const PosSample* ref = nullptr;
-    for (int i = 1; i <= g_sample_count; ++i) {
+    for (int i = 1; i < g_sample_count; ++i) {
         // Walk backwards from newest-1 to oldest.
         int idx = (g_sample_head - 1 - i + 2 * kSampleCapacity)
                   % kSampleCapacity;
@@ -427,10 +443,14 @@ void Tick() {
     // Hysteresis: enter stuck only on a full window of evidence, leave
     // on clear net progress, hold state in the dead band between.
     if (g_was_stuck) {
-        if (wSpeed > kStuckExitSpeed) g_was_stuck = false;
+        if (wSpeed > kStuckExitSpeed) {
+            g_was_stuck = false;
+            g_stuck_since_ms = 0;
+        }
     } else {
         if (span_ms >= kMinHistoryMs && wSpeed < kStuckEnterSpeed) {
             g_was_stuck = true;
+            g_stuck_since_ms = now_ms;
         }
     }
 
@@ -522,4 +542,67 @@ extern "C" int __cdecl OnPlayFootstep(void* creature) {
         suppress ? 1 : 0);
 
     return suppress ? kSuppress : kPlay;
+}
+
+// CSWCCreature::UpdateRollingFootstepSound detour — BOTH games. Wheeled and
+// floating droids (footstepsounds.2da rows 8/9: T3-M4, astromechs, remotes)
+// carry a LOOPING drive sound (fs_wheel_drdslow / fs_floatdroid) that this
+// per-frame updater starts and stops purely from the current ANIMATION:
+// walk/run anims keep the loop playing, any other anim falls through to an
+// idle branch that Stops the source and clears the playing state. Grinding
+// a wall keeps the walk anim alive, so the loop plays forever while the
+// droid gets nowhere — the same gap the windowed stuck detector closes for
+// one-shot footsteps, but on the droid's DOMINANT sound channel (its
+// PlayFootstep one-shots fire only about once a second and were already
+// suppressed, which is why suppression was inaudible on T3: 2026-08-05 K2
+// fuel-depot session).
+//
+// On a suppress verdict the hook consumes into the engine's OWN idle/stop
+// branch: the engine performs its own null and playing checks, the Stop,
+// and the state clear — and the untouched updater restarts the loop by
+// itself one frame after movement recovers. The handler makes no engine
+// call and reads no creature field, so there is nothing here to go stale.
+//
+// The loop's verdict is STRICTER than the one-shot footstep verdict, on
+// purpose (first round 2026-08-05 reused the footstep verdict verbatim and
+// T3 went silent during ordinary walking):
+//   - Sustained stuck (>= kLoopStuckSustainMs), not instantaneous: the
+//     windowed detector dips into stuck for sub-second stretches during
+//     normal course corrections at droid walking pace. Skipping a single
+//     footstep click there is inaudible; cutting a continuous loop reads
+//     as broken audio. A wall grind sustains the state for seconds and
+//     still goes silent well before the free-directions probe speaks.
+//   - A forward/backward key must be HELD: pivoting in place nets zero
+//     displacement by definition, and the servo sound while pivoting is
+//     legitimate droid audio the player knows from vanilla. Only "pushing
+//     somewhere and getting nowhere" is wall-grinding.
+//   - Combat bypass as everywhere in this file.
+// Like the one-shot verdict it is global (leader-derived), not
+// per-creature — while the leader is wedged, a nearby drive loop fills
+// the silence the player is listening for.
+//
+// KOTOR 1 — cut at 0x00610843, the first instruction after the prologue
+// parks `this` in ESI (MOV EAX,[ESI+0x430], 6 bytes, replayed on the
+// natural path):
+//   return 1 → consumed_exit 0x00610885, the idle/stop branch. Both EAX
+//              and ECX are written there before any read, so the consume
+//              path's EAX clobber is harmless.
+//   return 0 → natural resume, normal animation dispatch.
+// KOTOR 2 — twin cut documented in kotor2.hooks.toml.
+namespace {
+constexpr unsigned int kLoopStuckSustainMs = 1200;
+}
+extern "C" int __cdecl OnUpdateRollingFootstep(void* creature) {
+    if (!creature) return 0;
+    const bool sustained = acc::audio::footstep_suppress::StuckSustainedFor(
+        kLoopStuckSustainMs);
+    const bool pushing   = acc::engine_keymap::ForwardBackwardKeyHeld();
+    const bool in_combat = acc::combat::IsCombatActive();
+    const int  suppress  = (sustained && pushing && !in_combat) ? 1 : 0;
+    acclog::Edge("FootstepSup.rolling", suppress,
+                 "UpdateRollingFootstep suppress=%d (sustained=%d pushing=%d "
+                 "combat=%d)",
+                 suppress, sustained ? 1 : 0, pushing ? 1 : 0,
+                 in_combat ? 1 : 0);
+    return suppress;
 }

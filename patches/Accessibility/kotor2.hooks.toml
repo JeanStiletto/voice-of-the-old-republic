@@ -798,3 +798,59 @@ consumed_exit_address = 0x00765f10
 [[hooks.parameters]]
 source = "eax"
 type = "pointer"
+
+# CSWCCreature::UpdateRollingFootstepSound twin @0x0077FB10 — the per-frame
+# updater for the looping droid drive sound (fs_wheel_drdslow /
+# fs_floatdroid; K2 keeps K1's footstepsounds.2da rows 8/9 and T3-M4's
+# FootstepType=8 byte-identically). Found 2026-08-05 by caller sweep:
+# the K2 build factors K1's inline idle/stop block into its own function
+# 0x0077FAC0 (Stop facade + clear [this+0x450]/[this+0x454]) and the Play
+# twin is 0x0077FA00 (source [this+0x448], pitchoffset [this+0x44c] — K1's
+# 0x430-band shifted +0x18). This updater calls the anim getter twin
+# 0x007ED7D0, dispatches walk anims to Play(0), run anims to Play(1), and
+# everything else to the stop block at 0x0077FB73 — same shape as K1's
+# 0x00610840, just frame-based (unoptimized Aspyr codegen).
+#
+# Cut = the engine's whole null-source early-out (CMP + JNZ + the exit
+# JMP), skip_original_bytes, at 0x0077FB1C — after the prologue's
+# MOV EAX,[EBP-4] reload, which stays OUTSIDE the cut and executes before
+# the detour jmp. ECX still carries `this` there (parameter source below).
+#
+# The first attempt (2026-08-05) cut at 0x0077FB19 including that MOV and
+# let the framework replay it. The wrapper replays cut bytes AFTER the
+# register restore and BEFORE its TEST EAX consumed-exit check, so the
+# replayed MOV overwrote the handler verdict with the (non-null) `this`
+# pointer — every frame consumed into the stop branch and T3's drive loop
+# was permanently silent from session start (2026-08-05 report: "movement
+# still silent" while the verdict log showed suppress=0). Cut bytes must
+# never write EAX under consumed_exit + replay; owning the branch outright
+# avoids replay entirely. Same lesson as the K1 entry.
+#
+#   83 b8 48 04 00 00 00     CMP dword ptr [EAX+0x448], 0
+#   75 02                    JNZ 0x0077FB27               ; source -> body
+#   eb 54                    JMP 0x0077FB7B               ; null -> exit
+#
+# Handler return 0 -> natural resume 0x0077FB27, the animation dispatch
+# body. Safe for a NULL source even though the early-out is gone: the Play
+# twin 0x0077FA00 and the stop block 0x0077FAC0 both re-check
+# [this+0x448] themselves (decompiled). Return 1 -> consumed_exit
+# 0x0077FB73, the engine's own idle branch: writes ECX before any read
+# (safe under the consume EAX clobber), calls the stop block, and falls
+# into the shared epilogue at identical stack depth to the cut. No jump
+# target lands inside the cut (JNZ target 0x0077FB27 = the resume point;
+# switch table: 0x0077FB5B / 0x0077FB67 / 0x0077FB73; JMP target
+# 0x0077FB7B).
+[[hooks]]
+address = 0x0077fb1c
+type = "detour"
+function = "OnUpdateRollingFootstep"
+
+original_bytes = [0x83, 0xb8, 0x48, 0x04, 0x00, 0x00, 0x00, 0x75, 0x02, 0xeb, 0x54]
+
+skip_original_bytes = true
+exclude_from_restore = ["eax"]
+consumed_exit_address = 0x0077fb73
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"

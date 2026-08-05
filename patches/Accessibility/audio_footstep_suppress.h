@@ -43,6 +43,15 @@ void Tick();
 // OnPlayFootstep.
 bool WasStuckLastTick();
 
+// True iff the stuck state has been continuously held for at least min_ms.
+// Read by OnUpdateRollingFootstep: the droid drive LOOP needs a stricter
+// verdict than the one-shot footsteps, because sub-second stuck dips are
+// normal during course corrections and pivots — muting a continuous loop on
+// those reads as broken audio, while skipping a single footstep click is
+// inaudible. (2026-08-05 K2 T3 feedback: loop went silent during ordinary
+// walking.)
+bool StuckSustainedFor(unsigned int min_ms);
+
 // Stamps the timestamp the stuck-direction probe gates on. Called from
 // OnPlayFootstep without exposing internal state.
 void NoteLeaderFootstep();
