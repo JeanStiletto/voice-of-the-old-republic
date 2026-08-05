@@ -572,11 +572,20 @@ extern "C" int __cdecl OnPlayFootstep(void* creature) {
 //     footstep click there is inaudible; cutting a continuous loop reads
 //     as broken audio. A wall grind sustains the state for seconds and
 //     still goes silent well before the free-directions probe speaks.
-//   - A forward/backward key must be HELD: pivoting in place nets zero
-//     displacement by definition, and the servo sound while pivoting is
-//     legitimate droid audio the player knows from vanilla. Only "pushing
-//     somewhere and getting nowhere" is wall-grinding.
+//   - A forward/backward key must be held to ARM it: pivoting in place nets
+//     zero displacement by definition, and the servo sound while pivoting is
+//     legitimate droid audio — the player turns on the spot constantly to
+//     navigate by cues, so muting that would be the worse regression. Only
+//     "pushing somewhere and getting nowhere" is wall-grinding.
+//   - But the key does NOT disarm it: once armed, suppression holds until
+//     the stuck state itself clears. Releasing the key at a wall used to
+//     unmute instantly while the walk animation still ran, so the loop blipped
+//     back for the half second until the engine's idle branch stopped it
+//     (2026-08-05 report). The character has not started moving just because
+//     the key came up.
 //   - Combat bypass as everywhere in this file.
+// Known gap: a walk the ENGINE drives (auto-walk into scenery) never arms,
+// since no key is down. The walk-to watchdog already announces that case.
 // Like the one-shot verdict it is global (leader-derived), not
 // per-creature — while the leader is wedged, a nearby drive loop fills
 // the silence the player is listening for.
@@ -591,14 +600,20 @@ extern "C" int __cdecl OnPlayFootstep(void* creature) {
 // KOTOR 2 — twin cut documented in kotor2.hooks.toml.
 namespace {
 constexpr unsigned int kLoopStuckSustainMs = 1200;
+bool g_loop_latched = false;  // armed by a push, held until stuck clears
 }
 extern "C" int __cdecl OnUpdateRollingFootstep(void* creature) {
     if (!creature) return 0;
     const bool sustained = acc::audio::footstep_suppress::StuckSustainedFor(
         kLoopStuckSustainMs);
-    const bool pushing   = acc::engine_keymap::ForwardBackwardKeyHeld();
     const bool in_combat = acc::combat::IsCombatActive();
-    const int  suppress  = (sustained && pushing && !in_combat) ? 1 : 0;
+    const bool pushing   = acc::engine_keymap::ForwardBackwardKeyHeld();
+    if (!sustained || in_combat) {
+        g_loop_latched = false;
+    } else if (pushing) {
+        g_loop_latched = true;
+    }
+    const int suppress = g_loop_latched ? 1 : 0;
     acclog::Edge("FootstepSup.rolling", suppress,
                  "UpdateRollingFootstep suppress=%d (sustained=%d pushing=%d "
                  "combat=%d)",

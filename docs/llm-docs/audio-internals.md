@@ -236,9 +236,12 @@ helper 0x0077FAC0). Because the loop keys off the ANIM, a wall-grinding
 droid never goes silent — fixed by `OnUpdateRollingFootstep`
 (audio_footstep_suppress.cpp), which consumes into the engine's own
 idle/stop branch. Its verdict is STRICTER than the one-shot footstep
-verdict: sustained stuck (>=1.2s) AND a forward/backward key held —
+verdict: sustained stuck (>=1.2s) plus a forward/backward key to ARM —
 instantaneous stuck dips during course corrections and pivot turns must
-not cut a continuous loop (first-round lesson, 2026-08-05). K1 hook cut
+not cut a continuous loop (first-round lesson, 2026-08-05). The key only
+arms; suppression then latches until the stuck state clears, because
+releasing it at a wall let the loop blip back for the half second before
+the idle animation arrived. K1 hook cut
 0x00610843 → idle 0x00610885; K2 cut 0x0077FB19 → idle 0x0077FB73.
 It never fired on Endar Spire because no wheeled droid was near — the
 2026-05-06 "zero fires" observation, now explained.
