@@ -702,17 +702,12 @@ const uintptr_t kAddrCSWSCreatureGetFaction = acc::addr::R(0x00513fc0);
 // strref at [feat+8].
 const uintptr_t kAddrCSWRulesGetFeat = acc::addr::Pick(0x00550c00, 0x006A20F0);
 
-// CSWFeat::GetNameText — __thiscall(CExoString* out) -> CExoString*.
-// Fetches localized feat name via CTlkTable::Fetch using the feat's
-// `field2_0x8` strref. Constructs the out CExoString in place; caller
-// must read .c_string before destruct (we deliberately leak the heap
-// string, same pattern as CSWSItem::GetPropertyDescription).
-const uintptr_t kAddrCSWFeatGetNameText = acc::addr::R(0x005cd760);
-
-// CSWFeat::GetDescriptionText — __thiscall(CExoString* out) -> CExoString*.
-// Sibling of GetNameText. Resolves the feat's `description` strref at
-// +0x0c through CTlkTable; same heap-leak rule applies.
-const uintptr_t kAddrCSWFeatGetDescriptionText = acc::addr::R(0x005cd800);
+// CSWFeat::GetNameText (K1 0x005cd760) and GetDescriptionText (K1 0x005cd800)
+// are no longer called: they were KOTOR 1-only addresses, and each is a bare
+// CTlkTable::Fetch of the strref at [feat+0x8] / [feat+0xc] (decompiled
+// 2026-08-04), so the resolvers read those strrefs directly (Same() offsets
+// in engine_offsets_fields.h) and go through LookupTlk — dual-game, and no
+// leaked CExoString.
 
 // CSWSpellArray::GetSpell — __thiscall(int spell_id) -> CSWSpell* (cast
 // as int in the Ghidra signature). Returns nullptr / 0 if spell_id is
@@ -722,11 +717,9 @@ const uintptr_t kAddrCSWFeatGetDescriptionText = acc::addr::R(0x005cd800);
 // pattern (0x1a8 there).
 const uintptr_t kAddrCSWSpellArrayGetSpell = acc::addr::Pick(0x0059b6d0, 0x006C1450);
 
-// CSWSpell::GetSpellNameText — __thiscall(CExoString* out) -> CExoString*.
-// Same shape as CSWFeat::GetNameText: constructs the localized name into
-// the out string in place; caller must read .c_string before any
-// destructor runs (we leak — CRT mismatch otherwise). BYTES_PURGED=4.
-const uintptr_t kAddrCSWSpellGetSpellNameText = acc::addr::R(0x0059b940);
+// CSWSpell::GetSpellNameText (K1 0x0059b940) is no longer called — same
+// retirement as the CSWFeat accessors above: a bare fetch of the strref at
+// [spell + kSpellNameStrRefOffset], now read directly + LookupTlk.
 
 // CSWGuiInGameAbilities methods (__thiscall). OnAbilitySelectionChanged is the
 // repaint entry point: after we drive the LB_ABILITY cursor (DriveListBoxSelection

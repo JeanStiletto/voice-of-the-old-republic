@@ -659,6 +659,7 @@ const size_t    kFeatStructSize               = acc::off::Pick(0x48, 0x50);
 // Same on K2: its OnEnterFeat twin 0x0090B9B0 SetStrRefs [feat+0x8] onto
 // the name label (description strref at [feat+0xc]).
 const size_t    kFeatNameStrRefOffset         = acc::off::Same(0x08);
+const size_t    kFeatDescriptionStrRefOffset  = acc::off::Same(0x0c);
 
 // Offset of the embedded CSWGuiSkillFlowChart inside CSWGuiPowersLevelUp.
 // Matches struct field33_0x19fc (swkotor.exe.h:16637). We call
@@ -1025,10 +1026,17 @@ const size_t kStatsFactionIdOffset                = acc::off::Todo(0x78);
 // at [rules+0x104].
 const size_t    kRulesSpellsOffset                = acc::off::Pick(0x8c, 0x104);
 
-// CSWSpell.spell_description — int (TLK strref) at +0x0c per SARIF
-// DATATYPE dump. CSWSpell has no GetSpellDescriptionText accessor, so
+// CSWSpell.name / .spell_description — TLK strrefs at +0x08 / +0x0c per
+// SARIF DATATYPE dump (K1 layout: label CExoString 8 bytes at +0, then the
+// two strrefs). K2 shifted BOTH by 4 (+0x0c / +0x10): its OnEnterPower twin
+// 0x00908F70, decompiled 2026-08-04 against K1's 0x006f1460, makes the same
+// two tail calls in the same order — name strref onto the power label, then
+// description into SetDescription — reading [spell+0xc] and [spell+0x10]
+// where K1 reads [spell+8] and [spell+0xc].
+const size_t    kSpellNameStrRefOffset            = acc::off::Pick(0x08, 0x0c);
+// CSWSpell has no GetSpellDescriptionText accessor, so
 // callers read the strref and route through LookupTlk themselves.
-const size_t    kSpellDescriptionStrRefOffset     = acc::off::Todo(0x0c);
+const size_t    kSpellDescriptionStrRefOffset     = acc::off::Pick(0x0c, 0x10);
 
 // CSWSCombatRoundAction additional offsets (decoded from GetActionIcon
 // @0x686fb0 — case 0xb/0xc switch). The action_type byte at +0x10

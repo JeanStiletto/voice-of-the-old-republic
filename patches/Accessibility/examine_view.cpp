@@ -9,6 +9,7 @@
 #include "engine_area.h"
 #include "engine_input.h"
 #include "engine_offsets.h"
+#include "engine_reads.h"   // LookupTlk — strref → localized text, both games
 #include "engine_app.h"     // GetClientApp
 #include "engine_player.h"
 #include "engine_subscreen.h" // Begin/EndOverlayPause — freeze the world while open
@@ -39,15 +40,6 @@ struct State {
 State g_state;
 
 typedef void* (__thiscall* PFN_GetFeat)(void* rules, unsigned short featIdx);
-typedef void* (__thiscall* PFN_GetFeatNameText)(void* feat, void* outExoString);
-
-// CExoString layout (matches CExoLocString byte-wise for our use):
-//   +0x0 char*  c_string
-//   +0x4 uint32 length
-struct ExoStringRaw {
-    char*    c_string;
-    uint32_t length;
-};
 
 void* GetCSWRules() {
     __try {
@@ -545,10 +537,12 @@ bool IsHostileCreature(void* serverObject) {
 
 // Public — same shape as ResolveFeatName below, but for the spells
 // array. Reads Rules->spells (CSWSpellArray* at +kRulesSpellsOffset),
-// resolves a CSWSpell* via GetSpell(spell_id), then formats the
-// localized name via CSWSpell::GetSpellNameText. SEH-guarded at every
-// dereference. Used by combat::queue's row speech for action_type=9
-// (Cast Force Power) entries.
+// resolves a CSWSpell* via GetSpell(spell_id), then reads the name strref
+// off the row and resolves it through the dual-game TLK path (the retired
+// CSWSpell::GetSpellNameText call was a bare fetch of the same strref, but
+// KOTOR 1-only — on K2 it resolved to 0 and every queued power spoke as the
+// generic "Macht einsetzen"). SEH-guarded at every dereference. Used by
+// combat::queue's row speech for action_type=9 (Cast Force Power) entries.
 bool ResolveSpellName(int spellId, char* outBuf, size_t outBufSize) {
     if (!outBuf || outBufSize < 2) return false;
     outBuf[0] = '\0';
@@ -575,27 +569,20 @@ bool ResolveSpellName(int spellId, char* outBuf, size_t outBufSize) {
     }
     if (!spell) return false;
 
-    using PFN_GetSpellNameText = void* (__thiscall*)(void* spell, void* outExo);
-    ExoStringRaw exo{nullptr, 0};
+    uint32_t nameStrRef = 0;
     __try {
-        auto fn = reinterpret_cast<PFN_GetSpellNameText>(
-            kAddrCSWSpellGetSpellNameText);
-        fn(spell, &exo);
+        nameStrRef = *reinterpret_cast<uint32_t*>(
+            reinterpret_cast<unsigned char*>(spell) + kSpellNameStrRefOffset);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
     }
-    if (!exo.c_string || exo.c_string[0] == '\0') {
-        // Same heap-leak rationale as ResolveFeatName.
-        return false;
-    }
-    std::strncpy(outBuf, exo.c_string, outBufSize - 1);
-    outBuf[outBufSize - 1] = '\0';
-    return true;
+    if (nameStrRef == 0 || nameStrRef == 0xffffffff) return false;
+    return acc::engine::LookupTlk(nameStrRef, outBuf, outBufSize);
 }
 
 // Public — declared in examine_view.h. Lives outside the anonymous
 // namespace so combat::queue (and any other future caller) can link to
-// it. Internal helpers (GetCSWRules, PFN_GetFeat, ExoStringRaw,
+// it. Internal helpers (GetCSWRules, PFN_GetFeat,
 // kAddrCSWRulesGetFeat) reach through the anon-namespace using-directive
 // that the enclosing acc::examine_view namespace implicitly maintains.
 // SEH-guarded — feats-table walk.
@@ -614,22 +601,22 @@ bool ResolveFeatName(unsigned short featIdx, char* outBuf, size_t outBufSize) {
     }
     if (!feat) return false;
 
-    ExoStringRaw exo{nullptr, 0};
+    // Read the name strref off the feat row and resolve it through the
+    // dual-game TLK path. This replaced the CSWFeat::GetNameText call
+    // (which is all that accessor does with the same +0x8 strref) because
+    // its address was KOTOR 1-only — on K2 the call resolved to 0, the SEH
+    // swallowed the fault, and every queued feat spoke as the generic
+    // "Talent einsetzen" (2026-08-04 K2 session). Offset is Same(0x08),
+    // witnessed on K2 in the abilities OnEnterFeat twin.
+    uint32_t nameStrRef = 0;
     __try {
-        auto fn = reinterpret_cast<PFN_GetFeatNameText>(
-            kAddrCSWFeatGetNameText);
-        fn(feat, &exo);
+        nameStrRef = *reinterpret_cast<uint32_t*>(
+            reinterpret_cast<unsigned char*>(feat) + kFeatNameStrRefOffset);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
     }
-    if (!exo.c_string || exo.c_string[0] == '\0') {
-        // Leak the heap alloc — destruction across the DLL/EXE boundary
-        // risks a CRT mismatch on ~CExoString.
-        return false;
-    }
-    std::strncpy(outBuf, exo.c_string, outBufSize - 1);
-    outBuf[outBufSize - 1] = '\0';
-    return true;
+    if (nameStrRef == 0 || nameStrRef == 0xffffffff) return false;
+    return acc::engine::LookupTlk(nameStrRef, outBuf, outBufSize);
 }
 
 

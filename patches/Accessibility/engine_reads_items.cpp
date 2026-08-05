@@ -117,7 +117,6 @@ static void* GetRulesGlobal() {
 }
 
 typedef void* (__thiscall* PFN_RulesGetFeat)(void* rules, uint16_t featIdx);
-typedef void* (__thiscall* PFN_FeatGetDescriptionText)(void* feat, CExoString* out);
 
 bool ResolveFeatDescription(uint32_t featIdx, char* outBuf, size_t bufSize) {
     void* rules = GetRulesGlobal();
@@ -132,20 +131,23 @@ bool ResolveFeatDescription(uint32_t featIdx, char* outBuf, size_t bufSize) {
     }
     if (!feat) return false;
 
-    CExoString tmp = {nullptr, 0};
+    // Read the description strref off the feat row and resolve it through
+    // the dual-game TLK path — mirror of ResolveSpellDescription below.
+    // This replaced the CSWFeat::GetDescriptionText call (all it does with
+    // the same +0xc strref) because its address was KOTOR 1-only, so on K2
+    // the fetch faulted into the SEH and descriptions came back empty.
+    // Offset is Same(0x0c), witnessed on K2 in the abilities OnEnterFeat
+    // twin.
+    uint32_t descStrRef = 0;
     __try {
-        auto fn = reinterpret_cast<PFN_FeatGetDescriptionText>(
-            kAddrCSWFeatGetDescriptionText);
-        fn(feat, &tmp);
+        descStrRef = *reinterpret_cast<uint32_t*>(
+            reinterpret_cast<unsigned char*>(feat) +
+            kFeatDescriptionStrRefOffset);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
     }
-    if (!tmp.c_string || tmp.length == 0 || tmp.length >= bufSize) return false;
-    memcpy(outBuf, tmp.c_string, tmp.length);
-    outBuf[tmp.length] = '\0';
-    // c_string is a heap CRT-mismatched alloc by the engine; same leak
-    // rule as ReadItemPropertyDescription.
-    return true;
+    if (descStrRef == 0 || descStrRef == 0xffffffff) return false;
+    return LookupTlk(descStrRef, outBuf, bufSize);
 }
 
 typedef void* (__thiscall* PFN_SpellArrayGetSpell)(void* spells, int spellId);
