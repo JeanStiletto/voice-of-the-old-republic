@@ -717,6 +717,15 @@ const MsgStrings kPl = {
 //     the space or every target name starts with one.
 //   - 32292 swapped verbs: "benutzt" -> "verwendet". Doubles as the spoken
 //     ability line's glue (RuleAbilityUse), which stays correct German.
+//   - 42133/42134 (the <CUSTOM0> hit/miss tag, empty in K1 German) are FILLED
+//     in K2 — with the untranslated English words "Hit" / "Miss". The rendered
+//     connector after the target is therefore ". Hit mit N ..." with a single
+//     space, not K1's glued double-space, so phrase_mit drops to " mit " —
+//     the same single-space form (and the same both-tags-match property) as
+//     kEn's " with ". Found 2026-08-04 from a live K2 combat log: every
+//     attack summary fell through to raw speech because "  mit " never
+//     matched. The TLK-diff pass missed it because the tag strrefs only
+//     appear glued into the line at runtime.
 // The auto-hit/-fail tags (42390/42391) also grew trailing spaces, but they
 // are strstr'd as substrings, so the shorter K1 form matches either way and
 // is kept — it also survives any engine-side trailing-space trim.
@@ -729,6 +738,7 @@ const MsgStrings kPl = {
 MsgStrings BuildDeK2() {
     MsgStrings m = kDe;
     m.phrase_hit         = " ist erfolgreich  mit Angriff auf ";
+    m.phrase_mit         = " mit ";
     m.feat_marker        = " verwendet .";
     m.prefix_auswirkung  = "Auswirkungsstatistik: ";
     m.ability_use_marker = " verwendet ";
