@@ -1100,6 +1100,9 @@ void Tick() {
         g_pending_platz_valid        = false;
         acc::room_topology::Reset();
         acc::narration::Reset();
+        // Door numbering classes are frozen per area visit; drop the old
+        // area's snapshot so the next narration rebuilds from the new one.
+        acc::engine::ResetDoorLockSnapshot();
         // Leave g_module_load_pending alone. Player-loss is the standard
         // mid-load symptom (PC slot wiped while the engine swaps modules);
         // clearing the latch here would re-open the per-tick probes

@@ -495,6 +495,11 @@ enum class Id : int {
     //      cycle/narrate stays terse. See `BuildDoorSuffix`.
     DoorOpen,
     DoorLocked,
+    // Door that was locked when this area loaded and has since been picked or
+    // keyed open — still closed, so neither "locked" nor "open" applies.
+    // Confirms the unlock landed, and explains why the door keeps its slot in
+    // the locked-door numbering sequence (see WasDoorLockedAtAreaLoad).
+    DoorUnlocked,
     // Static/decorative door — the engine never lets anyone open it (UTD
     // Static flag, CSWSDoor +0x3c0). Set dressing, not a real passage; we
     // label it so the player can tell it apart from a genuinely locked door

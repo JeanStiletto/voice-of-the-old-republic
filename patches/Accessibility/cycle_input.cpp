@@ -174,7 +174,10 @@ void ResolveEntryName(const acc::cycle::CategoryListing& listing, int idx,
         out[0] != '\0') {
         return;
     }
-    if (!acc::engine::GetObjectName(listing.objs[idx], out, size) ||
+    // Base name — this is a same-name GROUPING key, so it must not carry a
+    // door's live state (see AppendAreaPositionOrdinal). Identical to
+    // GetObjectName for every kind this map-context path actually sees.
+    if (!acc::engine::GetObjectBaseName(listing.objs[idx], out, size) ||
         out[0] == '\0') {
         out[0] = '\0';
     }
@@ -316,8 +319,10 @@ void AnnounceCurrent(const acc::cycle::CategoryListing& listing,
     // Static hints never fall through to GetObjectName — the table row is
     // not an engine object; a failed GetLabel lands on the category name.
     if (!nameOk && !isStatic) {
-        nameOk = acc::engine::GetObjectName(s.focusedObj,
-                                            name, sizeof(name)) &&
+        // Base name only; the door state suffix goes on after the ordinal
+        // below, so the number lands right after the name.
+        nameOk = acc::engine::GetObjectBaseName(s.focusedObj,
+                                                name, sizeof(name)) &&
                  name[0] != '\0';
     }
     if (!nameOk) {
@@ -350,6 +355,12 @@ void AnnounceCurrent(const acc::cycle::CategoryListing& listing,
     } else {
         acc::narration::AppendDisambiguator(s.focusedObj, s.category, name,
                                             sizeof(name));
+        // Door state / destination / description (", verriegelt", ", Zur
+        // Brücke") — deferred until after the ordinal so the number reads as
+        // part of the door's identity: "Tür 3, verriegelt". No-op for every
+        // non-door kind.
+        acc::engine::AppendObjectStateSuffix(s.focusedObj, name,
+                                             sizeof(name));
         // Placeable state tag (", gefangen" / ", deaktiviert" …) — same
         // suffix the Q/E narration path appends via GetSpokenName, so an
         // object speaks one consistent state everywhere. Self-gates on the

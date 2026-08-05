@@ -152,6 +152,7 @@ const char* Get(Id id) {
 
         case Id::DoorOpen:             return "offen";
         case Id::DoorLocked:           return "verriegelt";
+        case Id::DoorUnlocked:         return "entriegelt";
         case Id::DoorCosmetic:         return "kosmetisch";
 
         case Id::DirNorth:             return "Nord";
@@ -822,7 +823,7 @@ const char* Get(Id id) {
         case Id::FmtChargenFeatUnnamed: return "Talent %u";
         case Id::ChargenBtnRecommended: return "Empfohlen";
         case Id::ChargenBtnAccept:      return "Akzeptieren";
-        case Id::ChargenBtnBack:        return "Zurü" "ck";
+        case Id::ChargenBtnBack:        return "Zur\xfc""ck";
         case Id::Count_:               return "";
     }
     return "";

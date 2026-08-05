@@ -45,13 +45,24 @@ void AppendDisambiguator(void* gameObject, acc::filter::CycleCategory category,
 void AppendSuffix(void* gameObject, char* outBuf, size_t bufSize);
 
 // Append a GLOBAL north-to-south positional ordinal to an already-resolved
-// name in outBuf. Ranks gameObject against EVERY same-category object in the
-// current area whose spoken name (engine GetObjectName) matches outBuf — not
-// just discovered/listed ones — so the number is a pure function of fixed
-// world position: stable across discovery progress, cycle direction,
+// BASE name in outBuf. Ranks gameObject against EVERY same-category object in
+// the current area whose base name (engine GetObjectBaseName) matches outBuf
+// — not just discovered/listed ones — so the number is a pure function of
+// fixed world position: stable across discovery progress, cycle direction,
 // distance, visit, save, and player. No-op when fewer than two same-named
 // peers exist. Use for static objects (doors, placeables, containers,
 // transitions, map-note waypoints); creatures move, so they use AppendSuffix.
+//
+// Two rules keep a door's number from moving while the player works on it:
+//   - Base name, never the enriched GetObjectName. The enriched string
+//     carries the live lock/open state, so grouping by it renumbered the
+//     whole corridor every time a door was opened.
+//   - Doors locked at area load form their own sequence (engine
+//     WasDoorLockedAtAreaLoad — frozen, not live), so picking a lock turns
+//     "Tür 2, verriegelt" into "Tür 2, entriegelt" and leaves the other
+//     locked doors alone.
+// Call with outBuf holding the base name only; the caller appends the state
+// suffix afterwards via engine::AppendObjectStateSuffix.
 void AppendAreaPositionOrdinal(void* gameObject,
                                acc::filter::CycleCategory category,
                                char* outBuf, size_t bufSize);

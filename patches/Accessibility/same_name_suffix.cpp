@@ -139,6 +139,20 @@ bool PositionLess(const Vector& a, const Vector& b) {
     return a.z < b.z;
 }
 
+int NumberingClass(void* gameObject) {
+    if (acc::engine::GetObjectKind(gameObject) !=
+        static_cast<int>(acc::engine::GameObjectKind::Door)) {
+        return 0;
+    }
+    // Static/cosmetic doors are frequently flagged locked in the blueprint
+    // even though nobody can ever open them — which is exactly why we speak
+    // "kosmetisch" instead of "verriegelt" for them. Honour that here too, or
+    // two identical bits of set dressing side by side would land in different
+    // numbering sequences purely on a flag the player is never told about.
+    if (acc::engine::IsDoorStatic(gameObject)) return 0;
+    return acc::engine::WasDoorLockedAtAreaLoad(gameObject) ? 1 : 0;
+}
+
 void AppendAreaPositionOrdinal(void* gameObject,
                                acc::filter::CycleCategory category,
                                char* outBuf, size_t bufSize) {
@@ -150,24 +164,37 @@ void AppendAreaPositionOrdinal(void* gameObject,
     void* area = acc::engine::GetCurrentArea();
     if (!area) return;
 
-    // outBuf holds the spoken base name; rank against same-category peers
-    // whose spoken name (engine GetObjectName) matches it. Keying off the
-    // spoken string — not a raw tag — keeps numbering aligned with what the
-    // user actually hears, and shared with the Q/E path which keys the same
-    // way. Both the focus (Q/E resolves the server twin via +0xf8; the cycle
-    // listing comes straight off the iterator) and the scan candidates are
-    // server objects, so pointer identity below is reliable.
+    // outBuf holds the spoken BASE name; rank against same-category peers
+    // whose base name matches it. Keying off the spoken string — not a raw
+    // tag — keeps numbering aligned with what the user actually hears, and
+    // shared with the Q/E path which keys the same way. Both the focus (Q/E
+    // resolves the server twin via +0xf8; the cycle listing comes straight
+    // off the iterator) and the scan candidates are server objects, so
+    // pointer identity below is reliable.
+    //
+    // GetObjectBaseName, NOT GetObjectName: the enriched name carries the
+    // door's live state, and grouping by that made the number a function of
+    // lock/open state. Opening one door then moved it out of its group and
+    // renumbered every door south of it, so a corridor handed the number 1
+    // to a new door each time the player opened one.
     char focusKey[128];
     std::strncpy(focusKey, outBuf, sizeof(focusKey) - 1);
     focusKey[sizeof(focusKey) - 1] = '\0';
+
+    // Doors that were locked when the area loaded are numbered as their own
+    // sequence, so "the second locked door" stays the second locked door
+    // after the player picks its lock. Frozen at load rather than read live —
+    // that is exactly what stops the unlock from shifting the others.
+    const int focusClass = NumberingClass(gameObject);
 
     int rank      = 1;  // 1-based, northmost = 1
     int peerCount = 0;
     acc::engine::AreaObjectIterator it(area);
     while (void* cand = it.Next()) {
         if (!acc::filter::ObjectMatches(cand, category)) continue;
+        if (NumberingClass(cand) != focusClass) continue;
         char other[128];
-        if (!acc::engine::GetObjectName(cand, other, sizeof(other)) ||
+        if (!acc::engine::GetObjectBaseName(cand, other, sizeof(other)) ||
             std::strcmp(other, focusKey) != 0) {
             continue;
         }
@@ -204,11 +231,15 @@ bool GetSpokenName(void* gameObject, acc::filter::CycleCategory category,
     if (!gameObject || !outBuf || bufSize < 2) return false;
     outBuf[0] = '\0';
 
-    if (!acc::engine::GetObjectName(gameObject, outBuf, bufSize) ||
+    // Base name → number → state suffix, in that order: the number belongs
+    // to the object's identity and must sit right after its name
+    // ("Tür 3, verriegelt"), not trailing the state word.
+    if (!acc::engine::GetObjectBaseName(gameObject, outBuf, bufSize) ||
         outBuf[0] == '\0') {
         return false;
     }
     AppendDisambiguator(gameObject, category, outBuf, bufSize);
+    acc::engine::AppendObjectStateSuffix(gameObject, outBuf, bufSize);
     acc::state::AppendStateLabel(gameObject, outBuf, bufSize);
     AppendEmptyContainerLabel(gameObject, outBuf, bufSize);
     return true;

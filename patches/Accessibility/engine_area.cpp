@@ -382,9 +382,64 @@ void AppendCommaSeparated(char* outBuf, size_t bufSize, const char* text) {
     outBuf[curLen] = '\0';
 }
 
+// One SEH-guarded read of the two live door state fields. Both callers
+// (the suffix builder and the lock snapshot) want them under one guard.
+// Leaves the outputs untouched and returns false on fault.
+bool ReadDoorFlags(void* serverDoor, uint32_t& locked, uint8_t& openState) {
+    if (!serverDoor) return false;
+    __try {
+        auto* base = reinterpret_cast<unsigned char*>(serverDoor);
+        locked    = *reinterpret_cast<uint32_t*>(base + kDoorLockedOffset);
+        openState = *reinterpret_cast<uint8_t*> (base + kDoorOpenStateOffset);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+// Door lock snapshot — which doors were locked when the area came up.
+//
+// Narration numbers doors within a class, and the class has to be frozen:
+// derive it from the live lock flag and every unlock renumbers the area.
+// Only the locked handles are stored (the interesting minority); anything
+// absent from the table counts as "was not locked".
+constexpr int kMaxSnapshotDoors = 256;
+uint32_t s_lockedAtLoad[kMaxSnapshotDoors];
+int      s_lockedAtLoadCount = 0;
+void*    s_lockSnapshotArea  = nullptr;  // also the "snapshot exists" flag
+
+void BuildDoorLockSnapshot(void* area) {
+    s_lockedAtLoadCount = 0;
+    s_lockSnapshotArea  = area;
+    if (!area) return;
+
+    int doors = 0;
+    AreaObjectIterator it(area);
+    while (void* obj = it.Next()) {
+        if (GetObjectKind(obj) !=
+            static_cast<int>(GameObjectKind::Door)) {
+            continue;
+        }
+        ++doors;
+        uint32_t locked = 0;
+        uint8_t  open   = 0;
+        if (!ReadDoorFlags(obj, locked, open) || locked == 0) continue;
+        if (s_lockedAtLoadCount >= kMaxSnapshotDoors) {
+            acclog::Write("DoorLockSnapshot",
+                "area=%p exceeded %d locked doors — remainder counts as "
+                "unlocked for numbering", area, kMaxSnapshotDoors);
+            break;
+        }
+        s_lockedAtLoad[s_lockedAtLoadCount++] = GetObjectHandle(obj);
+    }
+    acclog::Write("DoorLockSnapshot",
+        "area=%p doors=%d lockedAtLoad=%d", area, doors, s_lockedAtLoadCount);
+}
+
 // Build the comma-prefixed suffix for a CSWSDoor — state + transition
 // destination + description. Empty when the door is in the boring default
-// state (closed + unlocked) AND has no transition target / description.
+// state (closed, and never locked here) AND has no transition target /
+// description.
 //
 // Order is deliberate: state first ("Tür, verriegelt") because that's the
 // most actionable bit for the player; destination second ("Tür, offen,
@@ -409,13 +464,7 @@ void BuildDoorSuffix(void* serverDoor, char* outBuf, size_t bufSize) {
 
     uint32_t locked    = 0;
     uint8_t  openState = 0;
-    __try {
-        auto* base = reinterpret_cast<unsigned char*>(serverDoor);
-        locked    = *reinterpret_cast<uint32_t*>(base + kDoorLockedOffset);
-        openState = *reinterpret_cast<uint8_t*> (base + kDoorOpenStateOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        // leave defaults; suffix will skip the state line
-    }
+    ReadDoorFlags(serverDoor, locked, openState);  // defaults on fault
 
     if (locked != 0) {
         AppendCommaSeparated(outBuf, bufSize,
@@ -429,6 +478,15 @@ void BuildDoorSuffix(void* serverDoor, char* outBuf, size_t bufSize) {
         // animating door — better signal than silent.
         AppendCommaSeparated(outBuf, bufSize,
             acc::strings::Get(acc::strings::Id::DoorOpen));
+    } else if (WasDoorLockedAtAreaLoad(serverDoor)) {
+        // Closed again / still closed, but this door WAS locked when we got
+        // here — the player has picked or keyed it since. Worth saying: it
+        // confirms the unlock landed, and it explains why the door still
+        // counts in the locked-door numbering sequence. Short-lived in
+        // practice (the player normally opens it a beat later, and "offen"
+        // then wins above).
+        AppendCommaSeparated(outBuf, bufSize,
+            acc::strings::Get(acc::strings::Id::DoorUnlocked));
     }
 
     char buf[128];
@@ -505,7 +563,54 @@ bool GetObjectDisplayNameByHandle(uint32_t handle,
     return false;
 }
 
+bool WasDoorLockedAtAreaLoad(void* serverDoor) {
+    if (!serverDoor) return false;
+    if (GetObjectKind(serverDoor) !=
+        static_cast<int>(GameObjectKind::Door)) {
+        return false;
+    }
+
+    void* area = GetCurrentArea();
+    // Rebuild on the first query of a new area. When the area is momentarily
+    // unresolvable (mid-load) keep answering from the snapshot we have rather
+    // than throwing it away — a door queried during the hand-off would
+    // otherwise flip numbering class for one frame.
+    if (area && area != s_lockSnapshotArea) {
+        BuildDoorLockSnapshot(area);
+    }
+    if (!s_lockSnapshotArea) return false;
+
+    uint32_t handle = GetObjectHandle(serverDoor);
+    if (handle == 0u) return false;
+    for (int i = 0; i < s_lockedAtLoadCount; ++i) {
+        if (s_lockedAtLoad[i] == handle) return true;
+    }
+    return false;
+}
+
+void ResetDoorLockSnapshot() {
+    s_lockedAtLoadCount = 0;
+    s_lockSnapshotArea  = nullptr;
+}
+
+void AppendObjectStateSuffix(void* gameObject, char* outBuf, size_t bufSize) {
+    if (!gameObject || !outBuf || bufSize < 3 || outBuf[0] == '\0') return;
+    if (GetObjectKind(gameObject) !=
+        static_cast<int>(GameObjectKind::Door)) {
+        return;
+    }
+    size_t curLen = std::strlen(outBuf);
+    if (curLen + 3 >= bufSize) return;
+    BuildDoorSuffix(gameObject, outBuf + curLen, bufSize - curLen);
+}
+
 bool GetObjectName(void* gameObject, char* outBuf, size_t bufSize) {
+    if (!GetObjectBaseName(gameObject, outBuf, bufSize)) return false;
+    AppendObjectStateSuffix(gameObject, outBuf, bufSize);
+    return outBuf[0] != '\0';
+}
+
+bool GetObjectBaseName(void* gameObject, char* outBuf, size_t bufSize) {
     if (!gameObject || !outBuf || bufSize < 2) return false;
     outBuf[0] = '\0';
 
@@ -516,18 +621,13 @@ bool GetObjectName(void* gameObject, char* outBuf, size_t bufSize) {
     bool got = false;
     switch (K(kind)) {
         case K::Door:
+            // Bare LocName only. The state ("verriegelt"/"offen"/
+            // "entriegelt") + transition destination + description
+            // enrichment lives in AppendObjectStateSuffix, which
+            // GetObjectName applies on top — so narration can slot a
+            // disambiguating number in between the two halves.
             got = TryReadLocString(gameObject, kDoorLocNameOffset,
                                    outBuf, bufSize);
-            // Enrich with state ("verriegelt"/"offen") + transition
-            // destination + description. All three are silent on the
-            // common case (closed unlocked in-area door) so cycle
-            // narration stays terse; locked/open doors and module
-            // transitions get a meaningful suffix so the user can tell
-            // them apart without inspecting tags.
-            if (got && outBuf[0] != '\0') {
-                BuildDoorSuffix(gameObject, outBuf + std::strlen(outBuf),
-                                bufSize - std::strlen(outBuf));
-            }
             break;
         case K::Creature: {
             // Prefer the engine's universal display-name accessor (same

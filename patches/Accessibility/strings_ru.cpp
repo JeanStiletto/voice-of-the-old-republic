@@ -165,6 +165,8 @@ const char* Get(Id id) {
 
         case Id::DoorOpen:             return "\xEE\xF2\xEA\xF0\xFB\xF2\xE0";
         case Id::DoorLocked:           return "\xE7\xE0\xEF\xE5\xF0\xF2\xE0";
+        // "отперта"
+        case Id::DoorUnlocked:         return "\xEE\xF2\xEF\xE5\xF0\xF2\xE0";
         case Id::DoorCosmetic:         return "\xE4\xE5\xEA\xEE\xF0\xE0\xF2\xE8\xE2\xED\xE0\xFF";
 
         case Id::DirNorth:             return "\xF1\xE5\xE2\xE5\xF0";

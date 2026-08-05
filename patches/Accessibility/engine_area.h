@@ -127,6 +127,41 @@ bool GetRoomDisplayName(void* area, int roomIndex,
 // (modder-assigned id).
 bool GetObjectName(void* gameObject, char* outBuf, size_t bufSize);
 
+// GetObjectName split in two, for callers that need to put something
+// BETWEEN the name and its suffix.
+//
+// GetObjectBaseName is the per-kind localized name on its own — the half
+// that never changes while the area is live. AppendObjectStateSuffix adds
+// what GetObjectName would have appended for a door (state word, transition
+// destination, description); it is a no-op for every other kind.
+// GetObjectName is exactly the two composed, so existing callers are
+// unaffected.
+//
+// Narration uses the split so the same-name ordinal can group by the STABLE
+// half and land right after the name: "T\xfc""r 3, verriegelt" rather than
+// "T\xfc""r, verriegelt 3". Grouping by the enriched string made a door's
+// number a function of its live lock/open state, so opening or unlocking one
+// door renumbered every other door in the area.
+bool GetObjectBaseName(void* gameObject, char* outBuf, size_t bufSize);
+void AppendObjectStateSuffix(void* gameObject, char* outBuf, size_t bufSize);
+
+// True when this door was locked at the moment the current area's door
+// snapshot was taken — i.e. at area load, before the player could touch
+// anything. kDoorLockedOffset is the LIVE flag; this is the frozen one.
+//
+// Narration groups its door numbering on this rather than the live flag so a
+// door keeps its slot when the player picks its lock: "T\xfc""r 2, verriegelt"
+// becomes "T\xfc""r 2, entriegelt", and the other locked doors keep their
+// numbers. False for non-doors, for doors already unlocked at load, and for
+// doors that first appeared after the snapshot.
+bool WasDoorLockedAtAreaLoad(void* serverDoor);
+
+// Drops the door lock snapshot; the next query rebuilds it from the live
+// area. Wired to the area-transition reset chain in transitions.cpp. (The
+// snapshot also self-rebuilds when the area pointer changes; this covers the
+// case where a new area lands on the freed one's address.)
+void ResetDoorLockSnapshot();
+
 // CSWSObject.tag CExoString @+0x18 — the modder-assigned, locale-INDEPENDENT
 // object id (e.g. "tar03_mission031"). Unlike GetObjectName this never
 // localizes and never falls back; it's the raw tag or nothing. This is the
