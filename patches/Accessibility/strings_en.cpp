@@ -584,17 +584,20 @@ const char* Get(Id id) {
         case Id::HelpKeyModSettings:     return "Mod settings are in Options, at the bottom of the list";
         case Id::HelpKeyPadMenuNav:          return "In menus: D-pad or left stick move, A confirms, B goes back";
         case Id::HelpKeyPadInteract:          return "A: default action on the focused target (attack, open, talk, pick up)";
-        case Id::HelpKeyPadCycleObjects:     return "D-pad left and right: previous and next object";
-        case Id::HelpKeyPadCycleCategory:    return "D-pad up and down: previous and next category";
-        case Id::HelpKeyPadCycleEnds:        return "Left trigger with D-pad left or right: nearest or farthest object";
-        case Id::HelpKeyPadAnnounceFocus:    return "Left trigger with D-pad up: repeat the focused object";
-        case Id::HelpKeyPadWalkToFocus:      return "Left trigger with D-pad down: walk to the focused object";
-        case Id::HelpKeyPadBeacon:           return "Right trigger with D-pad up: audio beacon to the focused object";
-        case Id::HelpKeyPadActionMenu:        return "X: open the action menu (other attacks, force powers, medpacs, grenades)";
-        case Id::HelpKeyPadHelp:             return "Right trigger with D-pad left or right: keys for this screen, or this list";
+        case Id::HelpKeyPadModeSwitch:       return "Left trigger: switch the D-pad between object selection and the action menu";
+        case Id::HelpKeyPadCycleObjects:     return "Object selection, D-pad left and right: previous and next object";
+        case Id::HelpKeyPadCycleCategory:    return "Object selection, D-pad up and down: previous and next category";
+        case Id::HelpKeyPadActionMenuNav:    return "Action menu, D-pad: left and right change the category, up and down the entry, A fires";
+        case Id::HelpKeyPadWalkToFocus:      return "Right trigger with right shoulder button: walk to the focused object";
+        case Id::HelpKeyPadBeacon:           return "Left trigger with left shoulder button: audio beacon to the focused object";
+        case Id::HelpKeyPadDegrees:          return "Right trigger: announce the facing in degrees";
+        case Id::HelpKeyPadCameraOrient:     return "Right stick press: turn the camera to the beacon's next waypoint, otherwise to the next compass direction";
+        case Id::HelpKeyPadHelp:             return "Both triggers: keys for this screen. The quick menu's Help entry opens this list";
         case Id::HelpKeyPadQuickMenu:        return "Y: quick menu";
         case Id::HelpKeyPadCycleTargets:     return "Left and right shoulder buttons: cycle targets";
         case Id::HelpKeyPadOptions:          return "Back button: options menu";
+        case Id::PadModeCycle:               return "Object selection";
+        case Id::PadModeActionMenu:          return "Action menu";
 
         case Id::HelpMenuOpened:    return "Key help. Up and down to read, Escape to close.";
         case Id::HelpMenuClosed:    return "Key help closed.";

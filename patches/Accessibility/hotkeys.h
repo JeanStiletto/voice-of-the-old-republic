@@ -162,6 +162,20 @@ void Consume(Action a);
 // see the press yet.
 void ClaimRisingEdge(Action a);
 
+// Fire `a` from a source that is not the keyboard — currently the KOTOR 2
+// gamepad, whose buttons never set a VK. Latches a one-shot rising edge that
+// the next Pressed(a) reports, so the action's existing poller runs unchanged:
+// camera_orient keeps its in-flight state machine, announce_degrees keeps its
+// map-vs-world branch, and neither learns a controller exists. Reaching for
+// the handler directly instead would duplicate that logic per pad binding.
+//
+// The latch is cleared by the READ, not by EndTick, because pad events arrive
+// from the input hooks at arbitrary points between ticks: a tick-scoped latch
+// set just after its action's phase had already run would be discarded before
+// anyone saw it. Pressed() is therefore NOT idempotent within a tick for a
+// pad-latched action — the first caller takes it.
+void PadPress(Action a);
+
 // Direct OS-level modifier reads — no edge, no foreground gate.
 bool ShiftHeld();
 bool CtrlHeld();

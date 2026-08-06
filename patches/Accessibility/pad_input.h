@@ -49,6 +49,22 @@ constexpr int kPadShoulderL   = 53;   // KEYBOARD_C
 constexpr int kPadShoulderR   = 54;   // KEYBOARD_D
 constexpr int kPadBack        = 46;   // KEYBOARD_F8
 
+// ---------------------------------------------------------------------------
+// The other route: CClientExoAppInternal::HandleInputEvent (our
+// OnClientHandleInputEvent hook, in-world only). The engine maps the same
+// physical buttons to DIFFERENT InputIndices per input class, and the
+// in-world class is where the shoulders and stick presses actually DO
+// something — so a chord that has to take an action away from the engine has
+// to be claimed here, not at the manager.
+// ---------------------------------------------------------------------------
+constexpr int kPadClientShoulderL = 0xcc;  // LB — engine: Cycle Target (Left)
+constexpr int kPadClientShoulderR = 0xcd;  // RB — engine: Cycle Target (Right)
+constexpr int kPadClientStickL    = 0xf2;  // L3 — engine: Flourish Weapon
+// R3 — engine: First-Person View. This code is ALSO **MOUSE_BUTTON1**, the
+// right mouse button: mouse-look. Never consume it without first checking
+// that the physical button is up (TranslateClientEvent does).
+constexpr int kPadClientStickR    = 0x01;
+
 // NOT pad codes, recorded so nobody reads them as such again. Codes 65 and 66
 // arriving at CClientExoAppInternal::HandleInputEvent were once read as the
 // left stick's in-world movement ("65 = held direction, 66 = a varying
@@ -86,6 +102,16 @@ enum class Verdict {
 // later real press gets swallowed.
 Verdict TranslateManagerEvent(int& code, int& value);
 
+// The same seam for the in-world client route (OnClientHandleInputEvent).
+// Returns true when the pad has claimed the event and the caller must consume
+// it — the engine must not also act, or a beacon chord would additionally
+// cycle the target and a stick press would additionally flip the camera.
+//
+// No Verdict here: nothing on this route needs rewriting into a logical code,
+// because the mod's own handlers all hang off the manager route. It is either
+// ours outright or the engine's untouched.
+bool TranslateClientEvent(int code, int value);
+
 // True iff `code` could be a pad event on the running build. Used by
 // InputIndexName's log annotation, and by the help system to decide whether a
 // raw 0x27 is a physical F1 or a pad A.
@@ -120,6 +146,22 @@ bool IsPhysicalF1();
 // xinput1_4 / 1_3 / 9_1_0 are resolved at run time via LoadLibrary, never
 // linked: a delay-load import that fails to resolve takes the process down
 // with 0xC06D007F (see project_prism_backend_delayload_crash).
+//
+// Each trigger does two jobs — alone it is a button, held it is a modifier for
+// the shoulder beside it and for the other trigger:
+//
+//   LT alone        switch what the D-Pad is for (object selection <-> action
+//                   menu); the new mode announces itself
+//   RT alone        announce the facing in degrees (the keyboard's AltGr)
+//   LT + LB         audio beacon to the focused object
+//   RT + RB         walk to the focused object
+//   LT + RT         the current screen's keys (the keyboard's Ctrl+F1)
+//
+// The solo job fires on RELEASE, and any chord taken during the hold cancels
+// it. That is not a timing rule and there is nothing for the user to learn —
+// it is simply what makes LT+LB a beacon instead of a beacon plus an unwanted
+// mode switch. Firing on press cannot do that, because on press we do not yet
+// know whether a chord is coming.
 
 // Per-tick poll: refreshes trigger state and pad presence. Cheap (one
 // XInputGetState on a single slot) and self-gates to KOTOR 2. Call from

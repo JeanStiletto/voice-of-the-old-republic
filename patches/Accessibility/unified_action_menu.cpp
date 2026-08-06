@@ -89,8 +89,23 @@ struct State {
                                     // vanilla behaviour when that option is
                                     // unset (decompile-confirmed; see the
                                     // auto-pause note in action-menu-and-combat).
+    bool     live           = false;// KOTOR 2 pad "live" mode: the menu is the
+                                    // controller's persistent action surface,
+                                    // not a modal the user opens and closes.
+                                    // Two consequences, both in this file:
+                                    // it never takes the world pause (whatever
+                                    // the auto-pause option says), and firing
+                                    // never closes it. See RequestLiveArm.
 };
 State g;
+
+// One-shot: the next Arm() in this dispatch is a live (pad) arm. A request
+// rather than an Arm() parameter because the pad opens the menu through the
+// ordinary entry points — InteractNarratedTarget → ArmFromRadial, or
+// OpenPersonal — and threading a flag through that chain would touch the
+// keyboard paths for no reason. Consumed by Arm(), and cleared on disarm so a
+// declined open (no populated category) cannot leak into a later keyboard one.
+bool g_liveRequest = false;
 
 int ClampInt(int v, int lo, int hi) {
     if (v < lo) return lo;
@@ -373,7 +388,17 @@ void Arm() {
     g.suspended = false;
     if (!g.active) {
         g.active = true;
-        g.pausedOnOpen = ActionMenuAutoPauseEnabled();
+        g.live = g_liveRequest;
+        g_liveRequest = false;
+        // Live mode never pauses. The whole point of the pad's D-pad action
+        // surface is that it sits over a running world the way the engine's
+        // own does — pausing it would put back exactly the open/pick/close
+        // rhythm it exists to remove. So the auto-pause option is not
+        // consulted here; it still governs every keyboard open.
+        g.pausedOnOpen = !g.live && ActionMenuAutoPauseEnabled();
+        if (g.live) {
+            acclog::Write("UnifiedMenu", "open LIVE (pad) — no pause");
+        }
         if (g.pausedOnOpen) {
             acc::engine::BeginOverlayPause(
                 acc::engine::OverlayPauseOwner::UnifiedMenu);
@@ -398,6 +423,9 @@ int TargetSelection(int row) {
 
 bool IsActive() { return g.active; }
 bool IsSuspended() { return g.active && g.suspended; }
+bool IsLive() { return g.active && g.live; }
+
+void RequestLiveArm(bool on) { g_liveRequest = on; }
 
 // Re-speak the current category against the live menus. Used when a stacked
 // overlay (the combat queue) closes back onto this menu: the world stayed
@@ -481,9 +509,12 @@ void SetForegroundBlocked(bool blocked) {
 
 void ForceDisarm(const char* reason) {
     if (!g.active) return;
-    acclog::Write("UnifiedMenu", "disarm — reason=%s", reason ? reason : "?");
+    acclog::Write("UnifiedMenu", "disarm — reason=%s live=%d",
+                  reason ? reason : "?", g.live ? 1 : 0);
     g.active = false;
     g.suspended = false;
+    g.live = false;
+    g_liveRequest = false;
     if (g.pausedOnOpen)
         acc::engine::EndOverlayPause(
             acc::engine::OverlayPauseOwner::UnifiedMenu);
@@ -707,6 +738,17 @@ namespace {
 // we never paused, so there is no resume cue — speak an explicit close
 // confirmation instead so the user hears the menu dismissed.
 void CloseFromEsc() {
+// Live mode never held a pause, so there is nothing to resume and no engine
+// resume cue to serve as the close announcement. Speak the close and leave
+// the world exactly as it was — resuming a pause we did not take would undo
+// the player's own tactical pause. (Only a keyboard Esc reaches here in live
+// mode; the pad's B stays with the engine's cancel.)
+if (g.live) {
+    ForceDisarm("esc-live");
+    prism::Speak(acc::strings::Get(acc::strings::Id::ActionMenuClosed),
+                 /*interrupt=*/true);
+    return;
+}
 const bool wasPaused   = g.pausedOnOpen;
 const bool outOfCombat = !acc::combat::IsPartyInCombat();
 ForceDisarm("esc");
@@ -939,6 +981,15 @@ bool DispatchWithQueueAppend(void* tam, void* mi, const Cat& cur) {
 // unpause an active encounter — the confusion that shaped the
 // party-in-combat auto-close in combat.cpp.
 void ApplyPostFireClosePolicy() {
+    // Live mode never closes on a fire. Closing is what a modal does, and the
+    // pad's D-pad surface is not one: the user's next press is as likely to be
+    // "same action again" or "next category" as it is to be "done". Leaving it
+    // armed also keeps the D-pad meaningful — a closed menu would silently
+    // hand the next press back to the cycle bindings.
+    if (g.live) {
+        acclog::Write("UnifiedMenu", "live fire — staying open");
+        return;
+    }
     if (!acc::combat::IsPartyInCombat()) {
         if (acc::engine::WorldIsPaused()) {
             acclog::Write("UnifiedMenu",

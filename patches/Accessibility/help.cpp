@@ -200,23 +200,29 @@ constexpr Entry kEntries[] = {
     // The engine's own Help panel for pad users is a bare image of a
     // controller, so this section is the ONLY way a blind pad player learns
     // the bindings — which is also why the pad can reach both help surfaces
-    // itself (right trigger + D-Pad left / right; see pad_input.cpp).
-    // Tagged generously for Ctrl+F1: a pad user asking "what do I press here"
-    // wants the pad answer, not the keyboard one.
-    { S::HelpKeyPadMenuNav,       Grp::Controller,
+    // itself: both triggers together speak the current screen's keys, and the
+    // Quick Menu's own Help entry opens this list instead of that image (see
+    // pad_input.cpp). Tagged generously for Ctrl+F1: a pad user asking "what
+    // do I press here" wants the pad answer, not the keyboard one.
+    //
+    // Reading order follows the D-Pad's two modes: what the pad does in menus,
+    // then the switch, then each mode, then the chords.
+    { S::HelpKeyPadMenuNav,        Grp::Controller,
       kMenu | kActionMenu | kDialog | kContainer | kStore, false, true },
-    { S::HelpKeyPadInteract,      Grp::Controller, kWorld, false, true },
-    { S::HelpKeyPadCycleObjects,  Grp::Controller, kWorld, false, true },
-    { S::HelpKeyPadCycleCategory, Grp::Controller, kWorld, false, true },
-    { S::HelpKeyPadCycleEnds,     Grp::Controller, 0,      false, true },
-    { S::HelpKeyPadAnnounceFocus, Grp::Controller, kWorld, false, true },
-    { S::HelpKeyPadWalkToFocus,   Grp::Controller, 0,      false, true },
-    { S::HelpKeyPadBeacon,        Grp::Controller, 0,      false, true },
-    { S::HelpKeyPadActionMenu,    Grp::Controller, kWorld, false, true },
-    { S::HelpKeyPadHelp,          Grp::Controller, 0,      false, true },
-    { S::HelpKeyPadQuickMenu,     Grp::Controller, kWorld, false, true },
-    { S::HelpKeyPadCycleTargets,  Grp::Controller, kWorld, false, true },
-    { S::HelpKeyPadOptions,       Grp::Controller, 0,      false, true },
+    { S::HelpKeyPadInteract,       Grp::Controller, kWorld, false, true },
+    { S::HelpKeyPadModeSwitch,     Grp::Controller, kWorld, false, true },
+    { S::HelpKeyPadCycleObjects,   Grp::Controller, kWorld, false, true },
+    { S::HelpKeyPadCycleCategory,  Grp::Controller, kWorld, false, true },
+    { S::HelpKeyPadActionMenuNav,  Grp::Controller,
+      kWorld | kActionMenu, false, true },
+    { S::HelpKeyPadWalkToFocus,    Grp::Controller, 0,      false, true },
+    { S::HelpKeyPadBeacon,         Grp::Controller, 0,      false, true },
+    { S::HelpKeyPadDegrees,        Grp::Controller, kWorld | kMap, false, true },
+    { S::HelpKeyPadCameraOrient,   Grp::Controller, kWorld, false, true },
+    { S::HelpKeyPadHelp,           Grp::Controller, 0,      false, true },
+    { S::HelpKeyPadQuickMenu,      Grp::Controller, kWorld, false, true },
+    { S::HelpKeyPadCycleTargets,   Grp::Controller, kWorld, false, true },
+    { S::HelpKeyPadOptions,        Grp::Controller, 0,      false, true },
 };
 constexpr int kEntryCount =
     static_cast<int>(sizeof(kEntries) / sizeof(kEntries[0]));

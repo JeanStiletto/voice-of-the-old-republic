@@ -603,17 +603,20 @@ const char* Get(Id id) {
         case Id::HelpKeyModSettings:     return "Mod-Einstellungen findest du in den Optionen, ganz unten in der Liste";
         case Id::HelpKeyPadMenuNav:          return "In Men\xFCs: Steuerkreuz oder linker Stick bewegen, A best\xE4tigt, B geht zur\xFC" "ck";
         case Id::HelpKeyPadInteract:          return "A: Standardaktion am fokussierten Ziel (angreifen, \xF6" "ffnen, sprechen, aufheben)";
-        case Id::HelpKeyPadCycleObjects:     return "Steuerkreuz links und rechts: vorheriges und n\xE4" "chstes Objekt";
-        case Id::HelpKeyPadCycleCategory:    return "Steuerkreuz hoch und runter: vorherige und n\xE4" "chste Kategorie";
-        case Id::HelpKeyPadCycleEnds:        return "Linker Trigger mit Steuerkreuz links oder rechts: n\xE4" "chstes oder entferntestes Objekt";
-        case Id::HelpKeyPadAnnounceFocus:    return "Linker Trigger mit Steuerkreuz hoch: fokussiertes Objekt wiederholen";
-        case Id::HelpKeyPadWalkToFocus:      return "Linker Trigger mit Steuerkreuz runter: zum fokussierten Objekt laufen";
-        case Id::HelpKeyPadBeacon:           return "Rechter Trigger mit Steuerkreuz hoch: Audio-Bake zum fokussierten Objekt";
-        case Id::HelpKeyPadActionMenu:        return "X: Aktionsmen\xFC \xF6" "ffnen (andere Angriffe, Machtkr\xE4" "fte, Medipacks, Granaten)";
-        case Id::HelpKeyPadHelp:             return "Rechter Trigger mit Steuerkreuz links oder rechts: Tasten f\xFCr diesen Bildschirm oder diese Liste";
+        case Id::HelpKeyPadModeSwitch:       return "Linker Trigger: Steuerkreuz umschalten zwischen Objektwahl und Aktionsmen\xFC";
+        case Id::HelpKeyPadCycleObjects:     return "Objektwahl, Steuerkreuz links und rechts: vorheriges und n\xE4" "chstes Objekt";
+        case Id::HelpKeyPadCycleCategory:    return "Objektwahl, Steuerkreuz hoch und runter: vorherige und n\xE4" "chste Kategorie";
+        case Id::HelpKeyPadActionMenuNav:    return "Aktionsmen\xFC, Steuerkreuz: links und rechts wechseln die Kategorie, hoch und runter den Eintrag, A l\xF6st aus";
+        case Id::HelpKeyPadWalkToFocus:      return "Rechter Trigger mit rechter Schultertaste: zum fokussierten Objekt laufen";
+        case Id::HelpKeyPadBeacon:           return "Linker Trigger mit linker Schultertaste: Audio-Bake zum fokussierten Objekt";
+        case Id::HelpKeyPadDegrees:          return "Rechter Trigger: Blickrichtung in Grad ansagen";
+        case Id::HelpKeyPadCameraOrient:     return "Rechten Stick dr\xFC" "cken: Kamera zum n\xE4" "chsten Wegpunkt der Bake drehen, sonst zur n\xE4" "chsten Himmelsrichtung";
+        case Id::HelpKeyPadHelp:             return "Beide Trigger: Tasten f\xFCr diesen Bildschirm. Der Eintrag Hilfe im Schnellmen\xFC \xF6" "ffnet diese Liste";
         case Id::HelpKeyPadQuickMenu:        return "Y: Schnellmen\xFC";
         case Id::HelpKeyPadCycleTargets:     return "Linke und rechte Schultertaste: Ziele durchschalten";
         case Id::HelpKeyPadOptions:          return "Zur\xFC" "ck-Taste: Optionsmen\xFC";
+        case Id::PadModeCycle:               return "Objektwahl";
+        case Id::PadModeActionMenu:          return "Aktionsmen\xFC";
 
         case Id::HelpMenuOpened:    return "Tastenhilfe. Hoch und runter zum Lesen, Escape zum Schlie\xDF""en.";
         case Id::HelpMenuClosed:    return "Tastenhilfe geschlossen.";

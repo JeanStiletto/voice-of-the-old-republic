@@ -580,17 +580,20 @@ const char* Get(Id id) {
         case Id::HelpKeyModSettings:     return "Ustawienia moda s\xB9 w Opcjach, na dole listy";
         case Id::HelpKeyPadMenuNav:          return "W menu: krzy\xBF" "ak lub lewa ga\xB3ka przesuwaj\xB9, A zatwierdza, B cofa";
         case Id::HelpKeyPadInteract:          return "A: domy\x9Clna akcja na wybranym celu (atak, otwarcie, rozmowa, podniesienie)";
-        case Id::HelpKeyPadCycleObjects:     return "Krzy\xBF" "ak w lewo i w prawo: poprzedni i nast\xEApny obiekt";
-        case Id::HelpKeyPadCycleCategory:    return "Krzy\xBF" "ak w g\xF3r\xEA i w d\xF3\xB3: poprzednia i nast\xEApna kategoria";
-        case Id::HelpKeyPadCycleEnds:        return "Lewy spust z krzy\xBF" "akiem w lewo lub w prawo: najbli\xBFszy lub najdalszy obiekt";
-        case Id::HelpKeyPadAnnounceFocus:    return "Lewy spust z krzy\xBF" "akiem w g\xF3r\xEA: powt\xF3rz wybrany obiekt";
-        case Id::HelpKeyPadWalkToFocus:      return "Lewy spust z krzy\xBF" "akiem w d\xF3\xB3: id\x9F do wybranego obiektu";
-        case Id::HelpKeyPadBeacon:           return "Prawy spust z krzy\xBF" "akiem w g\xF3r\xEA: sygna\xB3 d\x9Fwi\xEAkowy do wybranego obiektu";
-        case Id::HelpKeyPadActionMenu:        return "X: otw\xF3rz menu akcji (inne ataki, moce Mocy, medpaki, granaty)";
-        case Id::HelpKeyPadHelp:             return "Prawy spust z krzy\xBF" "akiem w lewo lub w prawo: klawisze tego ekranu albo ta lista";
+        case Id::HelpKeyPadModeSwitch:       return "Lewy spust: prze\xB3\xB9" "cz krzy\xBF" "ak mi\xEA" "dzy wyborem obiekt\xF3w a menu akcji";
+        case Id::HelpKeyPadCycleObjects:     return "Wyb\xF3r obiekt\xF3w, krzy\xBF" "ak w lewo i w prawo: poprzedni i nast\xEApny obiekt";
+        case Id::HelpKeyPadCycleCategory:    return "Wyb\xF3r obiekt\xF3w, krzy\xBF" "ak w g\xF3r\xEA i w d\xF3\xB3: poprzednia i nast\xEApna kategoria";
+        case Id::HelpKeyPadActionMenuNav:    return "Menu akcji, krzy\xBF" "ak: w lewo i w prawo zmienia kategori\xEA, w g\xF3r\xEA i w d\xF3\xB3 pozycj\xEA, A wykonuje";
+        case Id::HelpKeyPadWalkToFocus:      return "Prawy spust z prawym bumperem: id\x9F do wybranego obiektu";
+        case Id::HelpKeyPadBeacon:           return "Lewy spust z lewym bumperem: sygna\xB3 d\x9Fwi\xEAkowy do wybranego obiektu";
+        case Id::HelpKeyPadDegrees:          return "Prawy spust: podaj kierunek w stopniach";
+        case Id::HelpKeyPadCameraOrient:     return "Naci\x9Cni\xEA" "cie prawej ga\xB3ki: obr\xF3\xE6 kamer\xEA do nast\xEApnego punktu sygna\xB3u albo do nast\xEApnej strony \x9Cwiata";
+        case Id::HelpKeyPadHelp:             return "Oba spusty: klawisze tego ekranu. Pozycja Pomoc w szybkim menu otwiera t\xEA list\xEA";
         case Id::HelpKeyPadQuickMenu:        return "Y: szybkie menu";
         case Id::HelpKeyPadCycleTargets:     return "Lewy i prawy bumper: zmiana celu";
         case Id::HelpKeyPadOptions:          return "Przycisk Back: menu opcji";
+        case Id::PadModeCycle:               return "Wyb\xF3r obiekt\xF3w";
+        case Id::PadModeActionMenu:          return "Menu akcji";
 
         case Id::HelpMenuOpened:    return "Pomoc klawiszy. G\xF3ra i d\xF3\xB3 czytaj\xB9, Escape zamyka.";
         case Id::HelpMenuClosed:    return "Pomoc klawiszy zamkni\xEAta.";

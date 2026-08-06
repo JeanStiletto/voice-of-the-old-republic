@@ -585,17 +585,20 @@ const char* Get(Id id) {
         case Id::HelpKeyModSettings:     return "Les r\xE9glages du mod sont dans les Options, en bas de la liste";
         case Id::HelpKeyPadMenuNav:          return "Dans les menus : croix directionnelle ou stick gauche pour se d\xE9placer, A valide, B revient en arri\xE8re";
         case Id::HelpKeyPadInteract:          return "A : action par d\xE9" "faut sur la cible actuelle (attaquer, ouvrir, parler, ramasser)";
-        case Id::HelpKeyPadCycleObjects:     return "Croix gauche et droite : objet pr\xE9" "c\xE9" "dent et suivant";
-        case Id::HelpKeyPadCycleCategory:    return "Croix haut et bas : cat\xE9gorie pr\xE9" "c\xE9" "dente et suivante";
-        case Id::HelpKeyPadCycleEnds:        return "G\xE2" "chette gauche avec croix gauche ou droite : objet le plus proche ou le plus \xE9loign\xE9";
-        case Id::HelpKeyPadAnnounceFocus:    return "G\xE2" "chette gauche avec croix haut : r\xE9p\xE9ter l'objet cibl\xE9";
-        case Id::HelpKeyPadWalkToFocus:      return "G\xE2" "chette gauche avec croix bas : marcher jusqu'\xE0 l'objet cibl\xE9";
-        case Id::HelpKeyPadBeacon:           return "G\xE2" "chette droite avec croix haut : balise sonore vers l'objet cibl\xE9";
-        case Id::HelpKeyPadActionMenu:        return "X : ouvrir le menu d'actions (autres attaques, pouvoirs, medpacs, grenades)";
-        case Id::HelpKeyPadHelp:             return "G\xE2" "chette droite avec croix gauche ou droite : touches de cet \xE9" "cran, ou cette liste";
+        case Id::HelpKeyPadModeSwitch:       return "G\xE2" "chette gauche : basculer la croix directionnelle entre s\xE9lection d'objets et menu d'actions";
+        case Id::HelpKeyPadCycleObjects:     return "S\xE9lection d'objets, croix gauche et droite : objet pr\xE9" "c\xE9" "dent et suivant";
+        case Id::HelpKeyPadCycleCategory:    return "S\xE9lection d'objets, croix haut et bas : cat\xE9gorie pr\xE9" "c\xE9" "dente et suivante";
+        case Id::HelpKeyPadActionMenuNav:    return "Menu d'actions, croix : gauche et droite changent de cat\xE9gorie, haut et bas d'entr\xE9" "e, A d\xE9" "clenche";
+        case Id::HelpKeyPadWalkToFocus:      return "G\xE2" "chette droite avec bouton de tranche droit : marcher jusqu'\xE0 l'objet cibl\xE9";
+        case Id::HelpKeyPadBeacon:           return "G\xE2" "chette gauche avec bouton de tranche gauche : balise sonore vers l'objet cibl\xE9";
+        case Id::HelpKeyPadDegrees:          return "G\xE2" "chette droite : annoncer l'orientation en degr\xE9s";
+        case Id::HelpKeyPadCameraOrient:     return "Pression du stick droit : tourner la cam\xE9ra vers le prochain point de la balise, sinon vers le point cardinal suivant";
+        case Id::HelpKeyPadHelp:             return "Les deux g\xE2" "chettes : touches de cet \xE9" "cran. L'entr\xE9" "e Aide du menu rapide ouvre cette liste";
         case Id::HelpKeyPadQuickMenu:        return "Y : menu rapide";
         case Id::HelpKeyPadCycleTargets:     return "Boutons de tranche gauche et droit : changer de cible";
         case Id::HelpKeyPadOptions:          return "Bouton Retour : menu des options";
+        case Id::PadModeCycle:               return "S\xE9lection d'objets";
+        case Id::PadModeActionMenu:          return "Menu d'actions";
 
         case Id::HelpMenuOpened:    return "Aide des touches. Haut et bas pour lire, \xC9""chap pour fermer.";
         case Id::HelpMenuClosed:    return "Aide des touches ferm\xE9""e.";

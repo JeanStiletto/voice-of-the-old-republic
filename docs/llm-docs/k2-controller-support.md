@@ -182,8 +182,13 @@ rows (F9–F12, A, B, C, D), so they are shared numbering, not pad-exclusive:
   the manager converts stick axes to the same nav codes keyboard arrows become.
 - Engine-side pad navigation DOES move the engine's active control, so our
   `SetActiveControl` focus hook fires. That is why the main menu already speaks.
-- The in-world D-Pad is **inert and free**: all four codes arrive at the manager
-  during world play, nothing consumes them, nothing happens.
+- ~~The in-world D-Pad is **inert and free**: all four codes arrive at the
+  manager during world play, nothing consumes them, nothing happens.~~
+  **REFUTED 2026-08-06 (fourth round, by play rather than by log).** The codes
+  do arrive, and the engine *does* consume them: they drive
+  `CSWGuiActionMenuIos`. The round that called them inert was a blind test
+  watching a silent, purely visual highlight move — "nothing happens" meant
+  "nothing was announced". See the level-1 answer below.
 - LT/RT confirmed dead — zero log lines from either.
 
 **Three defects the round exposed, all ours, not the engine's:**
@@ -293,6 +298,12 @@ bar — i.e. of our unified action menu. Two levels, both verified:
 - **Input** (`0x00747130`, vtable slot 15): `0x31` D-Pad up = step -1,
   `0x32` D-Pad down = step +1, `0x27` A = activate the selected variant,
   `0x28` B = close.
+- **Level 1 is D-Pad left / right** — `0x2f` / `0x30`. Settled 2026-08-06 by
+  play, not by decompile: a sighted pass over the shipped build steps
+  categories with left/right and entries with up/down, A confirming. This
+  closes the file's longest-standing OPEN item, and it means the whole D-Pad
+  is the engine's action surface during world play — the menu is not something
+  a pad player *opens*, it is simply there.
 - **Activate** (`FUN_0074d930(category, variantIndex)`) splits at 6 and stamps
   the engine's own selection fields — the same mechanism KOTOR 1 uses:
   - category 0..5 → `*(this + 0x1c7c + cat*4) = action_id`, the per-column
@@ -347,6 +358,24 @@ it.
 - **Chords** — any face/shoulder button held together with LT or RT, since we
   would be doing the combining ourselves.
 
+**Where a chord has to be claimed.** A physical button is mapped to a
+*different* InputIndex per input class, and the two arrive at two different
+hooks. The in-world class is the one on which the engine actually performs the
+action, so a chord that must take an action away from the engine has to be
+consumed at `CClientExoAppInternal::HandleInputEvent`, not at the GUI manager.
+In-world codes worth knowing:
+
+- LB = `0xcc`, RB = `0xcd` — Cycle Target left / right.
+- L3 = `0xf2` — Flourish Weapon. Cosmetic; the freest button on the pad.
+- R3 = `0x01` — First-Person View. **`0x01` is also `MOUSE_BUTTON1`, the right
+  mouse button (mouse-look).** Anything binding R3 must check that the physical
+  button is up before consuming, or every mouse user with a pad plugged in
+  loses right-click. `pad::TranslateClientEvent` does this with
+  `GetAsyncKeyState(VK_RBUTTON)`, the same twin-key test the shared manager
+  codes use.
+
+L3 and R3 have **no** GUI-class mapping at all, so they are in-world only.
+
 ## SUSPECTED
 
 - `CSWGuiActionMenuIos` is the in-world action surface a pad opens on a target
@@ -368,10 +397,8 @@ it.
 - What sets `CExoInput+0x1c` (the PS3-layout compat flag)?
 - Whether `AspyrFloatingButtonIcon` (on-screen button prompts) appears on PC and
   where it takes its glyphs from.
-- **Which input picks the CATEGORY (level 1) in `CSWGuiActionMenuIos`.** The
-  variant level is nailed (D-Pad up/down + A). Level 1 runs off a per-category
-  active test in `FUN_00746950` writing `DAT_00a10340`; the input that drives
-  that test is not yet identified. One log line from a test round settles it.
+- ~~Which input picks the CATEGORY (level 1) in `CSWGuiActionMenuIos`.~~
+  **SETTLED 2026-08-06: D-Pad left / right.** See the class section above.
 - Whether the pad ever changes what our `SetActiveControl` focus hook sees —
   i.e. whether engine-side pad navigation moves the engine's active control (in
   which case our announcements fire for free) or only moves a private cursor.

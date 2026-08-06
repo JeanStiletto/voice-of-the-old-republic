@@ -69,6 +69,16 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h2>v0.6.4</h2>
 
+<h3>KOTOR 2 — controller support:</h3>
+
+- KOTOR 2 can be played with a controller. Everything the mod speaks for keyboard players it now speaks for pad players: in menus the D-pad and left stick move, A confirms and B goes back, all with the same one-entry-per-press announcements the keyboard gives; in the world the left stick walks, the right stick turns the camera, and the game's own Quick Menu on Y is read out. (KOTOR 2's Steam release ships gamepad support; KOTOR 1 has none, so this is a KOTOR 2 feature only. Plug the pad in before launching — the game only looks for controllers once, at startup.)
+- The D-pad does two jobs, and the left trigger switches between them. On object selection, left and right step through the objects around you and up and down change category — the pad's version of the `,` and `.` keys. On the action menu, left and right change category and up and down change entry, with A firing the selected one. Each pull of the left trigger announces which of the two you have switched to.
+- The action menu on a controller never pauses the game and never closes after you fire. It is a surface the D-pad sits on rather than a menu you open and dismiss, so you can fire an attack, step one category over and throw a grenade without the world stopping in between — the way the game's own controller action menu works for sighted players. The keyboard action menu is unchanged and still follows your auto-pause setting.
+- The remaining bindings sit on the triggers and the right stick: right trigger alone announces your facing in degrees; left trigger with the left shoulder button drops an audio beacon on the focused object; right trigger with the right shoulder button walks you to it; both triggers together read out the keys for the screen you are on; and pressing the right stick turns the camera to the beacon's next waypoint, or to the next compass direction when no beacon is armed.
+- The Quick Menu's "Help" entry now opens the mod's key list. It normally shows a picture of a controller with the buttons labelled, which tells a blind player nothing — so the entry now does what it promises. That list gains a Controller section, present only when a pad is connected, covering every binding above.
+- Wheeled droids no longer grind on when you push them into a wall with the stick. The mod silences a stuck drive loop, but it was watching the movement keys, and a stick-driven walk holds no key.
+- On the map screen the left stick pans the map cursor, at a speed that follows how far you push it. The D-pad still navigates the screen's own controls.
+
 <h3>Polish translation:</h3>
 
 - The mod now speaks Polish, and the installer runs in Polish. KOTOR's Polish release — the 2004 Licomp Empik Multimedia edition, subtitles only — was never sold on Steam or GoG, so Polish players lay it over a Steam or GoG copy; the mod recognises that and switches language on its own. Everything the mod says is translated: menus, navigation cues, help, the tutorial hints, effect names on the examine screen, and the combat callouts. Like French, Italian, Spanish and Russian, this is a machine-translated first pass that a native speaker will want to improve. The game's own dialogue and item names come from the Polish translation itself, as before.

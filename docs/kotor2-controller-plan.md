@@ -19,6 +19,12 @@ Test-round history, because two of the three taught the file something:
    noise in the Y menu, pad navigation not cancelling the previous entry's
    speech, and the left stick navigating menu entries on the map screen instead
    of driving the map cursor.
+4. Fourth round — **the premise under Phase 1 turned out to be wrong**, and
+   correcting it reshaped the whole in-world binding set. The in-world D-Pad is
+   not free: it is the engine's action menu, categories on left/right and
+   entries on up/down, A confirming. Every earlier round had been consuming it
+   and reporting "nothing happens", which for a blind tester is what a silent
+   visual highlight looks like. See "The D-Pad is the action menu" below.
 
 This file is written to be executed cold: a fresh session should be able to work
 straight through it without the investigation conversation.
@@ -38,22 +44,57 @@ small edits at the seams they hook into:
   `map_ui_cursor.cpp` (stick pan), `core_tick.cpp` (two new phases), `strings*`
   (13 new localised strings, 7 languages).
 
+## The D-Pad is the action menu
+
+The single most important fact in this file, and the one every earlier round
+got wrong. During world play the D-Pad drives `CSWGuiActionMenuIos`: **left and
+right step the nine categories, up and down step the entries in the open
+category, A confirms.** It is not a menu a pad player opens — it is simply
+there, over a running world, always one thumb away.
+
+That is a better idiom than the mod had, so the mod **adopts** it instead of
+working around it. The D-Pad now drives the mod's own unified action menu in a
+new LIVE mode (`unified_action_menu.h`): never pauses whatever the auto-pause
+option says, and never closes after firing. The engine's menu stays suppressed
+— ours speaks, and drives the same engine machinery.
+
+The cost is that the D-Pad has two jobs — FINDING a thing and ACTING on it —
+and each wants all four directions. **The left trigger switches between them**,
+and the mode announces itself.
+
 **The pad binding set, as built.** In menus the pad simply IS the keyboard.
 On the map screen the left stick pans the virtual cursor (the D-Pad still
 navigates the panel). In the world:
 
-- D-Pad left / right — previous / next object in the current cycle category
-- D-Pad up / down — previous / next category
-- A — default action on the narrated target (the keyboard's Enter, not the
-  engine's default-action-on-last-clicked): attack, open, talk, pick up
-- X — open / close the unified action menu. Everything A is not: the other
-  attacks, force powers, medpacs, grenades
-- LT + D-Pad left / right — nearest / farthest object
-- LT + D-Pad up / down — announce focus / walk to focus
-- RT + D-Pad up — beacon to focus
-- RT + D-Pad left / right — context help / the F1 list
-- Y — the engine's Quick Menu, now spoken
-- LB / RB, Back, Start — left to the engine
+- LT (alone) — switch the D-Pad between object selection and the action menu
+- Object selection, D-Pad left / right — previous / next object
+- Object selection, D-Pad up / down — previous / next cycle category
+- Action menu, D-Pad left / right — previous / next action category
+- Action menu, D-Pad up / down — previous / next entry
+- A — object selection: default action on the narrated target (the keyboard's
+  Enter, not the engine's default-action-on-last-clicked). Action menu: fire
+  the selected entry. In either mode, with the menu not yet up, A opens it
+- RT (alone) — announce the facing in degrees (the keyboard's AltGr)
+- LT + LB — audio beacon to the focused object
+- RT + RB — walk to the focused object
+- LT + RT — the current screen's keys (the keyboard's Ctrl+F1)
+- Right stick press — camera orient (the keyboard's N)
+- Y — the engine's Quick Menu, now spoken; its **Help** entry opens the mod's
+  key list instead of the engine's controller picture
+- X (Switch Party Leader), B, LB / RB alone, Back, Start — left to the engine
+
+Each trigger's solo job fires on RELEASE, and a chord taken during the hold
+cancels it. This is not a user-facing rule — it is only what makes LT+LB a
+beacon rather than a beacon plus an unwanted mode switch, and firing on press
+cannot do it because on press we do not yet know a chord is coming.
+
+**Not bound on the pad:** nearest / farthest object (keyboard Ctrl+`,` /
+Ctrl+`.`) and repeat-focus (keyboard `-`). Both lost their LT + D-Pad home when
+the trigger layer was rebuilt, and neither was worth a new one. Repeat-focus
+was going to ride on the mode switch — switch back to object selection, hear
+what you are focused on — but the cycle's announce speaks with `interrupt=true`
+(correctly; it is what `-` does) and so cancels the mode word rather than
+queueing under it. One press, one cue: the switch says only the mode's name.
 
 Engine reference for everything below: **`docs/llm-docs/k2-controller-support.md`**.
 Read it before Phase 3 or later; Phases 0–2 need only the code table repeated
@@ -189,24 +230,28 @@ ergonomics were wrong — mid-combat a chord is a lost round, and the log shows
 the user never found it (`Pad: trigger state` fires 12 times, never with a
 D-Pad press inside the hold).
 
-Fixed by moving the action menu to a **bare X press**. X is free in the only
-sense that matters: its engine meaning is Switch Party Leader, which is
-redundant on the pad for this mod's users — the Y Quick Menu's second entry
-does exactly that, and better (it expands into the three party slots, so you
-pick rather than cycle), and keyboard Tab still does it. So X costs nothing and
-sits right next to A: **A does the obvious thing, X asks what else.** Pressing X
-again closes the menu. With no focused target it opens on the personal block
-rather than refusing — medpacs and stims are exactly what a player wants when
-nothing is targeted. RT + D-Pad down is now unbound.
+Fixed first by moving the action menu to a **bare X press** — then, one round
+later, **superseded entirely**. X is gone and back to the engine's Switch Party
+Leader; the action menu lives on the D-Pad. See "The D-Pad is the action menu"
+near the top of this file.
 
-**Still unanswered: how a SIGHTED pad player reaches the engine's own action
-menu.** `Pad.ActionMenu` has logged zero lines across every round, so
-`CSWGuiActionMenuIos` has never once opened while the mod was loaded. The most
-likely reason is that our A binding claims the button that opens it — which
-would make the plan's long-standing open question answered by construction, but
-that is inference, not evidence. It stopped blocking anything the moment X
-became the mod's own route in, so it is now a curiosity rather than a
-dependency.
+The X fix was right about the problem and wrong about the answer. It reasoned
+that the gesture reaching the other eight categories must not be a chord, and
+put it on the nearest free button. The real answer was that it should not be a
+*gesture* at all: the engine had already put that surface under the D-Pad, and
+the mod was consuming the codes that drove it.
+
+**Answered: how a SIGHTED pad player reaches the engine's action menu.** With
+the D-Pad. And the reason `Pad.ActionMenu` logged zero lines across every round
+is not the A-button inference this file recorded — it is that Phase 1 consumed
+all four D-Pad codes in the world from the day it landed, so the engine's menu
+was never reachable while the mod was loaded.
+
+The general lesson is the same one the codes-65/66 refutation taught, from the
+other direction: **"nothing happens" from a blind test round means "nothing was
+announced".** A purely visual effect and no effect at all are indistinguishable
+from the tester's seat, and the difference has to come from somewhere else — a
+decompile, a log line, or a sighted pass.
 
 **Not a defect — the empty cycle in a fresh area.** D-Pad category stepping
 found nothing anywhere, but the log shows why and it is correct behaviour: the
@@ -280,17 +325,16 @@ once at input init):
 
 ## Phase 1 — in-world bindings — IMPLEMENTED
 
-**Key finding that shapes this phase: the D-Pad is completely free in the
-world.** All four codes arrive at the manager during world play, nothing
-consumes them, nothing happens. And they arrive at a hook we already own, so no
-new input reader is needed for them.
-
-Bindings to add:
-
-- D-Pad left / right — previous / next object in the current cycle category
-- D-Pad up / down — previous / next category
-- LT and RT become modifier layers for the remainder: nearest, farthest,
-  announce focus, walk to focus, beacon
+**The key finding that shaped this phase was wrong.** It read: "the D-Pad is
+completely free in the world — all four codes arrive at the manager during
+world play, nothing consumes them, nothing happens." The codes do arrive at a
+hook we already own, which is the part that held; but the engine consumes them
+to drive `CSWGuiActionMenuIos`, and "nothing happens" was a blind reading of a
+silent visual highlight. The binding set below was rebuilt on the corrected
+premise — see "The D-Pad is the action menu". What survives unchanged: the
+manager hook is the right place, no new input reader is needed, and the cycle
+bindings themselves are exactly as described (they are now one of the D-Pad's
+two modes rather than its only job).
 
 Reading the triggers needs **XInput**, not DirectInput: in DirectInput both
 triggers share the single lZ axis and cancel each other out, so LT cannot be
@@ -312,15 +356,22 @@ one sweep per 2 s while no pad answers. Trigger threshold is 60 of 255, firmer
 than XInput's own 30: these are a MODIFIER, and one that engages on a resting
 finger would silently reroute the D-Pad.
 
-No chord consume turned out to be needed: every trigger binding pairs with the
-D-Pad, which the engine ignores in the world anyway, so nothing has to be taken
-away from the engine. `A` is the one button we do claim, and it is claimed
-outright rather than as a chord.
+**The chord consume the first cut skipped is now required.** That cut reasoned
+"every trigger binding pairs with the D-Pad, which the engine ignores in the
+world anyway" — the same wrong premise, and it collapsed with it. The chords
+now pair with the shoulders, which the engine really does use (Cycle Target
+left / right), so they are claimed at `OnClientHandleInputEvent` via
+`pad::TranslateClientEvent`. That is the route the engine performs the action
+on; consuming at the manager would leave it running alongside ours.
 
-Two bindings beyond the plan's list, both because a pad player otherwise has no
-route to them at all: **RT + D-Pad down** opens the mod's unified action menu
-(the Shift+Enter gesture), and **RT + D-Pad left / right** reach the two help
-surfaces. See Phase 5 — the engine's Help panel is a picture.
+**The one genuinely dangerous code.** The right stick press arrives in-world as
+InputIndex `0x01`, which is also `MOUSE_BUTTON1` — the right mouse button.
+Consuming it blindly takes mouse-look away from every player with a pad plugged
+in. `TranslateClientEvent` checks `GetAsyncKeyState(VK_RBUTTON)` first, the
+same twin-key discriminator the shared manager codes use.
+
+The trigger threshold is 60 of 255, firmer than XInput's own 30: a trigger that
+engaged on a resting finger would silently switch the D-Pad's mode.
 
 ## Phase 2 — analog movement — IMPLEMENTED (on a corrected premise)
 
@@ -431,29 +482,29 @@ the same nine categories, drives the same engine calls, already speaks, and is
 already tested. Reading theirs would mean reverse-engineering a second custom
 widget tree across two levels for no functional gain.
 
-Still open before implementing: **which input picks the category (level 1)**.
-The variant level is nailed; level 1 runs off a per-category active test in
-`FUN_00746950` writing the global `DAT_00a10340`. One log line from a focused
-test settles it, and it decides whether suppressing their menu also frees that
-input for us.
+**Level 1 is D-Pad left / right** — settled in the fourth round. So suppressing
+their menu does not merely free an input, it frees the whole D-Pad, and the
+mod's answer is to keep their *idiom* while replacing their *menu*: ours runs
+on the same four directions, in LIVE mode. See "The D-Pad is the action menu".
 
-**As built — and the open question is now answered by the log rather than
-blocking on it.** `pad_actionmenu.cpp` watches `DAT_00a10340` every tick. On
-the open edge it logs the category, writes -1 (the engine's own "nothing open"
-value, which its draw and input paths already have to handle), and opens the
-mod's unified action menu on the narrated target instead.
+**As built.** `pad_actionmenu.cpp` watches `DAT_00a10340` every tick and, on an
+open edge, logs the category and writes -1 (the engine's own "nothing open"
+value, which its draw and input paths already handle). It no longer opens ours
+in its place — the D-Pad does that, on the player's own press, and arming a
+second menu from a tick would both fight the one the user is navigating and
+break the unified menu's hard rule about input context.
 
-Two things to watch in the first test round:
+Two things to watch:
 
-1. **The likeliest outcome is that `Pad.ActionMenu` lines never appear at
-   all.** The most plausible level-1 opener is A on a target — and the pad's A
-   binding from Phase 1 already claims A in the world, so theirs would never
-   open. If the log is silent, that IS the answer to the open question.
-2. **This is the one place that WRITES engine state.** If the pad action menu
-   misbehaves — a stuck highlight, a frozen category, anything odd right after
-   an action — the write is the first suspect and backing it out is a two-line
-   change (drop the `CloseEngineMenu()` call and keep the log). The write is
-   SEH-guarded and every occurrence is logged.
+1. **`Pad.ActionMenu` lines should never appear.** The four D-Pad codes are
+   consumed in the world before the engine sees them, so its menu has no way to
+   open. A line in a log means a press got past the seam — that is the thing to
+   investigate, not the close.
+2. **This is the one place that WRITES engine state.** If anything looks odd
+   right after an action — a stuck highlight, a frozen category — the write is
+   the first suspect, and backing it out is a two-line change (drop the
+   `CloseEngineMenu()` call, keep the log). The write is SEH-guarded and every
+   occurrence is logged.
 
 ## Phase 5 — help for pad users — IMPLEMENTED
 
@@ -480,10 +531,19 @@ carrying `val = ±1`, and a D-Pad code — because the face and shoulder codes a
 shared with C, D and the function keys, which a keyboard-only KOTOR 2 session
 really does produce.
 
-The "no way in at all" worry is closed from the other end too: **RT + D-Pad
-right** opens this list and **RT + D-Pad left** speaks the current screen's
-keys, so a pad user reaches both help surfaces without touching a keyboard, and
-navigates the list with the D-Pad (`help::HandleNavCode`).
+The "no way in at all" worry is closed from the other end too, and the fourth
+round improved on how. **Both triggers together** speak the current screen's
+keys. The list itself is reached through the engine's own affordance: the Y
+Quick Menu's eighth entry is **Help**, and what it opens is exactly that
+useless controller picture — so the mod claims that entry and opens its own key
+list instead. The entry now does what it always promised, no binding was spent
+on it, and a pad player looking for help finds it where the game already says
+it is. Navigation is the D-Pad (`help::HandleNavCode`) as before.
+
+The entry is identified by position — after the decorative filter the chain is
+exactly the eight captioned entries in `gamepad.txt`'s own order, Help last —
+and the count is checked first, so if the filter ever lets a quad through the
+mod declines rather than firing the wrong entry.
 
 ## Combined test round (all six phases in one pass)
 
@@ -504,22 +564,42 @@ that the menu steps prove the seam before the world steps rely on it.
    discriminator, and it must not regress.
 7. With the list open, navigate it with the D-Pad and close it with B.
 
-**World — cycling (Phase 1).**
+**World — the D-Pad's two modes (Phase 1).**
 
-8. D-Pad left/right steps objects, up/down steps categories, each with the same
-   speech the keyboard `,` `.` produce.
-9. LT + D-Pad left/right — nearest / farthest object.
-10. LT + D-Pad up — repeat focus. LT + D-Pad down — walks there; press again to
-    cancel.
-11. RT + D-Pad up — beacon; press again to cancel.
-12. RT + D-Pad down — the unified action menu opens and speaks; D-Pad navigates
-    it, A fires, B closes.
-13. RT + D-Pad left — this screen's keys. RT + D-Pad right — the full list.
-14. A on a focused door / container / NPC — it opens / loots / talks, i.e. what
-    keyboard Enter does.
+8. D-Pad left/right steps objects, up/down steps cycle categories — the same
+   speech the keyboard `,` `.` produce. This is the default mode.
+9. A on a focused door / container / NPC — it opens / loots / talks, i.e. what
+   keyboard Enter does.
+10. Pull LT and let go. Expect "action menu" (or its localised name), then
+    nothing further. The mode word is the whole announcement here — the menu
+    itself opens on the next press, deliberately.
+11. Press any D-Pad direction. The action menu opens and speaks its category.
+    Then: left/right steps categories, up/down steps entries, A fires. **The
+    world must keep running** — no pause cue, before or after firing, whatever
+    the "Action Menu" auto-pause option says.
+12. Fire something, then press D-Pad again. The menu is still there, on the
+    same entry. This is the whole point of live mode; a close here is a defect.
+13. Pull LT and let go again. Expect "object selection" — that word and nothing
+    else — and the D-Pad back on the cycle.
+14. **The collision test.** Pull and hold LT, press LB, release LT. Expect the
+    beacon only — no mode switch, and no mode word spoken. Then the same with
+    RT + RB (autowalk). Press each a second time to cancel.
+15. Pull RT alone and let go — the facing in degrees, same phrasing as keyboard
+    AltGr. Then on the map screen, same button: the map variant of that line.
+16. Hold LT, pull RT, release both — this screen's keys. Neither mode switch
+    nor degrees may also fire.
+17. Press the right stick — the camera turns to the beacon's next waypoint, or
+    to the next compass direction with no beacon armed. Then, **with a mouse
+    connected, right-click**: mouse-look must still work. That is the
+    `MOUSE_BUTTON1` guard, and it is the one regression here that would hurt a
+    player who never touches a pad.
+18. Press X — the engine's Switch Party Leader, back where it was. It must no
+    longer open the action menu.
 
 If the triggers do nothing at all, grep the log for `Pad: XInput` — either the
-bind line naming the DLL, or the "no XInput DLL resolved" line.
+bind line naming the DLL, or the "no XInput DLL resolved" line. If a chord
+fires its action *and* the engine's (a beacon plus a target cycle), the consume
+is not landing: grep `Diag.ClientHIE` for `CONSUMED — pad binding`.
 
 **World — drive loop (Phase 2).** With T3-M4 (or any wheeled droid) as leader,
 push the LEFT STICK into a wall and hold. The drive loop should go silent after
@@ -530,18 +610,22 @@ if `pushing` stays 0, that line says whether the stick read reached us at all.
 
 **Quick Menu (Phase 3).** Y in the world. Expect "Quick menu" then the focused
 entry; D-Pad steps entries and each is spoken; Party Leader expands and speaks
-party names; A activates, B or Y closes. Then confirm the D-Pad is back on the
-cycle bindings afterwards — a stuck arm would leave them dead, and that is the
-failure mode worth checking explicitly.
+party names; A activates, B or Y closes. Then confirm the D-Pad is back on
+whichever mode it was in afterwards — a stuck arm would leave it dead, and that
+is the failure mode worth checking explicitly.
 
-**Action menu (Phase 4).** Grep the log for `Pad.ActionMenu`. Silence means the
-engine's menu never opened (most likely — Phase 1's A binding would have
-claimed its opener), which is a pass. Lines mean it did open, and the category
-number in them answers the last open question in this file.
+Then step to the LAST entry, **Help**, and press A: the mod's key list must
+open, not the controller picture. If the engine's picture appears instead, grep
+for the `Quick Menu chain has N entries` line — the decorative filter let
+something through and the mod declined on purpose.
 
-**Help (Phase 5).** Open the F1 list any way you like and read to the end: a
-"Controller" section with thirteen lines should be there with a pad connected,
-and completely absent without one.
+**Action menu (Phase 4).** Grep the log for `Pad.ActionMenu`. Silence is the
+pass: the D-Pad codes are consumed before the engine sees them, so its menu
+cannot open. Any line means a press got past the seam.
+
+**Help (Phase 5).** Open the key list from the Quick Menu's Help entry and read
+to the end: a "Controller" section with fourteen lines should be there with a
+pad connected, and completely absent without one.
 
 ## How to run and test
 

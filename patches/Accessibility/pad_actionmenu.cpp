@@ -7,9 +7,7 @@
 
 #include "engine_game.h"
 #include "engine_rebase.h"
-#include "interact_dispatch.h"
 #include "log.h"
-#include "unified_action_menu.h"
 
 namespace acc::pad::actionmenu {
 
@@ -69,24 +67,23 @@ void Tick() {
         return;
     }
 
-    // Open edge. Log the category first — this line, plus the surrounding
-    // `Menus.Input` codes, is what settles which pad input drives level 1.
+    // Open edge. Close it and say so.
+    //
+    // No longer opens ours in its place. The D-Pad is the mod's action surface
+    // now (pad_input.cpp), and it opens the unified menu in LIVE mode on the
+    // player's own press — so arming a second one from here would fight the
+    // one the user is already navigating. This is a backstop, not a route in:
+    // the D-Pad codes are consumed before the engine sees them, so the engine
+    // menu should never open at all, and a Pad.ActionMenu line in a log means
+    // something got past that.
     acclog::Write("Pad.ActionMenu",
                   "engine menu OPENED on category %d (0-5 personal column, "
-                  "6-8 target row) — closing it and opening ours instead",
+                  "6-8 target row) — closing it; the D-Pad drives ours",
                   category);
     g_wasOpen = true;
 
     const bool closed = CloseEngineMenu();
     g_wasOpen = !closed;
-
-    // Ours, on the narrated target — the exact Shift+Enter gesture. If our
-    // menu is already up (the user opened it via RT + D-Pad down and the
-    // engine's opened underneath), leave it alone: re-arming would move the
-    // cursor out from under them mid-navigation.
-    if (!acc::unified_menu::IsActive()) {
-        acc::interact::InteractNarratedTarget(/*forceRadial=*/true);
-    }
 }
 
 }  // namespace acc::pad::actionmenu

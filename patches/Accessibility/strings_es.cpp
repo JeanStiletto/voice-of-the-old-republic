@@ -586,17 +586,20 @@ const char* Get(Id id) {
         case Id::HelpKeyModSettings:     return "Los ajustes del mod est\xE1n en Opciones, al final de la lista";
         case Id::HelpKeyPadMenuNav:          return "En los men\xFAs: cruceta o palanca izquierda para moverte, A confirma, B vuelve atr\xE1s";
         case Id::HelpKeyPadInteract:          return "A: acci\xF3n por defecto sobre el objetivo enfocado (atacar, abrir, hablar, recoger)";
-        case Id::HelpKeyPadCycleObjects:     return "Cruceta izquierda y derecha: objeto anterior y siguiente";
-        case Id::HelpKeyPadCycleCategory:    return "Cruceta arriba y abajo: categor\xED" "a anterior y siguiente";
-        case Id::HelpKeyPadCycleEnds:        return "Gatillo izquierdo con cruceta izquierda o derecha: objeto m\xE1s cercano o m\xE1s lejano";
-        case Id::HelpKeyPadAnnounceFocus:    return "Gatillo izquierdo con cruceta arriba: repetir el objeto enfocado";
-        case Id::HelpKeyPadWalkToFocus:      return "Gatillo izquierdo con cruceta abajo: caminar hasta el objeto enfocado";
-        case Id::HelpKeyPadBeacon:           return "Gatillo derecho con cruceta arriba: baliza sonora hacia el objeto enfocado";
-        case Id::HelpKeyPadActionMenu:        return "X: abrir el men\xFA de acciones (otros ataques, poderes de la Fuerza, medpacs, granadas)";
-        case Id::HelpKeyPadHelp:             return "Gatillo derecho con cruceta izquierda o derecha: teclas de esta pantalla, o esta lista";
+        case Id::HelpKeyPadModeSwitch:       return "Gatillo izquierdo: cambiar la cruceta entre selecci\xF3n de objetos y men\xFA de acciones";
+        case Id::HelpKeyPadCycleObjects:     return "Selecci\xF3n de objetos, cruceta izquierda y derecha: objeto anterior y siguiente";
+        case Id::HelpKeyPadCycleCategory:    return "Selecci\xF3n de objetos, cruceta arriba y abajo: categor\xED" "a anterior y siguiente";
+        case Id::HelpKeyPadActionMenuNav:    return "Men\xFA de acciones, cruceta: izquierda y derecha cambian de categor\xED" "a, arriba y abajo de entrada, A ejecuta";
+        case Id::HelpKeyPadWalkToFocus:      return "Gatillo derecho con bot\xF3n superior derecho: caminar hasta el objeto enfocado";
+        case Id::HelpKeyPadBeacon:           return "Gatillo izquierdo con bot\xF3n superior izquierdo: baliza sonora hacia el objeto enfocado";
+        case Id::HelpKeyPadDegrees:          return "Gatillo derecho: anunciar la orientaci\xF3n en grados";
+        case Id::HelpKeyPadCameraOrient:     return "Pulsar la palanca derecha: girar la c\xE1mara hacia el siguiente punto de la baliza, o al siguiente punto cardinal";
+        case Id::HelpKeyPadHelp:             return "Ambos gatillos: teclas de esta pantalla. La entrada Ayuda del men\xFA r\xE1pido abre esta lista";
         case Id::HelpKeyPadQuickMenu:        return "Y: men\xFA r\xE1pido";
         case Id::HelpKeyPadCycleTargets:     return "Botones superiores izquierdo y derecho: cambiar de objetivo";
         case Id::HelpKeyPadOptions:          return "Bot\xF3n Atr\xE1s: men\xFA de opciones";
+        case Id::PadModeCycle:               return "Selecci\xF3n de objetos";
+        case Id::PadModeActionMenu:          return "Men\xFA de acciones";
 
         case Id::HelpMenuOpened:    return "Ayuda de teclas. Arriba y abajo para leer, Escape para cerrar.";
         case Id::HelpMenuClosed:    return "Ayuda de teclas cerrada.";

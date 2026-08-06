@@ -1673,21 +1673,27 @@ enum class Id : int {
     // Mod features.
     HelpKeyModSettings,
     // Controller (KOTOR 2, pad present). Order is the reading order: what the
-    // pad does in menus first, then in the world, then the two trigger layers,
-    // then the engine's own pad bindings worth knowing.
+    // pad does in menus first, then the D-Pad's two modes and the switch
+    // between them, then the trigger chords, then the engine's own pad
+    // bindings worth knowing.
     HelpKeyPadMenuNav,
     HelpKeyPadInteract,
+    HelpKeyPadModeSwitch,
     HelpKeyPadCycleObjects,
     HelpKeyPadCycleCategory,
-    HelpKeyPadCycleEnds,
-    HelpKeyPadAnnounceFocus,
+    HelpKeyPadActionMenuNav,
     HelpKeyPadWalkToFocus,
     HelpKeyPadBeacon,
-    HelpKeyPadActionMenu,
+    HelpKeyPadDegrees,
+    HelpKeyPadCameraOrient,
     HelpKeyPadHelp,
     HelpKeyPadQuickMenu,
     HelpKeyPadCycleTargets,
     HelpKeyPadOptions,
+    // Spoken when the left trigger switches what the D-Pad is for. Short —
+    // each mode announces its own content underneath the mode word.
+    PadModeCycle,
+    PadModeActionMenu,
 
     //      F1 list framing.
     //   HelpMenuOpened     — opener cue spoken on F1. Tells the user how to

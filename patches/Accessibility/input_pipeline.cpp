@@ -41,6 +41,7 @@
                              // owns the number keys
 #include "log.h"
 #include "narrated_target.h" // TryGet — pull the unified "current focus"
+#include "pad_input.h"       // TranslateClientEvent — the pad's in-world route
                              // slot to drive deterministic targeting
 #include "passive_narrate.h" // ReannounceCurrentShowObjectTarget — Q/E
 #include "engine_rebase.h"
@@ -217,6 +218,20 @@ extern "C" int __cdecl OnClientHandleInputEvent(void* this_ptr,
     // pad's movement signal on the strength of a misread test round; the stick
     // is now read directly through XInput instead. Nothing to do with them
     // here.
+
+    // ---- KOTOR 2 gamepad, in-world route -----------------------------------
+    // The shoulder chords (LT+LB beacon, RT+RB autowalk) and the right-stick
+    // press have to be claimed HERE rather than at the manager: this is the
+    // route on which the engine actually performs Cycle Target and First-Person
+    // View, so consuming at the manager would leave the engine action running
+    // alongside ours. Self-gates to KOTOR 2 and to a session that has really
+    // seen a pad — see pad::TranslateClientEvent for the MOUSE_BUTTON1
+    // collision on the stick-press code.
+    if (acc::pad::TranslateClientEvent(param_1, param_2)) {
+        acclog::Write("Diag.ClientHIE", "seq=%u code=%d CONSUMED — pad binding",
+                      seq, param_1);
+        return 1;  // consume → consumed_exit (POP*5 + RET 8)
+    }
 
     // ---- Puzzle-room bare-R ownership --------------------------------------
     // In the Rakatan floor-plate room the mod binds bare R to the board-state
