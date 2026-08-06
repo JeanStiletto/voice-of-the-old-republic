@@ -529,6 +529,7 @@ const char* Get(Id id) {
         case Id::HelpGroupScreens:      return "Pantallas";
         case Id::HelpGroupMap:          return "Mapa";
         case Id::HelpGroupMod:          return "Funciones del mod";
+        case Id::HelpGroupController:    return "Mando";
 
         case Id::HelpKeyUpDown:          return "Flecha arriba y abajo: moverse por listas y entradas de men\xFA";
         case Id::HelpKeyLeftRight:       return "Flecha izquierda y derecha: cambiar de categor\xED""a o modificar un valor";
@@ -583,6 +584,19 @@ const char* Get(Id id) {
 
 
         case Id::HelpKeyModSettings:     return "Los ajustes del mod est\xE1n en Opciones, al final de la lista";
+        case Id::HelpKeyPadMenuNav:          return "En los men\xFAs: cruceta o palanca izquierda para moverte, A confirma, B vuelve atr\xE1s";
+        case Id::HelpKeyPadInteract:         return "A: interactuar con el \xFAltimo objeto anunciado";
+        case Id::HelpKeyPadCycleObjects:     return "Cruceta izquierda y derecha: objeto anterior y siguiente";
+        case Id::HelpKeyPadCycleCategory:    return "Cruceta arriba y abajo: categor\xED" "a anterior y siguiente";
+        case Id::HelpKeyPadCycleEnds:        return "Gatillo izquierdo con cruceta izquierda o derecha: objeto m\xE1s cercano o m\xE1s lejano";
+        case Id::HelpKeyPadAnnounceFocus:    return "Gatillo izquierdo con cruceta arriba: repetir el objeto enfocado";
+        case Id::HelpKeyPadWalkToFocus:      return "Gatillo izquierdo con cruceta abajo: caminar hasta el objeto enfocado";
+        case Id::HelpKeyPadBeacon:           return "Gatillo derecho con cruceta arriba: baliza sonora hacia el objeto enfocado";
+        case Id::HelpKeyPadActionMenu:       return "Gatillo derecho con cruceta abajo: abrir el men\xFA de acciones";
+        case Id::HelpKeyPadHelp:             return "Gatillo derecho con cruceta izquierda o derecha: teclas de esta pantalla, o esta lista";
+        case Id::HelpKeyPadQuickMenu:        return "Y: men\xFA r\xE1pido";
+        case Id::HelpKeyPadCycleTargets:     return "Botones superiores izquierdo y derecho: cambiar de objetivo";
+        case Id::HelpKeyPadOptions:          return "Bot\xF3n Atr\xE1s: men\xFA de opciones";
 
         case Id::HelpMenuOpened:    return "Ayuda de teclas. Arriba y abajo para leer, Escape para cerrar.";
         case Id::HelpMenuClosed:    return "Ayuda de teclas cerrada.";
@@ -598,6 +612,17 @@ const char* Get(Id id) {
         case Id::HelpContextDialog:      return "Conversaci\xF3n.";
         case Id::HelpContextContainer:   return "Contenedor.";
         case Id::HelpContextStore:       return "Tienda.";
+        case Id::PadQuickMenuOpened:       return "Men\xFA r\xE1pido";
+        case Id::PadQuickMenus:            return "Men\xFAs";
+        case Id::PadQuickPartyLeader:      return "L\xED" "der del grupo";
+        case Id::PadQuickSoloParty:        return "Solo o grupo";
+        case Id::PadQuickStealth:          return "Sigilo";
+        case Id::PadQuickSave:             return "Guardado r\xE1pido";
+        case Id::PadQuickFreeLook:         return "Vista libre";
+        case Id::PadQuickSwitchWeapons:    return "Cambiar de arma";
+        case Id::PadQuickHelp:             return "Ayuda";
+        case Id::PadQuickUnknownEntry:     return "Entrada";
+        case Id::FmtPadQuickSlot:          return "Puesto %d";
 
         case Id::InputBlockedBigPicture:
             return "El juego no puede recibir tus teclas porque el modo "

@@ -527,6 +527,7 @@ const char* Get(Id id) {
         case Id::HelpGroupScreens:      return "Screens";
         case Id::HelpGroupMap:          return "Map";
         case Id::HelpGroupMod:          return "Mod features";
+        case Id::HelpGroupController:    return "Controller";
 
         case Id::HelpKeyUpDown:          return "Up and down arrow: move through lists and menu entries";
         case Id::HelpKeyLeftRight:       return "Left and right arrow: switch category or change a value";
@@ -581,6 +582,19 @@ const char* Get(Id id) {
 
 
         case Id::HelpKeyModSettings:     return "Mod settings are in Options, at the bottom of the list";
+        case Id::HelpKeyPadMenuNav:          return "In menus: D-pad or left stick move, A confirms, B goes back";
+        case Id::HelpKeyPadInteract:         return "A: interact with the object you last heard announced";
+        case Id::HelpKeyPadCycleObjects:     return "D-pad left and right: previous and next object";
+        case Id::HelpKeyPadCycleCategory:    return "D-pad up and down: previous and next category";
+        case Id::HelpKeyPadCycleEnds:        return "Left trigger with D-pad left or right: nearest or farthest object";
+        case Id::HelpKeyPadAnnounceFocus:    return "Left trigger with D-pad up: repeat the focused object";
+        case Id::HelpKeyPadWalkToFocus:      return "Left trigger with D-pad down: walk to the focused object";
+        case Id::HelpKeyPadBeacon:           return "Right trigger with D-pad up: audio beacon to the focused object";
+        case Id::HelpKeyPadActionMenu:       return "Right trigger with D-pad down: open the action menu";
+        case Id::HelpKeyPadHelp:             return "Right trigger with D-pad left or right: keys for this screen, or this list";
+        case Id::HelpKeyPadQuickMenu:        return "Y: quick menu";
+        case Id::HelpKeyPadCycleTargets:     return "Left and right shoulder buttons: cycle targets";
+        case Id::HelpKeyPadOptions:          return "Back button: options menu";
 
         case Id::HelpMenuOpened:    return "Key help. Up and down to read, Escape to close.";
         case Id::HelpMenuClosed:    return "Key help closed.";
@@ -596,6 +610,17 @@ const char* Get(Id id) {
         case Id::HelpContextDialog:      return "Conversation.";
         case Id::HelpContextContainer:   return "Container.";
         case Id::HelpContextStore:       return "Store.";
+        case Id::PadQuickMenuOpened:       return "Quick menu";
+        case Id::PadQuickMenus:            return "Menus";
+        case Id::PadQuickPartyLeader:      return "Party leader";
+        case Id::PadQuickSoloParty:        return "Solo or party";
+        case Id::PadQuickStealth:          return "Stealth";
+        case Id::PadQuickSave:             return "Quick save";
+        case Id::PadQuickFreeLook:         return "Free look";
+        case Id::PadQuickSwitchWeapons:    return "Switch weapons";
+        case Id::PadQuickHelp:             return "Help";
+        case Id::PadQuickUnknownEntry:     return "Entry";
+        case Id::FmtPadQuickSlot:          return "Slot %d";
 
         case Id::InputBlockedBigPicture:
             return "The game can't receive your key presses because Steam "

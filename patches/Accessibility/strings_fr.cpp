@@ -528,6 +528,7 @@ const char* Get(Id id) {
         case Id::HelpGroupScreens:      return "\xC9""crans";
         case Id::HelpGroupMap:          return "Carte";
         case Id::HelpGroupMod:          return "Fonctions du mod";
+        case Id::HelpGroupController:    return "Manette";
 
         case Id::HelpKeyUpDown:          return "Fl\xE8""ches haut et bas : parcourir les listes et les entr\xE9""es de menu";
         case Id::HelpKeyLeftRight:       return "Fl\xE8""ches gauche et droite : changer de cat\xE9gorie ou modifier une valeur";
@@ -582,6 +583,19 @@ const char* Get(Id id) {
 
 
         case Id::HelpKeyModSettings:     return "Les r\xE9glages du mod sont dans les Options, en bas de la liste";
+        case Id::HelpKeyPadMenuNav:          return "Dans les menus : croix directionnelle ou stick gauche pour se d\xE9placer, A valide, B revient en arri\xE8re";
+        case Id::HelpKeyPadInteract:         return "A : interagir avec le dernier objet annonc\xE9";
+        case Id::HelpKeyPadCycleObjects:     return "Croix gauche et droite : objet pr\xE9" "c\xE9" "dent et suivant";
+        case Id::HelpKeyPadCycleCategory:    return "Croix haut et bas : cat\xE9gorie pr\xE9" "c\xE9" "dente et suivante";
+        case Id::HelpKeyPadCycleEnds:        return "G\xE2" "chette gauche avec croix gauche ou droite : objet le plus proche ou le plus \xE9loign\xE9";
+        case Id::HelpKeyPadAnnounceFocus:    return "G\xE2" "chette gauche avec croix haut : r\xE9p\xE9ter l'objet cibl\xE9";
+        case Id::HelpKeyPadWalkToFocus:      return "G\xE2" "chette gauche avec croix bas : marcher jusqu'\xE0 l'objet cibl\xE9";
+        case Id::HelpKeyPadBeacon:           return "G\xE2" "chette droite avec croix haut : balise sonore vers l'objet cibl\xE9";
+        case Id::HelpKeyPadActionMenu:       return "G\xE2" "chette droite avec croix bas : ouvrir le menu d'actions";
+        case Id::HelpKeyPadHelp:             return "G\xE2" "chette droite avec croix gauche ou droite : touches de cet \xE9" "cran, ou cette liste";
+        case Id::HelpKeyPadQuickMenu:        return "Y : menu rapide";
+        case Id::HelpKeyPadCycleTargets:     return "Boutons de tranche gauche et droit : changer de cible";
+        case Id::HelpKeyPadOptions:          return "Bouton Retour : menu des options";
 
         case Id::HelpMenuOpened:    return "Aide des touches. Haut et bas pour lire, \xC9""chap pour fermer.";
         case Id::HelpMenuClosed:    return "Aide des touches ferm\xE9""e.";
@@ -597,6 +611,17 @@ const char* Get(Id id) {
         case Id::HelpContextDialog:      return "Conversation.";
         case Id::HelpContextContainer:   return "Conteneur.";
         case Id::HelpContextStore:       return "Boutique.";
+        case Id::PadQuickMenuOpened:       return "Menu rapide";
+        case Id::PadQuickMenus:            return "Menus";
+        case Id::PadQuickPartyLeader:      return "Chef de groupe";
+        case Id::PadQuickSoloParty:        return "Solo ou groupe";
+        case Id::PadQuickStealth:          return "Discr\xE9tion";
+        case Id::PadQuickSave:             return "Sauvegarde rapide";
+        case Id::PadQuickFreeLook:         return "Vue libre";
+        case Id::PadQuickSwitchWeapons:    return "Changer d'arme";
+        case Id::PadQuickHelp:             return "Aide";
+        case Id::PadQuickUnknownEntry:     return "Entr\xE9" "e";
+        case Id::FmtPadQuickSlot:          return "Emplacement %d";
 
         case Id::InputBlockedBigPicture:
             return "Le jeu ne peut pas recevoir vos touches, car le mode "

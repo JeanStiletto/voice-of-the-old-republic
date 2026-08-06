@@ -4,6 +4,14 @@
 `kotor2-port-feasibility.md`, whose *measurements* remain valid — the sigscan
 result especially — but whose cost estimate predates the RTTI finding below.
 
+**Controller support is a separate, self-contained workstream** — investigated,
+planned and fully implemented 2026-08-06 (Phases 0–5), built clean, awaiting its
+first live round. It does not block or depend on the batches below. Plan, as-built
+notes and the combined test round: `docs/kotor2-controller-plan.md`. Engine
+reference: `docs/llm-docs/k2-controller-support.md`. Code: `pad_input.{h,cpp}`,
+`pad_quickmenu.{h,cpp}`, `pad_actionmenu.{h,cpp}` plus seam edits listed in the
+plan.
+
 ## WHERE TO RESUME (read this first)
 
 **Character-creation batch, round 3 — IMPLEMENTED 2026-08-03 (sixteenth

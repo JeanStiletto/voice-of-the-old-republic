@@ -527,6 +527,7 @@ const char* Get(Id id) {
         case Id::HelpGroupScreens:      return "Schermate";
         case Id::HelpGroupMap:          return "Mappa";
         case Id::HelpGroupMod:          return "Funzioni della mod";
+        case Id::HelpGroupController:    return "Controller";
 
         case Id::HelpKeyUpDown:          return "Freccia su e gi\xF9: scorrere elenchi e voci di menu";
         case Id::HelpKeyLeftRight:       return "Freccia sinistra e destra: cambiare categoria o modificare un valore";
@@ -581,6 +582,19 @@ const char* Get(Id id) {
 
 
         case Id::HelpKeyModSettings:     return "Le impostazioni della mod sono nelle Opzioni, in fondo all'elenco";
+        case Id::HelpKeyPadMenuNav:          return "Nei menu: croce direzionale o levetta sinistra per muoverti, A conferma, B torna indietro";
+        case Id::HelpKeyPadInteract:         return "A: interagisci con l'ultimo oggetto annunciato";
+        case Id::HelpKeyPadCycleObjects:     return "Croce sinistra e destra: oggetto precedente e successivo";
+        case Id::HelpKeyPadCycleCategory:    return "Croce su e gi\xF9: categoria precedente e successiva";
+        case Id::HelpKeyPadCycleEnds:        return "Grilletto sinistro con croce sinistra o destra: oggetto pi\xF9 vicino o pi\xF9 lontano";
+        case Id::HelpKeyPadAnnounceFocus:    return "Grilletto sinistro con croce su: ripeti l'oggetto selezionato";
+        case Id::HelpKeyPadWalkToFocus:      return "Grilletto sinistro con croce gi\xF9: cammina verso l'oggetto selezionato";
+        case Id::HelpKeyPadBeacon:           return "Grilletto destro con croce su: radiofaro sonoro verso l'oggetto selezionato";
+        case Id::HelpKeyPadActionMenu:       return "Grilletto destro con croce gi\xF9: apri il menu azioni";
+        case Id::HelpKeyPadHelp:             return "Grilletto destro con croce sinistra o destra: tasti di questa schermata, o questo elenco";
+        case Id::HelpKeyPadQuickMenu:        return "Y: menu rapido";
+        case Id::HelpKeyPadCycleTargets:     return "Dorsali sinistro e destro: cambia bersaglio";
+        case Id::HelpKeyPadOptions:          return "Pulsante Indietro: menu opzioni";
 
         case Id::HelpMenuOpened:    return "Guida ai tasti. Su e gi\xF9 per leggere, Esc per chiudere.";
         case Id::HelpMenuClosed:    return "Guida ai tasti chiusa.";
@@ -596,6 +610,17 @@ const char* Get(Id id) {
         case Id::HelpContextDialog:      return "Conversazione.";
         case Id::HelpContextContainer:   return "Contenitore.";
         case Id::HelpContextStore:       return "Negozio.";
+        case Id::PadQuickMenuOpened:       return "Menu rapido";
+        case Id::PadQuickMenus:            return "Menu";
+        case Id::PadQuickPartyLeader:      return "Capogruppo";
+        case Id::PadQuickSoloParty:        return "Solo o gruppo";
+        case Id::PadQuickStealth:          return "Furtivit\xE0";
+        case Id::PadQuickSave:             return "Salvataggio rapido";
+        case Id::PadQuickFreeLook:         return "Vista libera";
+        case Id::PadQuickSwitchWeapons:    return "Cambia arma";
+        case Id::PadQuickHelp:             return "Aiuto";
+        case Id::PadQuickUnknownEntry:     return "Voce";
+        case Id::FmtPadQuickSlot:          return "Posizione %d";
 
         case Id::InputBlockedBigPicture:
             return "Il gioco non pu\xF2 ricevere i tuoi tasti perch\xE9 la "

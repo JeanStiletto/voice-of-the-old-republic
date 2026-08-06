@@ -40,6 +40,9 @@
 #include "menus.h"
 #include "menus_modsettings.h"
 #include "menus_pazaakdeck.h"
+#include "pad_actionmenu.h"
+#include "pad_input.h"
+#include "pad_quickmenu.h"
 #include "party_leader_announce.h"
 #include "passive_narrate.h"
 #include "minigame_pazaak.h"
@@ -273,6 +276,13 @@ void Dispatch() {
     // the poll thread; this just drains + speaks on a safe main-thread tick.
     acc::focus_guard::DrainInputBlockedWarning();
 
+    // KOTOR 2 gamepad. Runs before every input consumer: the trigger state it
+    // samples is the modifier layer the pad's D-Pad bindings read, and the
+    // pad events themselves arrive asynchronously at the GUI-manager hook, so
+    // the state must be fresh by the time one lands. Self-gates to KOTOR 2 and
+    // costs one XInput call (throttled to a 2 s rescan while no pad is found).
+    PHASE("pad_input", acc::pad::Tick());
+
     // Defensive — drop stale panel pointers before any handler touches them.
     PHASE("menus.ValidatePanels", acc::menus::ValidatePanels());
 
@@ -441,6 +451,16 @@ void Dispatch() {
     // hider/waypoint-list offsets and the fog + rotate entry points are
     // Pick'd from the K2 map ctor and fog-method decompiles.
     PHASE("map_ui_cursor", acc::map_ui_cursor::Tick());
+
+    // KOTOR 2 pad overlays. The Quick Menu navigator reads the engine's own
+    // selection index and speaks it (the menu's widgets are not
+    // CSWGuiControls, so the navigation chain cannot see them); the action-menu
+    // watcher closes the engine's pad action menu and opens ours in its place.
+    // Both self-gate to KOTOR 2 and are one read when idle. Placed with the
+    // other in-world surfaces, before the combat block that the action menu
+    // queues into.
+    PHASE("pad_quickmenu", acc::pad::quickmenu::Tick());
+    PHASE("pad_actionmenu", acc::pad::actionmenu::Tick());
 
     // Stuck-detection — feeds g_was_stuck for OnPlayFootstep. Both games
     // since the footstep port (2026-08-02): the whole chain was already

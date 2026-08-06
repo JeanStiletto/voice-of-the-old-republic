@@ -993,6 +993,34 @@ bool TryHandleEvent(int param_1, int param_2) {
     return false;
 }
 
+bool DispatchPadAction(PadAction action) {
+    // Same in-world gate the keyboard event path uses: outside the world
+    // (menus / chargen / mid-load) there is nothing to cycle and the caller
+    // should let the pad event through to whatever owns the screen.
+    Vector playerPos;
+    if (!acc::engine::GetPlayerPosition(playerPos)) return false;
+
+    // Same context split as the two keyboard paths — with the map sub-screen
+    // foreground the pad cycles map hints, otherwise world objects.
+    acc::filter::CycleContext ctx =
+        acc::engine::HasActiveMapPanel()
+            ? acc::filter::CycleContext::Map
+            : acc::filter::CycleContext::World;
+
+    switch (action) {
+        case PadAction::ItemPrev:      OnCycleItem(/*prev=*/true,  ctx); break;
+        case PadAction::ItemNext:      OnCycleItem(/*prev=*/false, ctx); break;
+        case PadAction::CategoryPrev:  OnCycleCategory(/*prev=*/true,  ctx); break;
+        case PadAction::CategoryNext:  OnCycleCategory(/*prev=*/false, ctx); break;
+        case PadAction::ItemFirst:     OnCycleEdge(/*last=*/false, ctx); break;
+        case PadAction::ItemLast:      OnCycleEdge(/*last=*/true,  ctx); break;
+        case PadAction::AnnounceFocus: OnAnnounceFocus();      break;
+        case PadAction::WalkToFocus:   OnPathfindFocus();      break;
+        case PadAction::BeaconFocus:   OnBeaconFocus();        break;
+    }
+    return true;
+}
+
 void PollWin32() {
     // All bindings live in `hotkeys.cpp`. Modifier-precedence at the
     // announce / autowalk / force / beacon key is encoded via per-Action

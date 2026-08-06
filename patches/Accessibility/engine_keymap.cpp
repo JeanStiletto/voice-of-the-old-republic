@@ -7,6 +7,8 @@
 
 #include "engine_game.h"  // IsKotor2 — per-game ini filename
 #include "log.h"
+#include "pad_input.h"    // StickMoving — the gamepad half of the movement
+                          // queries at the bottom of this file
 
 namespace acc::engine_keymap {
 
@@ -511,6 +513,14 @@ bool AnyMovementKeyHeld() {
         if (IsDownVk(vk)) return true;
     }
     return false;
+}
+
+bool ForwardBackwardCommanded() {
+    return ForwardBackwardKeyHeld() || acc::pad::StickMoving();
+}
+
+bool AnyMovementCommanded() {
+    return AnyMovementKeyHeld() || acc::pad::StickMoving();
 }
 
 }  // namespace acc::engine_keymap

@@ -649,4 +649,13 @@ void DispatchInteract(void* target, uint32_t handle, bool forceRadial) {
     DispatchInteractImpl(target, handle, forceRadial);
 }
 
+// Public seam for non-keyboard input sources (the KOTOR 2 gamepad's A / X
+// buttons). OnInteract is the target-resolution + dispatch half of the Enter
+// gesture; the context gate around it lives in the caller, which is why this
+// is a forwarder and not a copy of the router's preamble. See the contract
+// note in interact_dispatch.h.
+void InteractNarratedTarget(bool forceRadial) {
+    OnInteract(forceRadial);
+}
+
 }  // namespace acc::interact

@@ -1607,6 +1607,10 @@ enum class Id : int {
     HelpGroupScreens,
     HelpGroupMap,
     HelpGroupMod,
+    //      KOTOR 2 only, and only while a gamepad is present: the engine's own
+    //      Help panel for pad users is a bare picture of a controller, which
+    //      tells a blind player nothing at all.
+    HelpGroupController,
 
     //      Keybind entries — each is one self-contained "KEY: what it does"
     //      phrase, authored so a join with ". " reads cleanly when Ctrl+F1
@@ -1668,6 +1672,22 @@ enum class Id : int {
     HelpKeyMapPosition,
     // Mod features.
     HelpKeyModSettings,
+    // Controller (KOTOR 2, pad present). Order is the reading order: what the
+    // pad does in menus first, then in the world, then the two trigger layers,
+    // then the engine's own pad bindings worth knowing.
+    HelpKeyPadMenuNav,
+    HelpKeyPadInteract,
+    HelpKeyPadCycleObjects,
+    HelpKeyPadCycleCategory,
+    HelpKeyPadCycleEnds,
+    HelpKeyPadAnnounceFocus,
+    HelpKeyPadWalkToFocus,
+    HelpKeyPadBeacon,
+    HelpKeyPadActionMenu,
+    HelpKeyPadHelp,
+    HelpKeyPadQuickMenu,
+    HelpKeyPadCycleTargets,
+    HelpKeyPadOptions,
 
     //      F1 list framing.
     //   HelpMenuOpened     — opener cue spoken on F1. Tells the user how to
@@ -1698,6 +1718,24 @@ enum class Id : int {
     HelpContextDialog,
     HelpContextContainer,
     HelpContextStore,
+
+    // ---- KOTOR 2 Quick Menu (the pad's Y button, pad_quickmenu.cpp).
+    //      Eight fixed entries in engine order, plus the opener cue and the
+    //      Party Leader sub-list's fallback slot name. The engine's own labels
+    //      live in override/gamepad.txt, read by line index in a fixed
+    //      five-language block — i.e. in the GAME's language, not the mod's —
+    //      so they are named here instead.
+    PadQuickMenuOpened,
+    PadQuickMenus,
+    PadQuickPartyLeader,
+    PadQuickSoloParty,
+    PadQuickStealth,
+    PadQuickSave,
+    PadQuickFreeLook,
+    PadQuickSwitchWeapons,
+    PadQuickHelp,
+    PadQuickUnknownEntry,
+    FmtPadQuickSlot,        // party-slot fallback. Arg: 1-based slot (%d).
 
     // Spoken when the user presses a key while Steam Big Picture Mode holds
     // the foreground: in windowed mode the keystrokes go to Big Picture, not

@@ -6,7 +6,7 @@
 
 #include "camera_orient.h"  // IsActive — its snap-turn must not self-trip the
                             // movement-key cancel.
-#include "engine_keymap.h"  // AnyMovementKeyHeld — the player's bound move/turn
+#include "engine_keymap.h"  // AnyMovementCommanded — the player's bound move/turn
                             // keys, so cancel works regardless of rebinds.
 #include "engine_player.h"
 #include "guidance_approach.h"  // IsAnyModApproachInFlight / CancelByMovement —
@@ -347,14 +347,16 @@ void PollMovementKeysCancel() {
     // Any of the player's bound movement / turn keys held cancels the walk —
     // read from swkotor.ini [Keymapping] (engine_keymap) so this follows a
     // rebind instead of assuming A/D/W/S, and still covers the legacy German
-    // QWERTZ extras (C/Y/Z) as a union so it never regresses.
+    // QWERTZ extras (C/Y/Z) as a union so it never regresses. On KOTOR 2 the
+    // gamepad's left stick counts too: taking manual control of the character
+    // has to cancel the walk whichever device does it.
     //
     // Level-triggered (no rising-edge requirement): a key already held when the
     // walk dispatched still cancels, so the user can always turn/walk their way
     // out. The arm grace that prevents a pre-dispatch key from cancelling too
     // early lives in CancelByMovement (kCancelGraceMs), keyed off the tracker's
     // arm time.
-    if (!acc::engine_keymap::AnyMovementKeyHeld()) return;
+    if (!acc::engine_keymap::AnyMovementCommanded()) return;
 
     acc::guidance::CancelByMovement();
 }

@@ -212,6 +212,12 @@ extern "C" int __cdecl OnClientHandleInputEvent(void* this_ptr,
                       acc::engine::InputIndexName(param_1), param_1, param_2);
     }
 
+    // Codes 65 and 66 arriving here are the MOUSE axes, not the KOTOR 2 pad's
+    // left stick — see the note in pad_input.h. They were briefly wired to the
+    // pad's movement signal on the strength of a misread test round; the stick
+    // is now read directly through XInput instead. Nothing to do with them
+    // here.
+
     // ---- Puzzle-room bare-R ownership --------------------------------------
     // In the Rakatan floor-plate room the mod binds bare R to the board-state
     // readout (floor_puzzle::Tick). Vanilla R is "default action on current

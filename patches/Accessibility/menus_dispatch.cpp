@@ -47,6 +47,7 @@
 #include "input_pipeline.h"
 #include "interact_dispatch.h"
 #include "minigame_pazaak.h"
+#include "pad_input.h"
 #include "peek_description.h"
 #include "engine_game.h"
 
@@ -188,6 +189,30 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
         return rv;
     };
 
+    // ---- KOTOR 2 gamepad normalisation ------------------------------------
+    // The pad reuses the keyboard InputIndex numbering, so without this seam
+    // every handler below would need its own "…or the pad code" case. One
+    // translation instead: pad events are rewritten into the logical codes
+    // this function already speaks, or handled outright where the pad has a
+    // binding the keyboard does not (the in-world D-Pad, which the engine
+    // leaves completely inert). See pad_input.h.
+    //
+    // It runs ahead of the press-release pairing below, because the pairing
+    // tracker must see the same rewritten code on the press and on the
+    // matching release — otherwise a later real press gets swallowed. It is
+    // placed after `trackPress` only because a consume has to funnel through
+    // it like every other consume path in this function.
+    //
+    // No-op on KOTOR 1: that build has no gamepad path at all, so the shared
+    // codes (F9..F12, A, B, F1, F2) can never be misread there.
+    switch (acc::pad::TranslateManagerEvent(param_1, param_2)) {
+    case acc::pad::Verdict::Consumed:
+        return trackPress(1);
+    case acc::pad::Verdict::Rewritten:
+    case acc::pad::Verdict::NotPad:
+        break;
+    }
+
     if (param_2 == 0 && s_lastConsumedPress != 0 && s_lastConsumedPress == param_1) {
         int translated = acc::engine::ManagerTranslateCode(param_1);
         if (translated != param_1) {
@@ -292,16 +317,26 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
     // itself off Win32 edges (help::PollWin32); here we only stop the engine
     // events reaching the underlying panel.
     //
-    //   * Raw F1 (always): a physical F1 arrives at the manager pre-translation
-    //     as InputIndex 0x27 (kInputActivate) — Enter arrives as 0xb5/0xbb, so
-    //     0x27 here is unambiguously F1. The engine reuses 0x27 as its GUI
-    //     "activate" code, so an un-suppressed F1 would fire the focused
-    //     control. Swallow it; help::PollWin32 owns F1's open/close.
+    //   * Raw F1: a physical F1 arrives at the manager pre-translation as
+    //     InputIndex 0x27 (kInputActivate) — keyboard Enter arrives as
+    //     0xb5/0xbb. The engine reuses 0x27 as its GUI "activate" code, so an
+    //     un-suppressed F1 would fire the focused control. Swallow it;
+    //     help::PollWin32 owns F1's open/close.
+    //
+    //     0x27 is NOT unambiguously F1, and the comment that used to say so
+    //     here was the cause of a real defect: KOTOR 2's gamepad delivers its
+    //     A button as the very same 0x27, so this gate ate every A press in
+    //     every menu (25 HELP-F1-SUPPRESSED lines in one test round, with the
+    //     pad unable to activate anything anywhere). IsPhysicalF1() asks the
+    //     OS whether F1 is actually down; it is a constant `true` on KOTOR 1,
+    //     which has no gamepad path. The pad seam above has already claimed
+    //     any real pad A by this point — this guard is the second lock on the
+    //     same door, and both use the same predicate so they cannot disagree.
     //   * While the list is open: swallow the nav / Enter / Esc / Home / End
     //     events so the underlying panel doesn't navigate or activate beneath
     //     the overlay (mirrors the mod-settings pre-empt above).
     if (param_2 != 0) {
-        if (param_1 == kInputActivate) {
+        if (param_1 == kInputActivate && acc::pad::IsPhysicalF1()) {
             acclog::Write("Menus.Input",
                           "#%d seq=%u this=%p key=F1(0x27 activate-code) "
                           "HELP-F1-SUPPRESSED", n, seq, thisPtr);

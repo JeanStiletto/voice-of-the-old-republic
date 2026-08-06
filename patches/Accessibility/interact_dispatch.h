@@ -21,4 +21,16 @@ namespace acc::interact {
 // (engine::GetObjectHandle(target)). forceRadial=true → Shift+Enter
 // semantics, open the radial menu instead of dispatching default.
 void DispatchInteract(void* target, uint32_t handle, bool forceRadial);
+
+// Interact with the CURRENTLY NARRATED target — the exact gesture the
+// keyboard's Enter / Shift+Enter runs, exposed for input sources that do not
+// go through the Win32 hotkey poll. The KOTOR 2 gamepad's A button uses it so
+// pad and keyboard interact identically (the engine's own pad A fires a
+// default action on its LAST-CLICKED target, which for a blind player is not
+// the object they were just told about).
+//
+// The caller owns the context gate: only call this once "in the world, no
+// blocking panel, no mod overlay armed" is established, which is exactly what
+// the keyboard router checks before calling the same path.
+void InteractNarratedTarget(bool forceRadial);
 }  // namespace acc::interact

@@ -523,6 +523,7 @@ const char* Get(Id id) {
         case Id::HelpGroupScreens:      return "Ekrany";
         case Id::HelpGroupMap:          return "Mapa";
         case Id::HelpGroupMod:          return "Funkcje moda";
+        case Id::HelpGroupController:    return "Kontroler";
 
         case Id::HelpKeyUpDown:          return "Strza\xB3ka w g\xF3r\xEA i w d\xF3\xB3: poruszanie si\xEA po listach i pozycjach menu";
         case Id::HelpKeyLeftRight:       return "Strza\xB3ka w lewo i w prawo: zmiana kategorii lub warto\x9C""ci";
@@ -577,6 +578,19 @@ const char* Get(Id id) {
 
 
         case Id::HelpKeyModSettings:     return "Ustawienia moda s\xB9 w Opcjach, na dole listy";
+        case Id::HelpKeyPadMenuNav:          return "W menu: krzy\xBF" "ak lub lewa ga\xB3ka przesuwaj\xB9, A zatwierdza, B cofa";
+        case Id::HelpKeyPadInteract:         return "A: interakcja z ostatnio zapowiedzianym obiektem";
+        case Id::HelpKeyPadCycleObjects:     return "Krzy\xBF" "ak w lewo i w prawo: poprzedni i nast\xEApny obiekt";
+        case Id::HelpKeyPadCycleCategory:    return "Krzy\xBF" "ak w g\xF3r\xEA i w d\xF3\xB3: poprzednia i nast\xEApna kategoria";
+        case Id::HelpKeyPadCycleEnds:        return "Lewy spust z krzy\xBF" "akiem w lewo lub w prawo: najbli\xBFszy lub najdalszy obiekt";
+        case Id::HelpKeyPadAnnounceFocus:    return "Lewy spust z krzy\xBF" "akiem w g\xF3r\xEA: powt\xF3rz wybrany obiekt";
+        case Id::HelpKeyPadWalkToFocus:      return "Lewy spust z krzy\xBF" "akiem w d\xF3\xB3: id\x9F do wybranego obiektu";
+        case Id::HelpKeyPadBeacon:           return "Prawy spust z krzy\xBF" "akiem w g\xF3r\xEA: sygna\xB3 d\x9Fwi\xEAkowy do wybranego obiektu";
+        case Id::HelpKeyPadActionMenu:       return "Prawy spust z krzy\xBF" "akiem w d\xF3\xB3: otw\xF3rz menu akcji";
+        case Id::HelpKeyPadHelp:             return "Prawy spust z krzy\xBF" "akiem w lewo lub w prawo: klawisze tego ekranu albo ta lista";
+        case Id::HelpKeyPadQuickMenu:        return "Y: szybkie menu";
+        case Id::HelpKeyPadCycleTargets:     return "Lewy i prawy bumper: zmiana celu";
+        case Id::HelpKeyPadOptions:          return "Przycisk Back: menu opcji";
 
         case Id::HelpMenuOpened:    return "Pomoc klawiszy. G\xF3ra i d\xF3\xB3 czytaj\xB9, Escape zamyka.";
         case Id::HelpMenuClosed:    return "Pomoc klawiszy zamkni\xEAta.";
@@ -592,6 +606,17 @@ const char* Get(Id id) {
         case Id::HelpContextDialog:      return "Rozmowa.";
         case Id::HelpContextContainer:   return "Pojemnik.";
         case Id::HelpContextStore:       return "Sklep.";
+        case Id::PadQuickMenuOpened:       return "Szybkie menu";
+        case Id::PadQuickMenus:            return "Menu";
+        case Id::PadQuickPartyLeader:      return "Lider dru\xBFyny";
+        case Id::PadQuickSoloParty:        return "Solo lub dru\xBFyna";
+        case Id::PadQuickStealth:          return "Skradanie";
+        case Id::PadQuickSave:             return "Szybki zapis";
+        case Id::PadQuickFreeLook:         return "Swobodny widok";
+        case Id::PadQuickSwitchWeapons:    return "Zmiana broni";
+        case Id::PadQuickHelp:             return "Pomoc";
+        case Id::PadQuickUnknownEntry:     return "Pozycja";
+        case Id::FmtPadQuickSlot:          return "Miejsce %d";
 
         case Id::InputBlockedBigPicture:
             return "Gra nie odbiera naci\x9Cni\xEA\xE6 klawiszy, poniewa\xBF na wierzchu "

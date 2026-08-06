@@ -46,6 +46,18 @@ void CloseMenu();
 // examine) don't double-act. Call early in core_tick::Dispatch.
 void PollWin32();
 
+// Toggle the list / speak the current screen's keys from a source that is not
+// the keyboard poll — the KOTOR 2 gamepad reaches both surfaces through the
+// trigger layer (see pad_input.h), and a pad user has no other way in.
+void ToggleMenu();
+void SpeakContextHelp();
+
+// Drive the open list from a non-keyboard source. `code` is an engine logical
+// nav code (kInputNavUp/Down, kInputHome/End, kInputEnter1, kInputEsc1).
+// Returns false when the list is closed or the code is not one the list owns,
+// so the caller can route the event onward.
+bool HandleNavCode(int code);
+
 // Self-disarm hook. Closes the list if the world drops out from under an
 // in-world open (area load / teardown), so a stranded overlay can't survive
 // a transition with a stale pause hold. Cheap when the list is closed.

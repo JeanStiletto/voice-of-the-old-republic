@@ -3,9 +3,11 @@
 #include <windows.h>
 #include <atomic>
 #include <cstdint>
+#include <cstdio>
 
 #include "log.h"
 #include "engine_rebase.h"
+#include "pad_input.h"   // CodeHint — the KOTOR 2 pad shares this numbering
 
 namespace acc::engine {
 
@@ -29,7 +31,8 @@ typedef void(__thiscall* PFN_CExoInputSetActive)(void* this_, int active);
 // Names for the InputIndices enum (size 132, definition lifted from Lane's
 // Ghidra SARIF: /KotOR Types/Enums/InputIndices). Index = enum value;
 // covers MOUSE_*, KEYBOARD_*, JOYSTICK_*. -1 / 0xFFFFFFFF is INPUTDEVICE_NONE.
-const char* InputIndexName(int code) {
+namespace {
+const char* InputIndexNameRaw(int code) {
     static const char* const k_names[] = {
         "MOUSE_BUTTON0", "MOUSE_BUTTON1", "MOUSE_BUTTON2",
         "MOUSE_XAXIS", "MOUSE_YAXIS", "MOUSE_ZAXIS",
@@ -90,6 +93,28 @@ const char* InputIndexName(int code) {
     // Naming them inline keeps the input log readable instead of "?(206)".
     if (code == 0xCE) return "LOGICAL_TAB";
     return "?";
+}
+}  // namespace
+
+// Public wrapper. On KOTOR 2 the gamepad reuses this very numbering, so a raw
+// name like "KEYBOARD_F12" is actively misleading in a log that is mostly
+// about pad events — annotate the codes a pad can produce with what they mean
+// on the pad. The keyboard name stays primary and the hint keeps its question
+// mark: the numbering genuinely IS shared with real bindablekeys.2da rows, so
+// renaming outright would just move the lie.
+//
+// The small rotating buffer exists because callers pass the result straight
+// into a format string; one slot would break a line that names two codes.
+const char* InputIndexName(int code) {
+    const char* base = InputIndexNameRaw(code);
+    const char* hint = acc::pad::CodeHint(code);
+    if (!hint) return base;
+    static char s_bufs[4][96];
+    static int  s_slot = 0;
+    s_slot = (s_slot + 1) & 3;
+    _snprintf_s(s_bufs[s_slot], sizeof(s_bufs[s_slot]), _TRUNCATE,
+                "%s [pad %s?]", base, hint);
+    return s_bufs[s_slot];
 }
 
 // CSWGuiManager::HandleInputEvent receives KOTOR-internal "logical action"

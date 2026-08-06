@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "engine_input.h"       // kInput* logical codes — the pad nav route
 #include "engine_panels.h"
 #include "engine_player.h"      // GetPlayerPosition / Vector
 #include "engine_subscreen.h"   // Begin/EndOverlayPause
@@ -19,6 +20,7 @@
                                 // so the engine-event consume guard wins the
                                 // poll-vs-event race (no stray Options open)
 #include "log.h"
+#include "pad_input.h"          // Connected — gates the controller section
 #include "prism.h"
 #include "strings.h"
 #include "unified_action_menu.h"
@@ -92,13 +94,14 @@ Context DetectContext() {
 // ----- Catalog ------------------------------------------------------------
 enum class Grp {
     General, Movement, Interaction, Combat, Exploration, Screens, Map, Mod,
+    Controller,
     COUNT
 };
 
 constexpr S kGroupHeader[] = {
     S::HelpGroupGeneral, S::HelpGroupMovement, S::HelpGroupInteraction,
     S::HelpGroupCombat, S::HelpGroupExploration, S::HelpGroupScreens,
-    S::HelpGroupMap, S::HelpGroupMod,
+    S::HelpGroupMap, S::HelpGroupMod, S::HelpGroupController,
 };
 static_assert(sizeof(kGroupHeader) / sizeof(kGroupHeader[0]) ==
               static_cast<int>(Grp::COUNT),
@@ -110,7 +113,14 @@ struct Entry {
     uint32_t ctx;       // 0 = F1-list only, never spoken by Ctrl+F1
     bool     composed;  // true → label is a format; text built from MenuCat*
                         // names at BuildRows time (the number-key line)
+    bool     padOnly;   // true → listed only when a gamepad is present. Reading
+                        // a controller layout to a keyboard player is noise,
+                        // and on KOTOR 1 these bindings do not exist at all.
 };
+
+// One test for every pad-only row, so the F1 list and the Ctrl+F1 summary can
+// never disagree about whether the controller section exists.
+bool PadEntriesVisible() { return acc::pad::Connected(); }
 
 // Order within a group is the order F1 reads them. The General nav keys are
 // tagged for the menu-like screens they apply to (not World) so they're heard
@@ -185,6 +195,28 @@ constexpr Entry kEntries[] = {
     // ---- Mod features ----
     // F1-list only — Ctrl+F1 deliberately doesn't mention mod settings.
     { S::HelpKeyModSettings,     Grp::Mod, 0 },
+
+    // ---- Controller (KOTOR 2, pad present) ----
+    // The engine's own Help panel for pad users is a bare image of a
+    // controller, so this section is the ONLY way a blind pad player learns
+    // the bindings — which is also why the pad can reach both help surfaces
+    // itself (right trigger + D-Pad left / right; see pad_input.cpp).
+    // Tagged generously for Ctrl+F1: a pad user asking "what do I press here"
+    // wants the pad answer, not the keyboard one.
+    { S::HelpKeyPadMenuNav,       Grp::Controller,
+      kMenu | kActionMenu | kDialog | kContainer | kStore, false, true },
+    { S::HelpKeyPadInteract,      Grp::Controller, kWorld, false, true },
+    { S::HelpKeyPadCycleObjects,  Grp::Controller, kWorld, false, true },
+    { S::HelpKeyPadCycleCategory, Grp::Controller, kWorld, false, true },
+    { S::HelpKeyPadCycleEnds,     Grp::Controller, 0,      false, true },
+    { S::HelpKeyPadAnnounceFocus, Grp::Controller, kWorld, false, true },
+    { S::HelpKeyPadWalkToFocus,   Grp::Controller, 0,      false, true },
+    { S::HelpKeyPadBeacon,        Grp::Controller, 0,      false, true },
+    { S::HelpKeyPadActionMenu,    Grp::Controller, kWorld, false, true },
+    { S::HelpKeyPadHelp,          Grp::Controller, 0,      false, true },
+    { S::HelpKeyPadQuickMenu,     Grp::Controller, kWorld, false, true },
+    { S::HelpKeyPadCycleTargets,  Grp::Controller, kWorld, false, true },
+    { S::HelpKeyPadOptions,       Grp::Controller, 0,      false, true },
 };
 constexpr int kEntryCount =
     static_cast<int>(sizeof(kEntries) / sizeof(kEntries[0]));
@@ -231,15 +263,23 @@ void BuildComposedText(S formatId, char* out, size_t cap) {
 
 // Build the flat row list: each non-empty group emits a header row followed
 // by its entries, in catalog order.
+// A row is listed unless it describes hardware the player does not have.
+bool EntryListed(const Entry& e) {
+    return !e.padOnly || PadEntriesVisible();
+}
+
 void BuildRows() {
+    const int idxLimit = kMaxRows;
     int idx = 0;
     int entryNo = 0;
-    for (int g = 0; g < static_cast<int>(Grp::COUNT) && idx < kMaxRows; ++g) {
-        // Count this group's entries first so an (impossible) empty group is
+    for (int g = 0; g < static_cast<int>(Grp::COUNT) && idx < idxLimit; ++g) {
+        // Count this group's listed entries first so a group with nothing to
+        // show — which the Controller group genuinely is without a pad — is
         // skipped rather than emitting a lone header.
         bool any = false;
         for (int e = 0; e < kEntryCount; ++e) {
-            if (kEntries[e].grp == static_cast<Grp>(g)) { any = true; break; }
+            if (kEntries[e].grp == static_cast<Grp>(g) &&
+                EntryListed(kEntries[e])) { any = true; break; }
         }
         if (!any) continue;
 
@@ -251,8 +291,9 @@ void BuildRows() {
         hdr.entryPos = 0;
         ++idx;
 
-        for (int e = 0; e < kEntryCount && idx < kMaxRows; ++e) {
+        for (int e = 0; e < kEntryCount && idx < idxLimit; ++e) {
             if (kEntries[e].grp != static_cast<Grp>(g)) continue;
+            if (!EntryListed(kEntries[e])) continue;
             ++entryNo;
             Row& row = g_state.rows[idx];
             row.isHeader = false;
@@ -287,6 +328,20 @@ void SpeakRow(int idx, bool interrupt) {
     prism::Speak(line, interrupt);
 }
 
+// Focus movement, shared by the keyboard poll and the pad nav route so the
+// two can never drift. Both clamp (no wrap) — the repeated line is the
+// boundary cue, same rule the mod's submenus follow.
+void StepFocus(int delta) {
+    const int next = g_state.focus + delta;
+    if (next >= 0 && next < g_state.rowCount) g_state.focus = next;
+    SpeakRow(g_state.focus, /*interrupt=*/true);
+}
+
+void FocusEdge(bool last) {
+    g_state.focus = (last && g_state.rowCount > 0) ? g_state.rowCount - 1 : 0;
+    SpeakRow(g_state.focus, /*interrupt=*/true);
+}
+
 // Ctrl+F1 — speak the keys tagged for the current screen, joined.
 void SpeakContext() {
     Context c   = DetectContext();
@@ -298,6 +353,7 @@ void SpeakContext() {
     int n = 0;
     for (int e = 0; e < kEntryCount; ++e) {
         if (!(kEntries[e].ctx & bit)) continue;
+        if (!EntryListed(kEntries[e])) continue;
         const char* t = acc::strings::Get(kEntries[e].label);
         if (!t[0]) continue;
         if (n > 0) {
@@ -364,6 +420,38 @@ void CloseMenu() {
     prism::Speak(acc::strings::Get(S::HelpMenuClosed), /*interrupt=*/true);
 }
 
+void ToggleMenu() {
+    if (g_state.open) CloseMenu();
+    else              OpenMenu();
+}
+
+void SpeakContextHelp() { SpeakContext(); }
+
+bool HandleNavCode(int code) {
+    if (!g_state.open) return false;
+    switch (code) {
+        case kInputNavUp:   StepFocus(-1); return true;
+        case kInputNavDown: StepFocus(+1); return true;
+        case kInputHome:    FocusEdge(/*last=*/false); return true;
+        case kInputEnd:     FocusEdge(/*last=*/true);  return true;
+        case kInputEnter1:
+        case kInputEnter2:
+            SpeakRow(g_state.focus, /*interrupt=*/true);
+            return true;
+        case kInputEsc1:
+        case kInputEsc2:
+            CloseMenu();
+            acc::input::NoteOverlayEscClosed();
+            return true;
+        default:
+            // Left / Right have no meaning in a flat list — swallow them so
+            // the panel underneath the overlay cannot navigate beneath it,
+            // exactly as the manager-side HELP-CONSUMED gate does.
+            if (code == kInputNavLeft || code == kInputNavRight) return true;
+            return false;
+    }
+}
+
 void PollWin32() {
     using A = acc::hotkeys::Action;
 
@@ -376,8 +464,7 @@ void PollWin32() {
     // consumer (and the manager hook separately suppresses the engine's
     // F1-as-activate when in a menu).
     if (acc::hotkeys::Pressed(A::HelpMenuOpen)) {
-        if (g_state.open) CloseMenu();
-        else              OpenMenu();
+        ToggleMenu();
         acc::hotkeys::Consume(A::HelpMenuOpen);
     }
 
@@ -388,23 +475,19 @@ void PollWin32() {
     // pollers (cycle / interact / examine) and the Home/End synthesiser don't
     // also act on it this tick.
     if (acc::hotkeys::Pressed(A::NavUp)) {
-        if (g_state.focus > 0) --g_state.focus;
-        SpeakRow(g_state.focus, /*interrupt=*/true);
+        StepFocus(-1);
         acc::hotkeys::Consume(A::NavUp);
     }
     if (acc::hotkeys::Pressed(A::NavDown)) {
-        if (g_state.focus < g_state.rowCount - 1) ++g_state.focus;
-        SpeakRow(g_state.focus, /*interrupt=*/true);
+        StepFocus(+1);
         acc::hotkeys::Consume(A::NavDown);
     }
     if (acc::hotkeys::Pressed(A::NavHome)) {
-        g_state.focus = 0;
-        SpeakRow(g_state.focus, /*interrupt=*/true);
+        FocusEdge(/*last=*/false);
         acc::hotkeys::Consume(A::NavHome);
     }
     if (acc::hotkeys::Pressed(A::NavEnd)) {
-        if (g_state.rowCount > 0) g_state.focus = g_state.rowCount - 1;
-        SpeakRow(g_state.focus, /*interrupt=*/true);
+        FocusEdge(/*last=*/true);
         acc::hotkeys::Consume(A::NavEnd);
     }
     if (acc::hotkeys::Pressed(A::InteractTarget)) {  // Enter — re-read

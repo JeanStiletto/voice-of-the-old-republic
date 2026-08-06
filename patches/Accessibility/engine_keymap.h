@@ -127,4 +127,17 @@ bool AnyMovementKeyHeld();
 // only, legitimately audible servo) can never read as wall-grinding.
 bool ForwardBackwardKeyHeld();
 
+// ---- Device-independent movement queries ------------------------------------
+// The two above ask about KEYS, which is what this module knows about. What
+// their consumers actually mean is "is the player commanding movement right
+// now", and on KOTOR 2 that can also be the gamepad's left stick — which holds
+// no key, so the keyboard queries answer no while the character walks.
+//
+// The union lives here, once, rather than at each call site: there are only
+// two consumers today (drive-loop suppression, autowalk cancel) and both want
+// the same answer, so a shared "…|| pad" at both would be the same knowledge
+// written twice. Identical to the key-only queries on KOTOR 1.
+bool ForwardBackwardCommanded();
+bool AnyMovementCommanded();
+
 }  // namespace acc::engine_keymap

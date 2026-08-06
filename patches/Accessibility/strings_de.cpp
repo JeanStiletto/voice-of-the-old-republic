@@ -546,6 +546,7 @@ const char* Get(Id id) {
         case Id::HelpGroupScreens:      return "Bildschirme";
         case Id::HelpGroupMap:          return "Karte";
         case Id::HelpGroupMod:          return "Mod-Funktionen";
+        case Id::HelpGroupController:    return "Controller";
 
         case Id::HelpKeyUpDown:          return "Pfeil hoch und runter: durch Listen und Men\xFC""eintr\xE4ge bewegen";
         case Id::HelpKeyLeftRight:       return "Pfeil links und rechts: Kategorie wechseln oder Wert \xE4ndern";
@@ -600,6 +601,19 @@ const char* Get(Id id) {
 
 
         case Id::HelpKeyModSettings:     return "Mod-Einstellungen findest du in den Optionen, ganz unten in der Liste";
+        case Id::HelpKeyPadMenuNav:          return "In Men\xFCs: Steuerkreuz oder linker Stick bewegen, A best\xE4tigt, B geht zur\xFC" "ck";
+        case Id::HelpKeyPadInteract:         return "A: mit dem zuletzt angesagten Objekt interagieren";
+        case Id::HelpKeyPadCycleObjects:     return "Steuerkreuz links und rechts: vorheriges und n\xE4" "chstes Objekt";
+        case Id::HelpKeyPadCycleCategory:    return "Steuerkreuz hoch und runter: vorherige und n\xE4" "chste Kategorie";
+        case Id::HelpKeyPadCycleEnds:        return "Linker Trigger mit Steuerkreuz links oder rechts: n\xE4" "chstes oder entferntestes Objekt";
+        case Id::HelpKeyPadAnnounceFocus:    return "Linker Trigger mit Steuerkreuz hoch: fokussiertes Objekt wiederholen";
+        case Id::HelpKeyPadWalkToFocus:      return "Linker Trigger mit Steuerkreuz runter: zum fokussierten Objekt laufen";
+        case Id::HelpKeyPadBeacon:           return "Rechter Trigger mit Steuerkreuz hoch: Audio-Bake zum fokussierten Objekt";
+        case Id::HelpKeyPadActionMenu:       return "Rechter Trigger mit Steuerkreuz runter: Aktionsmen\xFC \xF6" "ffnen";
+        case Id::HelpKeyPadHelp:             return "Rechter Trigger mit Steuerkreuz links oder rechts: Tasten f\xFCr diesen Bildschirm oder diese Liste";
+        case Id::HelpKeyPadQuickMenu:        return "Y: Schnellmen\xFC";
+        case Id::HelpKeyPadCycleTargets:     return "Linke und rechte Schultertaste: Ziele durchschalten";
+        case Id::HelpKeyPadOptions:          return "Zur\xFC" "ck-Taste: Optionsmen\xFC";
 
         case Id::HelpMenuOpened:    return "Tastenhilfe. Hoch und runter zum Lesen, Escape zum Schlie\xDF""en.";
         case Id::HelpMenuClosed:    return "Tastenhilfe geschlossen.";
@@ -615,6 +629,17 @@ const char* Get(Id id) {
         case Id::HelpContextDialog:      return "Gespr\xE4""ch.";
         case Id::HelpContextContainer:   return "Beh\xE4lter.";
         case Id::HelpContextStore:       return "Laden.";
+        case Id::PadQuickMenuOpened:       return "Schnellmen\xFC";
+        case Id::PadQuickMenus:            return "Men\xFCs";
+        case Id::PadQuickPartyLeader:      return "Gruppenanf\xFChrer";
+        case Id::PadQuickSoloParty:        return "Solo oder Gruppe";
+        case Id::PadQuickStealth:          return "Schleichen";
+        case Id::PadQuickSave:             return "Schnellspeichern";
+        case Id::PadQuickFreeLook:         return "Freie Sicht";
+        case Id::PadQuickSwitchWeapons:    return "Waffen wechseln";
+        case Id::PadQuickHelp:             return "Hilfe";
+        case Id::PadQuickUnknownEntry:     return "Eintrag";
+        case Id::FmtPadQuickSlot:          return "Platz %d";
 
         case Id::InputBlockedBigPicture:
             return "Das Spiel kann deine Tasteneingaben nicht empfangen, "
