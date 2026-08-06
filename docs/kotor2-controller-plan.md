@@ -44,14 +44,16 @@ navigates the panel). In the world:
 
 - D-Pad left / right — previous / next object in the current cycle category
 - D-Pad up / down — previous / next category
-- A — interact with the narrated target (the keyboard's Enter, not the
-  engine's default-action-on-last-clicked)
+- A — default action on the narrated target (the keyboard's Enter, not the
+  engine's default-action-on-last-clicked): attack, open, talk, pick up
+- X — open / close the unified action menu. Everything A is not: the other
+  attacks, force powers, medpacs, grenades
 - LT + D-Pad left / right — nearest / farthest object
 - LT + D-Pad up / down — announce focus / walk to focus
-- RT + D-Pad up / down — beacon to focus / open the unified action menu
+- RT + D-Pad up — beacon to focus
 - RT + D-Pad left / right — context help / the F1 list
 - Y — the engine's Quick Menu, now spoken
-- LB / RB, Back, X, Start — left to the engine
+- LB / RB, Back, Start — left to the engine
 
 Engine reference for everything below: **`docs/llm-docs/k2-controller-support.md`**.
 Read it before Phase 3 or later; Phases 0–2 need only the code table repeated
@@ -178,6 +180,33 @@ for it — it is the screen's twin of walking. Fixed: the seam swallows the axis
 events while `map_ui_cursor::IsActive()`, and the cursor's pan vector falls
 back to `pad::StickVector()` when no walk key is held. Keys still win when both
 are given.
+
+**D9 — in combat the pad could only ever attack.** A fires the default action,
+which on a hostile is Angreifen, and that was the pad's ONLY way to act on a
+target: the other eight categories (force powers, medpacs, grenades, a
+different attack) sat behind RT + D-Pad down. That binding worked, but the
+ergonomics were wrong — mid-combat a chord is a lost round, and the log shows
+the user never found it (`Pad: trigger state` fires 12 times, never with a
+D-Pad press inside the hold).
+
+Fixed by moving the action menu to a **bare X press**. X is free in the only
+sense that matters: its engine meaning is Switch Party Leader, which is
+redundant on the pad for this mod's users — the Y Quick Menu's second entry
+does exactly that, and better (it expands into the three party slots, so you
+pick rather than cycle), and keyboard Tab still does it. So X costs nothing and
+sits right next to A: **A does the obvious thing, X asks what else.** Pressing X
+again closes the menu. With no focused target it opens on the personal block
+rather than refusing — medpacs and stims are exactly what a player wants when
+nothing is targeted. RT + D-Pad down is now unbound.
+
+**Still unanswered: how a SIGHTED pad player reaches the engine's own action
+menu.** `Pad.ActionMenu` has logged zero lines across every round, so
+`CSWGuiActionMenuIos` has never once opened while the mod was loaded. The most
+likely reason is that our A binding claims the button that opens it — which
+would make the plan's long-standing open question answered by construction, but
+that is inference, not evidence. It stopped blocking anything the moment X
+became the mod's own route in, so it is now a curiosity rather than a
+dependency.
 
 **Not a defect — the empty cycle in a fresh area.** D-Pad category stepping
 found nothing anywhere, but the log shows why and it is correct behaviour: the

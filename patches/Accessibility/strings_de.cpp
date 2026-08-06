@@ -602,14 +602,14 @@ const char* Get(Id id) {
 
         case Id::HelpKeyModSettings:     return "Mod-Einstellungen findest du in den Optionen, ganz unten in der Liste";
         case Id::HelpKeyPadMenuNav:          return "In Men\xFCs: Steuerkreuz oder linker Stick bewegen, A best\xE4tigt, B geht zur\xFC" "ck";
-        case Id::HelpKeyPadInteract:         return "A: mit dem zuletzt angesagten Objekt interagieren";
+        case Id::HelpKeyPadInteract:          return "A: Standardaktion am fokussierten Ziel (angreifen, \xF6" "ffnen, sprechen, aufheben)";
         case Id::HelpKeyPadCycleObjects:     return "Steuerkreuz links und rechts: vorheriges und n\xE4" "chstes Objekt";
         case Id::HelpKeyPadCycleCategory:    return "Steuerkreuz hoch und runter: vorherige und n\xE4" "chste Kategorie";
         case Id::HelpKeyPadCycleEnds:        return "Linker Trigger mit Steuerkreuz links oder rechts: n\xE4" "chstes oder entferntestes Objekt";
         case Id::HelpKeyPadAnnounceFocus:    return "Linker Trigger mit Steuerkreuz hoch: fokussiertes Objekt wiederholen";
         case Id::HelpKeyPadWalkToFocus:      return "Linker Trigger mit Steuerkreuz runter: zum fokussierten Objekt laufen";
         case Id::HelpKeyPadBeacon:           return "Rechter Trigger mit Steuerkreuz hoch: Audio-Bake zum fokussierten Objekt";
-        case Id::HelpKeyPadActionMenu:       return "Rechter Trigger mit Steuerkreuz runter: Aktionsmen\xFC \xF6" "ffnen";
+        case Id::HelpKeyPadActionMenu:        return "X: Aktionsmen\xFC \xF6" "ffnen (andere Angriffe, Machtkr\xE4" "fte, Medipacks, Granaten)";
         case Id::HelpKeyPadHelp:             return "Rechter Trigger mit Steuerkreuz links oder rechts: Tasten f\xFCr diesen Bildschirm oder diese Liste";
         case Id::HelpKeyPadQuickMenu:        return "Y: Schnellmen\xFC";
         case Id::HelpKeyPadCycleTargets:     return "Linke und rechte Schultertaste: Ziele durchschalten";

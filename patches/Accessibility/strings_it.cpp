@@ -583,14 +583,14 @@ const char* Get(Id id) {
 
         case Id::HelpKeyModSettings:     return "Le impostazioni della mod sono nelle Opzioni, in fondo all'elenco";
         case Id::HelpKeyPadMenuNav:          return "Nei menu: croce direzionale o levetta sinistra per muoverti, A conferma, B torna indietro";
-        case Id::HelpKeyPadInteract:         return "A: interagisci con l'ultimo oggetto annunciato";
+        case Id::HelpKeyPadInteract:          return "A: azione predefinita sul bersaglio selezionato (attaccare, aprire, parlare, raccogliere)";
         case Id::HelpKeyPadCycleObjects:     return "Croce sinistra e destra: oggetto precedente e successivo";
         case Id::HelpKeyPadCycleCategory:    return "Croce su e gi\xF9: categoria precedente e successiva";
         case Id::HelpKeyPadCycleEnds:        return "Grilletto sinistro con croce sinistra o destra: oggetto pi\xF9 vicino o pi\xF9 lontano";
         case Id::HelpKeyPadAnnounceFocus:    return "Grilletto sinistro con croce su: ripeti l'oggetto selezionato";
         case Id::HelpKeyPadWalkToFocus:      return "Grilletto sinistro con croce gi\xF9: cammina verso l'oggetto selezionato";
         case Id::HelpKeyPadBeacon:           return "Grilletto destro con croce su: radiofaro sonoro verso l'oggetto selezionato";
-        case Id::HelpKeyPadActionMenu:       return "Grilletto destro con croce gi\xF9: apri il menu azioni";
+        case Id::HelpKeyPadActionMenu:        return "X: apri il menu azioni (altri attacchi, poteri della Forza, medpac, granate)";
         case Id::HelpKeyPadHelp:             return "Grilletto destro con croce sinistra o destra: tasti di questa schermata, o questo elenco";
         case Id::HelpKeyPadQuickMenu:        return "Y: menu rapido";
         case Id::HelpKeyPadCycleTargets:     return "Dorsali sinistro e destro: cambia bersaglio";

@@ -585,14 +585,14 @@ const char* Get(Id id) {
 
         case Id::HelpKeyModSettings:     return "Los ajustes del mod est\xE1n en Opciones, al final de la lista";
         case Id::HelpKeyPadMenuNav:          return "En los men\xFAs: cruceta o palanca izquierda para moverte, A confirma, B vuelve atr\xE1s";
-        case Id::HelpKeyPadInteract:         return "A: interactuar con el \xFAltimo objeto anunciado";
+        case Id::HelpKeyPadInteract:          return "A: acci\xF3n por defecto sobre el objetivo enfocado (atacar, abrir, hablar, recoger)";
         case Id::HelpKeyPadCycleObjects:     return "Cruceta izquierda y derecha: objeto anterior y siguiente";
         case Id::HelpKeyPadCycleCategory:    return "Cruceta arriba y abajo: categor\xED" "a anterior y siguiente";
         case Id::HelpKeyPadCycleEnds:        return "Gatillo izquierdo con cruceta izquierda o derecha: objeto m\xE1s cercano o m\xE1s lejano";
         case Id::HelpKeyPadAnnounceFocus:    return "Gatillo izquierdo con cruceta arriba: repetir el objeto enfocado";
         case Id::HelpKeyPadWalkToFocus:      return "Gatillo izquierdo con cruceta abajo: caminar hasta el objeto enfocado";
         case Id::HelpKeyPadBeacon:           return "Gatillo derecho con cruceta arriba: baliza sonora hacia el objeto enfocado";
-        case Id::HelpKeyPadActionMenu:       return "Gatillo derecho con cruceta abajo: abrir el men\xFA de acciones";
+        case Id::HelpKeyPadActionMenu:        return "X: abrir el men\xFA de acciones (otros ataques, poderes de la Fuerza, medpacs, granadas)";
         case Id::HelpKeyPadHelp:             return "Gatillo derecho con cruceta izquierda o derecha: teclas de esta pantalla, o esta lista";
         case Id::HelpKeyPadQuickMenu:        return "Y: men\xFA r\xE1pido";
         case Id::HelpKeyPadCycleTargets:     return "Botones superiores izquierdo y derecho: cambiar de objetivo";

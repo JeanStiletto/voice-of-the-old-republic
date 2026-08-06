@@ -579,14 +579,14 @@ const char* Get(Id id) {
 
         case Id::HelpKeyModSettings:     return "Ustawienia moda s\xB9 w Opcjach, na dole listy";
         case Id::HelpKeyPadMenuNav:          return "W menu: krzy\xBF" "ak lub lewa ga\xB3ka przesuwaj\xB9, A zatwierdza, B cofa";
-        case Id::HelpKeyPadInteract:         return "A: interakcja z ostatnio zapowiedzianym obiektem";
+        case Id::HelpKeyPadInteract:          return "A: domy\x9Clna akcja na wybranym celu (atak, otwarcie, rozmowa, podniesienie)";
         case Id::HelpKeyPadCycleObjects:     return "Krzy\xBF" "ak w lewo i w prawo: poprzedni i nast\xEApny obiekt";
         case Id::HelpKeyPadCycleCategory:    return "Krzy\xBF" "ak w g\xF3r\xEA i w d\xF3\xB3: poprzednia i nast\xEApna kategoria";
         case Id::HelpKeyPadCycleEnds:        return "Lewy spust z krzy\xBF" "akiem w lewo lub w prawo: najbli\xBFszy lub najdalszy obiekt";
         case Id::HelpKeyPadAnnounceFocus:    return "Lewy spust z krzy\xBF" "akiem w g\xF3r\xEA: powt\xF3rz wybrany obiekt";
         case Id::HelpKeyPadWalkToFocus:      return "Lewy spust z krzy\xBF" "akiem w d\xF3\xB3: id\x9F do wybranego obiektu";
         case Id::HelpKeyPadBeacon:           return "Prawy spust z krzy\xBF" "akiem w g\xF3r\xEA: sygna\xB3 d\x9Fwi\xEAkowy do wybranego obiektu";
-        case Id::HelpKeyPadActionMenu:       return "Prawy spust z krzy\xBF" "akiem w d\xF3\xB3: otw\xF3rz menu akcji";
+        case Id::HelpKeyPadActionMenu:        return "X: otw\xF3rz menu akcji (inne ataki, moce Mocy, medpaki, granaty)";
         case Id::HelpKeyPadHelp:             return "Prawy spust z krzy\xBF" "akiem w lewo lub w prawo: klawisze tego ekranu albo ta lista";
         case Id::HelpKeyPadQuickMenu:        return "Y: szybkie menu";
         case Id::HelpKeyPadCycleTargets:     return "Lewy i prawy bumper: zmiana celu";

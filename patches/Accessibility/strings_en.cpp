@@ -583,14 +583,14 @@ const char* Get(Id id) {
 
         case Id::HelpKeyModSettings:     return "Mod settings are in Options, at the bottom of the list";
         case Id::HelpKeyPadMenuNav:          return "In menus: D-pad or left stick move, A confirms, B goes back";
-        case Id::HelpKeyPadInteract:         return "A: interact with the object you last heard announced";
+        case Id::HelpKeyPadInteract:          return "A: default action on the focused target (attack, open, talk, pick up)";
         case Id::HelpKeyPadCycleObjects:     return "D-pad left and right: previous and next object";
         case Id::HelpKeyPadCycleCategory:    return "D-pad up and down: previous and next category";
         case Id::HelpKeyPadCycleEnds:        return "Left trigger with D-pad left or right: nearest or farthest object";
         case Id::HelpKeyPadAnnounceFocus:    return "Left trigger with D-pad up: repeat the focused object";
         case Id::HelpKeyPadWalkToFocus:      return "Left trigger with D-pad down: walk to the focused object";
         case Id::HelpKeyPadBeacon:           return "Right trigger with D-pad up: audio beacon to the focused object";
-        case Id::HelpKeyPadActionMenu:       return "Right trigger with D-pad down: open the action menu";
+        case Id::HelpKeyPadActionMenu:        return "X: open the action menu (other attacks, force powers, medpacs, grenades)";
         case Id::HelpKeyPadHelp:             return "Right trigger with D-pad left or right: keys for this screen, or this list";
         case Id::HelpKeyPadQuickMenu:        return "Y: quick menu";
         case Id::HelpKeyPadCycleTargets:     return "Left and right shoulder buttons: cycle targets";

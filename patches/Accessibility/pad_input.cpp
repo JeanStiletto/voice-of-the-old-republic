@@ -18,6 +18,7 @@
 #include "interact_dispatch.h"
 #include "log.h"
 #include "map_ui_cursor.h"   // IsActive — the map screen owns the left stick
+#include "narrated_target.h" // TryGet — does X have a target to open on?
 #include "prism.h"           // Silence — the cancel a pad press has no
                              // keystroke to trigger
 #include "unified_action_menu.h"
@@ -235,7 +236,7 @@ bool RouteToOverlay(int logical) {
 //
 //   bare  left/right  previous / next object     up/down  previous / next category
 //   LT +  left/right  nearest  / farthest object up/down  announce focus / walk to focus
-//   RT +  left/right  context help / help list   up/down  beacon to focus / action menu
+//   RT +  left/right  context help / help list   up       beacon to focus
 //
 // Returns true when the binding fired (the caller consumes).
 bool DispatchWorldDpad(int code) {
@@ -256,14 +257,11 @@ bool DispatchWorldDpad(int code) {
             case kPadDpadUp:
                 acclog::Write("Pad", "RT + D-Pad up -> beacon to focus");
                 return acc::cycle_input::DispatchPadAction(PA::BeaconFocus);
-            case kPadDpadDown:
-                // Shift+Enter's gesture: open the unified action menu on the
-                // narrated target. Ours, not the engine's CSWGuiActionMenuIos
-                // — see pad_actionmenu.cpp for why theirs is suppressed.
-                acclog::Write("Pad", "RT + D-Pad down -> unified action menu");
-                acc::interact::InteractNarratedTarget(/*forceRadial=*/true);
-                return true;
             default:
+                // RT + D-Pad down is deliberately unbound. It used to open
+                // the action menu, which was a mistake of ergonomics rather
+                // than of mechanism: the one gesture a player needs mid-combat
+                // must not be a chord. It lives on X now.
                 return false;
         }
     }
@@ -285,6 +283,46 @@ bool DispatchWorldDpad(int code) {
         case kPadDpadDown:  return acc::cycle_input::DispatchPadAction(PA::CategoryNext);
         default:            return false;
     }
+}
+
+// X — open (or close) the mod's unified action menu on whatever is focused.
+//
+// Why X, and why a bare press. A is the engine's Default Action and ours: on a
+// hostile it queues an attack, on a door it opens it. That is the right thing
+// for A to do and it must stay one press. But it is then the ONLY thing the
+// pad can do to a target, and a player in combat needs the other eight
+// categories — force powers, medpacs, grenades, a different attack. The
+// gesture that reaches them cannot be a chord; mid-combat, a chord is a lost
+// round.
+//
+// X is free in every sense that matters here. Its engine meaning is Switch
+// Party Leader, which is redundant on the pad for this mod's users: the Y
+// Quick Menu's second entry does exactly that (and better — it expands into
+// the three party slots so you pick, rather than cycle), and keyboard Tab
+// still does it. So taking X costs nothing and buys the one binding combat
+// actually needs, right next to A.
+//
+// With no focused target the target categories are empty, so fall through to
+// the personal block — medpacs and stims are exactly what a player wants when
+// nothing is targeted, and refusing to open would be the wrong answer.
+bool ToggleActionMenu() {
+    if (acc::unified_menu::IsActive() && !acc::unified_menu::IsSuspended()) {
+        acclog::Write("Pad", "X -> closing action menu");
+        acc::unified_menu::HandleInputEvent(kInputEsc1, 1);
+        return true;
+    }
+    acc::narrated_target::Slot slot{};
+    const bool haveTarget = acc::narrated_target::TryGet(slot) && !slot.isMapPin;
+    acclog::Write("Pad", "X -> action menu (target=%d)", haveTarget ? 1 : 0);
+    if (haveTarget) {
+        // The Shift+Enter gesture: target categories first, and Left still
+        // crosses into the personal block from there.
+        acc::interact::InteractNarratedTarget(/*forceRadial=*/true);
+        if (acc::unified_menu::IsActive()) return true;
+        // No populated target row (a corpse, a non-combat NPC). The personal
+        // block is still worth opening rather than leaving the press silent.
+    }
+    return acc::unified_menu::OpenPersonal(0);
 }
 
 // The logical code a pad D-Pad / stick direction stands in for.
@@ -528,6 +566,20 @@ Verdict TranslateManagerEvent(int& code, int& value) {
         return Verdict::Rewritten;
     }
 
+    // ---- X ----------------------------------------------------------------
+    // In the world X is the action menu (see ToggleActionMenu). In menus it
+    // keeps its engine meaning, which is nothing we want to shadow.
+    if (code == kPadButtonX) {
+        if (value == 0) return Verdict::NotPad;
+        if (InWorldSurface() ||
+            (acc::unified_menu::IsActive() && !acc::unified_menu::IsSuspended())) {
+            NoteNavPress();
+            ToggleActionMenu();
+            return Verdict::Consumed;
+        }
+        return Verdict::NotPad;
+    }
+
     // ---- B ----------------------------------------------------------------
     if (code == kPadButtonB) {
         if (value == 0) return Verdict::NotPad;
@@ -545,7 +597,7 @@ Verdict TranslateManagerEvent(int& code, int& value) {
         return Verdict::Rewritten;
     }
 
-    // Everything else (X, Y, LB, RB, Back) keeps its engine meaning. They are
+    // Everything else (Y, LB, RB, Back) keeps its engine meaning. They are
     // still flagged as pad events so the F1 suppression in OnHandleInputEvent
     // and the log annotation know what they are looking at.
     return Verdict::NotPad;
