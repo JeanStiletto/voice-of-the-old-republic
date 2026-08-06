@@ -96,6 +96,19 @@ enum class PanelKind {
     // BACK at 9/10/11/12.
     PowersLevelUp,
 
+    // KOTOR 2 gamepad Quick Menu (CSWGamepadMenuIos, vtable 0x0099dd3c),
+    // opened by the pad's Y button. Identified by vtable equality; K2-only.
+    //
+    // The RE notes said its widgets were custom textured quads the navigation
+    // chain could not see. They are ordinary CSWGuiButtons, and the chain
+    // walks them fine — the eight entries come out with their real captions
+    // ("Menüs", "Gruppenanführer", …). What the panel also carries is 14
+    // captionless icon/background buttons of the SAME class, interleaved with
+    // the entries, so an unfiltered chain reads every other step as the
+    // "control N" placeholder. The decorative filter in menus_chain drops
+    // them; that is the whole of this kind's special handling.
+    GamepadQuickMenu,
+
     // Title-screen CSWGuiOptions (vtable 0x00758838). Not under
     // CGuiInGame — title is pre-game so CGuiInGame isn't resolvable
     // yet. Controls: 0 body listbox, 1..5 tab buttons, 6 title label,

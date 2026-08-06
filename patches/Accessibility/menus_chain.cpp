@@ -531,6 +531,21 @@ bool IsDecorativeControl(void* panel, void* c,
     // Pazaak deck builder: drop the overlay value/count/title labels and
     // the unaddable (zero-owned) available cards.
     if (acc::menus::pazaakdeck::IsChainDecorative(panel, c)) return true;
+    // KOTOR 2 gamepad Quick Menu: 22 controls, of which exactly 8 are the
+    // menu entries. The other 14 are the icon and background quads — the
+    // SAME CSWGuiButton class, and every id is -1, so neither the class nor
+    // the .gui id can tell them apart. What does is that they carry no
+    // caption by any route: the extractor's whole cascade (CExoString,
+    // strref, text object, gui_string, per-kind table) comes back empty, and
+    // reading their gui_string faults outright. Without this the chain is
+    // 22 entries long and every other press speaks the "control N"
+    // placeholder instead of a menu entry.
+    if (pk == PanelKind::GamepadQuickMenu) {
+        char text[128];
+        if (!acc::menus::extract::FromControl(c, text, sizeof(text), panel)) {
+            return true;
+        }
+    }
     // Pazaak wager popup: mask the less/more SpeedButtons (gui ids 4/5).
     // The wager is adjusted with Left/Right (held = auto-repeat) via
     // pazaak::Tick's polled stepper, so these buttons are redundant in the

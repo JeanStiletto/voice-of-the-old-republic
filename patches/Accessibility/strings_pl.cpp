@@ -606,17 +606,6 @@ const char* Get(Id id) {
         case Id::HelpContextDialog:      return "Rozmowa.";
         case Id::HelpContextContainer:   return "Pojemnik.";
         case Id::HelpContextStore:       return "Sklep.";
-        case Id::PadQuickMenuOpened:       return "Szybkie menu";
-        case Id::PadQuickMenus:            return "Menu";
-        case Id::PadQuickPartyLeader:      return "Lider dru\xBFyny";
-        case Id::PadQuickSoloParty:        return "Solo lub dru\xBFyna";
-        case Id::PadQuickStealth:          return "Skradanie";
-        case Id::PadQuickSave:             return "Szybki zapis";
-        case Id::PadQuickFreeLook:         return "Swobodny widok";
-        case Id::PadQuickSwitchWeapons:    return "Zmiana broni";
-        case Id::PadQuickHelp:             return "Pomoc";
-        case Id::PadQuickUnknownEntry:     return "Pozycja";
-        case Id::FmtPadQuickSlot:          return "Miejsce %d";
 
         case Id::InputBlockedBigPicture:
             return "Gra nie odbiera naci\x9Cni\xEA\xE6 klawiszy, poniewa\xBF na wierzchu "

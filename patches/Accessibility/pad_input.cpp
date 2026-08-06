@@ -4,6 +4,7 @@
 #include "pad_input.h"
 
 #include <windows.h>
+#include <cmath>
 #include <cstdint>
 
 #include "combat_queue.h"
@@ -16,7 +17,9 @@
 #include "help.h"
 #include "interact_dispatch.h"
 #include "log.h"
-#include "pad_quickmenu.h"
+#include "map_ui_cursor.h"   // IsActive — the map screen owns the left stick
+#include "prism.h"           // Silence — the cancel a pad press has no
+                             // keystroke to trigger
 #include "unified_action_menu.h"
 
 namespace acc::pad {
@@ -115,7 +118,9 @@ void EnsureXInput() {
 constexpr int kStickDeadZone   = 12000;
 constexpr int kStickDeadZoneSq = kStickDeadZone * kStickDeadZone;
 
-bool g_stickMoving = false;
+bool  g_stickMoving = false;
+float g_stickX      = 0.0f;   // normalised, +1 = right
+float g_stickY      = 0.0f;   // normalised, +1 = up (XInput's own convention)
 
 // ---------------------------------------------------------------------------
 // Pad-vs-keyboard discrimination
@@ -172,6 +177,24 @@ bool InWorldSurface() {
     Vector p;
     if (!acc::engine::GetPlayerPosition(p)) return false;
     return !acc::engine::IsForegroundUiBlocking();
+}
+
+// The cancel a pad press has no keystroke to trigger.
+//
+// Every menu announcement in the mod speaks with interrupt=false — deliberately,
+// because the screen reader itself cuts queued speech the moment the user
+// presses a key, and letting it do that keeps multi-part announcements (title
+// then focus) able to queue. A controller press produces no keystroke, so
+// nothing cancels and the entries pile up: the user hears the previous row
+// finish before the new one starts, worsening with every press.
+//
+// So issue the cancel ourselves, at the one place that knows the input came
+// from a pad. This is exactly what the screen reader would have done, and it
+// leaves every announce path unchanged — the alternative, flipping dozens of
+// call sites to interrupt=true, would also change keyboard behaviour and break
+// the announcements that intentionally queue.
+void NoteNavPress() {
+    prism::Silence();
 }
 
 // Route a logical nav / activate / cancel code into whichever in-DLL overlay
@@ -336,10 +359,18 @@ void Tick() {
     // squared magnitude of two full-scale axes overflows 16 bits.
     const int lx = st.Gamepad.sThumbLX;
     const int ly = st.Gamepad.sThumbLY;
-    const bool moving = (lx * lx + ly * ly) > kStickDeadZoneSq;
+    const int magSq = lx * lx + ly * ly;
+    const bool moving = magSq > kStickDeadZoneSq;
     acclog::Edge("Pad.stick", moving ? 1 : 0,
                  "left stick moving=%d (x=%d y=%d)", moving ? 1 : 0, lx, ly);
     g_stickMoving = moving;
+    if (moving) {
+        const float mag = std::sqrt(static_cast<float>(magSq));
+        g_stickX = static_cast<float>(lx) / mag;
+        g_stickY = static_cast<float>(ly) / mag;
+    } else {
+        g_stickX = g_stickY = 0.0f;
+    }
 }
 
 bool IsPadCode(int code) {
@@ -385,6 +416,13 @@ bool IsPhysicalF1() {
 
 bool StickMoving() { return g_stickMoving; }
 
+bool StickVector(float& outX, float& outY) {
+    if (!g_stickMoving) return false;
+    outX = g_stickX;
+    outY = g_stickY;
+    return true;
+}
+
 Verdict TranslateManagerEvent(int& code, int& value) {
     if (!acc::game::IsKotor2()) return Verdict::NotPad;
     if (!IsPadCode(code)) return Verdict::NotPad;
@@ -396,30 +434,6 @@ Verdict TranslateManagerEvent(int& code, int& value) {
     if (twinVk != 0 && PhysDown(twinVk)) return Verdict::NotPad;
 
     const int raw = code;
-
-    // ---- Quick Menu ownership ---------------------------------------------
-    // While the engine's Y-button Quick Menu is up, the D-Pad and both action
-    // buttons belong to IT: the engine does its own navigation inside a widget
-    // tree we cannot drive, and pad_quickmenu only reads the resulting index
-    // and speaks it. So stand down completely — no rewriting, no consuming.
-    // Y itself is never claimed either; it is what opens the thing.
-    if (code == kPadButtonY && value != 0) {
-        // Y toggles: the menu's own input handler treats 0x2a (Y) as a cancel
-        // alongside B, so a second press closes it.
-        if (acc::pad::quickmenu::IsArmed()) {
-            acc::pad::quickmenu::NoteClosed();
-        } else if (InWorldSurface()) {
-            acc::pad::quickmenu::NoteOpened();
-        }
-        return Verdict::NotPad;
-    }
-    if (acc::pad::quickmenu::IsArmed()) {
-        // A activates an entry and B cancels; either way the menu is gone.
-        if (value != 0 && (code == kPadButtonA || code == kPadButtonB)) {
-            acc::pad::quickmenu::NoteClosed();
-        }
-        return Verdict::NotPad;
-    }
 
     // ---- Left stick -> nav ------------------------------------------------
     // The engine's own preamble keys on val == +/-1 for these two codes, so
@@ -447,12 +461,26 @@ Verdict TranslateManagerEvent(int& code, int& value) {
         g_axisLatch[axis] = logical;
 
         // In the world the left stick MOVES the character; it must never
-        // double as menu navigation there. (Movement itself runs through the
-        // client hook, codes 65/66 — a different path entirely.)
+        // double as menu navigation there. (Movement itself never reaches this
+        // hook — it is the engine's own walk path.)
         if (InWorldSurface()) {
             g_axisLatch[axis] = 0;
             return Verdict::NotPad;
         }
+
+        // On the map screen the left stick pans the virtual cursor, exactly as
+        // the player's walk keys do there — that is the analog surface the map
+        // most wants, and the D-Pad still covers menu navigation. Swallow the
+        // axis event so the engine cannot ALSO step the panel's controls with
+        // it; the pan itself comes from the XInput sample in Tick(), read by
+        // map_ui_cursor.
+        if (acc::map_ui_cursor::IsActive()) {
+            g_axisLatch[axis] = 0;
+            acclog::Trace("Pad", "stick(%d) consumed — map cursor owns it", raw);
+            return Verdict::Consumed;
+        }
+
+        NoteNavPress();
         if (RouteToOverlay(logical)) return Verdict::Consumed;
         code = logical;
         acclog::Write("Pad", "stick(%d) val=%d -> logical %d", raw, value, code);
@@ -464,6 +492,7 @@ Verdict TranslateManagerEvent(int& code, int& value) {
     if (dpadLogical != 0) {
         NoteSeen();
         if (value == 0) return Verdict::NotPad;   // no release is ever sent
+        NoteNavPress();
         if (RouteToOverlay(dpadLogical)) {
             acclog::Write("Pad", "D-Pad(%d) -> overlay logical %d",
                           raw, dpadLogical);
@@ -480,6 +509,7 @@ Verdict TranslateManagerEvent(int& code, int& value) {
     // ---- A ----------------------------------------------------------------
     if (code == kPadButtonA) {
         if (value == 0) return Verdict::NotPad;
+        NoteNavPress();
         if (RouteToOverlay(kInputEnter1)) {
             acclog::Write("Pad", "A -> overlay activate");
             return Verdict::Consumed;
@@ -501,6 +531,7 @@ Verdict TranslateManagerEvent(int& code, int& value) {
     // ---- B ----------------------------------------------------------------
     if (code == kPadButtonB) {
         if (value == 0) return Verdict::NotPad;
+        NoteNavPress();
         if (RouteToOverlay(kInputEsc1)) {
             acclog::Write("Pad", "B -> overlay cancel");
             return Verdict::Consumed;

@@ -611,17 +611,6 @@ const char* Get(Id id) {
         case Id::HelpContextDialog:      return "Conversation.";
         case Id::HelpContextContainer:   return "Conteneur.";
         case Id::HelpContextStore:       return "Boutique.";
-        case Id::PadQuickMenuOpened:       return "Menu rapide";
-        case Id::PadQuickMenus:            return "Menus";
-        case Id::PadQuickPartyLeader:      return "Chef de groupe";
-        case Id::PadQuickSoloParty:        return "Solo ou groupe";
-        case Id::PadQuickStealth:          return "Discr\xE9tion";
-        case Id::PadQuickSave:             return "Sauvegarde rapide";
-        case Id::PadQuickFreeLook:         return "Vue libre";
-        case Id::PadQuickSwitchWeapons:    return "Changer d'arme";
-        case Id::PadQuickHelp:             return "Aide";
-        case Id::PadQuickUnknownEntry:     return "Entr\xE9" "e";
-        case Id::FmtPadQuickSlot:          return "Emplacement %d";
 
         case Id::InputBlockedBigPicture:
             return "Le jeu ne peut pas recevoir vos touches, car le mode "

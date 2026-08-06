@@ -1719,23 +1719,6 @@ enum class Id : int {
     HelpContextContainer,
     HelpContextStore,
 
-    // ---- KOTOR 2 Quick Menu (the pad's Y button, pad_quickmenu.cpp).
-    //      Eight fixed entries in engine order, plus the opener cue and the
-    //      Party Leader sub-list's fallback slot name. The engine's own labels
-    //      live in override/gamepad.txt, read by line index in a fixed
-    //      five-language block — i.e. in the GAME's language, not the mod's —
-    //      so they are named here instead.
-    PadQuickMenuOpened,
-    PadQuickMenus,
-    PadQuickPartyLeader,
-    PadQuickSoloParty,
-    PadQuickStealth,
-    PadQuickSave,
-    PadQuickFreeLook,
-    PadQuickSwitchWeapons,
-    PadQuickHelp,
-    PadQuickUnknownEntry,
-    FmtPadQuickSlot,        // party-slot fallback. Arg: 1-based slot (%d).
 
     // Spoken when the user presses a key while Steam Big Picture Mode holds
     // the foreground: in windowed mode the keystrokes go to Big Picture, not

@@ -42,7 +42,6 @@
 #include "menus_pazaakdeck.h"
 #include "pad_actionmenu.h"
 #include "pad_input.h"
-#include "pad_quickmenu.h"
 #include "party_leader_announce.h"
 #include "passive_narrate.h"
 #include "minigame_pazaak.h"
@@ -452,14 +451,12 @@ void Dispatch() {
     // Pick'd from the K2 map ctor and fog-method decompiles.
     PHASE("map_ui_cursor", acc::map_ui_cursor::Tick());
 
-    // KOTOR 2 pad overlays. The Quick Menu navigator reads the engine's own
-    // selection index and speaks it (the menu's widgets are not
-    // CSWGuiControls, so the navigation chain cannot see them); the action-menu
-    // watcher closes the engine's pad action menu and opens ours in its place.
-    // Both self-gate to KOTOR 2 and are one read when idle. Placed with the
-    // other in-world surfaces, before the combat block that the action menu
-    // queues into.
-    PHASE("pad_quickmenu", acc::pad::quickmenu::Tick());
+    // KOTOR 2 pad action menu: close the engine's own and open ours in its
+    // place. Self-gates to KOTOR 2 and is one global read when idle. Placed
+    // with the other in-world surfaces, before the combat block it queues
+    // into. The Y-button Quick Menu needs nothing here — it enumerates as an
+    // ordinary panel and the navigation chain reads it (see
+    // PanelKind::GamepadQuickMenu).
     PHASE("pad_actionmenu", acc::pad::actionmenu::Tick());
 
     // Stuck-detection — feeds g_was_stuck for OnPlayFootstep. Both games

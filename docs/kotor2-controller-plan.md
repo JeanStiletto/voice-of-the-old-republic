@@ -1,36 +1,46 @@
 # KOTOR 2 — controller support plan
 
-**Status: ALL PHASES IMPLEMENTED, STILL EFFECTIVELY UNTESTED (2026-08-06).**
-Phases 0–5 are written and the patch builds clean. A second live round ran but
-tested nothing: the controller was connected AFTER launch, so `CExoInput` — which
-enumerates game controllers exactly once at input init — had no joystick device
-and the engine emitted no pad event at all. The log
-(`patch-20260806-162206.log`) contains zero codes in the 47–54 range and no
-`Pad:` lines beyond XInput binding, i.e. nothing of ours had anything to act
-on. **The next round must have the pad connected before launch.**
+**Status: BASELINE CONFIRMED WORKING IN GAME (2026-08-06, third round).**
+Confirmed live: A activates, the stick and D-Pad navigate menus, the right
+stick turns the camera and the direction announcement fires, the left stick
+moves and the drive-loop suppression arms off it. Committed on that basis.
 
-That round was not wasted, though: it refuted the first round's reading of the
-in-world movement signal. See Phase 2.
+Test-round history, because two of the three taught the file something:
+
+1. First round — the defect list below (D1–D5), and a reading of the in-world
+   movement signal that later proved wrong.
+2. Second round — tested nothing: the pad was connected AFTER launch, so
+   `CExoInput` (which enumerates controllers exactly once at input init) had no
+   joystick device and the engine emitted no pad event at all. Not wasted: it
+   refuted the movement signal. See Phase 2. **A round with the pad connected
+   late tests nothing — plug it in first.**
+3. Third round — baseline confirmed, plus the Quick Menu refutation (Phase 3)
+   and three defects now fixed and awaiting their own round: the "control N"
+   noise in the Y menu, pad navigation not cancelling the previous entry's
+   speech, and the left stick navigating menu entries on the map screen instead
+   of driving the map cursor.
 
 This file is written to be executed cold: a fresh session should be able to work
 straight through it without the investigation conversation.
 
-**Where the code lives.** Everything pad-specific is in three new module
-pairs, plus small edits at the seams they hook into:
+**Where the code lives.** Everything pad-specific is in two module pairs, plus
+small edits at the seams they hook into:
 
 - `pad_input.{h,cpp}` — the single translation seam. Phases 0, 1 and 2.
-- `pad_quickmenu.{h,cpp}` — the Y-button Quick Menu navigator. Phase 3.
 - `pad_actionmenu.{h,cpp}` — `CSWGuiActionMenuIos` suppression. Phase 4.
 - Seam edits: `menus_dispatch.cpp` (calls the seam, F1 gate corrected),
   `engine_input.cpp` (log annotation), `cycle_input.{h,cpp}`
   (`DispatchPadAction`), `help.{h,cpp}` (`HandleNavCode` / `ToggleMenu` /
   `SpeakContextHelp` + the Controller section), `interact_dispatch.{h,cpp}`
   (`InteractNarratedTarget`), `engine_keymap.{h,cpp}`
-  (`ForwardBackwardCommanded` / `AnyMovementCommanded`), `core_tick.cpp`
-  (three new phases), `strings*` (24 new localised strings, 7 languages).
+  (`ForwardBackwardCommanded` / `AnyMovementCommanded`), `engine_panels.{h,cpp}`
+  + `menus_chain.cpp` (`PanelKind::GamepadQuickMenu` + its decorative filter),
+  `map_ui_cursor.cpp` (stick pan), `core_tick.cpp` (two new phases), `strings*`
+  (13 new localised strings, 7 languages).
 
 **The pad binding set, as built.** In menus the pad simply IS the keyboard.
-In the world:
+On the map screen the left stick pans the virtual cursor (the D-Pad still
+navigates the panel). In the world:
 
 - D-Pad left / right — previous / next object in the current cycle category
 - D-Pad up / down — previous / next category
@@ -139,8 +149,46 @@ behaving correctly on the input it saw. Treat the stale premise as a
 **verify-then-decide** item, not a known defect: re-check it under a genuine
 partial-tilt stick push into a wall before touching any threshold.
 
-**D5 — the Quick Menu (Y) is silent.** Expected; it is not built from
-`CSWGuiControl`s so the chain cannot see it. Phase 3.
+**D5 — the Quick Menu (Y) is silent.** Expected — but the stated reason ("it is
+not built from `CSWGuiControl`s so the chain cannot see it") is wrong. It is,
+and the chain can. See Phase 3.
+
+## Defects from the third round (2026-08-06) — all fixed, none re-tested
+
+Evidence: `<K2 install>\logs\patch-20260806-163136.log`.
+
+**D6 — the Quick Menu reads "control N" every other press.** Not a silent
+menu: the chain sees the panel and reads the eight captions correctly, but also
+the 14 captionless icon quads sitting between them. Fixed with a decorative
+filter — Phase 3.
+
+**D7 — pad navigation never cancels the previous entry's speech.** Every menu
+announcement in the mod speaks with `interrupt=false`, which works on the
+keyboard only because the screen reader itself cuts queued speech on a
+keypress. A pad press produces no keystroke, so entries queue and the lag grows
+with every press. Fixed by issuing the cancel ourselves at the pad seam
+(`NoteNavPress` → `prism::Silence()`) — precisely what the reader would have
+done. Deliberately NOT fixed by flipping the announce paths to `interrupt=true`:
+that would change keyboard behaviour and break the announcements that
+intentionally queue (title, then focus).
+
+**D8 — on the map screen the left stick navigated menu entries.** The map's
+virtual cursor is the analog surface there, and the stick is the natural driver
+for it — it is the screen's twin of walking. Fixed: the seam swallows the axis
+events while `map_ui_cursor::IsActive()`, and the cursor's pan vector falls
+back to `pad::StickVector()` when no walk key is held. Keys still win when both
+are given.
+
+**Not a defect — the empty cycle in a fresh area.** D-Pad category stepping
+found nothing anywhere, but the log shows why and it is correct behaviour: the
+discovery set for that module loaded with **0 keys**
+(`Discovery: loaded set var=ACC_DISC_106per keys=0`), and `,`/`.` drive the
+discovery tier by default. `BuildListing` scanned 194 objects, saw 14 doors and
+43 placeables, and filtered all of them out because none had been narrated
+there yet. Nothing was discovered because no passive narration fired in that
+area — the player arrived and went straight into dialogue. Turning on
+"Extended cycling" in mod settings widens the same keys to everything in the
+area, which is the answer for a player who wants to sweep an unfamiliar room.
 
 ## Phase 0 — unblock menus — IMPLEMENTED
 
@@ -308,45 +356,40 @@ worth spending a round on — is whether continuous stick rotation ever settles
 long enough to satisfy the announcement's stability quiet window, which a
 keyboard tap-rotate trivially does.
 
-## Phase 3 — Quick Menu navigator — IMPLEMENTED
+## Phase 3 — Quick Menu navigator — IMPLEMENTED, then DELETED as unnecessary
 
-The Y-button menu (`CSWGamepadMenuIos`). Custom textured quads, not
-`CSWGuiControl`s — the chain cannot see it. Build a dedicated navigator on the
-Abilities-screen pattern (Strategy B in `docs/controller-mod-techniques.md` §5):
-read the selection index and speak the label.
+The plan called for a dedicated navigator reading `+0x68` / `+0x6c`, on the
+premise that the Y menu's widgets were custom textured quads the navigation
+chain could not see. **That premise is wrong** (third round,
+`patch-20260806-163136.log`): the Quick Menu is an ordinary `CSWGuiPanel`
+pushed onto `modal_stack` with 22 `CSWGuiButton` children, and the chain walks
+it and reads the real captions — "Menüs", "Gruppenanführer", "Einzelmodus",
+"Stealth-Modus", "Schnellspeichern", "Freie Sicht", "Waffe wechseln", "Hilfe".
 
-- Eight entries, fixed order: Menus, Party Leader, Solo/Party, Stealth,
-  Quick Save, Free Look, Switch Weapons, Help.
-- Labels come from `override/gamepad.txt` by line index — **line order is the
-  API**, 8 strings × 5 languages (EN, FR, IT, DE, ES in that order).
-- Selection index at `+0x68`, sub-selection at `+0x6c`, sub-count at `+0x70`.
-  Entry 1 (Party Leader) expands to a 3-item sub-list. Entry 3 (Stealth) is
-  skipped when the gate at `+0x7c` is clear.
-- Offsets, addresses and the input handler are in
-  `docs/llm-docs/k2-controller-support.md`.
+The navigator was not merely redundant, it was harmful: it stood the D-Pad down
+while armed, so on any machine where the offsets resolved it would have shut
+the working chain out entirely. (In the test round its own read failed and it
+disarmed immediately, which is the only reason the chain got the keys and the
+truth became visible.) `pad_quickmenu.{h,cpp}` and its eleven strings are
+deleted.
 
-**As built, with two deliberate departures from the sketch above.**
+**What the panel actually needs** is a decorative filter. Fourteen of the 22
+children are icon and background quads — same `CSWGuiButton` class, every `id`
+is `-1`, so neither class nor `.gui` id tells them apart. What does: they carry
+no caption by any route, and their `is_active` / `bit_flags` read as garbage.
+Unfiltered the chain is 22 entries long and every other press speaks the
+"control N" placeholder, which is exactly the symptom the round reported.
 
-*Labels come from our own string tables, not from `gamepad.txt`.* That file is
-read by line index in a fixed five-language block, so it speaks whatever
-language the GAME is in rather than the language the MOD is set to, and it has
-to be present and unmodified. The eight entries are fixed engine functionality,
-so naming them ourselves costs nothing and keeps every spoken string in one
-place. Eleven new `PadQuick*` ids, seven languages.
+As built: `PanelKind::GamepadQuickMenu`, identified by vtable `0x0099dd3c`
+(K2-only, so the constant poisons to 0 on KOTOR 1 and the detector declines
+there without a read), and one clause in `IsDecorativeControl` dropping any
+child the extractor cannot get text out of. Everything else — navigation,
+activation, close — is the chain the mod already had.
 
-*The `+0x7c` Stealth gate is not read.* We read the live index, so an entry the
-engine skips is simply an index we never see — there was nothing to handle.
-
-The navigator arms on the Y press (`pad_input` routes it) rather than on a
-state poll, and stands down on A, B, or a second Y — all three are cancels or
-activations in the menu's own input handler. Three safeguards keep a stale arm
-from silently costing the player their D-Pad bindings: the arm expires after
-1500 ms if the engine never moves the index off -1 (its open path can refuse),
-it drops when the state becomes unreadable, and it drops when the world goes
-away.
-
-Party Leader's sub-list speaks the party member's name for the slot, falling
-back to "Slot N" when the roster cannot be read.
+The Party Leader sub-list is untested: entry 1 expands into three items, and
+whether those arrive as fresh captioned children (which the chain would pick up
+on its next rebind) or as a state change inside the same widgets is the one
+open question left on this panel.
 
 ## Phase 4 — the action menu — IMPLEMENTED (the riskiest piece; read this)
 

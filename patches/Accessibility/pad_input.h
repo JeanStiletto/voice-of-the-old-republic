@@ -157,4 +157,15 @@ bool Connected();
 // tick by Tick(); false whenever XInput is unavailable or no pad is connected.
 bool StickMoving();
 
+// The left stick as a normalised direction, screen convention: x = +1 right,
+// y = +1 UP (the axis as XInput reports it, not the map's inverted pixel
+// space — the caller flips if it wants pixels). Returns false and leaves the
+// outputs untouched when the stick is inside the dead zone.
+//
+// This is what makes the stick a continuous analog driver rather than four
+// synthetic key presses: the map cursor scales its pan by the magnitude the
+// player is actually giving it. Same sample StickMoving reads, so the two can
+// never disagree.
+bool StickVector(float& outX, float& outY);
+
 }  // namespace acc::pad

@@ -20,6 +20,8 @@
 #include "audio_cues.h"
 #include "engine_area.h"
 #include "engine_keymap.h"            // MoveAxisVks — bound move/turn keys
+#include "pad_input.h"                // StickVector — the KOTOR 2 pad's left
+                                      // stick pans the cursor here
 #include "engine_panels.h"
 #include "engine_player.h"
 #include "engine_reads.h"             // ReadCExoString — waypoint tag log
@@ -827,6 +829,25 @@ void Tick() {
         // Normalise diagonals so combined keys don't 1.4× the speed.
         float mag = std::sqrt(vx * vx + vy * vy);
         vx /= mag; vy /= mag;
+    } else {
+        // KOTOR 2 gamepad: the left stick pans the cursor, on the same
+        // principle as the keys above — the map's pan is the screen's twin of
+        // walking, so it belongs on the stick the player walks with. Already
+        // normalised and dead-zoned by pad_input; the Y flip is the map's
+        // pixel convention (stick up = +y, map up = lower pixel row).
+        //
+        // Keys win when both are given, which is why this is the else branch:
+        // a resting stick must never dilute a deliberate keypress, and the two
+        // devices are not meant to be blended.
+        //
+        // The matching axis events are swallowed at the pad seam, so the
+        // engine cannot also step the panel's controls with the same push.
+        float sx = 0.0f, sy = 0.0f;
+        if (acc::pad::StickVector(sx, sy)) {
+            vx = sx;
+            vy = -sy;
+            acclog::Trace("MapCursor", "input stick x=%.2f y=%.2f", vx, vy);
+        }
     }
     float step = kCursorSpeedPx * dt;
     float newPx = g_state.px + vx * step;

@@ -307,13 +307,33 @@ bar — i.e. of our unified action menu. Two levels, both verified:
   which 6 are displayed as columns. Entries are 0x3c bytes with `action_id` at
   `+8`. Matches K1's `PopulateMenus` shape exactly.
 
-**These widgets are NOT `CSWGuiControl`s.** They are custom textured quads with
-their own draw and hit handling, held in fixed arrays. Our navigation chain
-(`RebindChain`, which walks a `CSWGuiPanel`'s `CExoArrayList<CSWGuiControl*>`)
-**cannot see them at all**. Any accessibility for the Quick Menu has to be a
-dedicated navigator that reads `+0x68` / `+0x6c` and speaks the `gamepad.txt`
-string for the index — the Abilities-screen pattern (Strategy B in
-`docs/controller-mod-techniques.md` §5), not the generic chain.
+**~~These widgets are NOT `CSWGuiControl`s.~~ REFUTED 2026-08-06 (third round,
+`patch-20260806-163136.log`).** They are ordinary `CSWGuiButton`s and the
+Quick Menu is an ordinary `CSWGuiPanel`: opening it pushes panel `vtable
+0x0099dd3c` onto `modal_stack` with **22 children**, and the generic chain
+walks them and reads the real captions straight out — "Menüs",
+"Gruppenanführer", "Einzelmodus", "Stealth-Modus", "Schnellspeichern", "Freie
+Sicht", "Waffe wechseln", "Hilfe".
+
+So no dedicated navigator is needed, and one written against `+0x68` / `+0x6c`
+is actively worse: it would swallow the D-Pad and shut the working chain out.
+
+What the panel does need is a **decorative filter**. Fourteen of the 22
+children are the icon and background quads — the same `CSWGuiButton` class,
+every `id` is `-1`, so neither class nor `.gui` id distinguishes them. What
+does: they carry no caption by any route (the extractor's whole cascade comes
+back empty, and reading their `gui_string` faults outright), and their
+`is_active` / `bit_flags` read as garbage. Unfiltered, the chain is 22 entries
+long and every other step speaks the "control N" placeholder. The mod
+identifies the panel by vtable (`PanelKind::GamepadQuickMenu`) and drops the
+captionless children in `IsDecorativeControl`.
+
+The lesson generalises past this panel: "custom quads, the chain cannot see
+them" was inferred from the ctor building fixed `0x1d0`-byte widget arrays.
+Fixed arrays of widgets and registration in the panel's
+`CExoArrayList<CSWGuiControl*>` are not mutually exclusive — the ctor evidence
+never actually spoke to the second question. One `Menus.PanelWalk` line settled
+it.
 
 ## KNOWN — what is free for our own bindings
 

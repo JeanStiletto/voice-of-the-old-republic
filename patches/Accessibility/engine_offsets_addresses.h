@@ -330,6 +330,14 @@ const uintptr_t kAddrCSWGuiPowersLevelUpOnPowerPicked = acc::addr::Pick(0x006f20
 // (0x007598b0) in the vtable region, as expected for sibling GUI classes.
 const uintptr_t kVtableCSWGuiPowersLevelUp             = acc::addr::Pick(0x00759780, 0x009AA34C);
 
+// CSWGamepadMenuIos identity by vtable — the KOTOR 2 gamepad Quick Menu (Y).
+// KOTOR 2 only; the class does not exist in KOTOR 1. Same reasoning as the
+// powers panel above: no CGuiInGame slot, so the vtable is the identifier.
+// Witnessed live (patch-20260806-163136.log) as the foreground panel's vtable
+// when Y opens the menu, and it is the same vtable the RE doc names for the
+// menu's input handler at slot 15.
+const uintptr_t kVtableCSWGamepadMenuIos               = acc::addr::Kotor2Only(0x0099dd3c);
+
 // CSWGuiSkillFlowChart::SetSelectedSkill — sets the chart's render-side
 // selection state by feat ID. Walks rows × cols looking for the matching
 // feat, updates the chart's (selected_col, selected_row) pair and the

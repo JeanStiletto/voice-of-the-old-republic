@@ -610,17 +610,6 @@ const char* Get(Id id) {
         case Id::HelpContextDialog:      return "Conversation.";
         case Id::HelpContextContainer:   return "Container.";
         case Id::HelpContextStore:       return "Store.";
-        case Id::PadQuickMenuOpened:       return "Quick menu";
-        case Id::PadQuickMenus:            return "Menus";
-        case Id::PadQuickPartyLeader:      return "Party leader";
-        case Id::PadQuickSoloParty:        return "Solo or party";
-        case Id::PadQuickStealth:          return "Stealth";
-        case Id::PadQuickSave:             return "Quick save";
-        case Id::PadQuickFreeLook:         return "Free look";
-        case Id::PadQuickSwitchWeapons:    return "Switch weapons";
-        case Id::PadQuickHelp:             return "Help";
-        case Id::PadQuickUnknownEntry:     return "Entry";
-        case Id::FmtPadQuickSlot:          return "Slot %d";
 
         case Id::InputBlockedBigPicture:
             return "The game can't receive your key presses because Steam "

@@ -308,6 +308,20 @@ bool IsScriptSelectStructural(void* panel) {
 // heap-allocated panel we've seen puts a listbox at ID 6 or 7, which keeps
 // this distinct from SaveLoad (listbox at 0) and the Workbench shapes
 // (listbox at 0).
+// KOTOR 2 gamepad Quick Menu — vtable equality, nothing structural. The class
+// exists only in KOTOR 2, so the constant poisons to 0 on KOTOR 1 and the
+// guard below declines there without a read.
+bool IsGamepadQuickMenuStructural(void* panel) {
+    if (!panel) return false;
+    if (!acc::addr::Ok(kVtableCSWGamepadMenuIos)) return false;
+    __try {
+        void** vt = *reinterpret_cast<void***>(panel);
+        return reinterpret_cast<uintptr_t>(vt) == kVtableCSWGamepadMenuIos;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 bool IsPowersLevelUpStructural(void* panel) {
     if (!panel) return false;
     __try {
@@ -852,6 +866,10 @@ PanelKind IdentifyPanel(void* panel) {
     // panel's ID 11 = LBL_UPGRADE44 (LabelHilight) no longer false-matches.
     // Probing workbench-shapes before SaveLoad provides belt-and-braces
     // protection against future regressions.
+    // Vtable equality, so it is collision-proof and cheap — probe it first.
+    if (IsGamepadQuickMenuStructural(panel)) {
+        return recordAndReturn(PanelKind::GamepadQuickMenu, "GamepadQuickMenu");
+    }
     if (IsWorkbenchUpgradeStructural(panel)) {
         return recordAndReturn(PanelKind::WorkbenchUpgrade, "WorkbenchUpgrade");
     }

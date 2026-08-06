@@ -629,17 +629,6 @@ const char* Get(Id id) {
         case Id::HelpContextDialog:      return "Gespr\xE4""ch.";
         case Id::HelpContextContainer:   return "Beh\xE4lter.";
         case Id::HelpContextStore:       return "Laden.";
-        case Id::PadQuickMenuOpened:       return "Schnellmen\xFC";
-        case Id::PadQuickMenus:            return "Men\xFCs";
-        case Id::PadQuickPartyLeader:      return "Gruppenanf\xFChrer";
-        case Id::PadQuickSoloParty:        return "Solo oder Gruppe";
-        case Id::PadQuickStealth:          return "Schleichen";
-        case Id::PadQuickSave:             return "Schnellspeichern";
-        case Id::PadQuickFreeLook:         return "Freie Sicht";
-        case Id::PadQuickSwitchWeapons:    return "Waffen wechseln";
-        case Id::PadQuickHelp:             return "Hilfe";
-        case Id::PadQuickUnknownEntry:     return "Eintrag";
-        case Id::FmtPadQuickSlot:          return "Platz %d";
 
         case Id::InputBlockedBigPicture:
             return "Das Spiel kann deine Tasteneingaben nicht empfangen, "
