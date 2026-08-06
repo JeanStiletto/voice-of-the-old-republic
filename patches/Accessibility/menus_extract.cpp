@@ -295,8 +295,8 @@ const char* FindSiblingLabel(void* panel, void* control,
     int targetCx, targetCy;
     if (!GetControlCenter(control, targetCx, targetCy)) return nullptr;
 
-    void* best = nullptr;
     int bestScore = 0x7fffffff;
+    bool haveBest = false;
 
     // Tolerances. Same-row dy<=5; vertical offset (above OR below) up to
     // 50 px (typical KOTOR row height is ~30-55 px) with dx tolerance 80
@@ -353,21 +353,35 @@ const char* FindSiblingLabel(void* panel, void* control,
             continue;
         }
 
-        if (score < bestScore) {
-            bestScore = score;
-            best      = c;
+        if (score >= bestScore) continue;
+
+        // Read the candidate's text HERE rather than once at the end, and
+        // only keep it if it actually carries some. Picking the geometric
+        // winner first and reading it afterwards loses the whole lookup to
+        // any closer-but-empty decorative label — KOTOR 2's optsound_p.gui
+        // is exactly that case: LBL_BAR4 is a 318x329 empty-text frame whose
+        // centre lands 21px from SLI_FX, beating LBL_FX at 75px, so the FX
+        // slider came back unlabelled while its neighbours resolved fine.
+        // Skipping empty candidates lets the next-best labelled one win.
+        // Sized to the largest caller buffer (TrySiblingLabel's label[256])
+        // so routing through the staging copy can't truncate what a direct
+        // write into outBuf would have kept.
+        char candidate[256];
+        if (!ExtractTextOrStrRefIndirect(c,
+                                         kLabelTextOffset,
+                                         kLabelStrRefOffset,
+                                         kLabelTextObjectOffset,
+                                         candidate, sizeof(candidate)) ||
+            candidate[0] == '\0') {
+            continue;
         }
+
+        bestScore = score;
+        haveBest  = true;
+        strncpy_s(outBuf, bufSize, candidate, _TRUNCATE);
     }
 
-    if (!best) return nullptr;
-    if (ExtractTextOrStrRefIndirect(best,
-                                    kLabelTextOffset,
-                                    kLabelStrRefOffset,
-                                    kLabelTextObjectOffset,
-                                    outBuf, bufSize)) {
-        return "siblinglabel";
-    }
-    return nullptr;
+    return haveBest ? "siblinglabel" : nullptr;
 }
 
 // Identify the movie-volume slider on optionssound.gui. The stock German
@@ -381,6 +395,12 @@ const char* FindSiblingLabel(void* panel, void* control,
 // file in data/gui.bif and are stable across locales — unlike the label
 // strrefs that the engine renders. `control` must itself be the id=8
 // slider.
+//
+// KOTOR 1 only, and the fingerprint enforces that on its own: K2's
+// optsound_p.gui numbers its sliders {2,5,8,9}, so has1/has4/has7 can never
+// all be true there. Nothing to port — K2 gives LBL_MOVIE its own strref
+// ("Film-Lautstärke"), so the duplicate-label bug this works around simply
+// doesn't exist in that game.
 bool IsSoundOptionsMovieSlider(void* panel, void* control) {
     if (!panel || !control) return false;
     if (!IsSlider(control)) return false;
@@ -843,17 +863,28 @@ const char* TryLabelHilight(void* control, char* outBuf, size_t bufSize) {
 //    resolves a duplicate. When the slider sits on a panel whose ID
 //    fingerprint matches optionssound.gui ({1,4,7,8} — locale-stable),
 //    we substitute the localized "Video volume" string for the label.
-const char* TrySlider(void* control, char* outBuf, size_t bufSize) {
+//
+//    `owner` is FromControl's ResolveOwnerPanel result, for the same reason
+//    TrySiblingLabel (step 9) takes it: the g_currentPanel global this used
+//    to read is the panel that last fired SetActiveControl, which is NOT the
+//    panel holding the control whenever one is pushed on top without firing
+//    it. KOTOR 2's Soundoptionen is exactly that — a modal over the options
+//    screen, with g_currentPanel still on the InGameOptions panel behind it
+//    (patch-20260804-191607.log: `Routing: fg=333D2C60 current=31EB85D8`).
+//    FindSiblingLabel then walked the wrong panel's controls, found no label
+//    near the slider, and all four volume sliders announced as a bare
+//    "85 von 100".
+const char* TrySlider(void* control, void* owner,
+                      char* outBuf, size_t bufSize) {
     const char* source = nullptr;
     if (IsSlider(control)) {
         uint32_t cur = ReadU32(control, kSliderCurValueOffset);
         uint32_t max = ReadU32(control, kSliderMaxValueOffset);
         char label[128];
         const char* labelText = nullptr;
-        // Liveness-filtered: TrySlider runs ahead of FromControl's
-        // ResolveOwnerPanel, so the raw global is all we have here — and both
-        // callees walk panel+kPanelControlsOffset.
-        void* panel = CurrentPanelIfLive();
+        // Liveness-filtered by ResolveOwnerPanel — both callees walk
+        // panel+kPanelControlsOffset, which a freed panel would fault on.
+        void* panel = owner;
         if (panel && IsSoundOptionsMovieSlider(panel, control)) {
             labelText = acc::strings::Get(
                 acc::strings::Id::SoundOptionsMovieVolume);
@@ -2288,13 +2319,17 @@ const char* FromControl(void* control,
 
     const char* source = nullptr;
 
+    // Resolved up front, not just before the per-kind fallbacks: TrySlider
+    // needs the owning panel too (its category label is a spatial sibling).
+    void* owner = ResolveOwnerPanel(control, ownerPanel);
+
     if (!source) source = TryVirtualRowAnchor(control, ownerPanel, outBuf, bufSize);
     if (!source) source = TryTooltip(control, outBuf, bufSize);
     if (!source) source = TryButton(control, outBuf, bufSize);
     if (!source) source = TryButtonToggle(control, outBuf, bufSize);
     if (!source) source = TryLabel(control, outBuf, bufSize);
     if (!source) source = TryLabelHilight(control, outBuf, bufSize);
-    if (!source) source = TrySlider(control, outBuf, bufSize);
+    if (!source) source = TrySlider(control, owner, outBuf, bufSize);
     if (!source) source = TryEditbox(control, outBuf, bufSize);
     if (!source) source = TrySingleRowListBox(control, outBuf, bufSize);
     if (!source) {
@@ -2306,8 +2341,7 @@ const char* FromControl(void* control,
     }
     if (!source) source = TrySpeculativeVtableRead(control, outBuf, bufSize);
 
-    // The per-kind fallbacks below all need the owning panel.
-    void* owner = ResolveOwnerPanel(control, ownerPanel);
+    // The per-kind fallbacks below all need the owning panel too.
     if (!source) source = TryInGameMenuIcon(control, owner, outBuf, bufSize);
     if (!source) source = TryEquipSlot(control, owner, outBuf, bufSize);
     if (!source) source = TryInGameMapArrow(control, owner, outBuf, bufSize);

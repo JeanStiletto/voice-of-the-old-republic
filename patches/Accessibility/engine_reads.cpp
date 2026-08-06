@@ -144,6 +144,20 @@ bool LookupTlk(uint32_t strref, char* outBuf, size_t bufSize) {
     return ok;
 }
 
+// See engine_reads.h for why every engine-rendered-vs-TLK compare has to
+// come through here rather than strcmp.
+bool EqualsTrimmed(const char* a, const char* b) {
+    if (!a || !b) return false;
+    while (*a == ' ' || *a == '\t' || *a == '\n' || *a == '\r') ++a;
+    while (*b == ' ' || *b == '\t' || *b == '\n' || *b == '\r') ++b;
+    size_t la = strlen(a), lb = strlen(b);
+    while (la > 0 && (a[la - 1] == ' ' || a[la - 1] == '\t' ||
+                      a[la - 1] == '\n' || a[la - 1] == '\r')) --la;
+    while (lb > 0 && (b[lb - 1] == ' ' || b[lb - 1] == '\t' ||
+                      b[lb - 1] == '\n' || b[lb - 1] == '\r')) --lb;
+    return la == lb && memcmp(a, b, la) == 0;
+}
+
 bool ExtractTextOrStrRef(void* control,
                          size_t cexoOffset, size_t strRefOffset,
                          char* outBuf, size_t bufSize) {
@@ -251,6 +265,21 @@ bool ReadControlTooltip(void* control, char* outBuf, size_t bufSize) {
     return false;
 }
 
+// True for the byte-level glyph markers KOTOR 2 embeds in a rendered
+// gui_string. The Aspyr build prefixes an actionable button's caption with a
+// controller-icon code — 0x11 followed by a space — so the close button on
+// every sub-screen renders as "\x11 Schliessen" while dialog.tlk 1582 says
+// "Schliessen". Not whitespace, so no amount of trimming reaches it; it has to
+// come off as a distinct class of byte.
+//
+// Whitespace controls are deliberately NOT in the set. '\n' in particular
+// carries meaning downstream — the Options settings blob is identified by
+// interior newlines (menus.cpp SetActive) — so only the non-whitespace C0
+// codes are treated as markers.
+bool IsGlyphMarkerByte(unsigned char ch) {
+    return ch < 0x20 && ch != '\t' && ch != '\n' && ch != '\r';
+}
+
 bool ReadGuiString(void* control, size_t guiStringPtrOffset,
                    char* outBuf, size_t bufSize) {
     if (!control || bufSize < 2) return false;
@@ -275,7 +304,30 @@ bool ReadGuiString(void* control, size_t guiStringPtrOffset,
                       control, (unsigned)guiStringPtrOffset);
         got = false;
     }
-    return got;
+    if (!got) return false;
+
+    // Strip the glyph markers off both ends. Done here, at the single funnel
+    // every gui_string read goes through, rather than at each comparison site
+    // — the marker is not text, and letting it through means both a caption
+    // that no strref compare can match AND a stray control byte handed to the
+    // screen reader on every K2 button.
+    size_t start = 0;
+    while (outBuf[start] &&
+           IsGlyphMarkerByte(static_cast<unsigned char>(outBuf[start]))) {
+        ++start;
+    }
+    size_t end = strlen(outBuf + start);
+    while (end > 0 &&
+           IsGlyphMarkerByte(static_cast<unsigned char>(outBuf[start + end - 1]))) {
+        --end;
+    }
+    if (start != 0) memmove(outBuf, outBuf + start, end);
+    outBuf[end] = '\0';
+
+    // Marker-only strings (a pure icon button) count as no text, so the
+    // caller falls through to its CExoString / strref paths instead of
+    // accepting an empty rendered string as the answer.
+    return outBuf[0] != '\0';
 }
 
 bool ExtractTextOrStrRefIndirect(void* control,

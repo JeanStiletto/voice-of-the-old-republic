@@ -732,11 +732,21 @@ bool IsDecorativeControl(void* panel, void* c,
     // This subsumes the per-panel Store/Equip/Options Schliess. filters
     // above; those stay for their non-1582 siblings (Equip OK, Store
     // Verkaufsliste/Kaufen) and as the Esc-routing anchors.
+    //
+    // EqualsTrimmed, not strcmp: KOTOR 2 renders this caption as
+    // "\x11 Schliessen" — an Aspyr controller-glyph marker, then a pad space,
+    // then the word — against a dialog.tlk that says "Schliessen". A
+    // byte-exact compare never matched, so the close button survived in every
+    // K2 sub-screen chain (patch-20260806-173225.log: `[5] button
+    // text="\x11 Schliessen"`, and not one "filter close button" line in the
+    // whole session). ReadGuiString takes the 0x11 off, this takes the space
+    // off; both halves are needed. KOTOR 1 emits neither, which is why the
+    // same code was correct there for months.
     if (haveCloseCaption &&
         CallDowncast(c, kVtableAsButton) != nullptr) {
         char btnText[64];
         if (ReadButtonText(c, btnText, sizeof(btnText)) &&
-            strcmp(btnText, closeCaption) == 0) {
+            EqualsTrimmed(btnText, closeCaption)) {
             acclog::Write("Menus.Chain",
                           "filter close button panel=%p ctrl=%p "
                           "text=\"%s\" (TLK %u)",

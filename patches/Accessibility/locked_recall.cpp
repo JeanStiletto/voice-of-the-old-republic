@@ -46,19 +46,9 @@ unsigned int s_recentTickMs = 0;
 
 char s_pendingReplay[512] = {0};
 
-// Trim-insensitive compare (mirrors tutorial_hints::EqualsTrimmed) — guards a
-// stray padding space between the router's rendered line and our TLK
-// resolution of the same strref.
-bool EqualsTrimmed(const char* a, const char* b) {
-    while (*a == ' ' || *a == '\t' || *a == '\n' || *a == '\r') ++a;
-    while (*b == ' ' || *b == '\t' || *b == '\n' || *b == '\r') ++b;
-    size_t la = std::strlen(a), lb = std::strlen(b);
-    while (la > 0 && (a[la-1] == ' ' || a[la-1] == '\t' ||
-                      a[la-1] == '\n' || a[la-1] == '\r')) --la;
-    while (lb > 0 && (b[lb-1] == ' ' || b[lb-1] == '\t' ||
-                      b[lb-1] == '\n' || b[lb-1] == '\r')) --lb;
-    return la == lb && std::memcmp(a, b, la) == 0;
-}
+// Guards a stray padding space between the router's rendered line and our TLK
+// resolution of the same strref. Shared implementation — see engine_reads.h.
+using acc::engine::EqualsTrimmed;
 
 bool IsLockedMessage(const char* text) {
     if (!s_lockedTextBuilt) {

@@ -43,6 +43,20 @@ bool TryReadPtr(void* base, size_t offset, void** out);
 // or any fault.
 bool LookupTlk(uint32_t strref, char* outBuf, size_t bufSize);
 
+// Case-sensitive compare that ignores leading/trailing whitespace on both
+// sides. The compare to reach for whenever engine-RENDERED text is matched
+// against our own LookupTlk resolution of the same strref: the two are not
+// byte-identical, because the engine pads captions when it builds the
+// gui_string. KOTOR 2 renders every close button as " Schliessen" against a
+// TLK that says "Schliessen", which is exactly how a plain strcmp let the
+// close-button chain filter fail on every K2 sub-screen. (The 0x11 glyph
+// marker that K2 puts ahead of that pad space is NOT whitespace and is not
+// this function's job — ReadGuiString removes it at the read.)
+//
+// Was copy-pasted into tutorial_hints.cpp and locked_recall.cpp before it
+// lived here; both now call this.
+bool EqualsTrimmed(const char* a, const char* b);
+
 // Mirrors CSWGuiControl::DisplayToolTip @0x418a90:
 //   1. tooltip_strref at +0x24 → TLK lookup.
 //   2. tooltip_string at +0x28 if non-empty.
