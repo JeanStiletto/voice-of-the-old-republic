@@ -317,8 +317,10 @@ bool OpenLiveActionMenu() {
     }
     if (!acc::unified_menu::IsActive()) {
         // No populated target row (a corpse, a non-combat NPC), or no target
-        // at all. The personal block is still worth opening.
-        acc::unified_menu::OpenPersonal(0);
+        // at all. The personal block is still worth opening — wherever it has
+        // something, which is NOT necessarily column 0: on a droid that column
+        // is Force Powers and is always empty.
+        acc::unified_menu::OpenAnyPersonal();
     }
     const bool up = acc::unified_menu::IsActive();
     // Both entry points declined (every category drained). Drop the request

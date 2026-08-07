@@ -238,11 +238,22 @@ void BuildCategoryList(void* tam, void* mi) {
         }
     }
     if (mi) {
+        int n[kColumnCount] = {0};
         for (int col = 0; col < kColumnCount && g.catCount < kMaxCats; ++col) {
-            if (acc::engine_actionbar::VariantCount(mi, col) > 0) {
+            n[col] = acc::engine_actionbar::VariantCount(mi, col);
+            if (n[col] > 0) {
                 g.cats[g.catCount++] = {CatKind::Personal, col};
             }
         }
+        // Column census, deduped. KOTOR 1 populates four personal columns and
+        // binds them to keys 4..7; KOTOR 2's pad action menu is documented as
+        // SIX, and whether its PC action bar really fills columns 4 and 5 has
+        // never been observed. This walk already reads all six, so the answer
+        // is free — and it decides whether those two need number keys of their
+        // own. Trace collapses it to one line per distinct shape.
+        acclog::Trace("UnifiedMenu.cols", "personal variant counts "
+                      "[0]=%d [1]=%d [2]=%d [3]=%d [4]=%d [5]=%d",
+                      n[0], n[1], n[2], n[3], n[4], n[5]);
     }
 }
 
@@ -639,7 +650,11 @@ bool OpenTarget(int row) {
     return true;
 }
 
-bool OpenPersonal(int col) {
+// `requested` distinguishes the two intents that share this body. Shift+4..7
+// REQUESTS a column: the user named it, so an empty one is worth saying aloud.
+// The pad's live mode does not — it is opening "the action menu", not "Force
+// Powers", so a notice about a column nobody asked for would be noise.
+bool OpenPersonalImpl(int col, bool requested) {
     if (col < 0 || col >= kColumnCount) return false;
     if (ForegroundPanelBlocks()) {
         acclog::Write("UnifiedMenu", "OpenPersonal col=%d — foreground panel; not arming",
@@ -669,25 +684,39 @@ bool OpenPersonal(int col) {
     // see the identical note in OpenTarget).
     void* mi = acc::engine_actionbar::ResolveMainInterface();
 
-    // If the REQUESTED column has no entries (e.g. Shift+4 self-powers on a
-    // non-Jedi, Shift+6 explosives with no grenades), announce that column
-    // by name and don't open — never silently jump to a different category.
-    if (!mi || acc::engine_actionbar::VariantCount(mi, g.reqSlot) <= 0) {
+    if (!mi) {
+        acclog::Write("UnifiedMenu", "OpenPersonal col=%d — main interface "
+            "unresolved; not arming", g.reqSlot);
+        return false;
+    }
+
+    // The requested column may be empty — Shift+4 self-powers on a non-Jedi or
+    // a droid, Shift+6 explosives with no grenades. Say so by name, then open
+    // anyway and land on the first populated category.
+    //
+    // Refusing outright was the old rule ("never silently jump to a different
+    // category"), and it read as a menu that would not respond: on T3-M4 every
+    // open announced "Own Force Powers: empty" and then nothing at all
+    // answered the arrow keys, because nothing had opened. The rule's real
+    // intent was don't jump SILENTLY, and this notice is what makes it not
+    // silent. It rides in as SpeakCategory's prefix rather than as its own
+    // utterance, because SpeakCategory speaks with interrupt=true and would
+    // otherwise cancel it — the user hears "<column>: empty. <where you
+    // landed>" as one line.
+    char emptyNotice[160] = "";
+    if (requested && acc::engine_actionbar::VariantCount(mi, g.reqSlot) <= 0) {
         Cat reqCat{CatKind::Personal, g.reqSlot};
         const char* name = CategoryName(reqCat);
-        char msg[160];
         if (name && name[0]) {
-            std::snprintf(msg, sizeof(msg),
+            std::snprintf(emptyNotice, sizeof(emptyNotice),
                 acc::strings::Get(acc::strings::Id::FmtMenuCategoryEmpty), name);
         } else {
-            std::snprintf(msg, sizeof(msg),
+            std::snprintf(emptyNotice, sizeof(emptyNotice),
                 acc::strings::Get(acc::strings::Id::FmtActionBarColumnEmpty),
                 g.reqSlot + 1);
         }
-        prism::Speak(msg, /*interrupt=*/true);
-        acclog::Write("UnifiedMenu", "OpenPersonal col=%d empty -> [%s]",
-            g.reqSlot, msg);
-        return false;
+        acclog::Write("UnifiedMenu", "OpenPersonal col=%d empty -> landing on "
+            "first populated category [%s]", g.reqSlot, emptyNotice);
     }
 
     // Fold in the target block when a live hostile target is focused and its
@@ -702,16 +731,27 @@ bool OpenPersonal(int col) {
     }
     const bool hasTarget = (tam != nullptr);
 
-    Arm();
     g.hasTargetBlock = hasTarget;   // false → no per-press re-anchor
     g.targetHandle   = hasTarget ? handle : 0;
     g.creature       = hasTarget ? DetectCreature(tam, handle) : false;
     g.targetName[0]  = '\0';
 
+    // Build BEFORE arming. With nothing populated anywhere there is no menu to
+    // open, and arming first would take a world pause (and consume a live-arm
+    // request) only to hand it straight back.
     BuildCategoryList(tam, mi);  // tam==nullptr → personal block only
+    if (g.catCount == 0) {
+        if (emptyNotice[0]) prism::Speak(emptyNotice, /*interrupt=*/true);
+        acclog::Write("UnifiedMenu", "OpenPersonal col=%d — no populated "
+            "category anywhere; not arming", g.reqSlot);
+        return false;
+    }
 
-    // Requested column is populated → land on it (Left/Right reach the rest,
-    // including the target rows when folded in).
+    Arm();
+
+    // Land on the requested column when it is populated; otherwise on the
+    // first category there is. Left/Right reach the rest, including the target
+    // rows when folded in.
     int loc = LocateCat(CatKind::Personal, g.reqSlot);
     g.curCat = (loc >= 0) ? loc : 0;
 
@@ -719,9 +759,13 @@ bool OpenPersonal(int col) {
         "target=0x%08x creature=%d cats=%d curCat=%d", g.reqSlot,
         hasTarget ? 1 : 0, g.targetHandle, g.creature ? 1 : 0,
         g.catCount, g.curCat);
-    SpeakCategory(tam, mi, /*prefix=*/nullptr);
+    SpeakCategory(tam, mi, emptyNotice[0] ? emptyNotice : nullptr);
     return true;
 }
+
+bool OpenPersonal(int col) { return OpenPersonalImpl(col, /*requested=*/true); }
+
+bool OpenAnyPersonal() { return OpenPersonalImpl(0, /*requested=*/false); }
 
 // Steps of HandleInputEvent below. They are file-local because every one of
 // them writes `g` and is only meaningful inside a single input dispatch —

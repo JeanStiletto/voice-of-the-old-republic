@@ -45,7 +45,19 @@ bool OpenTarget(int row);
 // Open on a specific PERSONAL column (Shift+4/5/6/7, col 0..3). Always
 // available; refreshes against the narrated target (if any) so Left can
 // still cross into the target block.
+//
+// An empty requested column is announced by name and the menu then opens on
+// the first populated category. It used to refuse instead, which read as a
+// menu that would not respond — on a droid, Shift+4 said "Own Force Powers:
+// empty" and no arrow key did anything, because nothing had opened. Refusal
+// is now reserved for the one case that means it: nothing populated anywhere.
 bool OpenPersonal(int col);
+
+// Open the personal block wherever it actually has something, with no column
+// requested. The pad's live mode uses this: it is opening "the action menu",
+// not "Force Powers", so a notice about an empty column nobody asked for
+// would be answering an unasked question.
+bool OpenAnyPersonal();
 
 // Arm from the Shift+Enter radial path. The picker (engine_picker::Drive
 // with forceRadial) has already run PopulateMenus against `targetHandle`.
