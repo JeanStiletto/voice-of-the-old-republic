@@ -1083,6 +1083,14 @@ EdgeResult ClassifyEdge(void* areaForDiag,
     return r;
 }
 
+// Append `entry` to a comma-separated list string, inserting ", " before
+// it when the list is non-empty. No-op for empty entries.
+void AppendListEntry(std::string& list, const std::string& entry) {
+    if (entry.empty()) return;
+    if (!list.empty()) list += ", ";
+    list += entry;
+}
+
 // Render the door-flavoured replacement of a direction word. Single
 // source of truth for the dead-end / corridor / junction-octant
 // rewrites. Each format takes (noun, direction[, extra]):
@@ -1145,9 +1153,9 @@ std::string RenderDoorDirection(int doorIdx, const char* dirWord) {
 // Render a corridor's axis label into outBuf. Branches by corridor
 // symmetry so the spoken form stays terse for clean axes but exposes
 // both endpoints when the corridor turns:
-//   - opposite CARDINAL octants (N+S, E+W) → the dedicated axis words
-//     ("Nord-Süd" / "Ost-West"). Unambiguous: neither is an octant
-//     name, so they can only be heard as an axis.
+//   - opposite CARDINAL octants (N+S, E+W) AND no door on either end →
+//     the dedicated axis words ("Nord-Süd" / "Ost-West"). Unambiguous:
+//     neither is an octant name, so they can only be heard as an axis.
 //   - opposite DIAGONAL octants (NE+SW, NW+SE) → both direction words,
 //     same as the asymmetric form below. These USED to abbreviate to
 //     the northern-half octant word ("Nord-Ost") — but that word IS a
@@ -1161,45 +1169,69 @@ std::string RenderDoorDirection(int doorIdx, const char* dirWord) {
 //     Süd-Ost"). Caught the "Korridor West" failure mode where the
 //     old single-octant axis collapsed an asymmetric corridor to a
 //     single direction and lost the other endpoint.
-// When `doorIdx` >= 0 the picked label is wrapped via
-// RenderDoorDirection so corridors that pass through doors read as
-// "Tür <axis>" / "Tür <axis> nach <DEST>".
-std::string RenderCorridorAxis(int bitA, int bitB, int doorIdx) {
+// `doorA` / `doorB` are the door indices of the A-end and B-end exits
+// respectively (-1 = no door). Each end is rendered independently via
+// RenderDoorDirection, so a corridor whose ends are different doors
+// keeps both names ("Sicherheitstür Ost, Tür West nach Treibstoffdepot")
+// instead of collapsing onto whichever door was collected first.
+std::string RenderCorridorAxis(int bitA, int doorA, int bitB, int doorB) {
     using acc::strings::Id;
     if (bitA < 0 || bitB < 0 || bitA == bitB) return std::string();
 
+    bool anyDoor = (doorA >= 0) || (doorB >= 0);
+
+    // The axis collapse names the RUN, not its ends, so it can only be
+    // used when neither end is a door. Folding a door into it drops the
+    // one fact the player needs — which end the door is on — and the old
+    // single-doorIdx form then printed that noun in front of whichever
+    // octant happened to sort first: "Tür Ost-West" for a corridor whose
+    // east end is a Sicherheitstür and whose west end is a plain Tür.
+    // Same reasoning that already un-collapsed the diagonal pairs below.
     bool cardinalPair = ((bitA ^ bitB) == 4) &&
                         (bitA == 2 || bitB == 2 || bitA == 0 || bitB == 0);
-    if (cardinalPair) {
+    if (cardinalPair && !anyDoor) {
         Id wordId = (bitA == 2 || bitB == 2) ? Id::AxisNorthSouth   // N <-> S
                                              : Id::AxisEastWest;    // E <-> W
         const char* word = acc::strings::Get(wordId);
         if (!word[0]) return std::string();
-        if (doorIdx >= 0) return RenderDoorDirection(doorIdx, word);
         const char* fmt = acc::strings::Get(Id::FmtMapCursorCorridorDir);
         if (fmt[0]) return acc::strfmt::Format(fmt, word);
         return std::string();
     }
 
-    // Non-opposite octants: render both endpoints. Order by
-    // y-component descending, x-component descending on ties — keeps
-    // the more-northern, then more-eastern, end first.
+    // Render both endpoints. Order by y-component descending, x-component
+    // descending on ties — keeps the more-northern, then more-eastern,
+    // end first. Each end's door travels WITH its octant through the
+    // swap, so the sort can no longer attach one end's door noun to the
+    // other end's direction.
     static const int octant_y[8] = { 0,  1,  2,  1,  0, -1, -2, -1};
     static const int octant_x[8] = { 2,  1,  0, -1, -2, -1,  0,  1};
-    int first = bitA, second = bitB;
+    int first  = bitA, firstDoor  = doorA;
+    int second = bitB, secondDoor = doorB;
     if (octant_y[bitB] > octant_y[first] ||
         (octant_y[bitB] == octant_y[first] &&
          octant_x[bitB] >  octant_x[first])) {
-        first = bitB;
-        second = bitA;
+        first  = bitB; firstDoor  = doorB;
+        second = bitA; secondDoor = doorA;
     }
     const char* wordA = acc::strings::Get(BitToOctant(first));
     const char* wordB = acc::strings::Get(BitToOctant(second));
     if (!wordA[0] || !wordB[0]) return std::string();
 
-    std::string combo = acc::strfmt::Format("%s, %s", wordA, wordB);
+    // One entry per end, each naming its own door (noun + landmark or
+    // transition destination) or just its direction. Matches the way
+    // ClassifyAsArea already renders per-octant exits, so a two-door
+    // corridor keeps both door names instead of losing one.
+    std::string combo;
+    AppendListEntry(combo, (firstDoor >= 0)
+                               ? RenderDoorDirection(firstDoor, wordA)
+                               : std::string(wordA));
+    AppendListEntry(combo, (secondDoor >= 0)
+                               ? RenderDoorDirection(secondDoor, wordB)
+                               : std::string(wordB));
+    if (combo.empty()) return std::string();
 
-    if (doorIdx >= 0) return RenderDoorDirection(doorIdx, combo.c_str());
+    if (anyDoor) return combo;
     const char* fmt = acc::strings::Get(Id::FmtMapCursorCorridorDir);
     if (fmt[0]) return acc::strfmt::Format(fmt, combo.c_str());
     return std::string();
@@ -1259,14 +1291,6 @@ void UFUnite(int a, int b) {
     // stable across runs (the root is also used as the cluster's id).
     if (ra < rb) s_uf_parent[rb] = ra;
     else         s_uf_parent[ra] = rb;
-}
-
-// Append `entry` to a comma-separated list string, inserting ", " before
-// it when the list is non-empty. No-op for empty entries.
-void AppendListEntry(std::string& list, const std::string& entry) {
-    if (entry.empty()) return;
-    if (!list.empty()) list += ", ";
-    list += entry;
 }
 
 // Render one direction entry. When `markDeadEnd` is set, the direction
@@ -1615,26 +1639,40 @@ void ClassifyAsCorridor(const acc::engine::navgraph::NavGraphSnapshot& g, int n,
                                           g.nodes[nbA].pos.y - centroid.y));
     int bitB = OctantBit(OctantFromVector(g.nodes[nbB].pos.x - centroid.x,
                                           g.nodes[nbB].pos.y - centroid.y));
-    // Prefer the door verdicts precomputed on the actual graph
-    // edges (member→nbA, member→nbB). If neither edge carried a
-    // door, fall back to the corridor-span test for doors that
-    // sit off both graph edges but still on the spanning line.
-    int doorIdx = -1;
-    if (externalDoorIdx) {
-        doorIdx = externalDoorIdx[0];
-        if (doorIdx < 0) doorIdx = externalDoorIdx[1];
+    // Door verdicts precomputed on the actual graph edges, kept PER END
+    // (member→nbA and member→nbB are different exits and routinely
+    // different doors). Collapsing them onto one index is what made the
+    // Peragus hangar ramp announce "Tür Süd-Ost, Süd-West nach
+    // Treibstoffdepot": the noun belonged to the south-west end but was
+    // spoken against the south-east one, and the south-east end's own
+    // "Sicherheitstür" was never voiced at all.
+    int doorA = externalDoorIdx ? externalDoorIdx[0] : -1;
+    int doorB = externalDoorIdx ? externalDoorIdx[1] : -1;
+    // Neither graph edge carried a door: fall back to the corridor-span
+    // test for a door that sits off both edges but still on the line
+    // between the ends, and attribute it to the end it actually stands
+    // at rather than smearing it across both.
+    if (doorA < 0 && doorB < 0) {
+        int spanDoor = FindDoorOnEdge(g.nodes[nbA].pos, g.nodes[nbB].pos);
+        if (spanDoor >= 0 && spanDoor < g_graph.door_count) {
+            const Vector& dp = g_graph.doors[spanDoor].pos;
+            float ax = dp.x - g.nodes[nbA].pos.x;
+            float ay = dp.y - g.nodes[nbA].pos.y;
+            float bx = dp.x - g.nodes[nbB].pos.x;
+            float by = dp.y - g.nodes[nbB].pos.y;
+            if (ax * ax + ay * ay <= bx * bx + by * by) doorA = spanDoor;
+            else                                        doorB = spanDoor;
+        }
     }
-    if (doorIdx < 0) {
-        doorIdx = FindDoorOnEdge(g.nodes[nbA].pos, g.nodes[nbB].pos);
-    }
-    outLabel = RenderCorridorAxis(bitA, bitB, doorIdx);
+    outLabel = RenderCorridorAxis(bitA, doorA, bitB, doorB);
     AppendListEntry(outLabel, trigEntries);
-    if (doorIdx >= 0) {
+    if (doorA >= 0 || doorB >= 0) {
         acclog::Write(
             "WallTopo",
             "ClassifyCluster: degree-2 corridor at (%.1f,%.1f,%.1f) "
-            "HIT door idx=%d on segment → \"%s\"",
-            centroid.x, centroid.y, centroid.z, doorIdx, outLabel.c_str());
+            "HIT door A=%d B=%d on segment → \"%s\"",
+            centroid.x, centroid.y, centroid.z, doorA, doorB,
+            outLabel.c_str());
     }
     outKind = kKindCorridor;
     int sigBit = (bitA < bitB) ? bitA : bitB;
@@ -1699,17 +1737,17 @@ void ClassifyDemotedToDeadEnd(const Vector& centroid,
 void ClassifyDemotedToCorridor(const Vector& centroid,
                                const int octantDoorIdx[8],
                                const int realExitBits[8],
-                               int firstDoorBit,
                                const std::string& trigEntries,
                                std::string& outLabel, int& outKind,
                                int& outSig) {
     using acc::strings::Id;
     int bitA = realExitBits[0];
     int bitB = realExitBits[1];
-    int doorIdx = (firstDoorBit >= 0)
-                      ? octantDoorIdx[firstDoorBit]
-                      : -1;
-    outLabel = RenderCorridorAxis(bitA, bitB, doorIdx);
+    // octantDoorIdx is already per-octant here — index it by each end's
+    // own octant instead of collapsing onto the first door found.
+    int doorA = (bitA >= 0 && bitA < 8) ? octantDoorIdx[bitA] : -1;
+    int doorB = (bitB >= 0 && bitB < 8) ? octantDoorIdx[bitB] : -1;
+    outLabel = RenderCorridorAxis(bitA, doorA, bitB, doorB);
     AppendListEntry(outLabel, trigEntries);
     outKind = kKindCorridor;
     int sigBitLo = (bitA < bitB) ? bitA : bitB;
@@ -1951,13 +1989,11 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
     // the loot rooms behind security doors).
     int realExitCount = 0;
     int realExitBits[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
-    int firstDoorBit = -1;
     for (int bit = 0; bit < 8; ++bit) {
         bool hasOnward = octantHasExit[bit] && !octantAllDeadEnd[bit];
         bool hasDoor   = octantDoorIdx[bit] >= 0;
         if (!hasOnward && !hasDoor) continue;
         realExitBits[realExitCount++] = bit;
-        if (hasDoor && firstDoorBit < 0) firstDoorBit = bit;
     }
 
     if (realExitCount == 1) {
@@ -1968,7 +2004,7 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
 
     if (realExitCount == 2) {
         ClassifyDemotedToCorridor(centroid, octantDoorIdx, realExitBits,
-                                  firstDoorBit, trigEntries,
+                                  trigEntries,
                                   outLabel, outKind, outSig);
         return;
     }
@@ -2780,7 +2816,28 @@ void AbsorbAdjacentStragglers(const acc::engine::navgraph::NavGraphSnapshot& g,
                         x, g.nodes[x].pos.x, g.nodes[x].pos.y, Degree(g, x),
                         coreRootA, coreNbA,
                         g.nodes[coreNbA].pos.x, g.nodes[coreNbA].pos.y);
+                    // Carry the combined size onto the merged set's NEW
+                    // root. sizeByRoot is indexed by root id and only
+                    // rebuilt per outer iteration, but UFUnite roots at the
+                    // SMALLER index — so absorbing a low-id straggler into a
+                    // higher-rooted core moves the root onto a node whose
+                    // snapshot entry still reads 1. Every later "already in
+                    // a core" test for that set then sees a singleton and
+                    // the guard above silently fails. That is how the
+                    // Peragus hangar ramp lost its bend boundary: node 7
+                    // absorbed into the west leg (root 11 -> 7), and node 17
+                    // — which corner-fold had just claimed for that same
+                    // west leg — read sizeByRoot[7] == 1, passed the guard
+                    // it should have failed, and bridged into the east leg,
+                    // welding a 2-corridor switchback into one horseshoe
+                    // cluster whose centroid sits inside the rock between
+                    // the legs.
+                    int mergedSize = sizeByRoot[UFFind(x)] +
+                                     sizeByRoot[UFFind(coreNbA)];
                     UFUnite(x, coreNbA);
+                    int newRoot = UFFind(x);
+                    if (newRoot >= 0 && newRoot < n)
+                        sizeByRoot[newRoot] = mergedSize;
                     ++absorbAdj;
                     changed = true;
                 }

@@ -33,7 +33,27 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
-<h2>Unreleased</h2>
+<h2>v0.7.0</h2>
+
+<h3>World navigation:</h3>
+
+- Rooms shaped like a horseshoe or a switchback ramp are no longer described as though they were one straight corridor. A corridor that bends back on itself was being merged end to end into a single space, and its exits were then named by their compass direction from the middle of that space — a point that, for a U-shaped room, lies inside the wall between the two arms. On the Peragus fuel-depot ramp this announced a door to the south-east that was 80 metres away around the bend and a storey up, with a wall in between; walking south-east was the one thing that could not work. Such a room is now split at its bends, so each straight run is described on its own and the direction you are given is one you can walk.
+- Doors in a corridor are announced on the end they are actually on. A corridor with an exit at each end kept only one door's name and put it in front of whichever direction happened to be read out first, so the name regularly landed on the wrong exit — and when both ends were doors, the second one's name was never spoken at all. Each end now carries its own name and destination: a passage that used to say "Door east-west" now says "Security door east, Door west".
+
+<h3>KOTOR 2 — action menu:</h3>
+
+- KOTOR 2's fifth action-bar column is reachable. The second game gives every character a combat-behaviour setting — Aggressive and three siblings — in a column the first game does not have, and the mod had no name and no key for it. It is now called Combat Behaviour, sits in the action menu alongside the others, and answers to 8 (apply the current setting) and Shift+8 (open it to pick another), both rebindable. Neither game binds anything to 8 on its own, so this key is the mod's rather than the game's; on KOTOR 1 nothing changes.
+- Opening a category that happens to be empty no longer leaves you stuck. Shift+4 on a droid announced "Own Force Powers: empty" — correctly, a droid has none — and then refused to open at all, so no arrow key did anything and it read as a menu that had frozen. It now says which category was empty and opens on the first one that isn't. Only a character with no actions at all in any category still declines.
+
+<h3>KOTOR 2 — controller support:</h3>
+
+- KOTOR 2 can be played with a controller. Everything the mod speaks for keyboard players it now speaks for pad players: in menus the D-pad and left stick move, A confirms and B goes back, all with the same one-entry-per-press announcements the keyboard gives; in the world the left stick walks, the right stick turns the camera, and the game's own Quick Menu on Y is read out. (KOTOR 2's Steam release ships gamepad support; KOTOR 1 has none, so this is a KOTOR 2 feature only. Plug the pad in before launching — the game only looks for controllers once, at startup.)
+- The D-pad does two jobs, and the left trigger switches between them. On object selection, left and right step through the objects around you and up and down change category — the pad's version of the `,` and `.` keys. On the action menu, left and right change category and up and down change entry, with A firing the selected one. Each pull of the left trigger announces which of the two you have switched to.
+- The action menu on a controller never pauses the game and never closes after you fire. It is a surface the D-pad sits on rather than a menu you open and dismiss, so you can fire an attack, step one category over and throw a grenade without the world stopping in between — the way the game's own controller action menu works for sighted players. The keyboard action menu is unchanged and still follows your auto-pause setting.
+- The remaining bindings sit on the triggers and the right stick: right trigger alone announces your facing in degrees; left trigger with the left shoulder button drops an audio beacon on the focused object; right trigger with the right shoulder button walks you to it; both triggers together read out the keys for the screen you are on; and pressing the right stick turns the camera to the beacon's next waypoint, or to the next compass direction when no beacon is armed.
+- The Quick Menu's "Help" entry now opens the mod's key list. It normally shows a picture of a controller with the buttons labelled, which tells a blind player nothing — so the entry now does what it promises. That list gains a Controller section, present only when a pad is connected, covering every binding above.
+- Wheeled droids no longer grind on when you push them into a wall with the stick. The mod silences a stuck drive loop, but it was watching the movement keys, and a stick-driven walk holds no key.
+- On the map screen the left stick pans the map cursor, at a speed that follows how far you push it. The D-pad still navigates the screen's own controls.
 
 <h3>Installer:</h3>
 
@@ -68,21 +88,6 @@ and add the German in parentheses if it genuinely aids clarity.
 - HoloPatcher, the tool that installs the community patches, now ships inside the installer instead of being downloaded. It was the one component with no manual alternative — you never see it, so you could not fetch it yourself — and if its download had ever gone away, no community patch would have installed for either game. Adds about 7 MB to the download.
 
 <h2>v0.6.4</h2>
-
-<h3>KOTOR 2 — action menu:</h3>
-
-- KOTOR 2's fifth action-bar column is reachable. The second game gives every character a combat-behaviour setting — Aggressive and three siblings — in a column the first game does not have, and the mod had no name and no key for it. It is now called Combat Behaviour, sits in the action menu alongside the others, and answers to 8 (apply the current setting) and Shift+8 (open it to pick another), both rebindable. Neither game binds anything to 8 on its own, so this key is the mod's rather than the game's; on KOTOR 1 nothing changes.
-- Opening a category that happens to be empty no longer leaves you stuck. Shift+4 on a droid announced "Own Force Powers: empty" — correctly, a droid has none — and then refused to open at all, so no arrow key did anything and it read as a menu that had frozen. It now says which category was empty and opens on the first one that isn't. Only a character with no actions at all in any category still declines.
-
-<h3>KOTOR 2 — controller support:</h3>
-
-- KOTOR 2 can be played with a controller. Everything the mod speaks for keyboard players it now speaks for pad players: in menus the D-pad and left stick move, A confirms and B goes back, all with the same one-entry-per-press announcements the keyboard gives; in the world the left stick walks, the right stick turns the camera, and the game's own Quick Menu on Y is read out. (KOTOR 2's Steam release ships gamepad support; KOTOR 1 has none, so this is a KOTOR 2 feature only. Plug the pad in before launching — the game only looks for controllers once, at startup.)
-- The D-pad does two jobs, and the left trigger switches between them. On object selection, left and right step through the objects around you and up and down change category — the pad's version of the `,` and `.` keys. On the action menu, left and right change category and up and down change entry, with A firing the selected one. Each pull of the left trigger announces which of the two you have switched to.
-- The action menu on a controller never pauses the game and never closes after you fire. It is a surface the D-pad sits on rather than a menu you open and dismiss, so you can fire an attack, step one category over and throw a grenade without the world stopping in between — the way the game's own controller action menu works for sighted players. The keyboard action menu is unchanged and still follows your auto-pause setting.
-- The remaining bindings sit on the triggers and the right stick: right trigger alone announces your facing in degrees; left trigger with the left shoulder button drops an audio beacon on the focused object; right trigger with the right shoulder button walks you to it; both triggers together read out the keys for the screen you are on; and pressing the right stick turns the camera to the beacon's next waypoint, or to the next compass direction when no beacon is armed.
-- The Quick Menu's "Help" entry now opens the mod's key list. It normally shows a picture of a controller with the buttons labelled, which tells a blind player nothing — so the entry now does what it promises. That list gains a Controller section, present only when a pad is connected, covering every binding above.
-- Wheeled droids no longer grind on when you push them into a wall with the stick. The mod silences a stuck drive loop, but it was watching the movement keys, and a stick-driven walk holds no key.
-- On the map screen the left stick pans the map cursor, at a speed that follows how far you push it. The D-pad still navigates the screen's own controls.
 
 <h3>Polish translation:</h3>
 
