@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "engine_game.h"        // IsKotor2 — gates the K2-only key rows
 #include "engine_input.h"       // kInput* logical codes — the pad nav route
 #include "engine_panels.h"
 #include "engine_player.h"      // GetPlayerPosition / Vector
@@ -116,6 +117,11 @@ struct Entry {
     bool     padOnly;   // true → listed only when a gamepad is present. Reading
                         // a controller layout to a keyboard player is noise,
                         // and on KOTOR 1 these bindings do not exist at all.
+    bool     k2Only;    // true → listed only on KOTOR 2. For bindings that
+                        // exist because the second game has something the
+                        // first does not (its fifth action-bar column), where
+                        // listing the key on KOTOR 1 would promise a category
+                        // that is never populated there.
 };
 
 // One test for every pad-only row, so the F1 list and the Ctrl+F1 summary can
@@ -174,6 +180,12 @@ constexpr Entry kEntries[] = {
     // linear key→column order, matching the engine dispatch).
     { S::FmtHelpNumberActions,   Grp::Combat, 0, /*composed=*/true },
     { S::HelpKeyOpenCategory,    Grp::Combat, 0 },
+    // Key 8 is its own line rather than an eighth slot in the composed 1..7
+    // one, because it exists only on KOTOR 2 — folding it in would need two
+    // variants of that format string in seven languages, and would list a
+    // category KOTOR 1 never populates.
+    { S::FmtHelpNumberActions8,  Grp::Combat, 0, /*composed=*/true,
+      /*padOnly=*/false, /*k2Only=*/true },
     { S::HelpKeyActionQueue,     Grp::Combat, 0 },
     { S::HelpKeyLevelUp,         Grp::Combat, 0 },
     { S::HelpKeyCancelCombat,    Grp::Combat, 0 },
@@ -264,6 +276,11 @@ void BuildComposedText(S formatId, char* out, size_t cap) {
                       acc::strings::Get(S::MenuCatExplosives));
         return;
     }
+    if (formatId == S::FmtHelpNumberActions8) {
+        std::snprintf(out, cap, acc::strings::Get(formatId),
+                      acc::strings::Get(S::MenuCatCombatBehaviour));
+        return;
+    }
     std::snprintf(out, cap, "%s", acc::strings::Get(formatId));
 }
 
@@ -271,7 +288,9 @@ void BuildComposedText(S formatId, char* out, size_t cap) {
 // by its entries, in catalog order.
 // A row is listed unless it describes hardware the player does not have.
 bool EntryListed(const Entry& e) {
-    return !e.padOnly || PadEntriesVisible();
+    if (e.padOnly && !PadEntriesVisible()) return false;
+    if (e.k2Only  && !acc::game::IsKotor2()) return false;
+    return true;
 }
 
 void BuildRows() {

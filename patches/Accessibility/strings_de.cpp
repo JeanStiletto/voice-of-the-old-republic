@@ -107,6 +107,7 @@ const char* Get(Id id) {
         case Id::MenuCatMedical:       return "Medizin";
         case Id::MenuCatMisc:          return "Sonstiges";
         case Id::MenuCatExplosives:    return "Sprengstoffe";
+        case Id::MenuCatCombatBehaviour: return "Kampfverhalten";
         case Id::FmtMenuCatMulti:      return "%s: %s, %d Optionen";
         case Id::FmtMenuCatSingle:     return "%s: %s";
         case Id::FmtMenuPlainMulti:    return "%s, %d Optionen";
@@ -583,6 +584,7 @@ const char* Get(Id id) {
 
         case Id::FmtHelpNumberActions:   return "1 bis 7: die zuletzt benutzte Aktion einer Kategorie einsetzen. 1 %s, 2 %s, 3 %s, 4 %s, 5 %s, 6 %s, 7 %s";
         case Id::HelpKeyOpenCategory:    return "Umschalt und 1 bis 7: die jeweilige Kategorie zum Ausw\xE4hlen \xF6""ffnen";
+        case Id::FmtHelpNumberActions8:  return "8: das aktuelle %s einsetzen. Umschalt und 8 \xF6""ffnet die Kategorie zur Auswahl";
         case Id::HelpKeyActionQueue:     return "Umschalt und H: Aktionswarteschlange \xF6""ffnen";
         case Id::HelpKeyLevelUp:         return "Umschalt und L: Stufenaufstieg \xF6""ffnen";
         case Id::HelpKeyCancelCombat:    return "F: Kampf abbrechen";
@@ -664,10 +666,12 @@ const char* Get(Id id) {
         case Id::KbNamePersonalKey2:        return "Eigene Aktion 2";
         case Id::KbNamePersonalKey3:        return "Eigene Aktion 3";
         case Id::KbNamePersonalKey4:        return "Eigene Aktion 4";
+        case Id::KbNamePersonalKey5:        return "Eigene Aktion 5";
         case Id::KbNameActionBarOpen1:      return "Aktionsleiste 1 \xF6""ffnen";
         case Id::KbNameActionBarOpen2:      return "Aktionsleiste 2 \xF6""ffnen";
         case Id::KbNameActionBarOpen3:      return "Aktionsleiste 3 \xF6""ffnen";
         case Id::KbNameActionBarOpen4:      return "Aktionsleiste 4 \xF6""ffnen";
+        case Id::KbNameActionBarOpen5:      return "Aktionsleiste 5 \xF6""ffnen";
         case Id::KbNameTargetActionOpen1:   return "Zielaktion 1 \xF6""ffnen";
         case Id::KbNameTargetActionOpen2:   return "Zielaktion 2 \xF6""ffnen";
         case Id::KbNameTargetActionOpen3:   return "Zielaktion 3 \xF6""ffnen";

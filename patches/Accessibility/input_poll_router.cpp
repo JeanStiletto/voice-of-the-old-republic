@@ -68,10 +68,12 @@ void PollHotkey() {
     bool risingK5    = hk::Pressed(hk::Action::PersonalKey2);
     bool risingK6    = hk::Pressed(hk::Action::PersonalKey3);
     bool risingK7    = hk::Pressed(hk::Action::PersonalKey4);
+    bool risingK8    = hk::Pressed(hk::Action::PersonalKey5);
     bool risingOpen1 = hk::Pressed(hk::Action::ActionBarOpen1);
     bool risingOpen2 = hk::Pressed(hk::Action::ActionBarOpen2);
     bool risingOpen3 = hk::Pressed(hk::Action::ActionBarOpen3);
     bool risingOpen4 = hk::Pressed(hk::Action::ActionBarOpen4);
+    bool risingOpen5 = hk::Pressed(hk::Action::ActionBarOpen5);
     bool risingOpenT1 = hk::Pressed(hk::Action::TargetActionOpen1);
     bool risingOpenT2 = hk::Pressed(hk::Action::TargetActionOpen2);
     bool risingOpenT3 = hk::Pressed(hk::Action::TargetActionOpen3);
@@ -152,6 +154,7 @@ void PollHotkey() {
         // to defer to, so this precedence is purely ours to set.
         const bool numberOpener =
             risingOpen1 || risingOpen2 || risingOpen3 || risingOpen4 ||
+            risingOpen5 ||
             risingOpenT1 || risingOpenT2 || risingOpenT3;
         if (numberOpener && acc::combat::queue::IsActive()) {
             acclog::Write("Interact",
@@ -176,6 +179,12 @@ void PollHotkey() {
         if (risingOpen2) acc::unified_menu::OpenPersonal(1);
         if (risingOpen3) acc::unified_menu::OpenPersonal(2);
         if (risingOpen4) acc::unified_menu::OpenPersonal(3);
+        // Shift+8 — KOTOR 2's fifth personal column (combat behaviour). It has
+        // no engine twin to stay in step with: neither game binds an
+        // action-bar action to key 8 (1..9 are the dialogue-reply keys), so
+        // this opener is purely the mod's. On KOTOR 1 the column is never
+        // populated, so the open simply declines.
+        if (risingOpen5) acc::unified_menu::OpenPersonal(4);
 
         // Shift+1..3 — open the unified menu on a target-action row. Direct
         // row mapping (1→row 0, 2→row 1, 3→row 2); the engine routes target
@@ -280,6 +289,10 @@ void PollHotkey() {
         if (risingK5) AnnounceBarePersonalKey(1);
         if (risingK6) AnnounceBarePersonalKey(2);
         if (risingK7) AnnounceBarePersonalKey(3);
+        // Bare 8 FIRES rather than announces. 4..7 report what the engine
+        // just dispatched; nothing dispatches on 8, so the mod has to do it
+        // (see unified_menu::FirePersonal).
+        if (risingK8) acc::unified_menu::FirePersonal(4);
     }
 
     // Combat system, Phase 2C — Ö opens the navigable examine view

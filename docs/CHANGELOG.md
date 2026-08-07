@@ -69,6 +69,11 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h2>v0.6.4</h2>
 
+<h3>KOTOR 2 — action menu:</h3>
+
+- KOTOR 2's fifth action-bar column is reachable. The second game gives every character a combat-behaviour setting — Aggressive and three siblings — in a column the first game does not have, and the mod had no name and no key for it. It is now called Combat Behaviour, sits in the action menu alongside the others, and answers to 8 (apply the current setting) and Shift+8 (open it to pick another), both rebindable. Neither game binds anything to 8 on its own, so this key is the mod's rather than the game's; on KOTOR 1 nothing changes.
+- Opening a category that happens to be empty no longer leaves you stuck. Shift+4 on a droid announced "Own Force Powers: empty" — correctly, a droid has none — and then refused to open at all, so no arrow key did anything and it read as a menu that had frozen. It now says which category was empty and opens on the first one that isn't. Only a character with no actions at all in any category still declines.
+
 <h3>KOTOR 2 — controller support:</h3>
 
 - KOTOR 2 can be played with a controller. Everything the mod speaks for keyboard players it now speaks for pad players: in menus the D-pad and left stick move, A confirms and B goes back, all with the same one-entry-per-press announcements the keyboard gives; in the world the left stick walks, the right stick turns the camera, and the game's own Quick Menu on Y is read out. (KOTOR 2's Steam release ships gamepad support; KOTOR 1 has none, so this is a KOTOR 2 feature only. Plug the pad in before launching — the game only looks for controllers once, at startup.)

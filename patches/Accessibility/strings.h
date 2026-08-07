@@ -329,6 +329,10 @@ enum class Id : int {
     MenuCatMedical,        // col 1 — medpacs, stims
     MenuCatMisc,           // col 2 — misc usable items
     MenuCatExplosives,     // col 3 — mines / grenades
+    // col 4 — KOTOR 2 only: the party-AI combat stance (Aggressive and its
+    // three siblings). KOTOR 1 has no such column and never populates it, so
+    // this name is only ever spoken on KOTOR 2.
+    MenuCatCombatBehaviour,
     //      Announce formats:
     //      `FmtMenuCatMulti`  — named category, >1 entry. Args: category
     //                           name (`%s`), selected entry label (`%s`),
@@ -1657,6 +1661,9 @@ enum class Id : int {
     HelpKeyOpenCategory,
     HelpKeyActionQueue,
     HelpKeyLevelUp,
+    // KOTOR 2 only — key 8 / Shift+8 on the fifth action-bar column. One
+    // format arg: the category name (MenuCatCombatBehaviour).
+    FmtHelpNumberActions8,
     HelpKeyCancelCombat,
     // Quick screens (in-world hotkeys that open menus).
     HelpKeyScreenMap,
@@ -1786,10 +1793,12 @@ enum class Id : int {
     KbNamePersonalKey2,
     KbNamePersonalKey3,
     KbNamePersonalKey4,
+    KbNamePersonalKey5,
     KbNameActionBarOpen1,
     KbNameActionBarOpen2,
     KbNameActionBarOpen3,
     KbNameActionBarOpen4,
+    KbNameActionBarOpen5,
     KbNameTargetActionOpen1,
     KbNameTargetActionOpen2,
     KbNameTargetActionOpen3,

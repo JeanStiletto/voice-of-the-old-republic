@@ -36,10 +36,17 @@ enum class Action : int {
     PersonalKey2,          // 5
     PersonalKey3,          // 6
     PersonalKey4,          // 7
+    // 8 / Shift+8 — KOTOR 2's fifth personal column (combat behaviour), which
+    // KOTOR 1 does not have. Unlike 4..7 the ENGINE has no action-bar binding
+    // on 8 (both games bind 1..9 only as dialogue-reply keys), so the bare
+    // press has to fire the column itself rather than announce an engine
+    // dispatch. Harmless on KOTOR 1, where the column is never populated.
+    PersonalKey5,          // 8
     ActionBarOpen1,        // Shift+4
     ActionBarOpen2,        // Shift+5
     ActionBarOpen3,        // Shift+6
     ActionBarOpen4,        // Shift+7
+    ActionBarOpen5,        // Shift+8
     TargetActionOpen1,     // Shift+1 — opens target-row submenu (row 0)
     TargetActionOpen2,     // Shift+2
     TargetActionOpen3,     // Shift+3

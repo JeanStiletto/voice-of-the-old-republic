@@ -96,6 +96,7 @@ const char* Get(Id id) {
         case Id::MenuCatMedical:       return "Medical";
         case Id::MenuCatMisc:          return "Miscellaneous";
         case Id::MenuCatExplosives:    return "Explosives";
+        case Id::MenuCatCombatBehaviour: return "Combat Behaviour";
         case Id::FmtMenuCatMulti:      return "%s: %s, %d options";
         case Id::FmtMenuCatSingle:     return "%s: %s";
         case Id::FmtMenuPlainMulti:    return "%s, %d options";
@@ -564,6 +565,7 @@ const char* Get(Id id) {
 
         case Id::FmtHelpNumberActions:   return "1 to 7: use a category's most recent action. 1 %s, 2 %s, 3 %s, 4 %s, 5 %s, 6 %s, 7 %s";
         case Id::HelpKeyOpenCategory:    return "Shift plus 1 to 7: open that category to choose an action";
+        case Id::FmtHelpNumberActions8:  return "8: use the current %s. Shift plus 8 opens it to choose another";
         case Id::HelpKeyActionQueue:     return "Shift plus H: open the action queue";
         case Id::HelpKeyLevelUp:         return "Shift plus L: open the level-up screen";
         case Id::HelpKeyCancelCombat:    return "F: cancel combat";
@@ -645,10 +647,12 @@ const char* Get(Id id) {
         case Id::KbNamePersonalKey2:        return "Personal action 2";
         case Id::KbNamePersonalKey3:        return "Personal action 3";
         case Id::KbNamePersonalKey4:        return "Personal action 4";
+        case Id::KbNamePersonalKey5:        return "Personal action 5";
         case Id::KbNameActionBarOpen1:      return "Open action bar 1";
         case Id::KbNameActionBarOpen2:      return "Open action bar 2";
         case Id::KbNameActionBarOpen3:      return "Open action bar 3";
         case Id::KbNameActionBarOpen4:      return "Open action bar 4";
+        case Id::KbNameActionBarOpen5:      return "Open action bar 5";
         case Id::KbNameTargetActionOpen1:   return "Open target action 1";
         case Id::KbNameTargetActionOpen2:   return "Open target action 2";
         case Id::KbNameTargetActionOpen3:   return "Open target action 3";

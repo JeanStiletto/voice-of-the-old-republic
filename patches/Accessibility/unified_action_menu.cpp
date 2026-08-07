@@ -214,6 +214,12 @@ const char* CategoryName(const Cat& c) {
             case 1: return acc::strings::Get(S::MenuCatMedical);
             case 2: return acc::strings::Get(S::MenuCatMisc);
             case 3: return acc::strings::Get(S::MenuCatExplosives);
+            // KOTOR 2 only. Its main interface fills a fifth column the first
+            // game does not have — the party-AI combat stance, Aggressive and
+            // three siblings (confirmed live: UnifiedMenu.cols read
+            // [4]=4 with "Aggressiv" at index 0). KOTOR 1 never populates it,
+            // so BuildCategoryList drops it there and this name is unreachable.
+            case 4: return acc::strings::Get(S::MenuCatCombatBehaviour);
             default: return nullptr;
         }
     }
@@ -1109,6 +1115,68 @@ bool HandleEnter(void* tam, void* mi, const Cat& cur, int sel,
 }
 
 }  // namespace
+
+// Fire a personal column's selected entry outright, with no menu.
+//
+// This is what bare 8 does for KOTOR 2's combat-behaviour column, and it is
+// deliberately NOT what bare 4..7 do: those keys are the ENGINE's, and the mod
+// only announces what the engine fired. Key 8 has no engine action-bar
+// binding in either game (both bind 1..9 solely as dialogue-reply keys), so
+// nothing fires unless we do it.
+//
+// On the announcement: speak the label BEFORE dispatching. If the entry turns
+// out to be a real combat-round action, the CSWSCombatRound::AddAction detour
+// speaks the authoritative "X, Platz N" with interrupt=true and simply
+// replaces this line — which is the behaviour bare 4..7 already have. If it is
+// a stance toggle that never reaches AddAction, this line is the only
+// confirmation there is. Correct either way, without the mod having to know
+// which kind of entry it just fired.
+bool FirePersonal(int col) {
+    if (col < 0 || col >= kColumnCount) return false;
+    if (ForegroundPanelBlocks()) return false;
+
+    void* mi = acc::engine_actionbar::ResolveMainInterface();
+    if (!mi) {
+        acclog::Write("UnifiedMenu", "FirePersonal col=%d — main interface "
+            "unresolved", col);
+        return false;
+    }
+
+    Cat c{CatKind::Personal, col};
+    const int count = acc::engine_actionbar::VariantCount(mi, col);
+    if (count <= 0) {
+        const char* name = CategoryName(c);
+        char msg[160];
+        if (name && name[0]) {
+            std::snprintf(msg, sizeof(msg),
+                acc::strings::Get(acc::strings::Id::FmtMenuCategoryEmpty), name);
+        } else {
+            std::snprintf(msg, sizeof(msg),
+                acc::strings::Get(acc::strings::Id::FmtActionBarColumnEmpty),
+                col + 1);
+        }
+        prism::Speak(msg, /*interrupt=*/true);
+        acclog::Write("UnifiedMenu", "FirePersonal col=%d empty -> [%s]",
+                      col, msg);
+        return false;
+    }
+
+    // The shadow is the entry the menu last left the user on, kept in lock-step
+    // with the engine's own per-column selection — so this fires what Shift+8
+    // would have shown as current.
+    int& sel = ShadowFor(c);
+    sel = ClampInt(sel, 0, count - 1);
+    ApplySelection(/*tam=*/nullptr, mi, c, sel);
+
+    char label[128] = "";
+    ReadLabel(/*tam=*/nullptr, mi, c, sel, label, sizeof(label));
+    if (label[0]) prism::Speak(label, /*interrupt=*/true);
+
+    const bool ok = DispatchWithQueueAppend(/*tam=*/nullptr, mi, c);
+    acclog::Write("UnifiedMenu", "FirePersonal col=%d idx=%d/%d label=[%s] ok=%d",
+                  col, sel, count, label, ok ? 1 : 0);
+    return ok;
+}
 
 bool HandleInputEvent(int code, int value) {
     if (!g.active) return false;
