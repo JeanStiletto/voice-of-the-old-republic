@@ -49,6 +49,10 @@ and add the German in parentheses if it genuinely aids clarity.
 - Cycling to a container you have already emptied now tells you it is empty. The `,` and `.` object cycle left that note off while focusing the same container with Q or E included it, so whether you learned a footlocker had already been looted depended on which key you reached it with. Both now build the spoken name through the same code, so every part of it — the number, the door state, and the empty note — is identical on both.
 - Doors in a corridor are announced on the end they are actually on. A corridor with an exit at each end kept only one door's name and put it in front of whichever direction happened to be read out first, so the name regularly landed on the wrong exit — and when both ends were doors, the second one's name was never spoken at all. Each end now carries its own name and destination: a passage that used to say "Door east-west" now says "Security door east, Door west".
 
+<h3>Mod settings:</h3>
+
+- Two new entries sit at the bottom of the Mod settings list: "Support the modder", which opens my Ko-fi page, and "Latest changes", which opens the release page of the newest version and the notes that come with it. Enter on either opens the address in your default browser.
+
 <h3>KOTOR 2 — action menu:</h3>
 
 - KOTOR 2's fifth action-bar column is reachable. The second game gives every character a combat-behaviour setting — Aggressive and three siblings — in a column the first game does not have, and the mod had no name and no key for it. It is now called Combat Behaviour, sits in the action menu alongside the others, and answers to 8 (apply the current setting) and Shift+8 (open it to pick another), both rebindable. Neither game binds anything to 8 on its own, so this key is the mod's rather than the game's; on KOTOR 1 nothing changes.

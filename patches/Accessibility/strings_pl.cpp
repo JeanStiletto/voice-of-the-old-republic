@@ -480,6 +480,10 @@ const char* Get(Id id) {
         case Id::FmtModSettingSlider:         return "%s: %d procent";
         case Id::ModSettingUrgentVolume:      return "G\xB3o\x9Cno\x9C\xE6 komunikat\xF3w m\xF3wionych";
         case Id::ModSettingUrgentVolumePreview: return "Przyk\xB3""adowy komunikat";
+        case Id::ModSettingSupportModder:           return "Wesprzyj tw\xF3rc\xEA moda";
+        case Id::ModSettingLatestChanges:           return "Najnowsze zmiany";
+        case Id::ModSettingLinkOpened:              return "Otwieram w przegl\xB9" "darce.";
+        case Id::ModSettingLinkFailed:              return "Nie uda\xB3o si\xEA otworzy\xE6 odno\x9Cnika.";
 
         case Id::ModSettingAudioGlossary:           return "S\xB3ownik d\x9Fwi\xEAk\xF3w";
         case Id::ModSettingsAudioGlossaryOpened:    return "Otwarto s\xB3ownik d\x9Fwi\xEAk\xF3w";

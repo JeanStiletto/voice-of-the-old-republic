@@ -500,6 +500,10 @@ const char* Get(Id id) {
         case Id::FmtModSettingSlider:         return "%s: %d Prozent";
         case Id::ModSettingUrgentVolume:      return "Lautst\xe4rke der Sprachansagen";
         case Id::ModSettingUrgentVolumePreview: return "Beispielansage";
+        case Id::ModSettingSupportModder:           return "Modder unterst\xFCtzen";
+        case Id::ModSettingLatestChanges:           return "Neueste \xC4nderungen";
+        case Id::ModSettingLinkOpened:              return "Wird im Browser ge\xF6" "ffnet.";
+        case Id::ModSettingLinkFailed:              return "Der Link konnte nicht ge\xF6" "ffnet werden.";
 
         case Id::ModSettingAudioGlossary:           return "Audio-Glossar";
         case Id::ModSettingsAudioGlossaryOpened:    return "Audio-Glossar ge\xf6""ffnet";

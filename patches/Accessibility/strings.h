@@ -1497,6 +1497,15 @@ enum class Id : int {
     ModSettingPlayIntrosOnNextLaunch,     // intros are now re-enabled
     ModSettingSkipIntrosToggleFailed,     // rename failed (rare — files missing)
 
+    // Link rows at the bottom of the mod-settings list. Enter hands the URL
+    // to the default browser and minimises the game so the page is the
+    // foreground window (see OpenExternalUrl in menus_modsettings.cpp).
+    // LinkOpened / LinkFailed are the spoken outcome of that press.
+    ModSettingSupportModder,              // row label — opens the Ko-fi page
+    ModSettingLatestChanges,              // row label — opens the latest release page
+    ModSettingLinkOpened,
+    ModSettingLinkFailed,
+
     // ---- Mod-settings → Audio glossary submenu (menus_modsettings).
     //      Nested submenu opened by Enter on the "Audio-Glossar" row.
     //      Each row pairs a NavCue with a localised label; Enter on a

@@ -485,6 +485,10 @@ const char* Get(Id id) {
         case Id::FmtModSettingSlider:         return "%s : %d pour cent";
         case Id::ModSettingUrgentVolume:      return "Volume des annonces vocales";
         case Id::ModSettingUrgentVolumePreview: return "Exemple d'annonce";
+        case Id::ModSettingSupportModder:           return "Soutenir le moddeur";
+        case Id::ModSettingLatestChanges:           return "Derniers changements";
+        case Id::ModSettingLinkOpened:              return "Ouverture dans le navigateur.";
+        case Id::ModSettingLinkFailed:              return "Impossible d'ouvrir le lien.";
 
         case Id::ModSettingAudioGlossary:           return "Glossaire audio";
         case Id::ModSettingsAudioGlossaryOpened:    return "Glossaire audio ouvert";

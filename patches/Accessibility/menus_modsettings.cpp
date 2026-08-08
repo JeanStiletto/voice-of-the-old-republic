@@ -4,6 +4,7 @@
 // sentinel pointer, the toggle bits, and the input router.
 
 #include <windows.h>
+#include <shellapi.h>   // ShellExecuteA — the link rows' browser handoff
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
@@ -24,6 +25,8 @@
 #include "mod_settings_store.h"  // persist toggles across launches
 #include "prism.h"
 #include "strings.h"
+
+#pragma comment(lib, "shell32.lib")  // ShellExecuteA
 
 namespace acc::menus::modsettings {
 
@@ -77,6 +80,8 @@ bool s_toggles[static_cast<int>(Option::Count)] = {
                                   // prism (Get/SetUrgentVolumePercent).
     /* Keybindings     */ false,  // unused — RowKind::Submenu (configurator pivot)
     /* AudioGlossary   */ false,  // unused — RowKind::Submenu
+    /* SupportModder   */ false,  // unused — RowKind::Link
+    /* LatestChanges   */ false,  // unused — RowKind::Link
 };
 
 // Submenu state. `s_open` flips on OpenSubMenu / Close; `s_focused`
@@ -131,7 +136,17 @@ enum class RowKind {
     Toggle,    // Enter flips s_toggles[idx]; speech reads "Name: state"
     Submenu,   // Enter opens a nested view; speech reads "Name" only
     Slider,    // Left/Right adjust a percent; speech reads "Name: N Prozent"
+    Link,      // Enter opens a URL in the browser; speech reads "Name" only
 };
+
+// Link-row targets. Both mirror addresses already published elsewhere:
+// the Ko-fi page is the one in README.md's support section, and the
+// releases/latest redirect is the same endpoint update_checker.cpp polls
+// for the version check (it serves the page a browser can read, not the
+// API JSON).
+constexpr const char* kSupportModderUrl = "https://ko-fi.com/jeanstiletto";
+constexpr const char* kLatestChangesUrl =
+    "https://github.com/JeanStiletto/voice-of-the-old-republic/releases/latest";
 
 // Cue-volume slider step (percent per Left/Right press) and the cue used
 // for the audible preview. The preview rides priority group 0xb so it
@@ -180,6 +195,8 @@ constexpr OptionSpec k_options[] = {
     { Option::UrgentVolume,    acc::strings::Id::ModSettingUrgentVolume,    RowKind::Slider  },
     { Option::Keybindings,     acc::strings::Id::KeybindsRootLabel,         RowKind::Submenu },
     { Option::AudioGlossary,   acc::strings::Id::ModSettingAudioGlossary,   RowKind::Submenu },
+    { Option::SupportModder,   acc::strings::Id::ModSettingSupportModder,   RowKind::Link    },
+    { Option::LatestChanges,   acc::strings::Id::ModSettingLatestChanges,   RowKind::Link    },
 };
 constexpr int k_optionCount = static_cast<int>(
     sizeof(k_options) / sizeof(k_options[0]));
@@ -272,7 +289,7 @@ const char* StateText(int optionIdx) {
 }
 
 // Speak the current focused option. Toggle rows read as "Name: state";
-// Submenu rows read just "Name" (no toggle state to compose with).
+// Submenu and Link rows read just "Name" (no state to compose with).
 // Always uses Speak(interrupt=true) — normal NVDA / screen-reader speech
 // with previous-utterance interrupt, NOT SAPI urgent. Per-feedback
 // 2026-05-26: SpeakUrgent is reserved for cross-cancel events
@@ -516,6 +533,42 @@ void CloseGlossarySubMenu() {
     SpeakFocusedOption();
 }
 
+// Hand `url` to the default browser. Returns false if the shell refused
+// (no browser association, blocked protocol handler) so the caller can
+// speak the failure instead of leaving the user waiting for a page that
+// never came.
+//
+// Deliberately nothing beyond the handoff. The first cut also minimised
+// the game window (ShowWindow SW_MINIMIZE) on the theory that a fullscreen
+// game would bury the browser; in testing the browser came up fine on its
+// own, and the forced minimise made alt-tabbing BACK into the game
+// misbehave badly. Letting the shell do the window management is both
+// simpler and what actually works — do not reintroduce the minimise.
+bool OpenExternalUrl(const char* url) {
+    HINSTANCE rc = ShellExecuteA(nullptr, "open", url, nullptr, nullptr,
+                                 SW_SHOWNORMAL);
+    // ShellExecute's success contract is "> 32"; anything at or below is an
+    // error code in the return value itself.
+    const bool ok = reinterpret_cast<INT_PTR>(rc) > 32;
+    acclog::Write("ModSettings", "open url \"%s\" rc=%d ok=%d",
+                  url, static_cast<int>(reinterpret_cast<INT_PTR>(rc)),
+                  ok ? 1 : 0);
+    return ok;
+}
+
+// Enter on a Link row: open the URL, then speak the outcome. The submenu
+// stays open, so the user is still on the same row when they come back
+// from the browser.
+void ActivateLinkRow(Option opt) {
+    const char* url = (opt == Option::SupportModder) ? kSupportModderUrl
+                                                     : kLatestChangesUrl;
+    const bool ok = OpenExternalUrl(url);
+    prism::Speak(
+        acc::strings::Get(ok ? acc::strings::Id::ModSettingLinkOpened
+                             : acc::strings::Id::ModSettingLinkFailed),
+        /*interrupt=*/true);
+}
+
 // Adjust the focused Slider row by delta percent (clamped 0..100),
 // re-announce "Name: N Prozent", and play an audible preview at the new
 // level so the user hears the loudness they just dialled in. The preview
@@ -592,7 +645,7 @@ bool HandleInputRoot(int keyCode) {
         }
     }
     // Enter: Toggle rows flip + re-announce; Submenu rows pivot to the
-    // nested view.
+    // nested view; Link rows hand their URL to the browser.
     if (keyCode == kInputEnter1 || keyCode == kInputEnter2) {
         if (s_focused < 0 || s_focused >= k_optionCount) return true;
         const auto& row = k_options[s_focused];
@@ -603,6 +656,10 @@ bool HandleInputRoot(int keyCode) {
                 s_keybindsOpen = true;
                 acc::menus::keybinds::Open();
             }
+            return true;
+        }
+        if (row.kind == RowKind::Link) {
+            ActivateLinkRow(row.option);
             return true;
         }
         // Slider: Enter replays the preview at the current level (Left/
