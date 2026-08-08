@@ -225,6 +225,10 @@ constexpr Entry kEntries[] = {
     { S::HelpKeyPadModeSwitch,     Grp::Controller, kWorld, false, true },
     { S::HelpKeyPadCycleObjects,   Grp::Controller, kWorld, false, true },
     { S::HelpKeyPadCycleCategory,  Grp::Controller, kWorld, false, true },
+    // The map screen runs the same cycle over its own hints, so the D-Pad
+    // reads them on the horizontal axis exactly as it reads objects in the
+    // world — see DispatchMapDpad in pad_input.cpp.
+    { S::HelpKeyPadMapHints,       Grp::Controller, kMap,   false, true },
     { S::HelpKeyPadActionMenuNav,  Grp::Controller,
       kWorld | kActionMenu, false, true },
     { S::HelpKeyPadWalkToFocus,    Grp::Controller, 0,      false, true },
@@ -234,6 +238,10 @@ constexpr Entry kEntries[] = {
     { S::HelpKeyPadHelp,           Grp::Controller, 0,      false, true },
     { S::HelpKeyPadQuickMenu,      Grp::Controller, kWorld, false, true },
     { S::HelpKeyPadCycleTargets,   Grp::Controller, kWorld, false, true },
+    // The shoulders' one non-engine job: the keyboard's Q / E mode toggle on
+    // the two panels where the engine leaves them free.
+    { S::HelpKeyPadTradeMode,      Grp::Controller, kContainer | kStore,
+      false, true },
     { S::HelpKeyPadOptions,        Grp::Controller, 0,      false, true },
 };
 constexpr int kEntryCount =

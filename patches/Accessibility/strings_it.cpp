@@ -589,6 +589,7 @@ const char* Get(Id id) {
         case Id::HelpKeyPadModeSwitch:       return "Grilletto sinistro: cambia la croce direzionale tra selezione oggetti e menu azioni";
         case Id::HelpKeyPadCycleObjects:     return "Selezione oggetti, croce sinistra e destra: oggetto precedente e successivo";
         case Id::HelpKeyPadCycleCategory:    return "Selezione oggetti, croce su e gi\xF9: categoria precedente e successiva";
+        case Id::HelpKeyPadMapHints:         return "Schermata mappa, croce sinistra e destra: indicazione precedente e successiva";
         case Id::HelpKeyPadActionMenuNav:    return "Menu azioni, croce: sinistra e destra cambiano categoria, su e gi\xF9 cambiano voce, A esegue";
         case Id::HelpKeyPadWalkToFocus:      return "Grilletto destro con dorsale destro: cammina verso l'oggetto selezionato";
         case Id::HelpKeyPadBeacon:           return "Grilletto sinistro con dorsale sinistro: radiofaro sonoro verso l'oggetto selezionato";
@@ -597,6 +598,7 @@ const char* Get(Id id) {
         case Id::HelpKeyPadHelp:             return "Entrambi i grilletti: tasti di questa schermata. La voce Aiuto del menu rapido apre questo elenco";
         case Id::HelpKeyPadQuickMenu:        return "Y: menu rapido";
         case Id::HelpKeyPadCycleTargets:     return "Dorsali sinistro e destro: cambia bersaglio";
+        case Id::HelpKeyPadTradeMode:        return "Contenitore e negozio, dorsali: cambia modalit\xE0";
         case Id::HelpKeyPadOptions:          return "Pulsante Indietro: menu opzioni";
         case Id::PadModeCycle:               return "Selezione oggetti";
         case Id::PadModeActionMenu:          return "Menu azioni";

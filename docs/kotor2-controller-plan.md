@@ -62,9 +62,14 @@ The cost is that the D-Pad has two jobs — FINDING a thing and ACTING on it —
 and each wants all four directions. **The left trigger switches between them**,
 and the mode announces itself.
 
-**The pad binding set, as built.** In menus the pad simply IS the keyboard.
-On the map screen the left stick pans the virtual cursor (the D-Pad still
-navigates the panel). In the world:
+**The pad binding set, as built.** In menus the pad simply IS the keyboard,
+with two additions: on the container and the store panels LB and RB carry the
+keyboard's Q / E mode toggle (take vs give, buy vs sell), because the engine
+leaves the shoulders free there. On the map screen the left stick pans the
+virtual cursor and the D-Pad runs the mod's Map cycle — left / right for the
+previous / next map hint, up / down for the category — which is the same
+mapping it has in the world, and the same thing the keyboard's `,` / `.` do
+there. In the world:
 
 - LT (alone) — switch the D-Pad between object selection and the action menu
 - Object selection, D-Pad left / right — previous / next object

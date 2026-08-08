@@ -1688,6 +1688,7 @@ enum class Id : int {
     HelpKeyPadModeSwitch,
     HelpKeyPadCycleObjects,
     HelpKeyPadCycleCategory,
+    HelpKeyPadMapHints,
     HelpKeyPadActionMenuNav,
     HelpKeyPadWalkToFocus,
     HelpKeyPadBeacon,
@@ -1696,6 +1697,7 @@ enum class Id : int {
     HelpKeyPadHelp,
     HelpKeyPadQuickMenu,
     HelpKeyPadCycleTargets,
+    HelpKeyPadTradeMode,
     HelpKeyPadOptions,
     // Spoken when the left trigger switches what the D-Pad is for. Short —
     // each mode announces its own content underneath the mode word.

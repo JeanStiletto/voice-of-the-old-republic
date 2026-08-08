@@ -407,6 +407,37 @@ bool DispatchWorldDpad(int code) {
     }
 }
 
+// The map screen's D-Pad.
+//
+// Every control on the map panel is filtered out of the chain (menus_chain
+// drops the close button and both note-stepper buttons), so the D-Pad had
+// nothing of ours to drive there and fell through to the engine — whose
+// InGameMap steps prev / next map note on UP and DOWN, and does nothing at all
+// with left and right. The hints were therefore on the vertical axis while the
+// world's objects are on the horizontal one, and they are all one category:
+// exactly what the horizontal axis is for everywhere else in the mod.
+//
+// So the map screen gets the same D-Pad the world does, through the mod's own
+// Map cycle context — which is also what the keyboard's `,` / `.` already do
+// here. Left and right step the hints (spoken name, bearing and distance, with
+// the virtual cursor panning to each); up and down step the category, of which
+// the map has one.
+//
+// Gated on HasActiveMapPanel, the same predicate DispatchPadAction uses to
+// pick Map over World context, so the two can never disagree about which
+// cycle state the press lands in.
+bool DispatchMapDpad(int code) {
+    if (!acc::engine::HasActiveMapPanel()) return false;
+    using PA = acc::cycle_input::PadAction;
+    switch (code) {
+        case kPadDpadLeft:  return acc::cycle_input::DispatchPadAction(PA::ItemPrev);
+        case kPadDpadRight: return acc::cycle_input::DispatchPadAction(PA::ItemNext);
+        case kPadDpadUp:    return acc::cycle_input::DispatchPadAction(PA::CategoryPrev);
+        case kPadDpadDown:  return acc::cycle_input::DispatchPadAction(PA::CategoryNext);
+        default:            return false;
+    }
+}
+
 // The logical code a pad D-Pad / stick direction stands in for.
 int LogicalForDirection(int code) {
     switch (code) {
@@ -706,6 +737,10 @@ Verdict TranslateManagerEvent(int& code, int& value) {
         if (InWorldSurface() && DispatchWorldDpad(code)) {
             return Verdict::Consumed;
         }
+        if (DispatchMapDpad(code)) {
+            acclog::Write("Pad", "D-Pad(%d) -> map cycle", raw);
+            return Verdict::Consumed;
+        }
         code = dpadLogical;
         acclog::Write("Pad", "D-Pad(%d) -> logical %d", raw, code);
         return Verdict::Rewritten;
@@ -763,7 +798,38 @@ Verdict TranslateManagerEvent(int& code, int& value) {
         return Verdict::Rewritten;
     }
 
-    // Everything else (X, Y, LB, RB, Back) keeps its engine meaning. X is
+    // ---- LB / RB ----------------------------------------------------------
+    // The bare shoulders are the engine's nearly everywhere: in the world they
+    // cycle targets, and on the in-game menu strip they step between the
+    // sub-screens — that is how the pad reaches the map at all. Two panels are
+    // the exception. On the container and the store the engine gives them
+    // nothing, while the keyboard's Q / E carry the mode toggle there (take vs
+    // give, buy vs sell), so without this a pad player can only ever take and
+    // only ever buy.
+    //
+    // Routed as a synthetic press of the SAME action the keyboard poller runs,
+    // not as a reach into the panels: the foreground gate, the
+    // operation-already-pending guard and the mode announcement then all stay
+    // in their one place (menus_listbox / menus_store).
+    if (code == kPadShoulderL || code == kPadShoulderR) {
+        if (value == 0) return Verdict::NotPad;
+        acc::engine::UiBlockState blk;
+        acc::engine::IsForegroundUiBlocking(&blk);
+        const bool container =
+            (blk.fgKind == acc::engine::PanelKind::Container);
+        const bool store = (blk.fgKind == acc::engine::PanelKind::Store);
+        if (!container && !store) return Verdict::NotPad;
+        NoteNavPress();
+        acclog::Write("Pad", "%s -> %s mode toggle",
+                      code == kPadShoulderL ? "LB" : "RB",
+                      container ? "container" : "store");
+        acc::hotkeys::PadPress(container
+                                   ? acc::hotkeys::Action::ContainerGiveMode
+                                   : acc::hotkeys::Action::StoreModeToggle);
+        return Verdict::Consumed;
+    }
+
+    // Everything else (X, Y, Back) keeps its engine meaning. X is
     // Switch Party Leader and stays the engine's: it briefly hosted the mod's
     // action menu, which the D-Pad now carries far better — the menu belongs
     // where the navigation is, not on a button beside it.

@@ -590,6 +590,7 @@ const char* Get(Id id) {
         case Id::HelpKeyPadModeSwitch:       return "G\xE2" "chette gauche : basculer la croix directionnelle entre s\xE9lection d'objets et menu d'actions";
         case Id::HelpKeyPadCycleObjects:     return "S\xE9lection d'objets, croix gauche et droite : objet pr\xE9" "c\xE9" "dent et suivant";
         case Id::HelpKeyPadCycleCategory:    return "S\xE9lection d'objets, croix haut et bas : cat\xE9gorie pr\xE9" "c\xE9" "dente et suivante";
+        case Id::HelpKeyPadMapHints:         return "\xC9" "cran de carte, croix gauche et droite : indication pr\xE9" "c\xE9" "dente et suivante";
         case Id::HelpKeyPadActionMenuNav:    return "Menu d'actions, croix : gauche et droite changent de cat\xE9gorie, haut et bas d'entr\xE9" "e, A d\xE9" "clenche";
         case Id::HelpKeyPadWalkToFocus:      return "G\xE2" "chette droite avec bouton de tranche droit : marcher jusqu'\xE0 l'objet cibl\xE9";
         case Id::HelpKeyPadBeacon:           return "G\xE2" "chette gauche avec bouton de tranche gauche : balise sonore vers l'objet cibl\xE9";
@@ -598,6 +599,7 @@ const char* Get(Id id) {
         case Id::HelpKeyPadHelp:             return "Les deux g\xE2" "chettes : touches de cet \xE9" "cran. L'entr\xE9" "e Aide du menu rapide ouvre cette liste";
         case Id::HelpKeyPadQuickMenu:        return "Y : menu rapide";
         case Id::HelpKeyPadCycleTargets:     return "Boutons de tranche gauche et droit : changer de cible";
+        case Id::HelpKeyPadTradeMode:        return "Conteneur et boutique, boutons de tranche : changer de mode";
         case Id::HelpKeyPadOptions:          return "Bouton Retour : menu des options";
         case Id::PadModeCycle:               return "S\xE9lection d'objets";
         case Id::PadModeActionMenu:          return "Menu d'actions";

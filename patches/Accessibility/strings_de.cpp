@@ -608,6 +608,7 @@ const char* Get(Id id) {
         case Id::HelpKeyPadModeSwitch:       return "Linker Trigger: Steuerkreuz umschalten zwischen Objektwahl und Aktionsmen\xFC";
         case Id::HelpKeyPadCycleObjects:     return "Objektwahl, Steuerkreuz links und rechts: vorheriges und n\xE4" "chstes Objekt";
         case Id::HelpKeyPadCycleCategory:    return "Objektwahl, Steuerkreuz hoch und runter: vorherige und n\xE4" "chste Kategorie";
+        case Id::HelpKeyPadMapHints:         return "Kartenbildschirm, Steuerkreuz links und rechts: vorheriger und n\xE4" "chster Hinweis";
         case Id::HelpKeyPadActionMenuNav:    return "Aktionsmen\xFC, Steuerkreuz: links und rechts wechseln die Kategorie, hoch und runter den Eintrag, A l\xF6st aus";
         case Id::HelpKeyPadWalkToFocus:      return "Rechter Trigger mit rechter Schultertaste: zum fokussierten Objekt laufen";
         case Id::HelpKeyPadBeacon:           return "Linker Trigger mit linker Schultertaste: Audio-Bake zum fokussierten Objekt";
@@ -616,6 +617,7 @@ const char* Get(Id id) {
         case Id::HelpKeyPadHelp:             return "Beide Trigger: Tasten f\xFCr diesen Bildschirm. Der Eintrag Hilfe im Schnellmen\xFC \xF6" "ffnet diese Liste";
         case Id::HelpKeyPadQuickMenu:        return "Y: Schnellmen\xFC";
         case Id::HelpKeyPadCycleTargets:     return "Linke und rechte Schultertaste: Ziele durchschalten";
+        case Id::HelpKeyPadTradeMode:        return "Beh\xE4lter und Laden, Schultertasten: Modus wechseln";
         case Id::HelpKeyPadOptions:          return "Zur\xFC" "ck-Taste: Optionsmen\xFC";
         case Id::PadModeCycle:               return "Objektwahl";
         case Id::PadModeActionMenu:          return "Aktionsmen\xFC";

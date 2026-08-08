@@ -591,6 +591,7 @@ const char* Get(Id id) {
         case Id::HelpKeyPadModeSwitch:       return "Gatillo izquierdo: cambiar la cruceta entre selecci\xF3n de objetos y men\xFA de acciones";
         case Id::HelpKeyPadCycleObjects:     return "Selecci\xF3n de objetos, cruceta izquierda y derecha: objeto anterior y siguiente";
         case Id::HelpKeyPadCycleCategory:    return "Selecci\xF3n de objetos, cruceta arriba y abajo: categor\xED" "a anterior y siguiente";
+        case Id::HelpKeyPadMapHints:         return "Pantalla del mapa, cruceta izquierda y derecha: indicaci\xF3n anterior y siguiente";
         case Id::HelpKeyPadActionMenuNav:    return "Men\xFA de acciones, cruceta: izquierda y derecha cambian de categor\xED" "a, arriba y abajo de entrada, A ejecuta";
         case Id::HelpKeyPadWalkToFocus:      return "Gatillo derecho con bot\xF3n superior derecho: caminar hasta el objeto enfocado";
         case Id::HelpKeyPadBeacon:           return "Gatillo izquierdo con bot\xF3n superior izquierdo: baliza sonora hacia el objeto enfocado";
@@ -599,6 +600,7 @@ const char* Get(Id id) {
         case Id::HelpKeyPadHelp:             return "Ambos gatillos: teclas de esta pantalla. La entrada Ayuda del men\xFA r\xE1pido abre esta lista";
         case Id::HelpKeyPadQuickMenu:        return "Y: men\xFA r\xE1pido";
         case Id::HelpKeyPadCycleTargets:     return "Botones superiores izquierdo y derecho: cambiar de objetivo";
+        case Id::HelpKeyPadTradeMode:        return "Contenedor y tienda, botones superiores: cambiar de modo";
         case Id::HelpKeyPadOptions:          return "Bot\xF3n Atr\xE1s: men\xFA de opciones";
         case Id::PadModeCycle:               return "Selecci\xF3n de objetos";
         case Id::PadModeActionMenu:          return "Men\xFA de acciones";

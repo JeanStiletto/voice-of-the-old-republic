@@ -54,7 +54,8 @@ and add the German in parentheses if it genuinely aids clarity.
 - The remaining bindings sit on the triggers and the right stick: right trigger alone announces your facing in degrees; left trigger with the left shoulder button drops an audio beacon on the focused object; right trigger with the right shoulder button walks you to it; both triggers together read out the keys for the screen you are on; and pressing the right stick turns the camera to the beacon's next waypoint, or to the next compass direction when no beacon is armed.
 - The Quick Menu's "Help" entry now opens the mod's key list. It normally shows a picture of a controller with the buttons labelled, which tells a blind player nothing — so the entry now does what it promises. That list gains a Controller section, present only when a pad is connected, covering every binding above.
 - Wheeled droids no longer grind on when you push them into a wall with the stick. The mod silences a stuck drive loop, but it was watching the movement keys, and a stick-driven walk holds no key.
-- On the map screen the left stick pans the map cursor, at a speed that follows how far you push it. The D-pad still navigates the screen's own controls.
+- On the map screen the left stick pans the map cursor, at a speed that follows how far you push it. The D-pad reads the map's hints on the same axis it reads objects in the world — left and right for the previous and next hint, each spoken with its bearing and distance and with the cursor moved onto it.
+- Containers and stores switch mode from the shoulder buttons, the pad's version of Q and E. Without them a pad player could only ever take from a container and only ever buy in a store.
 
 <h3>Installer:</h3>
 

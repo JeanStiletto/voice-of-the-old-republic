@@ -589,6 +589,7 @@ const char* Get(Id id) {
         case Id::HelpKeyPadModeSwitch:       return "Left trigger: switch the D-pad between object selection and the action menu";
         case Id::HelpKeyPadCycleObjects:     return "Object selection, D-pad left and right: previous and next object";
         case Id::HelpKeyPadCycleCategory:    return "Object selection, D-pad up and down: previous and next category";
+        case Id::HelpKeyPadMapHints:         return "Map screen, D-pad left and right: previous and next map hint";
         case Id::HelpKeyPadActionMenuNav:    return "Action menu, D-pad: left and right change the category, up and down the entry, A fires";
         case Id::HelpKeyPadWalkToFocus:      return "Right trigger with right shoulder button: walk to the focused object";
         case Id::HelpKeyPadBeacon:           return "Left trigger with left shoulder button: audio beacon to the focused object";
@@ -597,6 +598,7 @@ const char* Get(Id id) {
         case Id::HelpKeyPadHelp:             return "Both triggers: keys for this screen. The quick menu's Help entry opens this list";
         case Id::HelpKeyPadQuickMenu:        return "Y: quick menu";
         case Id::HelpKeyPadCycleTargets:     return "Left and right shoulder buttons: cycle targets";
+        case Id::HelpKeyPadTradeMode:        return "Container and store, shoulder buttons: switch the mode";
         case Id::HelpKeyPadOptions:          return "Back button: options menu";
         case Id::PadModeCycle:               return "Object selection";
         case Id::PadModeActionMenu:          return "Action menu";

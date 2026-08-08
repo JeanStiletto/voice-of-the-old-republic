@@ -585,6 +585,7 @@ const char* Get(Id id) {
         case Id::HelpKeyPadModeSwitch:       return "Lewy spust: prze\xB3\xB9" "cz krzy\xBF" "ak mi\xEA" "dzy wyborem obiekt\xF3w a menu akcji";
         case Id::HelpKeyPadCycleObjects:     return "Wyb\xF3r obiekt\xF3w, krzy\xBF" "ak w lewo i w prawo: poprzedni i nast\xEApny obiekt";
         case Id::HelpKeyPadCycleCategory:    return "Wyb\xF3r obiekt\xF3w, krzy\xBF" "ak w g\xF3r\xEA i w d\xF3\xB3: poprzednia i nast\xEApna kategoria";
+        case Id::HelpKeyPadMapHints:         return "Ekran mapy, krzy\xBF" "ak w lewo i w prawo: poprzedni i nast\xEApny znacznik mapy";
         case Id::HelpKeyPadActionMenuNav:    return "Menu akcji, krzy\xBF" "ak: w lewo i w prawo zmienia kategori\xEA, w g\xF3r\xEA i w d\xF3\xB3 pozycj\xEA, A wykonuje";
         case Id::HelpKeyPadWalkToFocus:      return "Prawy spust z prawym bumperem: id\x9F do wybranego obiektu";
         case Id::HelpKeyPadBeacon:           return "Lewy spust z lewym bumperem: sygna\xB3 d\x9Fwi\xEAkowy do wybranego obiektu";
@@ -593,6 +594,7 @@ const char* Get(Id id) {
         case Id::HelpKeyPadHelp:             return "Oba spusty: klawisze tego ekranu. Pozycja Pomoc w szybkim menu otwiera t\xEA list\xEA";
         case Id::HelpKeyPadQuickMenu:        return "Y: szybkie menu";
         case Id::HelpKeyPadCycleTargets:     return "Lewy i prawy bumper: zmiana celu";
+        case Id::HelpKeyPadTradeMode:        return "Pojemnik i sklep, bumpery: zmiana trybu";
         case Id::HelpKeyPadOptions:          return "Przycisk Back: menu opcji";
         case Id::PadModeCycle:               return "Wyb\xF3r obiekt\xF3w";
         case Id::PadModeActionMenu:          return "Menu akcji";
