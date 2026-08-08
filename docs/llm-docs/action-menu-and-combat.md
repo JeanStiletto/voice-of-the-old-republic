@@ -251,6 +251,10 @@ option, and it fires when the user *uses* the menu (cycles a row/column arrow):
   pause-key `SetPausedByCombat @0x005edc20` our `BeginOverlayPause` uses.
   There is no combat gate inside the arrow handlers — the gate is purely the
   setting bit.
+- KOTOR 2's `SetPausedByCombat`: facade `@0x00740350`, internal `@0x0079BF40`
+  (K1's internal is `@0x005f2e10`). Found 2026-08-08 — before that the K2
+  address was missing and every overlay pause was a swallowed null call; see
+  "The overlay pause was dead on KOTOR 2" in `docs/kotor2-port.md`.
 
 **Our parity (unified_action_menu.cpp):** read the bit via
 `acc::engine::GetActionMenuAutoPause` and only `BeginOverlayPause` on open when

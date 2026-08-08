@@ -2636,6 +2636,50 @@ Two facts that will shape the design:
 `docs/controller-mod-techniques.md` is the existing hand-off note on our input
 pipelines and is the right starting point, but it describes K1 surfaces.
 
+## The overlay pause was dead on KOTOR 2 (found + fixed 2026-08-08)
+
+`CClientExoApp::SetPausedByCombat` had no K2 address. It was written as the K1
+address through plain `R()`, which returns 0 on K2, so **every**
+`BeginOverlayPause` / `EndOverlayPause` on K2 called through a null pointer and
+the site's own `__except` swallowed it. The log said
+`fault in overlay-pause SetPausedByCombat` — which reads as "the engine
+refused", not "we never found the function", and that is why it sat unnoticed
+through a whole test round.
+
+Everything that asks the world to freeze was affected — the examine view, the
+combat queue and the unified action menu. It surfaced through the action menu
+because the pad's left trigger made that menu the pad's main surface: with the
+world never actually paused, `WorldIsPaused()` stayed false and every fire took
+the "world running, out of combat" branch and closed the menu, so A could not
+queue a second action.
+
+**Resolved:**
+
+- facade `CClientExoApp::SetPausedByCombat` — **0x00740350** (K1 0x005edc20)
+- internal `CClientExoAppInternal::SetPausedByCombat` — **0x0079BF40**
+  (K1 0x005f2e10)
+
+Method, for the next address of this shape: the internal is the only small
+function in the K2 binary that writes K1's three fields at the *same* offsets
+(`0x37c |= 4`, source byte at `0x388`, requested state at `0x380`), gates on
+`gui_in_game`'s own flag, and forks into PauseRumble + `SetSoundMode(paused)`
+versus UnpauseRumble + `SetSoundMode(running)`. It was reached by listing the
+K2 functions that call the already-known `SetSoundMode` (0x0070BC60) **twice** —
+five candidates out of 44 callers — and reading the shortest. `ret 0xc` on both
+sides confirms the `(int, byte, int)` tail. The facade is its 37-byte forwarder
+through `this->internal` at +0x4, the same shape K1's has.
+
+Two K2-only additions in the internal, neither affecting us (we pass source 4):
+an early accept when source == 0x0d, and a skip of the rumble/sound work when
+source == 3.
+
+**The general lesson:** a `Pick`-less address is not a safe default on K2, it is
+a null call, and wrapping the call in `__try` converts a missing address into a
+plausible-looking engine refusal. Both `SetPausedByCombat` call sites now check
+`acc::addr::Ok()` first and log "unresolved on this build — the world will NOT
+pause". Worth doing at every K2 call site whose address might still be a bare
+`R()`.
+
 ## Sources
 
 - `kotor2-port-feasibility.md` — the original measurement (sigscan 0/213) and

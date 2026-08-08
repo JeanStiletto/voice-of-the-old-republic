@@ -174,12 +174,35 @@ void DispatchUnpauseCleanup(const char* trigger) {
 // The facade forwards to the internal via this->internal; we pass the
 // public CClientExoApp pointer (AppManager + 0x4). paused 1=pause/0=resume,
 // source 4 = the value the pause key passes, force 0.
-const uintptr_t kAddrSetPausedByCombat = acc::addr::R(0x005edc20);
+//
+// KOTOR 2: facade 0x00740350 → internal 0x0079BF40. Identified by structure,
+// not by name: the internal is the only small function in the binary that
+// writes the same three fields at the same offsets K1 uses (0x37c |= 4, the
+// source byte at 0x388, the requested state at 0x380), gates on
+// gui_in_game's own flag, and forks into PauseRumble + SetSoundMode(paused)
+// versus UnpauseRumble + SetSoundMode(running). `ret 0xc` on both confirms
+// the (int, byte, int) tail. The facade is its 37-byte forwarder through
+// this->internal at +0x4, the same shape K1's has.
+//
+// Until this was found, EVERY overlay pause on KOTOR 2 called address 0 and
+// was swallowed by the __except below — the menu believed it had paused, the
+// world kept running, and the action menu therefore took its
+// world-is-running branch and closed after one fire.
+const uintptr_t kAddrSetPausedByCombat =
+    acc::addr::Pick(0x005edc20, 0x00740350);
 using PFN_SetPausedByCombat =
     void(__thiscall *)(void* clientApp, int paused, int source, int force);
 
 void DispatchOverlayPause(const char* trigger, int paused) {
     acclog::Write("PauseToggle", "%s: SetPausedByCombat(%d,4,0)", trigger, paused);
+    // An unresolved address is a null call, and a null call inside __try is
+    // indistinguishable in the log from the engine refusing. Say which it is.
+    if (!acc::addr::Ok(kAddrSetPausedByCombat)) {
+        acclog::Write("PauseToggle",
+                      "overlay-pause skipped: SetPausedByCombat unresolved on "
+                      "this build — the world will NOT pause");
+        return;
+    }
     if (!acc::engine::GetAppManager()) {
         acclog::Write("PauseToggle", "overlay-pause skipped: AppManager NULL");
         return;
@@ -260,6 +283,12 @@ bool ResumeWorldIfPaused(const char* reason) {
     // an overlay pause at all).
     g_overlayPauseOwners = 0;
     acclog::Write("PauseToggle", "%s: resume world SetPausedByCombat(0,4,0)", tag);
+    if (!acc::addr::Ok(kAddrSetPausedByCombat)) {
+        acclog::Write("PauseToggle",
+                      "resume skipped: SetPausedByCombat unresolved on this "
+                      "build");
+        return false;
+    }
     if (!acc::engine::GetAppManager()) {
         acclog::Write("PauseToggle", "resume skipped: AppManager NULL");
         return false;
