@@ -35,6 +35,14 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h2>v0.7.0</h2>
 
+<h3>KOTOR 1 — controller support:</h3>
+
+- KOTOR 1 can be played with a controller, with the same layout KOTOR 2 has. The first game has no gamepad support of its own — its input layer only ever creates a keyboard and a mouse — so the mod reads the pad itself and, wherever the game rather than the mod has to act, presses your own bound key for you. Everything that made KOTOR 2 playable on a pad works here: the D-pad's two modes with the left trigger switching between them, the trigger chords for the beacon, autowalk, degrees and screen help, and one-entry-per-press navigation in menus.
+- The left stick walks and strafes in eight directions and the right stick turns the camera, following whichever movement keys you have bound. The stick releases the moment you let go or the game loses focus.
+- Y opens a quick menu: the menu screens, party leader, solo mode, stealth, quick save, and Help, which opens the mod's key list. KOTOR 2's own gamepad menu has one more entry, Switch Weapons, which the first game does not have. The left stick stops walking while the menu is open so you cannot wander off mid-choice.
+- The remaining buttons do what they do on KOTOR 2: the shoulder buttons cycle targets in the world and step the in-game menu's sub-screens elsewhere, X switches party leader, Back opens options, Start pauses, and the right stick press turns the camera to the beacon's next waypoint.
+- The key list's Controller section now appears on both games, and gains lines for X and Start. It is still shown only when a pad is connected.
+
 <h3>World navigation:</h3>
 
 - Rooms shaped like a horseshoe or a switchback ramp are no longer described as though they were one straight corridor. A corridor that bends back on itself was being merged end to end into a single space, and its exits were then named by their compass direction from the middle of that space — a point that, for a U-shaped room, lies inside the wall between the two arms. On the Peragus fuel-depot ramp this announced a door to the south-east that was 80 metres away around the bend and a storey up, with a wall in between; walking south-east was the one thing that could not work. Such a room is now split at its bends, so each straight run is described on its own and the direction you are given is one you can walk.

@@ -86,6 +86,7 @@ Always read these before diving into work — they capture decisions and current
 - **`docs/installer.md`** — end-user installer design, bundled-mods plan, beta-prep notes.
 - **`docs/upstream-prs.md`** — tracking of fixes/features we plan to send back to upstream (mostly KPatchManager).
 - **`docs/kotor2-controller-plan.md`** — controller support for KOTOR 2: the phased work plan, the confirmed pad→InputIndex code table, and the defects one live test round exposed. Written to be executed cold. Engine reference is `docs/llm-docs/k2-controller-support.md`.
+- **`docs/kotor1-controller-port.md`** — the same support backported to KOTOR 1, whose engine has no gamepad path at all (decompile evidence inside). Records what differs — the mod is the pad driver there — the shared binding set, and the combined test round.
 - **`docs/known-issues.md`** — five-bucket status tracker (Bugs / Planned / Monitor / Polish / Beta Preparations).
 - **`docs/CHANGELOG.md`** — versioned release notes. `installer/release.ps1` reads the top-most `## vX.Y.Z` heading to pick the version and uses the bullets under it as the GitHub release body. Add an entry (or rename `## Unreleased`) before tagging.
 - **`docs/llm-docs/`** — LLM-targeted reference material. See `docs/llm-docs/CLAUDE.md` for the index. Start with `game-flow.md` for lifecycle context, `accessibility-map.md` for pillar-by-pillar hook candidates, and `sarif-cookbook.md` for querying Lane's RE database.

@@ -10,6 +10,13 @@ build ships **real, live gamepad support** with a hard-coded binding table and
 three iOS-derived overlay surfaces. There is no "alternate GUI mode" — the pad
 drives the same `_p` panels, plus overlays that only a pad can open.
 
+**KOTOR 1 is the opposite case and none of this transfers.** Its input layer
+creates a keyboard and a mouse device and nothing else; the Aurora joystick
+plumbing is compiled in but no device is ever attached to it, so the engine can
+never emit a pad event. The decompile evidence and what the mod does instead
+(read the pad through XInput, synthesise the player's bound key when the engine
+has to act) are in **`docs/kotor1-controller-port.md`**.
+
 ---
 
 ## KNOWN — the build really has gamepad support

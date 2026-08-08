@@ -601,8 +601,20 @@ const char* Get(Id id) {
         case Id::HelpKeyPadCycleTargets:     return "Boutons de tranche gauche et droit : changer de cible";
         case Id::HelpKeyPadTradeMode:        return "Conteneur et boutique, boutons de tranche : changer de mode";
         case Id::HelpKeyPadOptions:          return "Bouton Retour : menu des options";
+        case Id::HelpKeyPadSwitchLeader:     return "X : changer de chef de groupe";
+        case Id::HelpKeyPadPause:            return "Start : pause";
         case Id::PadModeCycle:               return "S\xE9lection d'objets";
         case Id::PadModeActionMenu:          return "Menu d'actions";
+        case Id::PadQuickMenuOpened:
+            return "Menu rapide. Haut et bas pour choisir, A confirme, "
+                   "B ferme.";
+        case Id::PadQuickMenuClosed:         return "Menu rapide ferm\xE9.";
+        case Id::PadQuickMenus:              return "Menus";
+        case Id::PadQuickPartyLeader:        return "Chef de groupe";
+        case Id::PadQuickSoloMode:           return "Mode solo";
+        case Id::PadQuickStealth:            return "Discr\xE9tion";
+        case Id::PadQuickSave:               return "Sauvegarde rapide";
+        case Id::PadQuickHelp:               return "Aide";
 
         case Id::HelpMenuOpened:    return "Aide des touches. Haut et bas pour lire, \xC9""chap pour fermer.";
         case Id::HelpMenuClosed:    return "Aide des touches ferm\xE9""e.";

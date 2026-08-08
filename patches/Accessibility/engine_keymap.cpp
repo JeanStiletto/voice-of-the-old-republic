@@ -77,8 +77,13 @@ constexpr int kAxisDefaultVk[kMoveAxisCount] = {'W', 'S', 'A', 'D'};
 // to their resolved VK, captured during the same ini parse. Lets consumers ask
 // "what key currently fires game action N" — e.g. Action207 = Solo Mode (keymap
 // .2da row 7 'PartyActive' + 200; verified: Action264 = row 64 STEALTH = G).
+// The scancode is captured alongside the VK because the two answer different
+// questions: "is the player holding this key" wants the VK (GetAsyncKeyState),
+// while "make the engine act as if this key were pressed" wants the physical
+// scancode, which is all DirectInput sees. The KOTOR 1 pad layer asks the
+// second question of half a dozen game actions (see GameActionScancode).
 constexpr int kMaxActionVks = 160;  // stock ini ships ~120 Action lines
-struct ActionVk { int actionId; int vk; };
+struct ActionVk { int actionId; int vk; int scan; };
 ActionVk s_actionVks[kMaxActionVks];
 int      s_actionVkCount = 0;
 
@@ -104,6 +109,16 @@ constexpr AxisContrib kAxisPrimary[] = {
     {3, 281, 'B'},   // Right    : D (mod layout) / C (vanilla)
 };
 int s_axisPrimaryVk[kMoveAxisCount] = {0, 0, 0, 0};
+
+// The same four binds as scancodes, for the KOTOR 1 pad's movement driver
+// (pad_movement.cpp), which has to PRESS them rather than test them. 0 = the
+// ini had no line for that slot; MoveAxisScancode falls back to the WASD DIK
+// below, exactly as MoveAxisPrimaryVk falls back to kAxisDefaultVk.
+int s_axisPrimaryScan[kMoveAxisCount] = {0, 0, 0, 0};
+
+// DIK for W / S / A / D — the fallback when the ini is missing or unreadable.
+// Index matches MoveAxis, same as kAxisDefaultVk.
+constexpr int kAxisDefaultScan[kMoveAxisCount] = {0x11, 0x1F, 0x1E, 0x20};
 
 bool IsDownVk(int vk) {
     return vk != 0 && (GetAsyncKeyState(vk) & 0x8000) != 0;
@@ -135,6 +150,19 @@ int InputIndexToScancode(int ii) {
     if (ii >= 0x4d && ii <= 0x55) return 0x02 + (ii - 0x4d);     // 1..9
     if (ii == 0x56)               return 0x0B;                   // 0
     if (ii == 0x57)               return 0x39;                   // Space
+    // The non-letter keys KOTOR's own default binds land on: Tab (ChangeChar),
+    // Escape (GUI) and the function row (Quicksave = F4, Quickload = F5).
+    // Added for the KOTOR 1 pad's quick menu, which has to synthesise these.
+    if (ii == 0x1e)               return 0x0F;                   // Tab
+    if (ii == 0x1f)               return 0x01;                   // Escape
+    if (ii >= 0x27 && ii <= 0x30) return 0x3B + (ii - 0x27);     // F1..F10
+    if (ii == 0x31)               return 0x57;                   // F11
+    if (ii == 0x32)               return 0x58;                   // F12
+    // CAPSLOCK (InputIndex 89) is deliberately NOT mapped, even though KOTOR's
+    // default Freelook bind uses it. Everything that resolves a scancode here
+    // does so in order to INJECT it, and injecting Caps Lock toggles the OS
+    // lock state and fires the screen reader's modifier key. A caller that
+    // gets 0 declines, which is the right answer for that key.
     return 0;
 }
 
@@ -361,12 +389,15 @@ void ReloadGameConfig() {
             s_actionVkCount < kMaxActionVks) {
             s_actionVks[s_actionVkCount].actionId = actionId;
             s_actionVks[s_actionVkCount].vk       = vk;
+            s_actionVks[s_actionVkCount].scan     =
+                InputIndexToScancode(inputIndex);
             ++s_actionVkCount;
         }
         if (slot != 0 && vk != 0) {
             for (const AxisContrib& c : kAxisPrimary) {
                 if (c.actionId == actionId && c.slot == slot) {
-                    s_axisPrimaryVk[c.axis] = vk;
+                    s_axisPrimaryVk[c.axis]   = vk;
+                    s_axisPrimaryScan[c.axis] = InputIndexToScancode(inputIndex);
                     break;
                 }
             }
@@ -420,6 +451,22 @@ int GameActionVk(int actionId) {
         if (s_actionVks[i].actionId == actionId) return s_actionVks[i].vk;
     }
     return 0;
+}
+
+int GameActionScancode(int actionId) {
+    if (!s_gameLoaded) ReloadGameConfig();
+    for (int i = 0; i < s_actionVkCount; ++i) {
+        if (s_actionVks[i].actionId == actionId) return s_actionVks[i].scan;
+    }
+    return 0;
+}
+
+int MoveAxisScancode(MoveAxis axis) {
+    if (!s_gameLoaded) ReloadGameConfig();
+    const int a = static_cast<int>(axis);
+    if (a < 0 || a >= kMoveAxisCount) return 0;
+    if (s_axisPrimaryScan[a] != 0) return s_axisPrimaryScan[a];
+    return kAxisDefaultScan[a];
 }
 
 void Rebuild() {

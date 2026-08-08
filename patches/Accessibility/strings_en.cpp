@@ -600,8 +600,19 @@ const char* Get(Id id) {
         case Id::HelpKeyPadCycleTargets:     return "Left and right shoulder buttons: cycle targets";
         case Id::HelpKeyPadTradeMode:        return "Container and store, shoulder buttons: switch the mode";
         case Id::HelpKeyPadOptions:          return "Back button: options menu";
+        case Id::HelpKeyPadSwitchLeader:     return "X: switch party leader";
+        case Id::HelpKeyPadPause:            return "Start: pause";
         case Id::PadModeCycle:               return "Object selection";
         case Id::PadModeActionMenu:          return "Action menu";
+        case Id::PadQuickMenuOpened:
+            return "Quick menu. Up and down to choose, A confirms, B closes.";
+        case Id::PadQuickMenuClosed:         return "Quick menu closed.";
+        case Id::PadQuickMenus:              return "Menus";
+        case Id::PadQuickPartyLeader:        return "Party leader";
+        case Id::PadQuickSoloMode:           return "Solo mode";
+        case Id::PadQuickStealth:            return "Stealth";
+        case Id::PadQuickSave:               return "Quick save";
+        case Id::PadQuickHelp:               return "Help";
 
         case Id::HelpMenuOpened:    return "Key help. Up and down to read, Escape to close.";
         case Id::HelpMenuClosed:    return "Key help closed.";

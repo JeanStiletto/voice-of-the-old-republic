@@ -1,5 +1,6 @@
-// KOTOR 2 gamepad input — see pad_input.h for why this is one module and not
-// a pad case scattered through every handler.
+// Gamepad input — see pad_input.h for why this is one module and not a pad
+// case scattered through every handler, and for why KOTOR 1 and KOTOR 2 share
+// every binding but not their event source.
 
 #include "pad_input.h"
 
@@ -11,16 +12,20 @@
 #include "cycle_input.h"
 #include "engine_game.h"
 #include "engine_input.h"
+#include "engine_keymap.h"   // GameActionScancode — KOTOR 1 fires engine
+                             // actions by synthesising the player's own bind
 #include "engine_panels.h"
 #include "engine_player.h"
 #include "examine_view.h"
 #include "help.h"
 #include "hotkeys.h"         // PadPress — reuse the keyboard actions' pollers
 #include "interact_dispatch.h"
+#include "key_inject.h"      // Send / Tap — the scancode route into the engine
 #include "log.h"
 #include "map_ui_cursor.h"   // IsActive — the map screen owns the left stick
 #include "menus_chain.h"     // g_chain* — which Quick Menu entry is focused
 #include "narrated_target.h" // TryGet — is there a target to open the menu on?
+#include "pad_quickmenu.h"   // the KOTOR 1 Y menu (K2 uses the engine's own)
 #include "prism.h"           // Silence — the cancel a pad press has no
                              // keystroke to trigger
 #include "strings.h"
@@ -52,6 +57,23 @@ struct XiState {
     XiGamepad Gamepad;
 };
 typedef DWORD(WINAPI* PFN_XInputGetState)(DWORD dwUserIndex, XiState* pState);
+
+// XInput's own button bits. Mirrored rather than included for the same reason
+// the structures above are.
+constexpr WORD kBtnDpadUp    = 0x0001;
+constexpr WORD kBtnDpadDown  = 0x0002;
+constexpr WORD kBtnDpadLeft  = 0x0004;
+constexpr WORD kBtnDpadRight = 0x0008;
+constexpr WORD kBtnStart     = 0x0010;
+constexpr WORD kBtnBack      = 0x0020;
+constexpr WORD kBtnThumbL    = 0x0040;
+constexpr WORD kBtnThumbR    = 0x0080;
+constexpr WORD kBtnShoulderL = 0x0100;
+constexpr WORD kBtnShoulderR = 0x0200;
+constexpr WORD kBtnA         = 0x1000;
+constexpr WORD kBtnB         = 0x2000;
+constexpr WORD kBtnX         = 0x4000;
+constexpr WORD kBtnY         = 0x8000;
 
 // Firmer than XInput's own XINPUT_GAMEPAD_TRIGGER_THRESHOLD (30 of 255): the
 // triggers here are a MODIFIER, and a modifier that engages on a resting
@@ -134,6 +156,19 @@ constexpr int kStickDeadZoneSq = kStickDeadZone * kStickDeadZone;
 bool  g_stickMoving = false;
 float g_stickX      = 0.0f;   // normalised, +1 = right
 float g_stickY      = 0.0f;   // normalised, +1 = up (XInput's own convention)
+
+// The right stick, same convention. Rotate Camera on the shipped chart; on
+// KOTOR 1 pad_movement holds the bound camera-turn key from it.
+bool  g_rstickActive = false;
+float g_rstickX      = 0.0f;
+float g_rstickY      = 0.0f;
+
+// The button word, sampled by Tick() and edge-detected by PollButtons(). Two
+// stages rather than one because they run at different points in the tick:
+// Tick() has to be early (its trigger state is a modifier other consumers
+// read), while the dispatch belongs next to the keyboard poll.
+WORD g_btnNow  = 0;
+WORD g_btnLast = 0;
 
 // ---------------------------------------------------------------------------
 // Pad-vs-keyboard discrimination
@@ -250,6 +285,11 @@ bool RouteToOverlay(int logical) {
     // The F1 list is global (it opens over menus too) and owns its keys
     // outright while up, so it gets first refusal on every surface.
     if (acc::help::HandleNavCode(logical)) return true;
+
+    // The KOTOR 1 quick menu is the mod's own overlay and equally global while
+    // it is up — on KOTOR 2 the same surface is an engine panel and the
+    // navigation chain walks it instead, so this declines there.
+    if (acc::pad::quickmenu::HandleNavCode(logical)) return true;
 
     if (!InWorldSurface()) return false;
 
@@ -438,6 +478,81 @@ bool DispatchMapDpad(int code) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// KOTOR 1 — making the ENGINE act
+// ---------------------------------------------------------------------------
+// Everything above this point is game-agnostic: it drives the MOD. What
+// follows is the K1-only other half — the presses whose whole job is something
+// only the engine can do (navigate one of its panels, cycle a target, switch
+// party leader, pause). K2 gets those for free because the engine binds the
+// pad itself; K1 has to be given the player's own key.
+//
+// The key goes in as a DirectInput scancode, which is all the engine's
+// keyboard layer can see (a plain-VK SendInput is invisible to it). Every
+// caller here is already behind the foreground gate in PollButtons.
+//
+// [Keymapping] action ids are keymap.2da row + 200. The defaults below are
+// that file's own key for the row, used when the ini has no line for it — or
+// when the bound key is one the mod refuses to inject (Caps Lock; see
+// engine_keymap::InputIndexToScancode).
+constexpr int kActSelectPrev = 204;   // row 4  SelectPrev   — default Q
+constexpr int kActSelectNext = 205;   // row 5  SelectNext   — default E
+constexpr int kActChangeChar = 206;   // row 6  ChangeChar   — default Tab
+constexpr int kActOptions    = 216;   // row 16 Options      — default O
+constexpr int kActFlourish   = 242;   // row 42 Flourish     — default X
+constexpr int kActPrevMenu   = 243;   // row 43 PrevMenu     — default Q
+constexpr int kActNextMenu   = 244;   // row 44 NextMenu     — default E
+constexpr int kActPauseSpace = 241;   // row 41 Pause        — default Space
+
+// DIK for those defaults, plus the three keys the pad plays as itself in a
+// menu. The arrow cluster is behind the E0 prefix: DirectInput reports it as
+// DIK_UP = 0xC8, but SendInput wants the BASE scancode with the extended flag,
+// so 0x48 and `extended = true`.
+constexpr int kDikQ      = 0x10;
+constexpr int kDikE      = 0x12;
+constexpr int kDikO      = 0x18;
+constexpr int kDikX      = 0x2D;
+constexpr int kDikTab    = 0x0F;
+constexpr int kDikSpace  = 0x39;
+constexpr int kDikReturn = 0x1C;
+constexpr int kDikEscape = 0x01;
+constexpr int kDikUp     = 0x48;   // extended
+constexpr int kDikDown   = 0x50;   // extended
+constexpr int kDikLeft   = 0x4B;   // extended
+constexpr int kDikRight  = 0x4D;   // extended
+
+// Fire a [Keymapping] game action by synthesising the key it is bound to.
+void FireGameAction(int actionId, int defaultDik, const char* what) {
+    int scan = acc::engine_keymap::GameActionScancode(actionId);
+    if (scan == 0) scan = defaultDik;
+    acclog::Write("Pad", "%s -> game action %d (scan 0x%02x)", what, actionId,
+                  scan);
+    acc::key_inject::Tap(scan);
+}
+
+// Navigate an ENGINE panel: send the arrow / Enter / Esc the keyboard would
+// have sent. Nothing else in the mod needs to know a pad exists — the press
+// arrives at the GUI-manager hook as an ordinary keyboard event and the
+// navigation chain handles it exactly as it handles the keyboard, including
+// the press/release pairing and the engine's own control focus.
+//
+// If the arrow cluster ever turns out not to reach the engine's DirectInput
+// read (the extended-scancode question), the fallback is a direct call into
+// acc::menus::chain::HandleNavStep / HandleLeftRight / HandleEnterActivation /
+// HandleEsc, which are exported for exactly this shape of caller.
+void InjectMenuKey(int logical) {
+    switch (logical) {
+        case kInputNavUp:    acc::key_inject::Tap(kDikUp,    true); break;
+        case kInputNavDown:  acc::key_inject::Tap(kDikDown,  true); break;
+        case kInputNavLeft:  acc::key_inject::Tap(kDikLeft,  true); break;
+        case kInputNavRight: acc::key_inject::Tap(kDikRight, true); break;
+        case kInputEnter1:   acc::key_inject::Tap(kDikReturn);      break;
+        case kInputEsc1:     acc::key_inject::Tap(kDikEscape);      break;
+        default: return;
+    }
+    acclog::Trace("Pad", "menu key injected for logical %d", logical);
+}
+
 // The logical code a pad D-Pad / stick direction stands in for.
 int LogicalForDirection(int code) {
     switch (code) {
@@ -448,6 +563,141 @@ int LogicalForDirection(int code) {
         default:            return 0;
     }
 }
+
+// ---------------------------------------------------------------------------
+// KOTOR 1 — one press, dispatched
+// ---------------------------------------------------------------------------
+// Each of these is the K1 twin of a branch in TranslateManagerEvent, in the
+// same order of refusal, calling the same helpers. What differs is only the
+// tail: where K2 rewrites the code and lets the engine's own dispatch carry it
+// on, K1 synthesises the key the keyboard would have sent.
+
+void DispatchDpad(int code) {
+    const int logical = LogicalForDirection(code);
+    NoteNavPress();
+    if (RouteToOverlay(logical)) {
+        acclog::Write("Pad", "D-Pad -> overlay logical %d", logical);
+        return;
+    }
+    if (InWorldSurface()) {
+        // In the world the D-Pad is ours outright, and the fall-through must
+        // NOT reach the injection below: KOTOR 1 binds the arrow keys as the
+        // movement alternates (Action285/286), so an injected Up there would
+        // walk the character. A cycle that declines (empty category, no
+        // context) is silence, not a step forward.
+        DispatchWorldDpad(code);
+        return;
+    }
+    if (DispatchMapDpad(code)) {
+        acclog::Write("Pad", "D-Pad -> map cycle");
+        return;
+    }
+    InjectMenuKey(logical);
+}
+
+void DispatchA() {
+    NoteNavPress();
+    if (RouteToOverlay(kInputEnter1)) {
+        acclog::Write("Pad", "A -> overlay activate");
+        return;
+    }
+    if (InWorldSurface()) {
+        // Action-menu mode with the menu not up yet: A opens it rather than
+        // firing the default action, so A cannot mean two different things in
+        // one mode depending on whether a D-Pad press happened to open it.
+        if (EnsureLiveMenuForMode()) {
+            acclog::Write("Pad", "A -> opened live action menu");
+            return;
+        }
+        // Interact with what the player was last TOLD about, not the engine's
+        // last-clicked target — the promise keyboard Enter makes.
+        acclog::Write("Pad", "A -> interact with narrated target");
+        acc::interact::InteractNarratedTarget(/*forceRadial=*/false);
+        return;
+    }
+    InjectMenuKey(kInputEnter1);
+}
+
+void DispatchB() {
+    NoteNavPress();
+    if (RouteToOverlay(kInputEsc1)) {
+        acclog::Write("Pad", "B -> overlay cancel");
+        return;
+    }
+    // In the world there is nothing to cancel: KOTOR 1's Escape opens the
+    // in-game menu, and that is the quick menu's first entry, not a button
+    // the player should hit by reflex while walking.
+    if (InWorldSurface()) return;
+    InjectMenuKey(kInputEsc1);
+}
+
+void DispatchShoulder(bool right) {
+    // The chords come first — a shoulder taken during a trigger hold is the
+    // chord, and marking the trigger chorded is what stops its own solo job
+    // firing on release.
+    if (!right && g_ltHeld) {
+        g_ltChorded = true;
+        acclog::Write("Pad", "LT + LB -> beacon to focus");
+        acc::cycle_input::DispatchPadAction(
+            acc::cycle_input::PadAction::BeaconFocus);
+        return;
+    }
+    if (right && g_rtHeld) {
+        g_rtChorded = true;
+        acclog::Write("Pad", "RT + RB -> walk to focus");
+        acc::cycle_input::DispatchPadAction(
+            acc::cycle_input::PadAction::WalkToFocus);
+        return;
+    }
+
+    // On the container and the store the keyboard's Q / E carry the mode
+    // toggle (take vs give, buy vs sell). Same routing as KOTOR 2: a synthetic
+    // press of the action the keyboard poller runs, so the foreground gate,
+    // the pending-operation guard and the mode announcement stay in one place.
+    acc::engine::UiBlockState blk;
+    acc::engine::IsForegroundUiBlocking(&blk);
+    const bool container = (blk.fgKind == acc::engine::PanelKind::Container);
+    const bool store     = (blk.fgKind == acc::engine::PanelKind::Store);
+    if (container || store) {
+        NoteNavPress();
+        acclog::Write("Pad", "%s -> %s mode toggle", right ? "RB" : "LB",
+                      container ? "container" : "store");
+        acc::hotkeys::PadPress(container
+                                   ? acc::hotkeys::Action::ContainerGiveMode
+                                   : acc::hotkeys::Action::StoreModeToggle);
+        return;
+    }
+
+    // Otherwise the shoulders do what they do on KOTOR 2: cycle the target in
+    // the world, and step the in-game menu's sub-screens everywhere else —
+    // which is how a pad reaches the map, the journal and the equipment screen
+    // at all. KOTOR 1 has both as ordinary [Keymapping] actions.
+    if (InWorldSurface()) {
+        FireGameAction(right ? kActSelectNext : kActSelectPrev,
+                       right ? kDikE : kDikQ,
+                       right ? "RB (cycle target right)"
+                             : "LB (cycle target left)");
+        return;
+    }
+    FireGameAction(right ? kActNextMenu : kActPrevMenu,
+                   right ? kDikE : kDikQ,
+                   right ? "RB (next sub-screen)" : "LB (previous sub-screen)");
+}
+
+// D-Pad auto-repeat. KOTOR 2 gets this from the engine, which gates its own
+// D-Pad codes behind a 150 ms repeat; without it here a KOTOR 1 player would
+// have to tap once per entry down a long list.
+constexpr ULONGLONG kDpadRepeatFirstMs = 400;
+constexpr ULONGLONG kDpadRepeatNextMs  = 150;
+
+struct DpadBit { WORD mask; int code; };
+constexpr DpadBit kDpadBits[4] = {
+    {kBtnDpadUp,    kPadDpadUp},
+    {kBtnDpadDown,  kPadDpadDown},
+    {kBtnDpadLeft,  kPadDpadLeft},
+    {kBtnDpadRight, kPadDpadRight},
+};
+ULONGLONG g_dpadNextMs[4] = {0, 0, 0, 0};
 
 }  // namespace
 
@@ -460,7 +710,11 @@ bool RightTriggerHeld() { return g_rtHeld; }
 bool Connected()        { return g_padSeen; }
 
 void Tick() {
-    if (!acc::game::IsKotor2()) return;
+    // Both games. KOTOR 2 reads the pad here only for the triggers, the stick
+    // magnitude and pad presence — the engine delivers its presses. KOTOR 1
+    // has no engine pad path at all, so this sample is the ONLY thing that
+    // knows a controller was touched; PollButtons() and pad_movement read what
+    // it leaves behind.
     EnsureXInput();
     if (!g_xinputGet) return;
 
@@ -490,8 +744,16 @@ void Tick() {
         g_padSlot = -1;
         g_ltHeld = g_rtHeld = false;
         g_stickMoving = false;
+        // A pad that vanishes mid-hold must read as "everything released", or
+        // pad_movement would keep a synthesised walk key down forever and
+        // PollButtons would see a phantom rising edge when a pad comes back.
+        g_rstickActive = false;
+        g_rstickX = g_rstickY = 0.0f;
+        g_btnNow  = 0;
         return;
     }
+
+    g_btnNow = st.Gamepad.wButtons;
 
     const bool lt = st.Gamepad.bLeftTrigger  >= kTriggerHeld;
     const bool rt = st.Gamepad.bRightTrigger >= kTriggerHeld;
@@ -563,6 +825,21 @@ void Tick() {
     } else {
         g_stickX = g_stickY = 0.0f;
     }
+
+    // Right stick, same dead zone and same normalisation. Unused on KOTOR 2
+    // (the engine rotates its own camera from it); on KOTOR 1 it is what
+    // pad_movement turns the camera with.
+    const int rx = st.Gamepad.sThumbRX;
+    const int ry = st.Gamepad.sThumbRY;
+    const int rmagSq = rx * rx + ry * ry;
+    g_rstickActive = rmagSq > kStickDeadZoneSq;
+    if (g_rstickActive) {
+        const float rmag = std::sqrt(static_cast<float>(rmagSq));
+        g_rstickX = static_cast<float>(rx) / rmag;
+        g_rstickY = static_cast<float>(ry) / rmag;
+    } else {
+        g_rstickX = g_rstickY = 0.0f;
+    }
 }
 
 bool IsPadCode(int code) {
@@ -608,11 +885,93 @@ bool IsPhysicalF1() {
 
 bool StickMoving() { return g_stickMoving; }
 
+bool InWorld() { return InWorldSurface(); }
+
 bool StickVector(float& outX, float& outY) {
     if (!g_stickMoving) return false;
     outX = g_stickX;
     outY = g_stickY;
     return true;
+}
+
+bool RightStickVector(float& outX, float& outY) {
+    if (!g_rstickActive) return false;
+    outX = g_rstickX;
+    outY = g_rstickY;
+    return true;
+}
+
+void PollButtons() {
+    // KOTOR 2's presses arrive as engine events at the two Translate* seams;
+    // dispatching them a second time from here would double every binding.
+    if (!acc::game::IsKotor1()) return;
+
+    const WORD now  = g_btnNow;
+    const WORD last = g_btnLast;
+    // Update the edge baseline BEFORE any gate below can return: a button held
+    // across an alt-tab must not read as a fresh press on the way back.
+    g_btnLast = now;
+
+    if (!g_padSeen) return;
+    if (!acc::hotkeys::IsForegroundGame()) {
+        for (ULONGLONG& t : g_dpadNextMs) t = 0;
+        return;
+    }
+
+    const ULONGLONG nowMs = GetTickCount64();
+    auto rising = [&](WORD m) { return (now & m) != 0 && (last & m) == 0; };
+
+    // D-Pad first, and with repeat — it is the pad's primary surface in both
+    // of its modes and in every menu.
+    for (int i = 0; i < 4; ++i) {
+        const WORD m = kDpadBits[i].mask;
+        if (!(now & m)) {
+            g_dpadNextMs[i] = 0;
+            continue;
+        }
+        if (!(last & m)) {
+            g_dpadNextMs[i] = nowMs + kDpadRepeatFirstMs;
+            DispatchDpad(kDpadBits[i].code);
+            continue;
+        }
+        if (nowMs >= g_dpadNextMs[i]) {
+            g_dpadNextMs[i] = nowMs + kDpadRepeatNextMs;
+            DispatchDpad(kDpadBits[i].code);
+        }
+    }
+
+    if (rising(kBtnA)) DispatchA();
+    if (rising(kBtnB)) DispatchB();
+    if (rising(kBtnShoulderL)) DispatchShoulder(/*right=*/false);
+    if (rising(kBtnShoulderR)) DispatchShoulder(/*right=*/true);
+
+    // Y — the quick menu. Open only from the world (it acts on the world), but
+    // closable from wherever it happens to be up.
+    if (rising(kBtnY) &&
+        (acc::pad::quickmenu::IsOpen() || InWorldSurface())) {
+        acc::pad::quickmenu::Toggle();
+    }
+
+    // The remaining buttons are engine actions with no mod surface of their
+    // own, so they are world-only: in a menu the D-Pad and A/B are the whole
+    // vocabulary, and a stray party-leader switch there would be a surprise.
+    if (!InWorldSurface()) return;
+
+    if (rising(kBtnX))       FireGameAction(kActChangeChar, kDikTab,
+                                            "X (switch party leader)");
+    if (rising(kBtnBack))    FireGameAction(kActOptions, kDikO,
+                                            "Back (options)");
+    if (rising(kBtnStart))   FireGameAction(kActPauseSpace, kDikSpace,
+                                            "Start (pause)");
+    if (rising(kBtnThumbL))  FireGameAction(kActFlourish, kDikX,
+                                            "L3 (flourish)");
+    if (rising(kBtnThumbR)) {
+        // No MOUSE_BUTTON1 hazard here — that trap is K2's, where the engine
+        // hands R3 to us as the same InputIndex the right mouse button uses.
+        // We read the physical button, so there is nothing to disambiguate.
+        acclog::Write("Pad", "right stick press -> camera orient");
+        acc::hotkeys::PadPress(acc::hotkeys::Action::CameraOrient);
+    }
 }
 
 bool TranslateClientEvent(int code, int value) {

@@ -1,5 +1,35 @@
-// KOTOR 2 gamepad input — the one place that knows what a pad event looks
-// like.
+// Gamepad input — the one place that knows what a pad event looks like.
+//
+// Two games, two event SOURCES, one meaning
+// -----------------------------------------
+// KOTOR 2's Steam/Aspyr build ships real gamepad support: its DirectInput
+// layer enumerates game controllers and delivers pad presses to the engine's
+// own input path, so on K2 the mod's job is to TRANSLATE events it is already
+// being handed (TranslateManagerEvent / TranslateClientEvent).
+//
+// KOTOR 1 hands us nothing. Its raw-input layer creates exactly two DirectInput
+// devices — the system keyboard and the system mouse — and no other code in the
+// executable ever creates a third. The Aurora joystick plumbing is all still
+// there (`CExoRawInputInternal::GetJoystickBuffer` is a near-twin of K2's
+// reader, and the InputIndices enum still has JOYSTICK_XAXIS / JOYSTICK_BUTTON0
+// ..14) but the device array is zeroed in the constructor and written by
+// nothing, so the read early-outs before it touches anything. There is no
+// engine path to detour into life. On K1 the mod therefore IS the pad driver:
+// it reads the pad through XInput and pushes the result back in.
+//
+// What that changes, and what it does not:
+//
+//   * The MEANING of every pad control is shared. Both games run the same
+//     helpers — RouteToOverlay, DispatchWorldDpad, DispatchMapDpad,
+//     InteractNarratedTarget, the trigger layer — so the two play identically
+//     and a binding is never written twice.
+//   * Only the SOURCE differs. K2: engine events arriving at two hooks.
+//     K1: PollButtons(), edge-detecting the XInput button word.
+//   * Where the ENGINE has to act (walk, turn the camera, navigate one of its
+//     own panels, fire a game action), K1 synthesises the player's bound key as
+//     a DirectInput scancode — key_inject, the mechanism camera_orient's
+//     snap-turn has always used. The pad in a KOTOR 1 menu is therefore
+//     literally the keyboard, which is exactly what it is on K2.
 //
 // Why this module exists
 // ----------------------
@@ -17,12 +47,14 @@
 // pad has a binding the keyboard does not. Nothing downstream of that call
 // knows a controller exists.
 //
-// KOTOR 1 has no pad path at all (no gamepad preamble in its GUI manager), so
-// every entry point here is a no-op on KOTOR 1 — which also means the shared
-// keyboard codes (F9..F12, A, B, C, D) can never be misread there.
+// The two Translate* seams stay KOTOR 2 only: no pad event can ever arrive at
+// those hooks on KOTOR 1, which also means the shared keyboard codes (F9..F12,
+// A, B, C, D) can never be misread there — the whole twin-key discrimination
+// layer is K2's problem alone.
 //
 // Engine reference: docs/llm-docs/k2-controller-support.md.
-// Work plan + test steps: docs/kotor2-controller-plan.md.
+// Work plan + test steps: docs/kotor2-controller-plan.md,
+//                         docs/kotor1-controller-port.md.
 
 #pragma once
 
@@ -163,10 +195,25 @@ bool IsPhysicalF1();
 // mode switch. Firing on press cannot do that, because on press we do not yet
 // know whether a chord is coming.
 
-// Per-tick poll: refreshes trigger state and pad presence. Cheap (one
-// XInputGetState on a single slot) and self-gates to KOTOR 2. Call from
-// core_tick::Dispatch.
+// Per-tick SAMPLE: refreshes trigger state, stick vectors, the button word and
+// pad presence, and runs the trigger layer. Cheap (one XInputGetState on a
+// single slot, throttled to a 2 s rescan while no pad answers). Call early in
+// core_tick::Dispatch — several consumers read the state it leaves behind, and
+// on KOTOR 2 pad events arrive asynchronously at the GUI-manager hook, so it
+// has to be fresh before any of them run.
 void Tick();
+
+// KOTOR 1 only: edge-detect the button word Tick() sampled and dispatch it.
+// This is the K1 counterpart of TranslateManagerEvent — same helpers, same
+// bindings, different source. No-op on KOTOR 2, where the engine's own events
+// carry the same presses to the two Translate* seams.
+//
+// Call from the poll slot next to input_poll::PollHotkey, NOT from Tick():
+// these presses open the unified action menu and dispatch interactions, which
+// is what the keyboard poll does from exactly there. Tick() runs early, before
+// the menu monitors, and arming the menu from that point is what produced the
+// phantom-confirm bug the K2 action-menu watcher documents.
+void PollButtons();
 
 bool LeftTriggerHeld();
 bool RightTriggerHeld();
@@ -199,6 +246,16 @@ bool Connected();
 // tick by Tick(); false whenever XInput is unavailable or no pad is connected.
 bool StickMoving();
 
+// "The pad is driving the game, not a panel": a player exists and no engine
+// panel owns the foreground. Everything else — title screen, chargen, dialog,
+// the in-game menu strip, any modal — is a menu surface, where the pad's job is
+// simply to be the keyboard. The mod's OWN overlays do not make this false;
+// they are surfaces over a running world and claim their keys themselves.
+//
+// Exported because the movement driver has to ask the same question and a
+// second copy of the predicate is how the two would come to disagree.
+bool InWorld();
+
 // The left stick as a normalised direction, screen convention: x = +1 right,
 // y = +1 UP (the axis as XInput reports it, not the map's inverted pixel
 // space — the caller flips if it wants pixels). Returns false and leaves the
@@ -209,5 +266,10 @@ bool StickMoving();
 // player is actually giving it. Same sample StickMoving reads, so the two can
 // never disagree.
 bool StickVector(float& outX, float& outY);
+
+// The RIGHT stick, same convention and same sample. Rotate Camera on the
+// shipped KOTOR 2 chart; on KOTOR 1 it is what pad_movement holds the bound
+// camera-turn key from, since nothing in that engine turns a camera for us.
+bool RightStickVector(float& outX, float& outY);
 
 }  // namespace acc::pad

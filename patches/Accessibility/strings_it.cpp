@@ -600,8 +600,20 @@ const char* Get(Id id) {
         case Id::HelpKeyPadCycleTargets:     return "Dorsali sinistro e destro: cambia bersaglio";
         case Id::HelpKeyPadTradeMode:        return "Contenitore e negozio, dorsali: cambia modalit\xE0";
         case Id::HelpKeyPadOptions:          return "Pulsante Indietro: menu opzioni";
+        case Id::HelpKeyPadSwitchLeader:     return "X: cambia capogruppo";
+        case Id::HelpKeyPadPause:            return "Start: pausa";
         case Id::PadModeCycle:               return "Selezione oggetti";
         case Id::PadModeActionMenu:          return "Menu azioni";
+        case Id::PadQuickMenuOpened:
+            return "Menu rapido. Su e gi\xF9 per scegliere, A conferma, "
+                   "B chiude.";
+        case Id::PadQuickMenuClosed:         return "Menu rapido chiuso.";
+        case Id::PadQuickMenus:              return "Menu";
+        case Id::PadQuickPartyLeader:        return "Capogruppo";
+        case Id::PadQuickSoloMode:           return "Modalit\xE0 singola";
+        case Id::PadQuickStealth:            return "Furtivit\xE0";
+        case Id::PadQuickSave:               return "Salvataggio rapido";
+        case Id::PadQuickHelp:               return "Aiuto";
 
         case Id::HelpMenuOpened:    return "Guida ai tasti. Su e gi\xF9 per leggere, Esc per chiudere.";
         case Id::HelpMenuClosed:    return "Guida ai tasti chiusa.";

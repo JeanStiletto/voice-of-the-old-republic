@@ -602,8 +602,21 @@ const char* Get(Id id) {
         case Id::HelpKeyPadCycleTargets:     return "Botones superiores izquierdo y derecho: cambiar de objetivo";
         case Id::HelpKeyPadTradeMode:        return "Contenedor y tienda, botones superiores: cambiar de modo";
         case Id::HelpKeyPadOptions:          return "Bot\xF3n Atr\xE1s: men\xFA de opciones";
+        case Id::HelpKeyPadSwitchLeader:
+            return "X: cambiar de l\xED" "der de grupo";
+        case Id::HelpKeyPadPause:            return "Start: pausa";
         case Id::PadModeCycle:               return "Selecci\xF3n de objetos";
         case Id::PadModeActionMenu:          return "Men\xFA de acciones";
+        case Id::PadQuickMenuOpened:
+            return "Men\xFA r\xE1pido. Arriba y abajo para elegir, "
+                   "A confirma, B cierra.";
+        case Id::PadQuickMenuClosed:         return "Men\xFA r\xE1pido cerrado.";
+        case Id::PadQuickMenus:              return "Men\xFAs";
+        case Id::PadQuickPartyLeader:        return "L\xED" "der de grupo";
+        case Id::PadQuickSoloMode:           return "Modo solo";
+        case Id::PadQuickStealth:            return "Sigilo";
+        case Id::PadQuickSave:               return "Guardado r\xE1pido";
+        case Id::PadQuickHelp:               return "Ayuda";
 
         case Id::HelpMenuOpened:    return "Ayuda de teclas. Arriba y abajo para leer, Escape para cerrar.";
         case Id::HelpMenuClosed:    return "Ayuda de teclas cerrada.";

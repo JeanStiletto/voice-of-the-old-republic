@@ -13,6 +13,7 @@
 #include "engine_player.h"
 #include "guidance_beacon.h"
 #include "hotkeys.h"
+#include "key_inject.h"       // Send — the shared scancode injection
 #include "log.h"
 
 namespace acc::camera_orient {
@@ -98,11 +99,12 @@ bool ReadCurrentEngineYawRad(float& out) {
 }
 
 void SendKey(WORD scan, bool down) {
-    INPUT inp = {};
-    inp.type = INPUT_KEYBOARD;
-    inp.ki.wScan = scan;
-    inp.ki.dwFlags = KEYEVENTF_SCANCODE | (down ? 0 : KEYEVENTF_KEYUP);
-    SendInput(1, &inp, sizeof(INPUT));
+    // The injection itself lives in key_inject — the KOTOR 1 pad layer drives
+    // the engine the same way (walking, camera, menu navigation), and two
+    // copies of the SendInput call would be the same knowledge written twice.
+    // The predictive-release policy above stays here; key_inject is
+    // deliberately policy-free.
+    acc::key_inject::Send(scan, down);
 }
 
 float NormaliseRad(float r) {

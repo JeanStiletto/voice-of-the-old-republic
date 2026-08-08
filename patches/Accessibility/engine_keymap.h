@@ -63,6 +63,14 @@ void ReloadGameConfig();
 // unreadable. Auto-loads the config on first use.
 int GameActionVk(int actionId);
 
+// The same bind as a DIK scancode, for a caller that has to SYNTHESISE the key
+// rather than test it — the KOTOR 1 pad's quick menu drives Solo Mode, Stealth,
+// Quick Save and the rest this way (the engine reads DirectInput, which sees
+// scancodes only). 0 when the ini has no such line OR when the bound key is one
+// this mod refuses to inject (Caps Lock — see InputIndexToScancode). A caller
+// that gets 0 must fall back to its own default or decline the entry.
+int GameActionScancode(int actionId);
+
 // Resolve a DirectInput scancode to a Win32 VK against the active layout. Used
 // internally for the hardcoded command-code table (those are DIK scancodes).
 int ScancodeToVk(int scancode);
@@ -106,6 +114,13 @@ int MoveAxisVks(MoveAxis axis, int* out, int cap);
 // movement cluster, which is the promise this whole API exists to keep.
 // Never returns the arrow alternates. Auto-loads the config on first use.
 int MoveAxisPrimaryVk(MoveAxis axis);
+
+// The same primary bind as a DIK scancode. KOTOR 1 has no gamepad path in the
+// engine at all — its DirectInput layer creates a keyboard and a mouse device
+// and nothing else — so the pad's left stick MOVES the character by holding
+// these keys down (pad_movement.cpp). Falls back to the WASD DIK when the ini
+// has no bind, mirroring MoveAxisPrimaryVk's fallback exactly.
+int MoveAxisScancode(MoveAxis axis);
 
 // DIK scancode to synthesise (via SendInput KEYEVENTF_SCANCODE) to drive the
 // engine's camera-turn axis in the given direction — resolved from the

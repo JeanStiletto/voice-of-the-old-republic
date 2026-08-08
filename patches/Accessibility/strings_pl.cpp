@@ -596,8 +596,21 @@ const char* Get(Id id) {
         case Id::HelpKeyPadCycleTargets:     return "Lewy i prawy bumper: zmiana celu";
         case Id::HelpKeyPadTradeMode:        return "Pojemnik i sklep, bumpery: zmiana trybu";
         case Id::HelpKeyPadOptions:          return "Przycisk Back: menu opcji";
+        case Id::HelpKeyPadSwitchLeader:
+            return "X: zmiana przyw\xF3" "dcy dru\xBFyny";
+        case Id::HelpKeyPadPause:            return "Start: pauza";
         case Id::PadModeCycle:               return "Wyb\xF3r obiekt\xF3w";
         case Id::PadModeActionMenu:          return "Menu akcji";
+        case Id::PadQuickMenuOpened:
+            return "Szybkie menu. G\xF3ra i d\xF3\xB3 wybiera, A zatwierdza, "
+                   "B zamyka.";
+        case Id::PadQuickMenuClosed:         return "Szybkie menu zamkni\xEAte.";
+        case Id::PadQuickMenus:              return "Menu";
+        case Id::PadQuickPartyLeader:        return "Przyw\xF3" "dca dru\xBFyny";
+        case Id::PadQuickSoloMode:           return "Tryb solo";
+        case Id::PadQuickStealth:            return "Skradanie";
+        case Id::PadQuickSave:               return "Szybki zapis";
+        case Id::PadQuickHelp:               return "Pomoc";
 
         case Id::HelpMenuOpened:    return "Pomoc klawiszy. G\xF3ra i d\xF3\xB3 czytaj\xB9, Escape zamyka.";
         case Id::HelpMenuClosed:    return "Pomoc klawiszy zamkni\xEAta.";

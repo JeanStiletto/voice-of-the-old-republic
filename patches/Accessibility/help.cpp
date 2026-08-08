@@ -114,9 +114,10 @@ struct Entry {
     uint32_t ctx;       // 0 = F1-list only, never spoken by Ctrl+F1
     bool     composed;  // true → label is a format; text built from MenuCat*
                         // names at BuildRows time (the number-key line)
-    bool     padOnly;   // true → listed only when a gamepad is present. Reading
-                        // a controller layout to a keyboard player is noise,
-                        // and on KOTOR 1 these bindings do not exist at all.
+    bool     padOnly;   // true → listed only when a gamepad is present.
+                        // Reading a controller layout to a keyboard player is
+                        // noise. Both games now have pad bindings, so this is
+                        // purely about the hardware, not about the title.
     bool     k2Only;    // true → listed only on KOTOR 2. For bindings that
                         // exist because the second game has something the
                         // first does not (its fifth action-bar column), where
@@ -208,14 +209,21 @@ constexpr Entry kEntries[] = {
     // F1-list only — Ctrl+F1 deliberately doesn't mention mod settings.
     { S::HelpKeyModSettings,     Grp::Mod, 0 },
 
-    // ---- Controller (KOTOR 2, pad present) ----
-    // The engine's own Help panel for pad users is a bare image of a
-    // controller, so this section is the ONLY way a blind pad player learns
-    // the bindings — which is also why the pad can reach both help surfaces
-    // itself: both triggers together speak the current screen's keys, and the
-    // Quick Menu's own Help entry opens this list instead of that image (see
-    // pad_input.cpp). Tagged generously for Ctrl+F1: a pad user asking "what
-    // do I press here" wants the pad answer, not the keyboard one.
+    // ---- Controller (either game, pad present) ----
+    // This section is the ONLY way a blind pad player learns the bindings: on
+    // KOTOR 2 the engine's own Help panel is a bare image of a controller, and
+    // on KOTOR 1 the engine has no pad support to document at all. That is
+    // also why the pad can reach both help surfaces itself — both triggers
+    // together speak the current screen's keys, and the quick menu's Help
+    // entry opens this list. Tagged generously for Ctrl+F1: a pad user asking
+    // "what do I press here" wants the pad answer, not the keyboard one.
+    //
+    // Every line is true on BOTH games, and always was — these rows are gated
+    // on the HARDWARE (padOnly) and never on the title. They are reached
+    // differently: KOTOR 2 gets the engine's own pad bindings for free, KOTOR 1
+    // synthesises the player's bound key (pad_input.cpp). The one KOTOR 2 entry
+    // with no KOTOR 1 twin, Switch Weapons, was never listed here — it lives on
+    // the engine's own quick menu.
     //
     // Reading order follows the D-Pad's two modes: what the pad does in menus,
     // then the switch, then each mode, then the chords.
@@ -243,6 +251,8 @@ constexpr Entry kEntries[] = {
     { S::HelpKeyPadTradeMode,      Grp::Controller, kContainer | kStore,
       false, true },
     { S::HelpKeyPadOptions,        Grp::Controller, 0,      false, true },
+    { S::HelpKeyPadSwitchLeader,   Grp::Controller, kWorld, false, true },
+    { S::HelpKeyPadPause,          Grp::Controller, kWorld, false, true },
 };
 constexpr int kEntryCount =
     static_cast<int>(sizeof(kEntries) / sizeof(kEntries[0]));

@@ -619,8 +619,20 @@ const char* Get(Id id) {
         case Id::HelpKeyPadCycleTargets:     return "Linke und rechte Schultertaste: Ziele durchschalten";
         case Id::HelpKeyPadTradeMode:        return "Beh\xE4lter und Laden, Schultertasten: Modus wechseln";
         case Id::HelpKeyPadOptions:          return "Zur\xFC" "ck-Taste: Optionsmen\xFC";
+        case Id::HelpKeyPadSwitchLeader:     return "X: Gruppenanf\xFChrer wechseln";
+        case Id::HelpKeyPadPause:            return "Start: Pause";
         case Id::PadModeCycle:               return "Objektwahl";
         case Id::PadModeActionMenu:          return "Aktionsmen\xFC";
+        case Id::PadQuickMenuOpened:
+            return "Schnellmen\xFC. Hoch und runter zum Ausw\xE4hlen, "
+                   "A best\xE4tigt, B schlie\xDFt.";
+        case Id::PadQuickMenuClosed:         return "Schnellmen\xFC geschlossen.";
+        case Id::PadQuickMenus:              return "Men\xFCs";
+        case Id::PadQuickPartyLeader:        return "Gruppenanf\xFChrer";
+        case Id::PadQuickSoloMode:           return "Einzelmodus";
+        case Id::PadQuickStealth:            return "Stealth-Modus";
+        case Id::PadQuickSave:               return "Schnellspeichern";
+        case Id::PadQuickHelp:               return "Hilfe";
 
         case Id::HelpMenuOpened:    return "Tastenhilfe. Hoch und runter zum Lesen, Escape zum Schlie\xDF""en.";
         case Id::HelpMenuClosed:    return "Tastenhilfe geschlossen.";
