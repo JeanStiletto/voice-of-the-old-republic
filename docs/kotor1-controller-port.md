@@ -1,9 +1,26 @@
 # KOTOR 1 — controller support (backport of the KOTOR 2 work)
 
-**Status: BUILT, NOT YET TESTED (2026-08-08).** Written and committed as one
+**Status: CONFIRMED WORKING IN GAME (2026-08-08, first round).** Written as one
 piece for a single combined test round, on the dev's explicit call: one full
-backport to work on rather than one part after another. Expect defects; the
-test round below is what finds them.
+backport to work on rather than one part after another. The round passed with
+no defects reported.
+
+Evidence: `<K1 install>\logs\patch-20260808-064640.log`. Menus navigate and
+activate through the injected arrow cluster (33 injections, each followed by a
+real chain rebind or step and a `Menus.Input ... CONSUMED`), the sticks walk
+and turn, the left trigger switches the D-Pad's mode both ways, the live action
+menu opens on a D-Pad press, the trigger chords and LB / RB / Start / Back / RT
+all fire, and all 30 synthesised movement presses have their matching release —
+nothing was left held.
+
+**Risk 1 below is settled: the extended-scancode arrows DO reach the engine's
+DirectInput read.** That was the port's biggest unknown and it needs no
+fallback.
+
+**The one surface the round did not cover is the quick menu (Y)** — zero
+`Pad.quick` lines in the log. Everything about it is untested: whether it
+opens, reads, clamps, fires its five game actions, hands Help to the mod's key
+list, and stands the left stick down while up.
 
 Sibling document: `docs/kotor2-controller-plan.md`, which is where the binding
 set, the D-Pad's two modes and the trigger layer were designed. **Read that
