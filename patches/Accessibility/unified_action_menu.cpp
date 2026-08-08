@@ -953,6 +953,53 @@ void RestampTargetRowForDispatch(void* tam, const Cat& cur) {
 // Macht-Tapferkeit then Kurieren left only Kurieren). Set it for
 // the dispatch, restore afterward so the creature's real combat
 // mode is untouched.
+// Speak the engine's own refusal, when it is about to refuse.
+//
+// Call BEFORE the dispatch (the flags are read from the descriptor the
+// dispatch is about to consult) but speak AFTER it, so nothing the dispatch
+// itself says can cut this off. Personal entries only: the target rows are a
+// different engine function with its own refusal path, still unexamined.
+//
+// The engine's sentence is the good answer — it names the actual reason
+// ("no effect on this target", "not enough charges"). The generic line is the
+// fallback for a refusal that carries no reason code, because "nothing
+// happened" is exactly what this exists to stop.
+uint32_t PendingRefusalStrRef(void* mi, const Cat& cur, int sel,
+                              bool* outRefused) {
+    *outRefused = false;
+    if (cur.kind != CatKind::Personal) return 0;
+    uint32_t strref = 0;
+    *outRefused = acc::engine_actionbar::VariantRefusal(mi, cur.slot, sel,
+                                                        &strref);
+    return strref;
+}
+
+// interrupt=false throughout: the bare-key path speaks the entry's label
+// immediately before firing, and "Medikit" followed by the reason is the whole
+// sentence the user needs — cutting the label off to deliver the reason would
+// answer a question they can no longer hear. Nothing else speaks on a refusal
+// (there is no AddAction, and the out-of-combat close is silent by design), so
+// there is nothing for this to queue behind.
+void SpeakRefusal(uint32_t strref) {
+    // We are about to explain this press ourselves. The no-op watch would
+    // otherwise reach the same verdict 350 ms later and say it again, less
+    // usefully — the engine's own reason beats the generic line.
+    acc::combat::queue::CancelNoOpWatch();
+    char text[256] = "";
+    if (strref != 0 && acc::engine::LookupTlk(strref, text, sizeof(text)) &&
+        text[0]) {
+        acclog::Write("UnifiedMenu", "refused — speaking engine reason "
+                      "strref=0x%x [%s]", strref, text);
+        prism::Speak(text, /*interrupt=*/false);
+        return;
+    }
+    acclog::Write("UnifiedMenu",
+                  "refused — no usable engine reason (strref=0x%x); generic "
+                  "line", strref);
+    prism::Speak(acc::strings::Get(acc::strings::Id::ActionRefused),
+                 /*interrupt=*/false);
+}
+
 bool DispatchWithQueueAppend(void* tam, void* mi, const Cat& cur) {
     int prevQueueBit = acc::engine::SetLeaderQueueModeBit(1);
 
@@ -1051,8 +1098,16 @@ bool HandleEnter(void* tam, void* mi, const Cat& cur, int sel,
     char label[128] = "";
     ReadLabel(tam, mi, cur, sel, label, sizeof(label));
 
+    bool refused = false;
+    const uint32_t refusalStrRef = PendingRefusalStrRef(mi, cur, sel, &refused);
+
     RestampTargetRowForDispatch(tam, cur);
     bool ok = DispatchWithQueueAppend(tam, mi, cur);
+
+    // The dispatch ran either way — the engine's own no-op-and-beep is left
+    // exactly as it was, so a wrong read here costs a spoken line, never an
+    // action that should have fired.
+    if (refused) SpeakRefusal(refusalStrRef);
 
     // The queued-action confirmation ("X, Platz N" / "Warteschlange
     // voll") is spoken by the CSWSCombatRound::AddAction detour
@@ -1127,7 +1182,11 @@ bool FirePersonal(int col) {
     ReadLabel(/*tam=*/nullptr, mi, c, sel, label, sizeof(label));
     if (label[0]) prism::Speak(label, /*interrupt=*/true);
 
+    bool refused = false;
+    const uint32_t refusalStrRef = PendingRefusalStrRef(mi, c, sel, &refused);
+
     const bool ok = DispatchWithQueueAppend(/*tam=*/nullptr, mi, c);
+    if (refused) SpeakRefusal(refusalStrRef);
     acclog::Write("UnifiedMenu", "FirePersonal col=%d idx=%d/%d label=[%s] ok=%d",
                   col, sel, count, label, ok ? 1 : 0);
     return ok;

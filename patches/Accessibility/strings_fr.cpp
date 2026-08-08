@@ -94,6 +94,7 @@ const char* Get(Id id) {
 
         case Id::FmtActionBarColumnEmpty: return "La colonne %d est vide";
         case Id::FmtFireAtPosition:       return "%s, position %d";
+        case Id::ActionRefused:           return "Impossible.";
         case Id::FmtFireQueueFull:        return "%s, file pleine";
         case Id::ActionMenuClosed:        return "Menu d'action ferm?.";
 

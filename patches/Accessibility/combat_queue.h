@@ -49,6 +49,28 @@ int  GetPrePressDepth();
 // consume) so a rapid burst of presses each announce.
 void ArmUserQueueAdd();
 
+// The other half of the same arm: a user press that produces NO queue add.
+//
+// KOTOR 1 refuses an unusable action at the GUI layer — DoPersonalAction sees
+// the entry's usable bit clear, plays its error sound and never dispatches, and
+// the unified menu speaks the engine's own reason for it ("Volle Gesundheit").
+// KOTOR 2 does not: the same medkit at full health passes that test, the
+// handler runs, and it silently does nothing — no queue add, no feedback line,
+// no sound. The press is simply swallowed.
+//
+// So the absence of an add IS the signal. ArmUserQueueAdd starts this watch;
+// an attributed add cancels it; if the attribution window closes with nothing
+// added, the fire did nothing and TickNoOpWatch says so.
+//
+// Cancel it explicitly when the caller has already explained the outcome —
+// otherwise KOTOR 1's spoken refusal reason would be followed by the generic
+// line saying the same thing twice.
+void CancelNoOpWatch();
+
+// Per-tick verdict for the watch above. Call once per frame, after the input
+// polls, so an add triggered by this tick's dispatch is still counted.
+void TickNoOpWatch();
+
 // Announce a queued action the engine just accepted (or rejected at the
 // cap) — the authoritative "X, Platz N" / "Warteschlange voll" cue. Called
 // from the CSWSCombatRound::AddAction detour, which fires once per genuine

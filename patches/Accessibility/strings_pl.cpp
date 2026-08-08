@@ -107,6 +107,7 @@ const char* Get(Id id) {
 
         case Id::FmtActionBarColumnEmpty: return "Kolumna %d jest pusta";
         case Id::FmtFireAtPosition:       return "%s, pozycja %d";
+        case Id::ActionRefused:           return "Niemo\xBFliwe.";
         case Id::FmtFireQueueFull:        return "%s, kolejka pe\xB3na";
         case Id::ActionMenuClosed:        return "Menu akcji zamkni\xEAte.";
 

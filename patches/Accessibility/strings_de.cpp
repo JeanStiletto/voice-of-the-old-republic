@@ -97,6 +97,7 @@ const char* Get(Id id) {
 
         case Id::FmtActionBarColumnEmpty: return "Spalte %d ist leer";
         case Id::FmtFireAtPosition:       return "%s, Platz %d";
+        case Id::ActionRefused:           return "Nicht m\xF6glich.";
         case Id::FmtFireQueueFull:        return "%s, Warteschlange voll";
         case Id::ActionMenuClosed:        return "Aktionsmen? geschlossen.";
 

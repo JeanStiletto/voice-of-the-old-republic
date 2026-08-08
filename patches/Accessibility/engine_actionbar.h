@@ -46,6 +46,27 @@ bool ReadVariantLabel(void* mainInterface, int slot, int index,
 // CSWGuiInterfaceAction +0x08 (ulong). 0 on read fault.
 uint32_t ReadVariantActionId(void* mainInterface, int slot, int index);
 
+// Will DoPersonalAction refuse this entry, and why?
+//
+// The engine already knows both, and says neither in a way a blind player can
+// use: on refusal it stamps one of six "you cannot do that" StrRefs into a
+// panel field that is drawn on screen for five seconds, and plays GUI sound 2.
+// A sighted player reads the sentence; we heard, at best, a beep — and on
+// KOTOR 2 not even that, because its GUI-sound slot never sounds.
+//
+// So read the same two fields the engine tests, BEFORE dispatching, and let
+// the caller speak the engine's own sentence. Reading beats watching the panel
+// field: the field is only written when a reason code exists, it is not
+// cleared between refusals, and a second press of the same refused entry
+// rewrites the same value — so no before/after comparison can tell "refused
+// again" from "nothing happened".
+//
+// Returns true when the entry WILL be refused. *outStrRef receives the
+// engine's own reason, or 0 when the refusal carries no reason code (the
+// engine beeps and prints nothing in that case too).
+bool VariantRefusal(void* mainInterface, int slot, int index,
+                    uint32_t* outStrRef);
+
 // field45_0x771c[slot].action_button — safe to pass to acc::engine::
 // ReadControlTooltip / ReadGuiString (CSWGuiButton embeds CSWGuiControl
 // at offset 0).

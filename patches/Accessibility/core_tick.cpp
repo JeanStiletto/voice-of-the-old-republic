@@ -532,6 +532,11 @@ void Dispatch() {
     // isn't also fired into by an A press sampled in the same tick.
     PHASE("pad_triggers", acc::pad::PollTriggers());
 
+    // Verdict on any action fire that produced no queue add. After every input
+    // poll above, so an add caused by this tick's dispatch has already been
+    // counted; the watch itself only speaks once its window has expired.
+    PHASE("queue_noop", acc::combat::queue::TickNoOpWatch());
+
     // KOTOR 1 gamepad sticks -> movement and camera. After the buttons so a
     // press that just opened a menu has already stood the stick down this
     // tick, rather than walking one frame into it.

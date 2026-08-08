@@ -32,19 +32,23 @@ Let players give their own map pins a name when they drop one, and read that nam
 
 Offer the community resolution / widescreen + HR-menus patches as an installer option, and make our own code robust to the layout changes they introduce. Deliberately deferred until the mod leaves beta: it widens the support surface (several of our paths still assume a particular screen geometry — screen-pixel coordinates, the OS cursor, hardcoded hit-test offset compensations), and a beta is the wrong time to add a second variable to every bug report. Prerequisite when we do take it on: audit every place we depend on screen geometry and read it live from the engine instead of assuming. See `docs/installer.md` (Widescreen / HR-menus bundling) and the `project_radial_cursor_coupling` memory.
 
-### KOTOR 2 controller support — all phases implemented, awaiting the first live round
-
-KOTOR 2's Steam/Aspyr build ships working gamepad support, so unlike KOTOR 1 this needs no third-party mod. All six phases are now written and the patch builds clean, but **nothing has been through a live round yet** — this entry moves to Monitor once it has. What landed: one translation seam (`pad_input.cpp`) that normalises pad events into the mod's existing logical codes, closing the three defects that were ours rather than the engine's (pad A swallowed by our F1 suppression, unconsumed pad nav making menus announce several entries per press, pad B backing out silently); in-world D-Pad cycle bindings with LT/RT as a modifier layer read through XInput; the analog left-stick walk now arming the droid drive-loop silence; a spoken navigator for the Y-button Quick Menu (`pad_quickmenu.cpp`); suppression of the engine's own pad action menu in favour of ours (`pad_actionmenu.cpp`); and a Controller section in the F1 help that appears only when a pad is present. Combined test steps, the binding table, and the one remaining open question (which pad input opens the engine's action menu at the category level — the log now answers it) are in **`docs/kotor2-controller-plan.md`**; engine reference in `docs/llm-docs/k2-controller-support.md`.
-
-Riskiest single piece to watch in that round: `pad_actionmenu.cpp` is the only code here that WRITES engine state (`-1` into the open-category global). Anything odd about the pad action menu should suspect it first; backing it out is a two-line change.
-
-### Controller support (KOTOR 1) — once the community mod is out of beta
-
-A gamepad is a genuine accessibility surface in its own right (fewer keys to memorise, no reliance on modifier chords), so once the community controller-support mod for KOTOR 1 leaves beta, evaluate bundling or interoperating with it. Open questions: whether its input path conflicts with our own DirectInput handling and hotkey polling, how our chain navigation and unified action menu map onto sticks and face buttons, and whether announcements need a separate cue vocabulary when the player has no keyboard in hand. The specific mod is not pinned down in this entry yet — fill in the name and source link before starting.
-
 ## Monitor
 
-_None currently._
+### KOTOR 2 does not refuse impossible actions — we announce their absence instead
+
+A medkit used on a full-health character behaves differently in the two engines, and only one of them tells the player anything.
+
+KOTOR 1 refuses it at the GUI layer: `DoPersonalAction` finds the entry's usable bit clear, plays its error sound, and never dispatches. The entry's flag word carries a reason code, so we speak the engine's own sentence — logged as `ActionBar: variant flags ... usable=0 reason=5` followed by `refused — speaking engine reason strref=0xa602 [Volle Gesundheit]`.
+
+KOTOR 2 does not. The same item at full health reads `usable=1 reason=0`, so the engine dispatches into a handler that silently does nothing: no queue add, no feedback line, no sound. Sighted players get nothing either. Our answer is `combat_queue`'s no-op watch — a user fire that produces no `AddAction` inside the attribution window speaks the generic "Nicht möglich".
+
+**The open question this entry exists for:** whether KOTOR 2 genuinely permits the action, or whether the personal-action list we read is stale. `usable=1 reason=0` is consistent with both — a list populated while the character was damaged would read the same. The circumstantial evidence favours "genuinely permits" (the error sound has never been heard on KOTOR 2, including in sessions where the character was at full health from the start, so the list can only have been baked at full health), but that is an argument, not proof.
+
+**The test that would settle it:** make an entry unusable on KOTOR 2 for a reason *other* than health — a Force power with too few Force points, or an item down to zero charges — and fire it from the action menu. Any `usable=0` line with a non-zero reason means the mechanism is alive there and only the health verdict is missing, which would be worth chasing into K2's populate path. If nothing on KOTOR 2 ever produces `usable=0`, the flag is never computed in that build and the watch is the correct permanent answer.
+
+**Also unverified, and the reason to watch rather than close this:** the false-positive side of the watch. A successful use must speak "…, Platz N" and *not* the generic line, and the KOTOR 2 Combat Behaviour column (key 8) may legitimately queue nothing — if it does, it will wrongly announce "Nicht möglich" and that column needs excluding. Neither case has been through a round.
+
+Code: `engine_actionbar.cpp` (`VariantRefusal`, the always-on flags log), `combat_queue.cpp` (`ArmUserQueueAdd` / `TickNoOpWatch`), `unified_action_menu.cpp` (`SpeakRefusal`).
 
 ## Polish
 

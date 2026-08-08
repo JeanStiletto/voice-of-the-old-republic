@@ -316,6 +316,12 @@ enum class Id : int {
     // never paused (the "Action Menu" auto-pause option is off, so there is no
     // engine pause-resume cue to ride on). No format args.
     ActionMenuClosed,
+    // Fallback for an action the engine refuses without giving a reason. Its
+    // six real reasons are dialog.tlk strings we speak verbatim; this covers
+    // the refusal that carries no reason code, where the engine itself only
+    // beeps. Silence there would be the one outcome this must never produce.
+    // No format args.
+    ActionRefused,
 
     // ---- Unified action menu (Shift+Enter / Shift+1..7) category names +
     //      announce formats. The menu announces a category by NAME as the

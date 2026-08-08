@@ -592,9 +592,33 @@ DWORD g_userAddArmTick = 0;
 // (~seconds) only when the queue is empty, so they fall outside. Refresh-on-
 // arm + no-consume keeps a rapid press burst all announcing.
 constexpr DWORD kUserAddWindowMs = 250;
+
+// No-op watch (see CancelNoOpWatch in the header). Armed with the same press,
+// cleared by an attributed add, and judged once the attribution window has
+// closed — a little past it, so an add that only just made the window has been
+// counted before we declare nothing happened.
+DWORD g_noOpWatchTick = 0;
+constexpr DWORD kNoOpVerdictMs = kUserAddWindowMs + 100;
 }  // namespace
 
-void ArmUserQueueAdd() { g_userAddArmTick = GetTickCount(); }
+void ArmUserQueueAdd() {
+    const DWORD now = GetTickCount();
+    g_userAddArmTick = now;
+    g_noOpWatchTick  = now;
+}
+
+void CancelNoOpWatch() { g_noOpWatchTick = 0; }
+
+void TickNoOpWatch() {
+    if (g_noOpWatchTick == 0) return;
+    if ((GetTickCount() - g_noOpWatchTick) <= kNoOpVerdictMs) return;
+    g_noOpWatchTick = 0;
+    acclog::Write("Combat.Queue",
+                  "user fire produced no queue add within %ums — announcing "
+                  "that nothing happened", kNoOpVerdictMs);
+    prism::Speak(acc::strings::Get(acc::strings::Id::ActionRefused),
+                 /*interrupt=*/false);
+}
 
 void OnEngineActionAdded(void* combatRound, void* action) {
     if (!combatRound) return;
@@ -621,6 +645,11 @@ void OnEngineActionAdded(void* combatRound, void* action) {
                       "(auto-action)");
         return;
     }
+
+    // An add landed and is the user's: whatever this press did, it did
+    // something, and the cue below is the announcement. Nothing for the no-op
+    // watch to report.
+    g_noOpWatchTick = 0;
 
     // Pre-add count (detour fires at function entry, before the node is
     // inserted). Engine cap is `if (3 < count)`: 0..3 accept → slot count+1,

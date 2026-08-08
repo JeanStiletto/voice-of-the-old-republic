@@ -40,6 +40,25 @@ const size_t kIfActionLabelOffset    = acc::off::Same(0x00);  // CExoString (+0.
 const size_t kIfActionIdOffset       = acc::off::Same(0x08);  // ulong
 const size_t kIfActionStride         = acc::off::Pick(0x38, 0x3c);
 
+// The two fields DoPersonalAction itself tests before it will dispatch. Both
+// games read them at the SAME offsets (K1 decompile of 0x0068ad60; K2 listing
+// at 0x007518ca — `mov eax,[edx+0x30] / and eax,1 / je <refusal>`, then the
+// null test on the handler at +0x0c).
+//
+//   +0x30  flag word. Bit 0 = "this entry can be used right now". Bits 1..4
+//          are a reason code, 1..6, mapping to the six StrRefs below.
+//   +0x0c  the entry's handler (a pointer-to-member; the first dword is
+//          enough — the engine's own null test reads exactly this dword).
+const size_t kIfActionFlagsOffset    = acc::off::Same(0x30);
+const size_t kIfActionHandlerOffset  = acc::off::Same(0x0c);
+
+// The engine's own refusal strings, in reason-code order (code 1 → [0]).
+// Byte-identical ids in both binaries — it is what identified the K2 twin of
+// DoPersonalAction in the first place.
+constexpr uint32_t kRefusalStrRefs[6] = {
+    0x96d5, 0x96d6, 0x96d7, 0xa5b6, 0xa602, 0xbb40,
+};
+
 // Engine entry points (verified from k1_win_gog_swkotor.exe.xml +
 // docs/action-menu-investigation.md). GoG bytes match Steam per memory
 // project_ghidra_gog_steam_bytes_match.
@@ -168,6 +187,41 @@ bool ReadVariantLabel(void* mi, int slot, int index,
     void* desc = DescriptorAddr(mi, slot, index);
     if (!desc) return false;
     return ReadCExoStringLocal(desc, kIfActionLabelOffset, outBuf, bufSize);
+}
+
+bool VariantRefusal(void* mi, int slot, int index, uint32_t* outStrRef) {
+    if (outStrRef) *outStrRef = 0;
+    void* desc = DescriptorAddr(mi, slot, index);
+    if (!desc) return false;
+
+    int32_t flags = 0;
+    int32_t handler = 0;
+    if (!ReadInt32(desc, kIfActionFlagsOffset, &flags)) return false;
+    if (!ReadInt32(desc, kIfActionHandlerOffset, &handler)) return false;
+
+    // The engine's own predicate, mirrored: usable bit clear, or no handler.
+    const bool refused = ((flags & 1) == 0) || (handler == 0);
+    // The reason is optional even when the refusal is real — the engine only
+    // stamps a string when the code is in range, and beeps either way.
+    const uint32_t reason = (static_cast<uint32_t>(flags) >> 1) & 0xf;
+    if (refused && outStrRef && reason >= 1 && reason <= 6) {
+        *outStrRef = kRefusalStrRefs[reason - 1];
+    }
+
+    // Logged on EVERY read, refusal or not. The word itself is the evidence:
+    // KOTOR 1 answers a full-health medkit with bit 0 clear and reason 5
+    // ("Volle Gesundheit"), KOTOR 2 answers the same item with bit 0 set and
+    // dispatches into a handler that silently does nothing. Whether that is
+    // Aspyr permitting what KOTOR 1 forbids, or us reading a list KOTOR 2 has
+    // not repopulated, is decided by comparing these two words for the same
+    // item on the same kind of character — so log it either way.
+    acclog::Write("ActionBar",
+                  "variant flags slot=%d idx=%d flags=0x%08x handler=%s "
+                  "usable=%d reason=%u strref=0x%x",
+                  slot, index, static_cast<unsigned>(flags),
+                  handler ? "yes" : "NULL", (flags & 1) ? 1 : 0, reason,
+                  (outStrRef ? *outStrRef : 0));
+    return refused;
 }
 
 uint32_t ReadVariantActionId(void* mi, int slot, int index) {
