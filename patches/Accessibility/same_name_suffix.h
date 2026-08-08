@@ -26,6 +26,17 @@ namespace acc::narration {
 bool GetSpokenName(void* gameObject, acc::filter::CycleCategory category,
                    char* outBuf, size_t bufSize);
 
+// Append every qualifier that follows an object's base name, in the order
+// they must be spoken: disambiguating number, engine state suffix, state
+// override label, then the empty-loot note. GetSpokenName is base name +
+// this; callers that resolve the base name themselves (the in-world cycle,
+// which also handles map pins and curated hints) call this directly. Keeping
+// it as one call is deliberate — the cycle path previously inlined the
+// sequence and silently omitted the last step.
+void AppendObjectQualifiers(void* gameObject,
+                            acc::filter::CycleCategory category,
+                            char* outBuf, size_t bufSize);
+
 // Append the disambiguating number to an already-resolved name in outBuf,
 // using the unified policy keyed on category:
 //   - Npc (mobile "mobs"): handle-keyed encounter serial (AppendSuffix) —

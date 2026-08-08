@@ -226,22 +226,33 @@ void AppendDisambiguator(void* gameObject, acc::filter::CycleCategory category,
     }
 }
 
+void AppendObjectQualifiers(void* gameObject,
+                            acc::filter::CycleCategory category,
+                            char* outBuf, size_t bufSize) {
+    // Number → engine state → override label → empty-loot note, in that
+    // order: the number belongs to the object's identity and must sit right
+    // after its name ("Tür 3, verriegelt") rather than trailing the state
+    // word, and the empty note reads last as a closing remark.
+    //
+    // Every caller takes the WHOLE sequence. The in-world cycle used to
+    // replicate it inline and stopped one call short, so a looted container
+    // said ", leer" under Q/E and stayed silent about it under `,`/`.`.
+    AppendDisambiguator(gameObject, category, outBuf, bufSize);
+    acc::engine::AppendObjectStateSuffix(gameObject, outBuf, bufSize);
+    acc::state::AppendStateLabel(gameObject, outBuf, bufSize);
+    AppendEmptyContainerLabel(gameObject, outBuf, bufSize);
+}
+
 bool GetSpokenName(void* gameObject, acc::filter::CycleCategory category,
                    char* outBuf, size_t bufSize) {
     if (!gameObject || !outBuf || bufSize < 2) return false;
     outBuf[0] = '\0';
 
-    // Base name → number → state suffix, in that order: the number belongs
-    // to the object's identity and must sit right after its name
-    // ("Tür 3, verriegelt"), not trailing the state word.
     if (!acc::engine::GetObjectBaseName(gameObject, outBuf, bufSize) ||
         outBuf[0] == '\0') {
         return false;
     }
-    AppendDisambiguator(gameObject, category, outBuf, bufSize);
-    acc::engine::AppendObjectStateSuffix(gameObject, outBuf, bufSize);
-    acc::state::AppendStateLabel(gameObject, outBuf, bufSize);
-    AppendEmptyContainerLabel(gameObject, outBuf, bufSize);
+    AppendObjectQualifiers(gameObject, category, outBuf, bufSize);
     return true;
 }
 

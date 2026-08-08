@@ -36,7 +36,6 @@
 #include "narrated_target.h"
 #include "peek_description.h"
 #include "same_name_suffix.h"
-#include "state_overrides.h"    // AppendStateLabel — placeable state suffix
 #include "strings.h"
 #include "prism.h"
 
@@ -346,26 +345,22 @@ void AnnounceCurrent(const acc::cycle::CategoryListing& listing,
     // Map context uses the listing-relative AppendPositionOrdinal: its
     // listing is the full eligible set (never discovery-filtered), and it
     // alone resolves pin / map-note labels. World context funnels through
-    // acc::narration::AppendDisambiguator — the SAME entry point Q/E uses —
-    // which routes creatures to the serial and statics to the whole-area
-    // position ordinal (stable as more peers are discovered).
+    // acc::narration::AppendObjectQualifiers — the SAME entry point Q/E uses
+    // via GetSpokenName — whose ordinal step routes creatures to the serial
+    // and statics to the whole-area position ordinal (stable as more peers
+    // are discovered).
     if (mapCtx) {
         AppendPositionOrdinal(listing, s.focusedIndex, mapHint, name,
                               sizeof(name));
     } else {
-        acc::narration::AppendDisambiguator(s.focusedObj, s.category, name,
-                                            sizeof(name));
-        // Door state / destination / description (", verriegelt", ", Zur
-        // Brücke") — deferred until after the ordinal so the number reads as
-        // part of the door's identity: "Tür 3, verriegelt". No-op for every
-        // non-door kind.
-        acc::engine::AppendObjectStateSuffix(s.focusedObj, name,
-                                             sizeof(name));
-        // Placeable state tag (", gefangen" / ", deaktiviert" …) — same
-        // suffix the Q/E narration path appends via GetSpokenName, so an
-        // object speaks one consistent state everywhere. Self-gates on the
-        // override tag table; no-op for everything else.
-        acc::state::AppendStateLabel(s.focusedObj, name, sizeof(name));
+        // The full qualifier tail in one call — ordinal, door state
+        // (", verriegelt", ", Zur Brücke"), placeable state tag
+        // (", gefangen"), and the looted-container note (", leer"). Shared
+        // verbatim with the Q/E path's GetSpokenName so an object speaks the
+        // same string on both surfaces; this used to be three inlined calls
+        // that left the empty-container note off the cycle only.
+        acc::narration::AppendObjectQualifiers(s.focusedObj, s.category, name,
+                                               sizeof(name));
     }
 
     Vector playerPos;
