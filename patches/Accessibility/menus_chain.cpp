@@ -764,7 +764,8 @@ bool IsDecorativeControl(void* panel, void* c,
     //     chain entry so arrow keys can land for re-announce.
     //   * size == 1 elsewhere — descriptive label blob; skipped.
 void AppendListBoxChildren(void* panel, void* c, void* equipPickerLb,
-                           void* workbenchUpgradeLb, bool modalText) {
+                           void* workbenchUpgradeLb, bool modalText,
+                           int& listBlockTop) {
     void** vt = *reinterpret_cast<void***>(c);
     if (reinterpret_cast<uintptr_t>(vt) == kVtableListBox) {
         // Store mode filter: the engine keeps BOTH shopitems and
@@ -828,6 +829,16 @@ void AppendListBoxChildren(void* panel, void* c, void* equipPickerLb,
                               : lbList->size;
                 for (int j = 0; j < lbN; ++j) {
                     AppendChainEntry(lbList->data[j], blockSortCy);
+                }
+                // Report the block anchor to the caller so
+                // DemoteFilterStripAboveList knows where this panel's list
+                // content starts. Only blocks that actually contributed rows
+                // count, and only when the listbox had a usable extent — a
+                // degenerate one falls back to per-row cy, which is
+                // listbox-local and not comparable with screen coordinates.
+                if (lbN > 0 && blockSortCy != kSortByOwnCy &&
+                    blockSortCy < listBlockTop) {
+                    listBlockTop = blockSortCy;
                 }
             } else if (lbList->size == 1 && modalText) {
                 AppendChainTextOnly(c, panel);
@@ -998,6 +1009,54 @@ bool ChainEntryPrecedes(const ChainEntry& a, const ChainEntry& b) {
     if (a.sortCy != b.sortCy) return a.sortCy < b.sortCy;
     if (!a.geometricOrder || !b.geometricOrder) return false;
     return a.cx < b.cx;
+}
+
+// Synthetic sortCy base for a filter strip demoted below the list. Real
+// control cy tops out near 1800 at 2880x1800 and the mod-settings root sits
+// at 9000, so the whole 8000..8999 band is free for "after every real
+// control, still before mod settings".
+constexpr int kFilterStripSortBase = 8000;
+
+// House rule: on a list-driven screen the list is read first and its filter /
+// toggle strip after it. KOTOR 2 lays several of those strips out ABOVE the
+// list — the journal's three sort-mode buttons (Zeit / Name / Planet) sit over
+// the quest list, the load/save screen's Cloud-Speicher toggle sits over the
+// save slots — and this chain sorts geometrically, so the strip became the
+// first thing Up/Down reached AND the panel's initial focus (RebindChain
+// anchors at index 0 when the engine's active control is the listbox itself,
+// which is exactly what saveload does). Opening "Spiel laden" therefore spoke
+// the first save slot and then the focused Cloud toggle, one Enter away from
+// flipping a setting the user never went looking for.
+//
+// Demote by geometry rather than by a per-screen button list: any panel-direct
+// entry sitting above the topmost list block gets kFilterStripSortBase + its
+// own cy. That lands it after every real control while preserving the strip's
+// own top-to-bottom order, and the entries stay geometric so the comparator's
+// x tiebreak still walks a horizontal filter row left to right.
+//
+// KOTOR 2 only. KOTOR 1 already puts these strips below the list, so the
+// comparison would never fire there — gating on the game means a shipped
+// screen's order can't be rearranged by a geometry accident.
+//
+// listBlockTop is INT_MAX when no listbox contributed rows to this chain
+// (every non-list panel, plus the modal popups whose single-row listbox
+// becomes a text-only entry): nothing to sit above, so nothing moves.
+void DemoteFilterStripAboveList(void* panel, int listBlockTop) {
+    if (!acc::game::IsKotor2()) return;
+    if (listBlockTop == INT_MAX) return;
+    for (int i = 0; i < g_chainCount; ++i) {
+        if (!g_chain[i].geometricOrder) continue;
+        if (g_chain[i].cy >= listBlockTop) continue;
+        g_chain[i].sortCy = kFilterStripSortBase + g_chain[i].cy;
+        char text[128];
+        const char* src = acc::menus::extract::FromControl(
+            g_chain[i].control, text, sizeof(text), panel);
+        acclog::Write("Menus.Chain",
+                      "demote above-list panel=%p ctrl=%p cy=%d listTop=%d "
+                      "-> sort=%d text=\"%s\"",
+                      panel, g_chain[i].control, g_chain[i].cy, listBlockTop,
+                      g_chain[i].sortCy, src ? text : "");
+    }
 }
 
 // Insertion sort in reading order (ChainEntryPrecedes). Stable; the n^2 is
@@ -1244,6 +1303,10 @@ void RebindChain(void* panel) {
     // The cy-sort below still lands it at the top via its synthetic sortCy.
     acc::menus::credits::ForEachCreditsRowAnchor(panel, OnCreditsAnchor, panel);
 
+    // Top of the highest listbox block that contributes rows to this chain.
+    // Stays INT_MAX on panels without one. See DemoteFilterStripAboveList.
+    int listBlockTop = INT_MAX;
+
     for (int i = 0; i < n; ++i) {
         void* c = list->data[i];
         if (!c) continue;
@@ -1259,7 +1322,7 @@ void RebindChain(void* panel) {
             continue;
         }
         AppendListBoxChildren(panel, c, equipPickerLb, workbenchUpgradeLb,
-                              modalText);
+                              modalText, listBlockTop);
     }
 
     // The remaining virtual rows. Each ForEach*Anchor is a no-op on panel
@@ -1274,6 +1337,11 @@ void RebindChain(void* panel) {
         panel, OnEquipStatAnchor, panel);
     acc::menus::modsettings::ForEachRootAnchor(panel, OnModSettingsAnchor,
                                                panel);
+
+    // Runs on the finished entry set (the virtual-row anchors above pick their
+    // own synthetic sortCy and are non-geometric, so they are never demoted),
+    // and before the sort that consumes sortCy.
+    DemoteFilterStripAboveList(panel, listBlockTop);
 
     SortChainBySortCy();
     SquashCycleFlankers(panel);
