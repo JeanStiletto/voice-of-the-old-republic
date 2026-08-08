@@ -46,7 +46,9 @@ KOTOR 2 does not. The same item at full health reads `usable=1 reason=0`, so the
 
 **The test that would settle it:** make an entry unusable on KOTOR 2 for a reason *other* than health — a Force power with too few Force points, or an item down to zero charges — and fire it from the action menu. Any `usable=0` line with a non-zero reason means the mechanism is alive there and only the health verdict is missing, which would be worth chasing into K2's populate path. If nothing on KOTOR 2 ever produces `usable=0`, the flag is never computed in that build and the watch is the correct permanent answer.
 
-**Also unverified, and the reason to watch rather than close this:** the false-positive side of the watch. A successful use must speak "…, Platz N" and *not* the generic line, and the KOTOR 2 Combat Behaviour column (key 8) may legitimately queue nothing — if it does, it will wrongly announce "Nicht möglich" and that column needs excluding. Neither case has been through a round.
+**One false-positive class found and fixed (2026-08-08).** The watch was armed for every menu fire, and target-row actions tripped it three for three on a footlocker: Sicherheit, Sicherheits-Überbrücker, and a Schallmine that visibly blew the lock open all announced "Nicht möglich" while working perfectly (`patch-20260808-103232.log`). Target rows act without a combat-round add as a matter of course, so the watch is now armed only for the personal block — `ArmNoOpWatch`, called from the menu's personal path and from bare 4..7, never from `ArmUserQueueAdd` itself.
+
+**Still unverified:** a *successful* personal use must speak "…, Platz N" and not the generic line, and KOTOR 2's Combat Behaviour column (key 8) may legitimately queue nothing — if it does it will wrongly announce "Nicht möglich" and that column needs excluding too. The lesson from the target-row case is that any personal entry which acts without queueing will read as impossible, so this is the class to keep watching.
 
 Code: `engine_actionbar.cpp` (`VariantRefusal`, the always-on flags log), `combat_queue.cpp` (`ArmUserQueueAdd` / `TickNoOpWatch`), `unified_action_menu.cpp` (`SpeakRefusal`).
 

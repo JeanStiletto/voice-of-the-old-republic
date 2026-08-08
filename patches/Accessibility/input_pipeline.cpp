@@ -460,6 +460,14 @@ extern "C" int __cdecl OnClientHandleInputEvent(void* this_ptr,
         // so its detour speaks the authoritative "X, Platz N" cue (and
         // engine auto-attacks, which have no press, stay silent).
         acc::combat::queue::ArmUserQueueAdd();
+        // Watch for a swallowed press on the PERSONAL columns only (4..7 —
+        // note the engine's 6/7 swap above). Bare 1..3 are target rows, which
+        // act without a combat-round add as a matter of course; see
+        // ArmNoOpWatch for the footlocker evidence.
+        if (param_1 == 0xe8 || param_1 == 0xea || param_1 == 0xec ||
+            param_1 == 0xee) {
+            acc::combat::queue::ArmNoOpWatch();
+        }
         acc::combat_diag::LogPreFire(diag_label);
 
         // Fire the refresh. PrepareBareDispatch logs its own status line

@@ -49,7 +49,7 @@ int  GetPrePressDepth();
 // consume) so a rapid burst of presses each announce.
 void ArmUserQueueAdd();
 
-// The other half of the same arm: a user press that produces NO queue add.
+// A user press that produces NO queue add — PERSONAL actions only.
 //
 // KOTOR 1 refuses an unusable action at the GUI layer — DoPersonalAction sees
 // the entry's usable bit clear, plays its error sound and never dispatches, and
@@ -58,11 +58,20 @@ void ArmUserQueueAdd();
 // handler runs, and it silently does nothing — no queue add, no feedback line,
 // no sound. The press is simply swallowed.
 //
-// So the absence of an add IS the signal. ArmUserQueueAdd starts this watch;
-// an attributed add cancels it; if the attribution window closes with nothing
+// So the absence of an add IS the signal. Arm this alongside the fire; an
+// attributed add cancels it; if the attribution window closes with nothing
 // added, the fire did nothing and TickNoOpWatch says so.
 //
-// Cancel it explicitly when the caller has already explained the outcome —
+// TARGET-ROW actions must NOT arm it, which is why this is a separate call
+// rather than part of ArmUserQueueAdd. They routinely act without any
+// combat-round add inside the window and would every one of them be announced
+// as impossible: Sicherheit, Sicherheits-Überbrücker and a Schallmine placed
+// on a footlocker's lock all fired correctly — the mine visibly blew the lock
+// open — while producing no add (patch-20260808-103232.log). Only the personal
+// block has the evidence that an add is the expected outcome.
+void ArmNoOpWatch();
+
+// Cancel a pending watch when the caller has already explained the outcome —
 // otherwise KOTOR 1's spoken refusal reason would be followed by the generic
 // line saying the same thing twice.
 void CancelNoOpWatch();

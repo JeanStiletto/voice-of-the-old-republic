@@ -1007,6 +1007,9 @@ bool DispatchWithQueueAppend(void* tam, void* mi, const Cat& cur) {
     // Attribute the AddAction this dispatch triggers to the user so its
     // detour speaks the "X, Platz N" cue (see ArmUserQueueAdd).
     acc::combat::queue::ArmUserQueueAdd();
+    // Personal only — a target row acting without a queue add is normal, not a
+    // no-op (see ArmNoOpWatch).
+    if (cur.kind == CatKind::Personal) acc::combat::queue::ArmNoOpWatch();
     bool ok = Dispatch(tam, mi, cur);
     acc::combat_diag::LogPostFire("menu-enter");
 

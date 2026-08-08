@@ -601,11 +601,9 @@ DWORD g_noOpWatchTick = 0;
 constexpr DWORD kNoOpVerdictMs = kUserAddWindowMs + 100;
 }  // namespace
 
-void ArmUserQueueAdd() {
-    const DWORD now = GetTickCount();
-    g_userAddArmTick = now;
-    g_noOpWatchTick  = now;
-}
+void ArmUserQueueAdd() { g_userAddArmTick = GetTickCount(); }
+
+void ArmNoOpWatch() { g_noOpWatchTick = GetTickCount(); }
 
 void CancelNoOpWatch() { g_noOpWatchTick = 0; }
 
