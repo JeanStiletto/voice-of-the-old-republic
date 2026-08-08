@@ -1680,16 +1680,16 @@ enum class Id : int {
     // Mod features.
     HelpKeyModSettings,
     // Controller (either game, pad present). Order is the reading order: what
-    // the pad does in menus first, then the D-Pad's two modes and the switch
-    // between them, then the trigger chords, then the remaining buttons.
+    // the pad does in menus first, then the D-Pad's world job, then the action
+    // menu, then the trigger chords, then the remaining buttons.
     // Every line is true on both games — KOTOR 2 gets the last few from its
     // engine, KOTOR 1 from the mod synthesising the player's own bind.
     HelpKeyPadMenuNav,
     HelpKeyPadInteract,
-    HelpKeyPadModeSwitch,
     HelpKeyPadCycleObjects,
     HelpKeyPadCycleCategory,
     HelpKeyPadMapHints,
+    HelpKeyPadActionMenuToggle,
     HelpKeyPadActionMenuNav,
     HelpKeyPadWalkToFocus,
     HelpKeyPadBeacon,
@@ -1702,10 +1702,6 @@ enum class Id : int {
     HelpKeyPadOptions,
     HelpKeyPadSwitchLeader,
     HelpKeyPadPause,
-    // Spoken when the left trigger switches what the D-Pad is for. Short —
-    // each mode announces its own content underneath the mode word.
-    PadModeCycle,
-    PadModeActionMenu,
     // The KOTOR 1 quick menu (Y). KOTOR 2 has the engine's own panel here and
     // the navigation chain reads its captions, so these are K1's only.
     // PadQuickMenus is the in-game menu screens (the engine's "GUI" action),

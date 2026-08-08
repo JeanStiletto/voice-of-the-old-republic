@@ -225,18 +225,21 @@ constexpr Entry kEntries[] = {
     // with no KOTOR 1 twin, Switch Weapons, was never listed here — it lives on
     // the engine's own quick menu.
     //
-    // Reading order follows the D-Pad's two modes: what the pad does in menus,
-    // then the switch, then each mode, then the chords.
+    // Reading order: what the pad does in menus, then the D-Pad's one world
+    // job (the object cycle), then the action menu it opens, then the chords.
     { S::HelpKeyPadMenuNav,        Grp::Controller,
       kMenu | kActionMenu | kDialog | kContainer | kStore, false, true },
     { S::HelpKeyPadInteract,       Grp::Controller, kWorld, false, true },
-    { S::HelpKeyPadModeSwitch,     Grp::Controller, kWorld, false, true },
     { S::HelpKeyPadCycleObjects,   Grp::Controller, kWorld, false, true },
     { S::HelpKeyPadCycleCategory,  Grp::Controller, kWorld, false, true },
     // The map screen runs the same cycle over its own hints, so the D-Pad
     // reads them on the horizontal axis exactly as it reads objects in the
     // world — see DispatchMapDpad in pad_input.cpp.
     { S::HelpKeyPadMapHints,       Grp::Controller, kMap,   false, true },
+    // Tagged for the action menu as well as the world: the trigger is also how
+    // you get back OUT, so the line stays true while the menu is up.
+    { S::HelpKeyPadActionMenuToggle, Grp::Controller,
+      kWorld | kActionMenu, false, true },
     { S::HelpKeyPadActionMenuNav,  Grp::Controller,
       kWorld | kActionMenu, false, true },
     { S::HelpKeyPadWalkToFocus,    Grp::Controller, 0,      false, true },

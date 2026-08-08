@@ -8,10 +8,17 @@ no defects reported.
 Evidence: `<K1 install>\logs\patch-20260808-064640.log`. Menus navigate and
 activate through the injected arrow cluster (33 injections, each followed by a
 real chain rebind or step and a `Menus.Input ... CONSUMED`), the sticks walk
-and turn, the left trigger switches the D-Pad's mode both ways, the live action
-menu opens on a D-Pad press, the trigger chords and LB / RB / Start / Back / RT
-all fire, and all 30 synthesised movement presses have their matching release —
-nothing was left held.
+and turn, the action menu opens and drives, the trigger chords and
+LB / RB / Start / Back / RT all fire, and all 30 synthesised movement presses
+have their matching release — nothing was left held.
+
+**Superseded by that round's own finding:** the left trigger no longer switches
+a D-Pad mode. That round exposed what the mode cost — with action-menu mode on,
+A belonged to the menu permanently, so interacting with anything meant switching
+back first, and the menu's own B close was undone by the next press re-opening
+it. The trigger is now a plain open/close toggle on the action menu and the
+D-Pad has one job. See "The binding set" below; the mode is gone from both
+games.
 
 **Risk 1 below is settled: the extended-scancode arrows DO reach the engine's
 DirectInput read.** That was the port's biggest unknown and it needs no
@@ -89,20 +96,23 @@ everything through one `ReleaseAll()` on every exit path.
 
 ## The binding set
 
-Identical to KOTOR 2's, including the left trigger's D-Pad mode switch — the dev
-chose parity explicitly, so a player who owns both games learns one controller.
+Identical to KOTOR 2's, including the left trigger's action-menu toggle — the
+dev chose parity explicitly, so a player who owns both games learns one
+controller.
 
 In the world:
 
 - Left stick — move (forward/back on Action280, strafe on Action281), eight-way
 - Right stick — rotate the camera (Action284)
-- LT alone — switch the D-Pad between object selection and the action menu
-- Object selection, D-Pad left / right — previous / next object
-- Object selection, D-Pad up / down — previous / next cycle category
-- Action menu, D-Pad left / right — previous / next action category
-- Action menu, D-Pad up / down — previous / next entry
-- A — object selection: default action on the narrated target. Action menu:
-  fire the selected entry, or open the menu if it is not up yet
+- LT alone — open the unified action menu, or close it if it is already up
+  (the pad's Shift+Enter, and its Esc)
+- D-Pad left / right — previous / next object
+- D-Pad up / down — previous / next cycle category
+- Action menu open, D-Pad left / right — previous / next action category
+- Action menu open, D-Pad up / down — previous / next entry
+- A — default action on the narrated target; with the action menu open, fire
+  the selected entry (the menu is an overlay and claims the press first)
+- B — with the action menu open, close it; otherwise the engine's own cancel
 - RT alone — announce the facing in degrees
 - LT + LB — audio beacon to the focused object
 - RT + RB — walk to the focused object
@@ -199,19 +209,23 @@ away mid-push and come back: nothing must be left held (grep `Pad.move` for a
 camera turns, and the direction announcement fires when a sector boundary is
 crossed.
 
-**World — the D-Pad's two modes.**
+**World — the D-Pad and the action menu.**
 
 6. D-Pad left/right steps objects, up/down steps categories — the same speech
-   `,` and `.` produce.
-7. A on a focused door / container / NPC — it opens / loots / talks.
-8. Pull LT and let go: "action menu". Press a D-Pad direction — it opens and
-   speaks its category; left/right steps categories, up/down entries, A fires.
-   The world must keep running. Fire something and press again — still there,
-   same entry.
-9. Pull LT and let go again: "object selection", D-Pad back on the cycle.
-10. **The collision test.** Hold LT, press LB, release LT — the beacon only, no
-    mode switch and no mode word. Then RT + RB (autowalk). Then RT alone
-    (degrees), then LT + RT (this screen's keys).
+   `,` and `.` produce. This is the D-Pad's only world job; it has no modes.
+7. A on a focused door / container / NPC — it opens / loots / talks. A must do
+   this every time, with no state that can make it mean something else.
+8. Pull LT and let go: the action menu opens and speaks its category, exactly
+   as Shift+Enter does. Left/right steps categories, up/down entries, A fires.
+   With the "Action Menu" auto-pause option ON the world freezes here and the
+   menu stays open after firing, so several actions can be queued (each answers
+   "…, Platz N"); with it OFF the world keeps running and firing closes the menu
+   out of combat.
+9. Pull LT and let go again: the menu closes. Repeat with B instead of LT — same
+   close. After either, the D-Pad steps objects again and A interacts again.
+10. **The collision test.** Hold LT, press LB, release LT — the beacon only, and
+    NO action menu. Then RT + RB (autowalk). Then RT alone (degrees), then
+    LT + RT (this screen's keys).
 
 **World — the remaining buttons.** X switches party leader. Back opens options.
 Start pauses. R3 turns the camera to the beacon's next waypoint. L3 flourishes.
@@ -239,7 +253,9 @@ line naming the DLL, or "no XInput DLL resolved".
 3. **A stranded held key.** Every guard releases through one path and the guards
    run every tick, but this is the failure with consequences outside the game,
    so the alt-tab step above is worth doing deliberately.
-4. **The live action menu opened from the poll.** `PollButtons` runs from the
-   same slot as the keyboard poll for exactly this reason, but the phantom-confirm
-   bug the KOTOR 2 action-menu watcher records is the one to watch for: a menu
-   that fires its first entry on its own.
+4. **The action menu opened from the poll.** `PollButtons` and `PollTriggers`
+   both run from the same slot as the keyboard poll for exactly this reason, but
+   the phantom-confirm bug the KOTOR 2 action-menu watcher records is the one to
+   watch for: a menu that fires its first entry on its own. `PollTriggers` runs
+   AFTER `PollButtons` so a menu the left trigger opened this tick cannot also
+   be fired into by an A press sampled in the same tick.

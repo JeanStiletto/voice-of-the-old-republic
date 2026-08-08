@@ -586,11 +586,11 @@ const char* Get(Id id) {
         case Id::HelpKeyModSettings:     return "Le impostazioni della mod sono nelle Opzioni, in fondo all'elenco";
         case Id::HelpKeyPadMenuNav:          return "Nei menu: croce direzionale o levetta sinistra per muoverti, A conferma, B torna indietro";
         case Id::HelpKeyPadInteract:          return "A: azione predefinita sul bersaglio selezionato (attaccare, aprire, parlare, raccogliere)";
-        case Id::HelpKeyPadModeSwitch:       return "Grilletto sinistro: cambia la croce direzionale tra selezione oggetti e menu azioni";
-        case Id::HelpKeyPadCycleObjects:     return "Selezione oggetti, croce sinistra e destra: oggetto precedente e successivo";
-        case Id::HelpKeyPadCycleCategory:    return "Selezione oggetti, croce su e gi\xF9: categoria precedente e successiva";
+        case Id::HelpKeyPadCycleObjects:     return "Croce sinistra e destra: oggetto precedente e successivo";
+        case Id::HelpKeyPadCycleCategory:    return "Croce su e gi\xF9: categoria precedente e successiva";
         case Id::HelpKeyPadMapHints:         return "Schermata mappa, croce sinistra e destra: indicazione precedente e successiva";
-        case Id::HelpKeyPadActionMenuNav:    return "Menu azioni, croce: sinistra e destra cambiano categoria, su e gi\xF9 cambiano voce, A esegue";
+        case Id::HelpKeyPadActionMenuToggle: return "Grilletto sinistro: apre il menu azioni; premendolo di nuovo si chiude";
+        case Id::HelpKeyPadActionMenuNav:    return "Menu azioni, croce: sinistra e destra cambiano categoria, su e gi\xF9 cambiano voce, A esegue, B o il grilletto sinistro chiude";
         case Id::HelpKeyPadWalkToFocus:      return "Grilletto destro con dorsale destro: cammina verso l'oggetto selezionato";
         case Id::HelpKeyPadBeacon:           return "Grilletto sinistro con dorsale sinistro: radiofaro sonoro verso l'oggetto selezionato";
         case Id::HelpKeyPadDegrees:          return "Grilletto destro: annuncia l'orientamento in gradi";
@@ -602,8 +602,6 @@ const char* Get(Id id) {
         case Id::HelpKeyPadOptions:          return "Pulsante Indietro: menu opzioni";
         case Id::HelpKeyPadSwitchLeader:     return "X: cambia capogruppo";
         case Id::HelpKeyPadPause:            return "Start: pausa";
-        case Id::PadModeCycle:               return "Selezione oggetti";
-        case Id::PadModeActionMenu:          return "Menu azioni";
         case Id::PadQuickMenuOpened:
             return "Menu rapido. Su e gi\xF9 per scegliere, A conferma, "
                    "B chiude.";

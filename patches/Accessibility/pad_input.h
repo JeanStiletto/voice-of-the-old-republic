@@ -182,8 +182,8 @@ bool IsPhysicalF1();
 // Each trigger does two jobs — alone it is a button, held it is a modifier for
 // the shoulder beside it and for the other trigger:
 //
-//   LT alone        switch what the D-Pad is for (object selection <-> action
-//                   menu); the new mode announces itself
+//   LT alone        open the unified action menu, or close it if it is up —
+//                   the pad's Shift+Enter, and its Esc
 //   RT alone        announce the facing in degrees (the keyboard's AltGr)
 //   LT + LB         audio beacon to the focused object
 //   RT + RB         walk to the focused object
@@ -192,11 +192,12 @@ bool IsPhysicalF1();
 // The solo job fires on RELEASE, and any chord taken during the hold cancels
 // it. That is not a timing rule and there is nothing for the user to learn —
 // it is simply what makes LT+LB a beacon instead of a beacon plus an unwanted
-// mode switch. Firing on press cannot do that, because on press we do not yet
+// action menu. Firing on press cannot do that, because on press we do not yet
 // know whether a chord is coming.
 
 // Per-tick SAMPLE: refreshes trigger state, stick vectors, the button word and
-// pad presence, and runs the trigger layer. Cheap (one XInputGetState on a
+// pad presence, and edge-detects the trigger layer (whose jobs PollTriggers
+// then runs). Cheap (one XInputGetState on a
 // single slot, throttled to a 2 s rescan while no pad answers). Call early in
 // core_tick::Dispatch — several consumers read the state it leaves behind, and
 // on KOTOR 2 pad events arrive asynchronously at the GUI-manager hook, so it
@@ -214,6 +215,13 @@ void Tick();
 // the menu monitors, and arming the menu from that point is what produced the
 // phantom-confirm bug the K2 action-menu watcher documents.
 void PollButtons();
+
+// Both games: run the trigger layer's solo jobs, which Tick() only claimed.
+// Call from the input-poll slot, AFTER PollButtons — LT opens the unified
+// action menu, and the menu may not be populated from OnUpdate (where Tick()
+// runs). Ordering it after the button dispatch is deliberate too: a menu opened
+// this tick must not also be acted on by an A press sampled in the same tick.
+void PollTriggers();
 
 bool LeftTriggerHeld();
 bool RightTriggerHeld();

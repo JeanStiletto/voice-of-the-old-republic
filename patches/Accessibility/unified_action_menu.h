@@ -54,9 +54,9 @@ bool OpenTarget(int row);
 bool OpenPersonal(int col);
 
 // Open the personal block wherever it actually has something, with no column
-// requested. The pad's live mode uses this: it is opening "the action menu",
-// not "Force Powers", so a notice about an empty column nobody asked for
-// would be answering an unasked question.
+// requested. The pad's left trigger uses this: it is opening "the action
+// menu", not "Force Powers", so a notice about an empty column nobody asked
+// for would be answering an unasked question.
 bool OpenAnyPersonal();
 
 // Fire a personal column's currently-selected entry outright, no menu — what
@@ -76,29 +76,13 @@ bool ArmFromRadial(const char* name, uint32_t targetHandle);
 
 bool IsActive();
 
-// ---------------------------------------------------------------------------
-// Live mode — the KOTOR 2 controller's persistent action surface
-// ---------------------------------------------------------------------------
-// On a pad the action menu is not a modal the player opens, picks from and
-// closes; it is a surface the D-pad sits on, the way the engine's own
-// CSWGuiActionMenuIos does for sighted players. Two behaviours change, both
-// inside unified_action_menu.cpp:
-//
-//   * it never takes the world pause, whatever the "Action Menu" auto-pause
-//     option says — pausing would restore the open/pick/close rhythm live
-//     mode exists to remove;
-//   * firing never closes it, so the next press is still a menu press.
-//
-// Everything else — categories, entries, follow-cycling re-anchor, dispatch,
-// speech — is the menu the keyboard already uses.
-//
-// Arm it by calling RequestLiveArm(true) and then opening through any ordinary
-// entry point (InteractNarratedTarget, OpenPersonal). The request is consumed
-// by the next arm; a caller whose open was DECLINED (no populated category, a
-// blocking panel) must call RequestLiveArm(false) so the request cannot leak
-// into a later keyboard open. Close live mode with ForceDisarm.
-void RequestLiveArm(bool on);
-bool IsLive();
+// The pad opens this menu through the same entry points the keyboard uses —
+// the left trigger is Shift+Enter, B and the left trigger are Esc — so there
+// is no pad-specific mode here. There was one ("live": never pause, never
+// close on fire, the D-pad permanently parked on the menu); it was removed
+// because a menu that behaves differently depending on which device opened it
+// is two menus to reason about, and because the always-open surface cost the
+// pad its A button in the world.
 
 // Re-speak the current category against the live menus, re-locating the cursor
 // on the same slot. Called when a stacked overlay (the combat queue, opened via

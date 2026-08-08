@@ -44,23 +44,38 @@ small edits at the seams they hook into:
   `map_ui_cursor.cpp` (stick pan), `core_tick.cpp` (two new phases), `strings*`
   (13 new localised strings, 7 languages).
 
-## The D-Pad is the action menu
+## The D-Pad is the engine's action menu — and the mod takes it
 
 The single most important fact in this file, and the one every earlier round
 got wrong. During world play the D-Pad drives `CSWGuiActionMenuIos`: **left and
 right step the nine categories, up and down step the entries in the open
-category, A confirms.** It is not a menu a pad player opens — it is simply
-there, over a running world, always one thumb away.
+category, A confirms.** For a sighted player it is not a menu you open — it is
+simply there, over a running world, always one thumb away.
 
-That is a better idiom than the mod had, so the mod **adopts** it instead of
-working around it. The D-Pad now drives the mod's own unified action menu in a
-new LIVE mode (`unified_action_menu.h`): never pauses whatever the auto-pause
-option says, and never closes after firing. The engine's menu stays suppressed
-— ours speaks, and drives the same engine machinery.
+The engine's menu stays suppressed either way (`pad_actionmenu.cpp`); what
+changed is what the mod puts in its place.
 
-The cost is that the D-Pad has two jobs — FINDING a thing and ACTING on it —
-and each wants all four directions. **The left trigger switches between them**,
-and the mode announces itself.
+**First attempt — adopt the idiom.** The D-Pad drove the mod's own unified
+action menu in a LIVE mode: never paused, never closed after firing, always
+under the thumb. Because the D-Pad then had two jobs — FINDING a thing and
+ACTING on it — and each wants all four directions, the left trigger switched
+between them and the mode announced itself.
+
+**Rejected after the first live round (2026-08-08).** The always-open surface
+cost the pad its A button: with the mode on, A always belonged to the menu, so
+interacting with anything meant switching the mode back first. And the menu's
+own close was undone by the next press, which re-opened it from the mode. In
+practice the "saved" binding was not saved at all — you switched to the mode you
+needed anyway.
+
+**As built now.** The D-Pad has ONE world job, the object cycle. The left
+trigger opens the unified action menu and closes it again — a plain toggle, the
+pad's Shift+Enter and Esc, with B as the second way out. The menu is the same
+menu the keyboard opens, including the "Action Menu" auto-pause option: with it
+on, opening pauses the world and firing keeps the menu open so several actions
+queue into one round; with it off, the world runs and firing closes the menu out
+of combat. LIVE mode is deleted — one menu, one behaviour, whichever device
+opened it.
 
 **The pad binding set, as built.** In menus the pad simply IS the keyboard,
 with two additions: on the container and the store panels LB and RB carry the
@@ -71,14 +86,15 @@ previous / next map hint, up / down for the category — which is the same
 mapping it has in the world, and the same thing the keyboard's `,` / `.` do
 there. In the world:
 
-- LT (alone) — switch the D-Pad between object selection and the action menu
-- Object selection, D-Pad left / right — previous / next object
-- Object selection, D-Pad up / down — previous / next cycle category
-- Action menu, D-Pad left / right — previous / next action category
-- Action menu, D-Pad up / down — previous / next entry
-- A — object selection: default action on the narrated target (the keyboard's
-  Enter, not the engine's default-action-on-last-clicked). Action menu: fire
-  the selected entry. In either mode, with the menu not yet up, A opens it
+- LT (alone) — open the unified action menu, or close it if it is up
+- D-Pad left / right — previous / next object
+- D-Pad up / down — previous / next cycle category
+- Action menu open, D-Pad left / right — previous / next action category
+- Action menu open, D-Pad up / down — previous / next entry
+- A — default action on the narrated target (the keyboard's Enter, not the
+  engine's default-action-on-last-clicked); with the action menu open, fire the
+  selected entry, because the menu is an overlay and claims the press first
+- B — close the action menu when it is up; otherwise the engine's own
 - RT (alone) — announce the facing in degrees (the keyboard's AltGr)
 - LT + LB — audio beacon to the focused object
 - RT + RB — walk to the focused object
@@ -90,16 +106,19 @@ there. In the world:
 
 Each trigger's solo job fires on RELEASE, and a chord taken during the hold
 cancels it. This is not a user-facing rule — it is only what makes LT+LB a
-beacon rather than a beacon plus an unwanted mode switch, and firing on press
+beacon rather than a beacon plus an unwanted action menu, and firing on press
 cannot do it because on press we do not yet know a chord is coming.
+
+The solo jobs are only CLAIMED where the triggers are sampled (`pad::Tick`, in
+OnUpdate); they are RUN by `pad::PollTriggers` from the input-poll slot, both
+games. LT opens the unified action menu, and the menu's hard rule forbids
+populating it from OnUpdate — that is the phantom-confirm bug. `PollTriggers`
+also runs after `PollButtons` so a menu opened this tick is not fired into by
+an A press sampled in the same tick.
 
 **Not bound on the pad:** nearest / farthest object (keyboard Ctrl+`,` /
 Ctrl+`.`) and repeat-focus (keyboard `-`). Both lost their LT + D-Pad home when
-the trigger layer was rebuilt, and neither was worth a new one. Repeat-focus
-was going to ride on the mode switch — switch back to object selection, hear
-what you are focused on — but the cycle's announce speaks with `interrupt=true`
-(correctly; it is what `-` does) and so cancels the mode word rather than
-queueing under it. One press, one cue: the switch says only the mode's name.
+the trigger layer was rebuilt, and neither was worth a new one.
 
 Engine reference for everything below: **`docs/llm-docs/k2-controller-support.md`**.
 Read it before Phase 3 or later; Phases 0–2 need only the code table repeated
@@ -488,16 +507,16 @@ already tested. Reading theirs would mean reverse-engineering a second custom
 widget tree across two levels for no functional gain.
 
 **Level 1 is D-Pad left / right** — settled in the fourth round. So suppressing
-their menu does not merely free an input, it frees the whole D-Pad, and the
-mod's answer is to keep their *idiom* while replacing their *menu*: ours runs
-on the same four directions, in LIVE mode. See "The D-Pad is the action menu".
+their menu does not merely free an input, it frees the whole D-Pad. The mod
+first kept their *idiom* while replacing their *menu*; that was reverted, and
+the freed D-Pad now carries the object cycle while the left trigger opens the
+mod's menu. See "The D-Pad is the engine's action menu — and the mod takes it".
 
 **As built.** `pad_actionmenu.cpp` watches `DAT_00a10340` every tick and, on an
 open edge, logs the category and writes -1 (the engine's own "nothing open"
-value, which its draw and input paths already handle). It no longer opens ours
-in its place — the D-Pad does that, on the player's own press, and arming a
-second menu from a tick would both fight the one the user is navigating and
-break the unified menu's hard rule about input context.
+value, which its draw and input paths already handle). It does not open ours in
+its place: arming a menu from a tick would break the unified menu's hard rule
+about input context, and the player's own left trigger is the way in.
 
 Two things to watch:
 
@@ -569,29 +588,28 @@ that the menu steps prove the seam before the world steps rely on it.
    discriminator, and it must not regress.
 7. With the list open, navigate it with the D-Pad and close it with B.
 
-**World — the D-Pad's two modes (Phase 1).**
+**World — the D-Pad and the action menu (Phase 1).**
 
 8. D-Pad left/right steps objects, up/down steps cycle categories — the same
-   speech the keyboard `,` `.` produce. This is the default mode.
+   speech the keyboard `,` `.` produce. This is the D-Pad's only world job.
 9. A on a focused door / container / NPC — it opens / loots / talks, i.e. what
-   keyboard Enter does.
-10. Pull LT and let go. Expect "action menu" (or its localised name), then
-    nothing further. The mode word is the whole announcement here — the menu
-    itself opens on the next press, deliberately.
-11. Press any D-Pad direction. The action menu opens and speaks its category.
-    Then: left/right steps categories, up/down steps entries, A fires. **The
-    world must keep running** — no pause cue, before or after firing, whatever
-    the "Action Menu" auto-pause option says.
-12. Fire something, then press D-Pad again. The menu is still there, on the
-    same entry. This is the whole point of live mode; a close here is a defect.
-13. Pull LT and let go again. Expect "object selection" — that word and nothing
-    else — and the D-Pad back on the cycle.
+   keyboard Enter does. There is no state that can make A mean anything else.
+10. Pull LT and let go. The action menu opens and speaks its category, exactly
+    as keyboard Shift+Enter does — including the "Action Menu" auto-pause
+    option: on → the world's pause cue; off → the world keeps running.
+11. Left/right steps categories, up/down steps entries, A fires.
+12. Fire something. Paused (option on, or in combat): the menu stays open on
+    the same entry and the action answers "…, Platz N", so a second A queues
+    another. World running out of combat: the menu closes, matching the mouse
+    radial and the keyboard.
+13. Pull LT and let go again — the menu closes. Repeat with B: same close. After
+    either, the D-Pad steps objects again and A interacts again.
 14. **The collision test.** Pull and hold LT, press LB, release LT. Expect the
-    beacon only — no mode switch, and no mode word spoken. Then the same with
-    RT + RB (autowalk). Press each a second time to cancel.
+    beacon only — and NO action menu. Then the same with RT + RB (autowalk).
+    Press each a second time to cancel.
 15. Pull RT alone and let go — the facing in degrees, same phrasing as keyboard
     AltGr. Then on the map screen, same button: the map variant of that line.
-16. Hold LT, pull RT, release both — this screen's keys. Neither mode switch
+16. Hold LT, pull RT, release both — this screen's keys. Neither the action menu
     nor degrees may also fire.
 17. Press the right stick — the camera turns to the beacon's next waypoint, or
     to the next compass direction with no beacon armed. Then, **with a mouse

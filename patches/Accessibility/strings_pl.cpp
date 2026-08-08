@@ -582,11 +582,11 @@ const char* Get(Id id) {
         case Id::HelpKeyModSettings:     return "Ustawienia moda s\xB9 w Opcjach, na dole listy";
         case Id::HelpKeyPadMenuNav:          return "W menu: krzy\xBF" "ak lub lewa ga\xB3ka przesuwaj\xB9, A zatwierdza, B cofa";
         case Id::HelpKeyPadInteract:          return "A: domy\x9Clna akcja na wybranym celu (atak, otwarcie, rozmowa, podniesienie)";
-        case Id::HelpKeyPadModeSwitch:       return "Lewy spust: prze\xB3\xB9" "cz krzy\xBF" "ak mi\xEA" "dzy wyborem obiekt\xF3w a menu akcji";
-        case Id::HelpKeyPadCycleObjects:     return "Wyb\xF3r obiekt\xF3w, krzy\xBF" "ak w lewo i w prawo: poprzedni i nast\xEApny obiekt";
-        case Id::HelpKeyPadCycleCategory:    return "Wyb\xF3r obiekt\xF3w, krzy\xBF" "ak w g\xF3r\xEA i w d\xF3\xB3: poprzednia i nast\xEApna kategoria";
+        case Id::HelpKeyPadCycleObjects:     return "Krzy\xBF" "ak w lewo i w prawo: poprzedni i nast\xEApny obiekt";
+        case Id::HelpKeyPadCycleCategory:    return "Krzy\xBF" "ak w g\xF3r\xEA i w d\xF3\xB3: poprzednia i nast\xEApna kategoria";
         case Id::HelpKeyPadMapHints:         return "Ekran mapy, krzy\xBF" "ak w lewo i w prawo: poprzedni i nast\xEApny znacznik mapy";
-        case Id::HelpKeyPadActionMenuNav:    return "Menu akcji, krzy\xBF" "ak: w lewo i w prawo zmienia kategori\xEA, w g\xF3r\xEA i w d\xF3\xB3 pozycj\xEA, A wykonuje";
+        case Id::HelpKeyPadActionMenuToggle: return "Lewy spust: otwiera menu akcji, ponowne naci\x9Cni\xEA" "cie je zamyka";
+        case Id::HelpKeyPadActionMenuNav:    return "Menu akcji, krzy\xBF" "ak: w lewo i w prawo zmienia kategori\xEA, w g\xF3r\xEA i w d\xF3\xB3 pozycj\xEA, A wykonuje, B lub lewy spust zamyka";
         case Id::HelpKeyPadWalkToFocus:      return "Prawy spust z prawym bumperem: id\x9F do wybranego obiektu";
         case Id::HelpKeyPadBeacon:           return "Lewy spust z lewym bumperem: sygna\xB3 d\x9Fwi\xEAkowy do wybranego obiektu";
         case Id::HelpKeyPadDegrees:          return "Prawy spust: podaj kierunek w stopniach";
@@ -599,8 +599,6 @@ const char* Get(Id id) {
         case Id::HelpKeyPadSwitchLeader:
             return "X: zmiana przyw\xF3" "dcy dru\xBFyny";
         case Id::HelpKeyPadPause:            return "Start: pauza";
-        case Id::PadModeCycle:               return "Wyb\xF3r obiekt\xF3w";
-        case Id::PadModeActionMenu:          return "Menu akcji";
         case Id::PadQuickMenuOpened:
             return "Szybkie menu. G\xF3ra i d\xF3\xB3 wybiera, A zatwierdza, "
                    "B zamyka.";

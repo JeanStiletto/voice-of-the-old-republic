@@ -587,11 +587,11 @@ const char* Get(Id id) {
         case Id::HelpKeyModSettings:     return "Les r\xE9glages du mod sont dans les Options, en bas de la liste";
         case Id::HelpKeyPadMenuNav:          return "Dans les menus : croix directionnelle ou stick gauche pour se d\xE9placer, A valide, B revient en arri\xE8re";
         case Id::HelpKeyPadInteract:          return "A : action par d\xE9" "faut sur la cible actuelle (attaquer, ouvrir, parler, ramasser)";
-        case Id::HelpKeyPadModeSwitch:       return "G\xE2" "chette gauche : basculer la croix directionnelle entre s\xE9lection d'objets et menu d'actions";
-        case Id::HelpKeyPadCycleObjects:     return "S\xE9lection d'objets, croix gauche et droite : objet pr\xE9" "c\xE9" "dent et suivant";
-        case Id::HelpKeyPadCycleCategory:    return "S\xE9lection d'objets, croix haut et bas : cat\xE9gorie pr\xE9" "c\xE9" "dente et suivante";
+        case Id::HelpKeyPadCycleObjects:     return "Croix gauche et droite : objet pr\xE9" "c\xE9" "dent et suivant";
+        case Id::HelpKeyPadCycleCategory:    return "Croix haut et bas : cat\xE9gorie pr\xE9" "c\xE9" "dente et suivante";
         case Id::HelpKeyPadMapHints:         return "\xC9" "cran de carte, croix gauche et droite : indication pr\xE9" "c\xE9" "dente et suivante";
-        case Id::HelpKeyPadActionMenuNav:    return "Menu d'actions, croix : gauche et droite changent de cat\xE9gorie, haut et bas d'entr\xE9" "e, A d\xE9" "clenche";
+        case Id::HelpKeyPadActionMenuToggle: return "G\xE2" "chette gauche : ouvre le menu d'actions ; appuyer de nouveau le ferme";
+        case Id::HelpKeyPadActionMenuNav:    return "Menu d'actions, croix : gauche et droite changent de cat\xE9gorie, haut et bas d'entr\xE9" "e, A d\xE9" "clenche, B ou la g\xE2" "chette gauche ferme";
         case Id::HelpKeyPadWalkToFocus:      return "G\xE2" "chette droite avec bouton de tranche droit : marcher jusqu'\xE0 l'objet cibl\xE9";
         case Id::HelpKeyPadBeacon:           return "G\xE2" "chette gauche avec bouton de tranche gauche : balise sonore vers l'objet cibl\xE9";
         case Id::HelpKeyPadDegrees:          return "G\xE2" "chette droite : annoncer l'orientation en degr\xE9s";
@@ -603,8 +603,6 @@ const char* Get(Id id) {
         case Id::HelpKeyPadOptions:          return "Bouton Retour : menu des options";
         case Id::HelpKeyPadSwitchLeader:     return "X : changer de chef de groupe";
         case Id::HelpKeyPadPause:            return "Start : pause";
-        case Id::PadModeCycle:               return "S\xE9lection d'objets";
-        case Id::PadModeActionMenu:          return "Menu d'actions";
         case Id::PadQuickMenuOpened:
             return "Menu rapide. Haut et bas pour choisir, A confirme, "
                    "B ferme.";

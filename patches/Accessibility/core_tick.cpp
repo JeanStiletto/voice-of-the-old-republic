@@ -526,6 +526,12 @@ void Dispatch() {
     // No-op on KOTOR 2, whose engine delivers the same presses as events.
     PHASE("pad_buttons", acc::pad::PollButtons());
 
+    // The trigger layer's solo jobs, BOTH games — the left trigger opens and
+    // closes the unified action menu, so it needs this slot for the same
+    // reason the buttons above do. After them, so a menu opened this tick
+    // isn't also fired into by an A press sampled in the same tick.
+    PHASE("pad_triggers", acc::pad::PollTriggers());
+
     // KOTOR 1 gamepad sticks -> movement and camera. After the buttons so a
     // press that just opened a menu has already stood the stick down this
     // tick, rather than walking one frame into it.

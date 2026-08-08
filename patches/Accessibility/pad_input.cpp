@@ -103,6 +103,17 @@ bool g_rtHeld = false;
 bool g_ltChorded = false;
 bool g_rtChorded = false;
 
+// The three trigger jobs, claimed by Tick() and drained by PollTriggers().
+// Tick() runs in OnUpdate, and LT now OPENS the unified action menu — which
+// the menu's hard rule forbids from that context (arming from a tick made the
+// engine synthesise a phantom confirm one tick later that fired the menu's
+// first entry). So Tick() only decides that the job is owed; PollTriggers()
+// pays it from the input-poll slot, the same one the keyboard's Shift+Enter
+// and the pad's own A button open the menu from.
+bool g_pendingLtSolo = false;
+bool g_pendingRtSolo = false;
+bool g_pendingHelp   = false;
+
 // Sticky: once a pad has been seen this session we keep advertising it. The
 // engine enumerates game controllers exactly once at input init, so a pad that
 // was present at launch stays the relevant one even if XInput briefly stops
@@ -306,7 +317,7 @@ bool RouteToOverlay(int logical) {
 }
 
 // ---------------------------------------------------------------------------
-// The D-Pad, and what it is currently for
+// The D-Pad, and what it is for
 // ---------------------------------------------------------------------------
 // The D-Pad is not free in the world — it drives the engine's own
 // CSWGuiActionMenuIos, whose level 1 (category) is D-Pad left/right and whose
@@ -315,39 +326,22 @@ bool RouteToOverlay(int logical) {
 // highlight move; every round since has consumed the codes outright, which is
 // why Pad.ActionMenu never logged a line.
 //
-// That idiom is worth keeping, because it is a better one than the mod had:
-// the action surface is always THERE, under the thumb, over a running world,
-// instead of being a menu the player opens, picks from and closes. So the mod
-// adopts it rather than working around it — the D-Pad drives the mod's own
-// unified action menu in LIVE mode (unified_action_menu.h), which speaks and
-// which already drives the engine's real action machinery.
-//
-// One D-Pad, two jobs that each want all four directions — FINDING a thing and
-// ACTING on it. The left trigger switches between them:
-//
-//   Cycle mode        left/right  previous / next object
-//                     up/down     previous / next category
-//                     A           the default action on the focused thing
-//   Action-menu mode  left/right  previous / next action category
-//                     up/down     previous / next entry
-//                     A           fire the selected entry
-//
-// Cycle mode is the default: finding a target comes before acting on one.
-enum class DpadMode { Cycle, ActionMenu };
-DpadMode g_dpadMode = DpadMode::Cycle;
+// So the four codes are ours, and in the world they are the object cycle:
+// left/right steps the object, up/down the category. That is the D-Pad's ONE
+// job. It used to have two, switched by the left trigger — cycle and a
+// permanently-open "live" action menu — and the second one ate the A button:
+// with the mode on, A always belonged to the menu, so interacting with
+// anything meant switching the mode back first. The action menu is a menu the
+// player OPENS now (the left trigger, below), and while it is up it is an
+// overlay, so RouteToOverlay claims the D-Pad before this function is reached.
 
-// Open the unified action menu in live mode on whatever is focused. Returns
-// true when it is up afterwards.
+// Open the unified action menu on whatever is focused — the pad's Shift+Enter.
+// Returns true when it is up afterwards.
 //
 // With no focused target the target categories are empty, so fall through to
 // the personal block — medpacs and stims are exactly what a player wants when
 // nothing is targeted, and refusing to open would be the wrong answer.
-bool OpenLiveActionMenu() {
-    if (acc::unified_menu::IsActive() && !acc::unified_menu::IsSuspended()) {
-        return true;
-    }
-    acc::unified_menu::RequestLiveArm(true);
-
+bool OpenActionMenu() {
     acc::narrated_target::Slot slot{};
     const bool haveTarget = acc::narrated_target::TryGet(slot) && !slot.isMapPin;
     if (haveTarget) {
@@ -363,80 +357,35 @@ bool OpenLiveActionMenu() {
         acc::unified_menu::OpenAnyPersonal();
     }
     const bool up = acc::unified_menu::IsActive();
-    // Both entry points declined (every category drained). Drop the request
-    // so it cannot turn a later keyboard open into a live one.
-    if (!up) acc::unified_menu::RequestLiveArm(false);
-    acclog::Write("Pad", "live action menu open target=%d up=%d",
+    acclog::Write("Pad", "action menu open target=%d up=%d",
                   haveTarget ? 1 : 0, up ? 1 : 0);
     return up;
 }
 
-// Action-menu mode is on but the menu is not up yet. Called from the manager
-// input hook — and ONLY from there. The unified menu's hard rule is that it is
-// populated from the engine's input-dispatch context and nowhere else: arming
-// it from a tick made the engine synthesise a phantom confirm one tick later
-// that fired the menu's first entry. The trigger poll lives in Tick(), i.e. in
-// OnUpdate, so the mode switch may set the mode but must NOT open the menu.
-// The first in-world pad press does that instead, here.
-bool EnsureLiveMenuForMode() {
-    if (g_dpadMode != DpadMode::ActionMenu) return false;
-    if (acc::unified_menu::IsActive() && !acc::unified_menu::IsSuspended()) {
-        return false;   // already up — the caller's normal routing handles it
-    }
-    return OpenLiveActionMenu();
-}
-
-// Switch what the D-Pad is for, and say so.
+// LT — open the action menu, or close it if it is already up. The pad's whole
+// action-menu vocabulary: one button, both directions, exactly what Shift+Enter
+// and Esc are on the keyboard.
 //
-// The mode word is the WHOLE announcement, in both directions. Chaining the
-// focused object onto the cycle direction was tried and does not work: the
-// cycle's own announce speaks with interrupt=true (correctly — it is what the
-// `-` key does), so it cancels the mode word rather than queueing under it,
-// and the user hears the object but never learns the mode's name. One press,
-// one cue. The action menu likewise speaks only its name here; the menu opens
-// on the first D-Pad or A press and speaks its category then, for the
-// input-context reason above.
-void SetDpadMode(DpadMode mode) {
-    g_dpadMode = mode;
-    const bool actionMenu = (mode == DpadMode::ActionMenu);
-    acclog::Write("Pad", "D-Pad mode -> %s",
-                  actionMenu ? "action menu" : "cycle");
-    if (!actionMenu && acc::unified_menu::IsLive()) {
-        // Leaving action-menu mode closes the live menu — a menu nothing can
-        // navigate is worse than no menu, and ForceDisarm is the quiet close
-        // (live mode never held a pause, so there is nothing to resume). A
-        // menu the user opened from the KEYBOARD is left alone: it is not ours
-        // to close, and IsLive() is what tells the two apart.
-        acc::unified_menu::ForceDisarm("pad-mode-switch");
+// Closing routes Esc into the menu rather than calling ForceDisarm, so the
+// pause release, the queue commit and the close announcement all stay in
+// CloseFromEsc — the same close B and the keyboard's Esc run. A menu the
+// KEYBOARD opened closes here too: it is one menu, and a toggle that refused
+// to close some of them would be a rule the user has to know.
+void ToggleActionMenu() {
+    if (acc::unified_menu::IsActive() && !acc::unified_menu::IsSuspended()) {
+        acclog::Write("Pad", "LT -> close action menu");
+        acc::unified_menu::HandleInputEvent(kInputEsc1, 1);
+        return;
     }
-    prism::Speak(acc::strings::Get(actionMenu
-                                       ? acc::strings::Id::PadModeActionMenu
-                                       : acc::strings::Id::PadModeCycle),
-                 /*interrupt=*/true);
+    acclog::Write("Pad", "LT -> open action menu");
+    OpenActionMenu();
 }
 
-void ToggleDpadMode() {
-    SetDpadMode(g_dpadMode == DpadMode::Cycle ? DpadMode::ActionMenu
-                                              : DpadMode::Cycle);
-}
-
-// In-world D-Pad dispatch for CYCLE mode. Action-menu mode never reaches here:
-// the live menu is an overlay, so RouteToOverlay claims the code first.
-// Returns true when the binding fired (the caller consumes).
+// In-world D-Pad dispatch: the object cycle. The action menu never reaches
+// here — while it is up it is an overlay and RouteToOverlay claims the code
+// first. Returns true when the binding fired (the caller consumes).
 bool DispatchWorldDpad(int code) {
     using PA = acc::cycle_input::PadAction;
-
-    // Action-menu mode with no menu up — either the mode was just switched on
-    // (the trigger poll cannot open it, see EnsureLiveMenuForMode) or the user
-    // fired the last entry in a category that then drained. Open on the press
-    // rather than silently handing the D-Pad back to the cycle: the mode is
-    // what the user last chose, and it must stay true.
-    if (EnsureLiveMenuForMode()) return true;
-    if (g_dpadMode == DpadMode::ActionMenu) {
-        // Mode is on but nothing could be opened (every category empty). Say
-        // nothing extra — OpenPersonal already spoke the empty-category line.
-        return true;
-    }
 
     switch (code) {
         case kPadDpadLeft:  return acc::cycle_input::DispatchPadAction(PA::ItemPrev);
@@ -602,13 +551,10 @@ void DispatchA() {
         return;
     }
     if (InWorldSurface()) {
-        // Action-menu mode with the menu not up yet: A opens it rather than
-        // firing the default action, so A cannot mean two different things in
-        // one mode depending on whether a D-Pad press happened to open it.
-        if (EnsureLiveMenuForMode()) {
-            acclog::Write("Pad", "A -> opened live action menu");
-            return;
-        }
+        // In the world A always interacts. The action menu, when it is up, is
+        // an overlay and took this press at RouteToOverlay above — so A never
+        // has to be read as "which mode am I in".
+        //
         // Interact with what the player was last TOLD about, not the engine's
         // last-clicked target — the promise keyboard Enter makes.
         acclog::Write("Pad", "A -> interact with narrated target");
@@ -624,9 +570,11 @@ void DispatchB() {
         acclog::Write("Pad", "B -> overlay cancel");
         return;
     }
-    // In the world there is nothing to cancel: KOTOR 1's Escape opens the
-    // in-game menu, and that is the quick menu's first entry, not a button
-    // the player should hit by reflex while walking.
+    // With no overlay up there is nothing to cancel in the world: KOTOR 1's
+    // Escape opens the in-game menu, and that is the quick menu's first entry,
+    // not a button the player should hit by reflex while walking. (The action
+    // menu is an overlay, so B closes it at RouteToOverlay above — the second
+    // way out of it, beside LT.)
     if (InWorldSurface()) return;
     InjectMenuKey(kInputEsc1);
 }
@@ -776,35 +724,32 @@ void Tick() {
     // XInput answers whether or not KOTOR has focus, so the trigger ACTIONS
     // are gated on the game being foreground: a trigger pulled while the
     // player is alt-tabbed must not speak over whatever they switched to, nor
-    // silently change the D-Pad's mode under them. The edge state above is
-    // tracked regardless, so a chord begun in the background still cancels its
+    // silently open a menu under them. The edge state above is tracked
+    // regardless, so a chord begun in the background still cancels its
     // trigger's solo job instead of firing it on the way back — and the stick
     // sampling below stays outside the gate, because its consumers want a
     // truthful "not moving" while the game is away, not a stale "moving".
+    //
+    // What the edges MEAN is decided here; when it is acted on is not. The
+    // three trigger jobs are only recorded as pending and are drained by
+    // PollTriggers() in the input-poll slot — LT opens the unified action menu,
+    // and the menu's hard rule is that it may not be populated from OnUpdate,
+    // which is where this function runs.
     if (acc::hotkeys::IsForegroundGame()) {
         // Both triggers — the context help ("what do the keys do on THIS
-        // screen"). Fires on whichever press completes the pair, and marks
+        // screen"). Claimed on whichever press completes the pair, and marks
         // both holds chorded so neither release also does its solo job.
         if ((ltPressed && rt) || (rtPressed && lt)) {
             g_ltChorded = g_rtChorded = true;
-            acclog::Write("Pad", "LT + RT -> context help");
-            acc::help::SpeakContextHelp();
+            g_pendingHelp = true;
         }
 
-        // LT alone — switch what the D-Pad is for. Only in the world: in a
-        // menu the D-Pad is simply the keyboard's arrows, with nothing to
-        // switch between.
-        if (ltReleased && !g_ltChorded && InWorldSurface()) {
-            ToggleDpadMode();
-        }
+        // LT alone — open or close the action menu.
+        if (ltReleased && !g_ltChorded) g_pendingLtSolo = true;
 
         // RT alone — the exact keyboard AltGr binding: announce the facing in
-        // degrees. Routed as a synthetic press so announce_degrees keeps its
-        // own world-vs-map branch rather than the pad growing a second copy.
-        if (rtReleased && !g_rtChorded) {
-            acclog::Write("Pad", "RT -> announce facing in degrees");
-            acc::hotkeys::PadPress(acc::hotkeys::Action::AnnounceDegrees);
-        }
+        // degrees.
+        if (rtReleased && !g_rtChorded) g_pendingRtSolo = true;
     }
 
     // Left stick = Move on the shipped binding chart, so its magnitude is the
@@ -974,6 +919,37 @@ void PollButtons() {
     }
 }
 
+void PollTriggers() {
+    const bool lt   = g_pendingLtSolo;
+    const bool rt   = g_pendingRtSolo;
+    const bool help = g_pendingHelp;
+    // Clear before acting, and before any gate below can return: a job the
+    // game was not foreground for by the time we got here is dropped, not
+    // carried into the next tick.
+    g_pendingLtSolo = g_pendingRtSolo = g_pendingHelp = false;
+    if (!lt && !rt && !help) return;
+    if (!acc::hotkeys::IsForegroundGame()) return;
+
+    if (help) {
+        acclog::Write("Pad", "LT + RT -> context help");
+        acc::help::SpeakContextHelp();
+    }
+    // LT is the action menu's open AND close, so it is world-only in both
+    // directions: in a menu the pad is simply the keyboard, and there is no
+    // action menu to toggle over an engine panel. A suspended menu is exactly
+    // that case — a blocking panel is up, so InWorldSurface() is already false.
+    if (lt && InWorldSurface()) {
+        NoteNavPress();
+        ToggleActionMenu();
+    }
+    // RT — routed as a synthetic press so announce_degrees keeps its own
+    // world-vs-map branch rather than the pad growing a second copy.
+    if (rt) {
+        acclog::Write("Pad", "RT -> announce facing in degrees");
+        acc::hotkeys::PadPress(acc::hotkeys::Action::AnnounceDegrees);
+    }
+}
+
 bool TranslateClientEvent(int code, int value) {
     if (!acc::game::IsKotor2()) return false;
     // These three codes are ordinary engine InputIndices that a keyboard and a
@@ -1119,14 +1095,9 @@ Verdict TranslateManagerEvent(int& code, int& value) {
             return Verdict::Consumed;
         }
         if (InWorldSurface()) {
-            // Action-menu mode, menu not up yet: A opens it rather than firing
-            // the default action. Otherwise A would mean two different things
-            // in the same mode depending on whether a D-Pad press had happened
-            // to open the menu first.
-            if (EnsureLiveMenuForMode()) {
-                acclog::Write("Pad", "A -> opened live action menu");
-                return Verdict::Consumed;
-            }
+            // In the world A always interacts. The action menu, when it is up,
+            // is an overlay and took this press at RouteToOverlay above.
+            //
             // Interact with what the player was last TOLD about, not with the
             // engine's last-clicked target — the same promise keyboard Enter
             // makes. Consumed so the engine's own default action can't also
@@ -1148,7 +1119,9 @@ Verdict TranslateManagerEvent(int& code, int& value) {
             acclog::Write("Pad", "B -> overlay cancel");
             return Verdict::Consumed;
         }
-        if (InWorldSurface()) return Verdict::NotPad;   // engine's own cancel
+        // With no overlay up (the action menu is one, and RouteToOverlay closed
+        // it above if it was), the world's B stays the engine's own cancel.
+        if (InWorldSurface()) return Verdict::NotPad;
         // In a menu, B is Esc. Our close-and-announce path gets it; if it
         // declines, the engine still closes the panel off the raw 0x28 it
         // reads from its own frame.
@@ -1190,8 +1163,8 @@ Verdict TranslateManagerEvent(int& code, int& value) {
 
     // Everything else (X, Y, Back) keeps its engine meaning. X is
     // Switch Party Leader and stays the engine's: it briefly hosted the mod's
-    // action menu, which the D-Pad now carries far better — the menu belongs
-    // where the navigation is, not on a button beside it.
+    // action menu, which the left trigger carries now — a menu wants a button
+    // that does nothing else, and X already had a job.
     //
     // They are still flagged as pad events so the F1 suppression in
     // OnHandleInputEvent and the log annotation know what they are looking at.
