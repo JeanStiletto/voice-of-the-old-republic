@@ -609,12 +609,15 @@ const char* Get(Id id) {
 
         case Id::HelpKeyModSettings:     return "Mod-Einstellungen findest du in den Optionen, ganz unten in der Liste";
         case Id::HelpKeyPadMenuNav:          return "In Men\xFCs: Steuerkreuz oder linker Stick bewegen, A best\xE4tigt, B geht zur\xFC" "ck";
+        case Id::HelpKeyPadTooltip:          return "Y halten und Steuerkreuz hoch oder runter: ganze Beschreibung vorlesen, ohne zu wechseln";
         case Id::HelpKeyPadInteract:          return "A: Standardaktion am fokussierten Ziel (angreifen, \xF6" "ffnen, sprechen, aufheben)";
         case Id::HelpKeyPadCycleObjects:     return "Steuerkreuz links und rechts: vorheriges und n\xE4" "chstes Objekt";
         case Id::HelpKeyPadCycleCategory:    return "Steuerkreuz hoch und runter: vorherige und n\xE4" "chste Kategorie";
         case Id::HelpKeyPadMapHints:         return "Kartenbildschirm, Steuerkreuz links und rechts: vorheriger und n\xE4" "chster Hinweis";
         case Id::HelpKeyPadActionMenuToggle: return "Linker Trigger: Aktionsmen\xFC \xF6" "ffnen; erneut dr\xFC" "cken schlie\xDFt es";
         case Id::HelpKeyPadActionMenuNav:    return "Aktionsmen\xFC, Steuerkreuz: links und rechts wechseln die Kategorie, hoch und runter den Eintrag, A l\xF6st aus, B oder linker Trigger schlie\xDFt";
+        case Id::HelpKeyPadSelfStatus:       return "Linker Trigger mit X: eigener Zustand";
+        case Id::HelpKeyPadActionQueue:      return "Rechter Trigger mit X: Aktionsschlange. Steuerkreuz hoch und runter gehen die Eintr\xE4ge durch, A entfernt den zuletzt eingereihten, linker Trigger mit A leert die ganze Schlange, B schlie\xDFt";
         case Id::HelpKeyPadWalkToFocus:      return "Rechter Trigger mit rechter Schultertaste: zum fokussierten Objekt laufen";
         case Id::HelpKeyPadBeacon:           return "Linker Trigger mit linker Schultertaste: Audio-Bake zum fokussierten Objekt";
         case Id::HelpKeyPadDegrees:          return "Rechter Trigger: Blickrichtung in Grad ansagen";
@@ -624,8 +627,8 @@ const char* Get(Id id) {
         case Id::HelpKeyPadCycleTargets:     return "Linke und rechte Schultertaste: Ziele durchschalten";
         case Id::HelpKeyPadTradeMode:        return "Beh\xE4lter und Laden, Schultertasten: Modus wechseln";
         case Id::HelpKeyPadOptions:          return "Zur\xFC" "ck-Taste: Optionsmen\xFC";
-        case Id::HelpKeyPadSwitchLeader:     return "X: Gruppenanf\xFChrer wechseln";
         case Id::HelpKeyPadPause:            return "Start: Pause";
+        case Id::HelpKeyPadSwitchLeader:     return "X: Gruppenanf\xFChrer wechseln";
         case Id::PadQuickMenuOpened:
             return "Schnellmen\xFC. Hoch und runter zum Ausw\xE4hlen, "
                    "A best\xE4tigt, B schlie\xDFt.";

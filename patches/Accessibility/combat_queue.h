@@ -97,6 +97,13 @@ bool Open();
 
 bool IsActive();
 
+// Clear every queued action and close: what Shift+Enter does in the submenu.
+// Public because the pad reaches the same gesture as a chord (LT + A) and has
+// no Shift for HandleInputEvent's modifier read to find. Re-reads the queue
+// first, so a caller from outside the input dispatch is safe. No-op when the
+// submenu is not open.
+void ClearAllAndClose();
+
 // Press-edge only. Called after actionbar/radial gates.
 bool HandleInputEvent(int code, int value);
 

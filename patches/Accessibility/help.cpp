@@ -229,6 +229,11 @@ constexpr Entry kEntries[] = {
     // job (the object cycle), then the action menu it opens, then the chords.
     { S::HelpKeyPadMenuNav,        Grp::Controller,
       kMenu | kActionMenu | kDialog | kContainer | kStore, false, true },
+    // Y is the pad's Shift: held, it turns the D-Pad's up / down into the
+    // description peek the keyboard reaches with Shift+arrow. Same reading, one
+    // modifier each.
+    { S::HelpKeyPadTooltip,        Grp::Controller,
+      kMenu | kActionMenu | kContainer | kStore, false, true },
     { S::HelpKeyPadInteract,       Grp::Controller, kWorld, false, true },
     { S::HelpKeyPadCycleObjects,   Grp::Controller, kWorld, false, true },
     { S::HelpKeyPadCycleCategory,  Grp::Controller, kWorld, false, true },
@@ -242,6 +247,11 @@ constexpr Entry kEntries[] = {
       kWorld | kActionMenu, false, true },
     { S::HelpKeyPadActionMenuNav,  Grp::Controller,
       kWorld | kActionMenu, false, true },
+    // The two trigger chords that carry the keyboard's H and Shift+H. The queue
+    // line names its own in-queue keys because a pad player has nowhere else to
+    // learn them. Not world-only: the status readout answers on any screen.
+    { S::HelpKeyPadSelfStatus,     Grp::Controller, kWorld | kMenu, false, true },
+    { S::HelpKeyPadActionQueue,    Grp::Controller, kWorld, false, true },
     { S::HelpKeyPadWalkToFocus,    Grp::Controller, 0,      false, true },
     { S::HelpKeyPadBeacon,         Grp::Controller, 0,      false, true },
     { S::HelpKeyPadDegrees,        Grp::Controller, kWorld | kMap, false, true },
@@ -254,8 +264,8 @@ constexpr Entry kEntries[] = {
     { S::HelpKeyPadTradeMode,      Grp::Controller, kContainer | kStore,
       false, true },
     { S::HelpKeyPadOptions,        Grp::Controller, 0,      false, true },
-    { S::HelpKeyPadSwitchLeader,   Grp::Controller, kWorld, false, true },
     { S::HelpKeyPadPause,          Grp::Controller, kWorld, false, true },
+    { S::HelpKeyPadSwitchLeader,   Grp::Controller, kWorld, false, true },
 };
 constexpr int kEntryCount =
     static_cast<int>(sizeof(kEntries) / sizeof(kEntries[0]));

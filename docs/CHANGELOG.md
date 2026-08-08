@@ -40,7 +40,7 @@ and add the German in parentheses if it genuinely aids clarity.
 - KOTOR 1 can be played with a controller, with the same layout KOTOR 2 has. The first game has no gamepad support of its own — its input layer only ever creates a keyboard and a mouse — so the mod reads the pad itself and, wherever the game rather than the mod has to act, presses your own bound key for you. Everything that made KOTOR 2 playable on a pad works here: the D-pad's object cycle, the action menu on the left trigger, the trigger chords for the beacon, autowalk, degrees and screen help, and one-entry-per-press navigation in menus.
 - The left stick walks and strafes in eight directions and the right stick turns the camera, following whichever movement keys you have bound. The stick releases the moment you let go or the game loses focus.
 - Y opens a quick menu: the menu screens, party leader, solo mode, stealth, quick save, and Help, which opens the mod's key list. KOTOR 2's own gamepad menu has one more entry, Switch Weapons, which the first game does not have. The left stick stops walking while the menu is open so you cannot wander off mid-choice.
-- The remaining buttons do what they do on KOTOR 2: the shoulder buttons cycle targets in the world and step the in-game menu's sub-screens elsewhere, X switches party leader, Back opens options, Start pauses, and the right stick press turns the camera to the beacon's next waypoint.
+- The remaining buttons do what they do on KOTOR 2: the shoulder buttons cycle targets in the world and step the in-game menu's sub-screens elsewhere, X switches party leader, Start pauses, the left stick press flourishes your weapon, and the right stick press turns the camera to the beacon's next waypoint.
 - The key list's Controller section now appears on both games, and gains lines for X and Start. It is still shown only when a pad is connected.
 
 <h3>World navigation:</h3>
@@ -74,6 +74,12 @@ and add the German in parentheses if it genuinely aids clarity.
 - Wheeled droids no longer grind on when you push them into a wall with the stick. The mod silences a stuck drive loop, but it was watching the movement keys, and a stick-driven walk holds no key.
 - On the map screen the left stick pans the map cursor, at a speed that follows how far you push it. The D-pad reads the map's hints on the same axis it reads objects in the world — left and right for the previous and next hint, each spoken with its bearing and distance and with the cursor moved onto it.
 - Containers and stores switch mode from the shoulder buttons, the pad's version of Q and E. Without them a pad player could only ever take from a container and only ever buy in a store.
+
+<h3>Controller — status, action queue and tooltips:</h3>
+
+- The left trigger with X reads your own status: health, active effects and equipped weapon, the same readout the keyboard's H gives, and it answers in menus as well as in the world.
+- The right trigger with X opens the action queue, the keyboard's Shift+H. Inside it the D-pad steps the entries, A removes the one you are on, the left trigger with A clears the whole queue, and B closes. A removes an entry only while it is the last one queued for that character: the game has exactly one way to cancel a queued action and it takes the last one, so pulling an action out of the middle answers "Cannot remove this action" — clear the queue and re-issue what you still want. (That is the game's own limit, not the mod's: vanilla's cancel key, Y, does the same thing.)
+- Holding Y in a menu turns the D-pad's up and down into the description readout — Shift plus an arrow on the keyboard — so an item's properties, a quest's log text or a power's effect can be heard one block at a time without leaving the entry you are on. Y is the modifier only in menus; in the world it stays the Quick Menu.
 
 <h3>Installer:</h3>
 

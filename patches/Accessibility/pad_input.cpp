@@ -26,6 +26,7 @@
 #include "menus_chain.h"     // g_chain* — which Quick Menu entry is focused
 #include "narrated_target.h" // TryGet — is there a target to open the menu on?
 #include "pad_quickmenu.h"   // the KOTOR 1 Y menu (K2 uses the engine's own)
+#include "peek_description.h" // OnShiftReleased — Y is the pad's peek modifier
 #include "prism.h"           // Silence — the cancel a pad press has no
                              // keystroke to trigger
 #include "strings.h"
@@ -180,6 +181,15 @@ float g_rstickY      = 0.0f;
 // read), while the dispatch belongs next to the keyboard poll.
 WORD g_btnNow  = 0;
 WORD g_btnLast = 0;
+
+// The XInput-sourced buttons' own edge baseline. Separate from g_btnLast
+// because that one is PollButtons', which returns before touching it on
+// KOTOR 2 — and this layer runs on both games.
+WORD g_xiBtnLast = 0;
+
+// Y, the peek modifier. Sampled as a STATE rather than tracked as an edge
+// because that is the question peek_description asks of it.
+bool g_yHeld = false;
 
 // ---------------------------------------------------------------------------
 // Pad-vs-keyboard discrimination
@@ -381,6 +391,51 @@ void ToggleActionMenu() {
     OpenActionMenu();
 }
 
+// The action queue's clear-all, as a chord: LT + A while the queue is open.
+//
+// The keyboard clears the whole queue with Shift+Enter, and the queue's own
+// handler tells that press from a plain Enter by reading the physical Shift. A
+// pad holds no Shift, so the gesture is claimed here and calls the queue
+// directly — LT being the pad's Shift, this IS Shift+Enter. Returns true when
+// it fired and the caller must consume; a bare A still removes one entry.
+bool ClaimQueueClearAll() {
+    if (!g_ltHeld) return false;
+    if (!acc::combat::queue::IsActive()) return false;
+    // Mark the hold chorded so the trigger's own release job (toggling the
+    // action menu) does not also fire on the way out.
+    g_ltChorded = true;
+    acclog::Write("Pad", "LT + A -> clear the action queue");
+    acc::combat::queue::ClearAllAndClose();
+    return true;
+}
+
+// X with a trigger held — the pad's H key. LT + X is the self-status readout,
+// RT + X the action queue: exactly the keyboard's H and Shift+H.
+//
+// Returns true when a chord fired, which is also the caller's signal that bare
+// X (Switch Party Leader) must NOT run. Marks the trigger chorded so its own
+// solo job — the action menu on LT, the degrees announcement on RT — does not
+// also fire when the player lets go.
+//
+// Routed as synthetic presses of those two keyboard actions rather than as calls
+// into their handlers, so the world gate, the combat gate and the announcements
+// each stay in the one place they already live.
+bool DispatchXChord() {
+    if (g_ltHeld) {
+        g_ltChorded = true;
+        acclog::Write("Pad", "LT + X -> own status");
+        acc::hotkeys::PadPress(acc::hotkeys::Action::SelfStatusAnnounce);
+        return true;
+    }
+    if (g_rtHeld) {
+        g_rtChorded = true;
+        acclog::Write("Pad", "RT + X -> action queue");
+        acc::hotkeys::PadPress(acc::hotkeys::Action::CombatQueueOpen);
+        return true;
+    }
+    return false;
+}
+
 // In-world D-Pad dispatch: the object cycle. The action menu never reaches
 // here — while it is up it is an overlay and RouteToOverlay claims the code
 // first. Returns true when the binding fired (the caller consumes).
@@ -545,6 +600,9 @@ void DispatchDpad(int code) {
 }
 
 void DispatchA() {
+    // The chord first — with the queue open, LT + A clears it rather than
+    // removing the one focused entry.
+    if (ClaimQueueClearAll()) return;
     NoteNavPress();
     if (RouteToOverlay(kInputEnter1)) {
         acclog::Write("Pad", "A -> overlay activate");
@@ -698,10 +756,19 @@ void Tick() {
         g_rstickActive = false;
         g_rstickX = g_rstickY = 0.0f;
         g_btnNow  = 0;
+        g_yHeld   = false;
         return;
     }
 
     g_btnNow = st.Gamepad.wButtons;
+
+    // Y as the peek modifier. Its RELEASE resets the description-block cursor,
+    // exactly as the keyboard's Shift release does (cycle_input's shift
+    // tracker) — without that the next peek would resume mid-description
+    // instead of at block 0.
+    const bool y = (st.Gamepad.wButtons & kBtnY) != 0;
+    if (g_yHeld && !y) acc::peek::OnShiftReleased();
+    g_yHeld = y;
 
     const bool lt = st.Gamepad.bLeftTrigger  >= kTriggerHeld;
     const bool rt = st.Gamepad.bRightTrigger >= kTriggerHeld;
@@ -902,8 +969,11 @@ void PollButtons() {
     // vocabulary, and a stray party-leader switch there would be a surprise.
     if (!InWorldSurface()) return;
 
-    if (rising(kBtnX))       FireGameAction(kActChangeChar, kDikTab,
-                                            "X (switch party leader)");
+    // X only switches the leader BARE — with a trigger held it is the mod's H
+    // key, dispatched by PollXInputButtons.
+    if (rising(kBtnX) && !g_ltHeld && !g_rtHeld) {
+        FireGameAction(kActChangeChar, kDikTab, "X (switch party leader)");
+    }
     if (rising(kBtnBack))    FireGameAction(kActOptions, kDikO,
                                             "Back (options)");
     if (rising(kBtnStart))   FireGameAction(kActPauseSpace, kDikSpace,
@@ -916,6 +986,56 @@ void PollButtons() {
         // We read the physical button, so there is nothing to disambiguate.
         acclog::Write("Pad", "right stick press -> camera orient");
         acc::hotkeys::PadPress(acc::hotkeys::Action::CameraOrient);
+    }
+}
+
+bool PeekModifierHeld() { return g_padSeen && g_yHeld; }
+
+void PollXInputButtons() {
+    // Both games — see the header for why the engine's own L3 event cannot
+    // carry this binding. Own edge baseline, updated BEFORE any gate below can
+    // return: a button held across an alt-tab must not read as a fresh press on
+    // the way back.
+    const WORD now  = g_btnNow;
+    const WORD last = g_xiBtnLast;
+    g_xiBtnLast = now;
+
+    if (!g_padSeen) return;
+    if (!acc::hotkeys::IsForegroundGame()) return;
+
+    // X with a trigger held. Claimed here rather than from the engine's X event
+    // because only XInput knows whether a trigger is down, and because this runs
+    // on every surface — the status readout is as useful in the inventory as in
+    // the world. Bare X falls through untouched.
+    bool xClaimed = false;
+    if ((now & kBtnX) != 0 && (last & kBtnX) == 0) {
+        xClaimed = DispatchXChord();
+    }
+
+    // Name the presses this layer does NOT claim, one line per press.
+    //
+    // Start and L3 have no GUI-class mapping on KOTOR 2 at all: press either in
+    // a menu and the engine delivers nothing, so the log stays silent and
+    // "which button did I just press" is unanswerable from it — which is
+    // precisely the question that has to be settled when a binding moves. XInput
+    // sees every button on every screen, so one line here closes that gap for
+    // good. Bounded by construction: rising edges only.
+    //
+    // What it CANNOT see is the Series pad's Share button: Windows keeps that
+    // one for the Game Bar capture and reports it through no input API we have.
+    // Its absence from this log is therefore expected, not a missed press.
+    struct Named { WORD mask; const char* name; };
+    static const Named kUnclaimed[] = {
+        {kBtnStart, "Start"}, {kBtnBack, "Back"}, {kBtnX, "X"},
+        {kBtnThumbL, "left stick press"},
+    };
+    for (const Named& b : kUnclaimed) {
+        if (b.mask == kBtnX && xClaimed) continue;   // the chord above took it
+        if ((now & b.mask) != 0 && (last & b.mask) == 0) {
+            acclog::Write("Pad", "%s pressed (XInput bit 0x%04x) — this button "
+                                 "is the game's, not the mod's", b.name,
+                          static_cast<unsigned>(b.mask));
+        }
     }
 }
 
@@ -1084,6 +1204,9 @@ Verdict TranslateManagerEvent(int& code, int& value) {
     // ---- A ----------------------------------------------------------------
     if (code == kPadButtonA) {
         if (value == 0) return Verdict::NotPad;
+        // The chord first — with the queue open, LT + A clears the whole queue
+        // rather than removing the one focused entry.
+        if (ClaimQueueClearAll()) return Verdict::Consumed;
         NoteNavPress();
         if (QuickMenuHelpFocused()) {
             acclog::Write("Pad", "A on Quick Menu Help -> mod key list");
@@ -1161,7 +1284,31 @@ Verdict TranslateManagerEvent(int& code, int& value) {
         return Verdict::Consumed;
     }
 
-    // Everything else (X, Y, Back) keeps its engine meaning. X is
+    // ---- Y ----------------------------------------------------------------
+    // In the world Y stays the engine's Quick Menu. In a menu it is the mod's
+    // peek modifier — hold it and the D-Pad's up / down read the focused entry's
+    // description, the pad's Shift+arrow. The modifier itself is read from
+    // XInput (PeekModifierHeld), so this event has no job left; consuming it
+    // keeps the engine from finding one of its own on a screen where the pad is
+    // meant to be the keyboard.
+    if (code == kPadButtonY) {
+        if (value == 0) return Verdict::NotPad;
+        if (InWorldSurface()) return Verdict::NotPad;
+        acclog::Trace("Pad", "Y consumed in a menu — it is the peek modifier there");
+        return Verdict::Consumed;
+    }
+
+    // ---- X -----------------------------------------------------------------
+    // Bare X stays the engine's Switch Party Leader. With a trigger held it is
+    // the mod's H key — dispatched from the XInput sample (PollXInputButtons,
+    // which is the only reader that can see a trigger at all), so all this
+    // branch has to do is stop the engine acting on the same press.
+    if (code == kPadButtonX && value != 0 && (g_ltHeld || g_rtHeld)) {
+        acclog::Trace("Pad", "X consumed — trigger held, the chord owns it");
+        return Verdict::Consumed;
+    }
+
+    // Everything else (X bare, Back) keeps its engine meaning. X is
     // Switch Party Leader and stays the engine's: it briefly hosted the mod's
     // action menu, which the left trigger carries now — a menu wants a button
     // that does nothing else, and X already had a job.

@@ -526,6 +526,12 @@ void Dispatch() {
     // No-op on KOTOR 2, whose engine delivers the same presses as events.
     PHASE("pad_buttons", acc::pad::PollButtons());
 
+    // The one button the engine's pad path cannot deliver in a menu: Start,
+    // which is the mod's H key (own status; with the left trigger, the action
+    // queue). Both games, read from XInput, and in this slot for the same
+    // reason the buttons above are — it opens an overlay.
+    PHASE("pad_xinput_buttons", acc::pad::PollXInputButtons());
+
     // The trigger layer's solo jobs, BOTH games — the left trigger opens and
     // closes the unified action menu, so it needs this slot for the same
     // reason the buttons above do. After them, so a menu opened this tick

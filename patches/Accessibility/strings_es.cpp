@@ -592,12 +592,15 @@ const char* Get(Id id) {
 
         case Id::HelpKeyModSettings:     return "Los ajustes del mod est\xE1n en Opciones, al final de la lista";
         case Id::HelpKeyPadMenuNav:          return "En los men\xFAs: cruceta o palanca izquierda para moverte, A confirma, B vuelve atr\xE1s";
+        case Id::HelpKeyPadTooltip:          return "Mant\xE9n pulsado Y y pulsa la cruceta arriba o abajo: leer toda la descripci\xF3n sin cambiar de entrada";
         case Id::HelpKeyPadInteract:          return "A: acci\xF3n por defecto sobre el objetivo enfocado (atacar, abrir, hablar, recoger)";
         case Id::HelpKeyPadCycleObjects:     return "Cruceta izquierda y derecha: objeto anterior y siguiente";
         case Id::HelpKeyPadCycleCategory:    return "Cruceta arriba y abajo: categor\xED" "a anterior y siguiente";
         case Id::HelpKeyPadMapHints:         return "Pantalla del mapa, cruceta izquierda y derecha: indicaci\xF3n anterior y siguiente";
         case Id::HelpKeyPadActionMenuToggle: return "Gatillo izquierdo: abre el men\xFA de acciones; al pulsarlo de nuevo se cierra";
         case Id::HelpKeyPadActionMenuNav:    return "Men\xFA de acciones, cruceta: izquierda y derecha cambian de categor\xED" "a, arriba y abajo de entrada, A ejecuta, B o el gatillo izquierdo cierra";
+        case Id::HelpKeyPadSelfStatus:       return "Gatillo izquierdo con X: tu propio estado";
+        case Id::HelpKeyPadActionQueue:      return "Gatillo derecho con X: la cola de acciones. La cruceta arriba y abajo recorre las entradas, A quita la \xFAltima en cola, el gatillo izquierdo con A vac\xED" "a toda la cola, B cierra";
         case Id::HelpKeyPadWalkToFocus:      return "Gatillo derecho con bot\xF3n superior derecho: caminar hasta el objeto enfocado";
         case Id::HelpKeyPadBeacon:           return "Gatillo izquierdo con bot\xF3n superior izquierdo: baliza sonora hacia el objeto enfocado";
         case Id::HelpKeyPadDegrees:          return "Gatillo derecho: anunciar la orientaci\xF3n en grados";
@@ -607,9 +610,9 @@ const char* Get(Id id) {
         case Id::HelpKeyPadCycleTargets:     return "Botones superiores izquierdo y derecho: cambiar de objetivo";
         case Id::HelpKeyPadTradeMode:        return "Contenedor y tienda, botones superiores: cambiar de modo";
         case Id::HelpKeyPadOptions:          return "Bot\xF3n Atr\xE1s: men\xFA de opciones";
+        case Id::HelpKeyPadPause:            return "Start: pausa";
         case Id::HelpKeyPadSwitchLeader:
             return "X: cambiar de l\xED" "der de grupo";
-        case Id::HelpKeyPadPause:            return "Start: pausa";
         case Id::PadQuickMenuOpened:
             return "Men\xFA r\xE1pido. Arriba y abajo para elegir, "
                    "A confirma, B cierra.";

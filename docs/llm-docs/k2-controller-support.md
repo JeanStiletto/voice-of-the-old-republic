@@ -373,7 +373,23 @@ consumed at `CClientExoAppInternal::HandleInputEvent`, not at the GUI manager.
 In-world codes worth knowing:
 
 - LB = `0xcc`, RB = `0xcd` — Cycle Target left / right.
-- L3 = `0xf2` — Flourish Weapon. Cosmetic; the freest button on the pad.
+- L3 = `0xf2` — Flourish Weapon. Cosmetic, and the freest button on the pad by
+  that measure, but **deliberately left alone** — the flourish is kept.
+- Start = `0xe0` (in-world class) — Pause Combat. Left alone: the dev uses it.
+- Back / View = `0x0b` in-world, `46` at the GUI manager — Options Menu, and
+  **the mod takes it** (own status; with LT, the action queue). Its engine job
+  is the one genuinely redundant binding on the chart: the quick menu's first
+  entry and the LB / RB sub-screen step both reach Options already. The binding
+  is driven from the XInput button word on both games so it also works on
+  screens the pad's own event does not reach, and `0x0b` is an ordinary action
+  code the KEYBOARD also reaches (O by default), so consuming it needs the same
+  physical-button test as R3 below.
+- **Share (Series pads only) is NOT reachable.** Windows reserves it for the
+  Game Bar capture: XInput's `wButtons` has no bit for it, DirectInput's mapping
+  stops at the ten classic buttons, and Windows.Gaming.Input does not report it.
+  Only raw HID report parsing (what Steam Input does) or the GameInput system-
+  button API would see it. Do not plan a binding on it without doing that work
+  first.
 - R3 = `0x01` — First-Person View. **`0x01` is also `MOUSE_BUTTON1`, the right
   mouse button (mouse-look).** Anything binding R3 must check that the physical
   button is up before consuming, or every mouse user with a pad plugged in

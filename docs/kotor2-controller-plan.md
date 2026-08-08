@@ -99,10 +99,28 @@ there. In the world:
 - LT + LB — audio beacon to the focused object
 - RT + RB — walk to the focused object
 - LT + RT — the current screen's keys (the keyboard's Ctrl+F1)
+- LT + X — own status (the keyboard's H); RT + X — the action queue (Shift+H).
+  Dispatched from the XInput sample (the only reader that sees a trigger), and
+  the engine's X event is consumed while a trigger is held so the party leader
+  does not also switch under the chord
 - Right stick press — camera orient (the keyboard's N)
-- Y — the engine's Quick Menu, now spoken; its **Help** entry opens the mod's
-  key list instead of the engine's controller picture
-- X (Switch Party Leader), B, LB / RB alone, Back, Start — left to the engine
+- LT + A, action queue open — clear the whole queue (the keyboard's Shift+Enter,
+  which the queue reads as a physical Shift the pad cannot hold)
+- Y — in the world, the engine's Quick Menu, now spoken; its **Help** entry opens
+  the mod's key list instead of the engine's controller picture. In a MENU it is
+  the mod's peek modifier: held, the D-Pad's up / down read the focused entry's
+  description block by block (the keyboard's Shift+arrow). The modifier is the
+  XInput button state, so the engine's menu-class Y event is simply consumed
+- X (Switch Party Leader), B, LB / RB alone, Back (Options Menu),
+  Start (Pause Combat), L3 (Flourish) — left to the engine
+
+**Why H is on a chord and not a button.** Every XInput-visible button already
+has a job the dev uses — Start pauses, Back opens Options, L3 flourishes, R3
+orients the camera, X switches the leader, Y is the Quick Menu. The one spare
+button on the hardware is the Series pad's **Share**, and no game-facing API
+reports it (see the Share note in `docs/llm-docs/k2-controller-support.md`);
+reaching it would take a raw-HID reader, which was weighed and declined. So H
+and Shift+H sit on the triggers, where the mod already has a modifier.
 
 Each trigger's solo job fires on RELEASE, and a chord taken during the hold
 cancels it. This is not a user-facing rule — it is only what makes LT+LB a

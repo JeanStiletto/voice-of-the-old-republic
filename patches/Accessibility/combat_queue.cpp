@@ -730,6 +730,25 @@ bool Open() {
     return true;
 }
 
+void ClearAllAndClose() {
+    if (!g_state.active) return;
+    // Re-read first: the engine drains the queue as the combat round advances,
+    // and the pad's chord arrives from the poll slot rather than from inside
+    // HandleInputEvent's own refresh.
+    if (BuildRows() <= 0) {
+        prism::Speak(acc::strings::Get(acc::strings::Id::QueueEmpty),
+                     /*interrupt=*/true);
+        ForceDisarm("queue-emptied");
+        return;
+    }
+    const bool ok = ClearAllRows();
+    prism::Speak(acc::strings::Get(ok ? acc::strings::Id::QueueCleared
+                                      : acc::strings::Id::QueueRemoveFailed),
+                 /*interrupt=*/true);
+    acclog::Write("Combat.Queue", "clear-all ok=%d", ok ? 1 : 0);
+    ForceDisarm("clear-all");
+}
+
 bool HandleInputEvent(int code, int value) {
     if (!g_state.active) return false;
     if (value == 0) return false;  // press-edge only
@@ -758,16 +777,8 @@ bool HandleInputEvent(int code, int value) {
             return true;
         case kInputEnter1:
         case kInputEnter2: {
-            bool shift = acc::hotkeys::ShiftHeld();
-            if (shift) {
-                bool ok = ClearAllRows();
-                prism::Speak(acc::strings::Get(
-                                ok ? acc::strings::Id::QueueCleared
-                                   : acc::strings::Id::QueueRemoveFailed),
-                            /*interrupt=*/true);
-                acclog::Write("Combat.Queue", "Shift+Enter clear-all ok=%d",
-                              ok ? 1 : 0);
-                ForceDisarm("clear-all");
+            if (acc::hotkeys::ShiftHeld()) {
+                ClearAllAndClose();
                 return true;
             }
 

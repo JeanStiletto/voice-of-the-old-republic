@@ -117,11 +117,16 @@ In the world:
 - LT + LB — audio beacon to the focused object
 - RT + RB — walk to the focused object
 - LT + RT — the current screen's keys
+- LT + X — own status (the keyboard's H); RT + X — the action queue (Shift+H).
+  Bare X still switches the party leader. Both chords are read from the XInput
+  sample rather than from an X event, because only XInput reports the trigger
+  state and because the status readout has to answer in menus too
 - LB / RB alone — cycle target left / right (SelectPrev / SelectNext)
 - X — switch party leader (ChangeChar)
 - Y — the quick menu
 - Back — options screen (Options)
 - Start — pause (Pause)
+- LT + A, action queue open — clear the whole queue (the keyboard's Shift+Enter)
 - L3 — flourish weapon (Flourish)
 - R3 — camera orient (the keyboard's N)
 
@@ -228,7 +233,20 @@ crossed.
     LT + RT (this screen's keys).
 
 **World — the remaining buttons.** X switches party leader. Back opens options.
-Start pauses. R3 turns the camera to the beacon's next waypoint. L3 flourishes.
+Start pauses. L3 flourishes. R3 turns the camera to the beacon's next waypoint.
+
+**Action queue.** In combat, hold RT and press X: the queue opens and speaks its
+depth. D-Pad up / down then walk the entries, A removes the one you are on (only the last of that character's
+queue can go — anything else answers "Cannot remove this action"), LT + A clears
+the queue, B closes. Let LT go afterwards and confirm the action menu does NOT
+open: the chord marks the hold. Then LT + X anywhere — in the world and on the
+inventory screen — for the status readout, and confirm bare X still switches the
+party leader.
+
+**Tooltips in menus.** On the inventory, hold Y and tap D-Pad down: the item's
+description, one block per tap. Let Y go and press it again — the readout starts
+at the first block. Then press Y alone in a menu (nothing happens) and in the
+world (the quick menu opens).
 
 **Quick menu.** Y in the world: "Quick menu" then the focused entry; D-Pad steps
 entries, clamping at both ends; A fires; B or Y closes. Check that the left
@@ -236,7 +254,7 @@ stick does NOT walk while it is open. Then step to Help and press A — the mod'
 key list opens.
 
 **Help.** Open the key list and read to the end: a Controller section with
-eighteen lines, present with a pad connected and completely absent without one.
+twenty-one lines, present with a pad connected and completely absent without one.
 
 **If nothing happens at all,** grep the log for `Pad: XInput` — either the bind
 line naming the DLL, or "no XInput DLL resolved".

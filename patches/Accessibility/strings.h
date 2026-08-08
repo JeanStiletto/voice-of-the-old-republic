@@ -1700,12 +1700,15 @@ enum class Id : int {
     // Every line is true on both games — KOTOR 2 gets the last few from its
     // engine, KOTOR 1 from the mod synthesising the player's own bind.
     HelpKeyPadMenuNav,
+    HelpKeyPadTooltip,
     HelpKeyPadInteract,
     HelpKeyPadCycleObjects,
     HelpKeyPadCycleCategory,
     HelpKeyPadMapHints,
     HelpKeyPadActionMenuToggle,
     HelpKeyPadActionMenuNav,
+    HelpKeyPadSelfStatus,
+    HelpKeyPadActionQueue,
     HelpKeyPadWalkToFocus,
     HelpKeyPadBeacon,
     HelpKeyPadDegrees,
@@ -1715,8 +1718,8 @@ enum class Id : int {
     HelpKeyPadCycleTargets,
     HelpKeyPadTradeMode,
     HelpKeyPadOptions,
-    HelpKeyPadSwitchLeader,
     HelpKeyPadPause,
+    HelpKeyPadSwitchLeader,
     // The KOTOR 1 quick menu (Y). KOTOR 2 has the engine's own panel here and
     // the navigation chain reads its captions, so these are K1's only.
     // PadQuickMenus is the in-game menu screens (the engine's "GUI" action),

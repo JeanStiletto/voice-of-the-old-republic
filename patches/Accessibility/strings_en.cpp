@@ -590,12 +590,15 @@ const char* Get(Id id) {
 
         case Id::HelpKeyModSettings:     return "Mod settings are in Options, at the bottom of the list";
         case Id::HelpKeyPadMenuNav:          return "In menus: D-pad or left stick move, A confirms, B goes back";
+        case Id::HelpKeyPadTooltip:          return "Hold Y and press the D-pad up or down: read the full description without moving";
         case Id::HelpKeyPadInteract:          return "A: default action on the focused target (attack, open, talk, pick up)";
         case Id::HelpKeyPadCycleObjects:     return "D-pad left and right: previous and next object";
         case Id::HelpKeyPadCycleCategory:    return "D-pad up and down: previous and next category";
         case Id::HelpKeyPadMapHints:         return "Map screen, D-pad left and right: previous and next map hint";
         case Id::HelpKeyPadActionMenuToggle: return "Left trigger: open the action menu; press it again to close";
         case Id::HelpKeyPadActionMenuNav:    return "Action menu, D-pad: left and right change the category, up and down the entry, A fires, B or the left trigger closes";
+        case Id::HelpKeyPadSelfStatus:       return "Left trigger with X: your own status";
+        case Id::HelpKeyPadActionQueue:      return "Right trigger with X: the action queue. D-pad up and down step through the entries, A removes the last one queued, left trigger with A clears the whole queue, B closes";
         case Id::HelpKeyPadWalkToFocus:      return "Right trigger with right shoulder button: walk to the focused object";
         case Id::HelpKeyPadBeacon:           return "Left trigger with left shoulder button: audio beacon to the focused object";
         case Id::HelpKeyPadDegrees:          return "Right trigger: announce the facing in degrees";
@@ -605,8 +608,8 @@ const char* Get(Id id) {
         case Id::HelpKeyPadCycleTargets:     return "Left and right shoulder buttons: cycle targets";
         case Id::HelpKeyPadTradeMode:        return "Container and store, shoulder buttons: switch the mode";
         case Id::HelpKeyPadOptions:          return "Back button: options menu";
-        case Id::HelpKeyPadSwitchLeader:     return "X: switch party leader";
         case Id::HelpKeyPadPause:            return "Start: pause";
+        case Id::HelpKeyPadSwitchLeader:     return "X: switch party leader";
         case Id::PadQuickMenuOpened:
             return "Quick menu. Up and down to choose, A confirms, B closes.";
         case Id::PadQuickMenuClosed:         return "Quick menu closed.";

@@ -221,6 +221,38 @@ The vanilla KOTOR keyboard-only combat path is **broken by design**: pressing 1-
 
 **How to apply:** Before extending bare-key dispatch behaviour (new keys, new categories), satisfy the engine's invariant by calling `acc::engine_actionbar::PrepareBareDispatch(targetClient)` first. The helper wraps `CGuiInGame::SetMainInterfaceTarget(guiIn, targetClient)` (0x62b000) + `CGuiInGame::RePopulateMainInterface(guiIn)` (0x62b050) under SEH and lives at `patches/Accessibility/engine_actionbar.cpp`. It's wired into `OnClientHandleInputEvent` (input_pipeline.cpp) so the engine's switch sees fresh `action_lists` by the time `DoTargetAction` / `DoPersonalAction` fires.
 
+## queue_removal_is_tail_only_by_design (SARIF + decompile, 2026-08-08)
+_Vanilla's only "cancel a queued action" is the keyboard's Y, it removes the TAIL, and it is an Xbox-era button handler. Tail-only is the game's model, not our shortfall._
+
+The whole chain, from the one primitive upward, has exactly one branch at each step:
+
+- `CSWSCombatRound::RemoveLastAction` (`0x004d37b0`) has **one** caller in the
+  entire executable: `CSWGuiMainInterface::OnCombatYButton` (`0x006880c0`).
+- `OnCombatYButton` has three callers: `CSWGuiMainInterface::ClearOneAction`
+  (`0x00688790`), one site inside the main interface's own action-queue update
+  block, and `CSWGuiTutorialBox::PerformCombatYButton` (`0x006aa5d0`) — the
+  tutorial popup that teaches the gesture.
+- `ClearOneAction` has **one** caller: `CClientExoAppInternal::HandleInputEvent`
+  (`0x00621210`), cases `0xf5` and `0xfb`. It is an INPUT binding, not a button
+  callback — there is no mouse path to it at all.
+- `0xf5` = `[Keymapping]` Action245, and stock `swkotor.ini` ships
+  `Action245=75`. InputIndex 75 = `0x4b` = the letter **Y** (see
+  `engine_keymap::InputIndexToScancode`'s `A..Z` range at `0x33`). `0xfb`
+  (Action251) has no ini line, so it is unbound by default.
+
+Two consequences worth carrying:
+
+- **Nobody gets positional removal.** The engine has no splice primitive; a
+  sighted player taps Y to peel actions off the end, one per press, exactly as
+  `combat_queue::RemoveRow` does. Our "Cannot remove this action" on a non-tail
+  entry is therefore parity, not a gap — and the fix for it would be a new
+  primitive, not a missed binding.
+- **The names are Xbox vocabulary.** `OnCombatYButton` /
+  `PerformNonCombatXButton` / `PerformCombatYButton` are the original console
+  build's face buttons surviving in the PC binary, which is also why the PC
+  default landed on the *letter* Y. A controller player on the shipped PC pad
+  chart has no route to this at all — the chart spends Y on the Quick Menu.
+
 ## Action-menu auto-pause (vanilla behaviour, decompile-confirmed 2026-06-14)
 
 The vanilla radial/personal action menu does **NOT** pause the world by merely

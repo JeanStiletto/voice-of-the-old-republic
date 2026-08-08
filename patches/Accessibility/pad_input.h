@@ -92,6 +92,11 @@ constexpr int kPadBack        = 46;   // KEYBOARD_F8
 constexpr int kPadClientShoulderL = 0xcc;  // LB — engine: Cycle Target (Left)
 constexpr int kPadClientShoulderR = 0xcd;  // RB — engine: Cycle Target (Right)
 constexpr int kPadClientStickL    = 0xf2;  // L3 — engine: Flourish Weapon
+// Back / View — engine: Options Menu. The mod's H key; the engine's options
+// screen must not also open under it. This code is ALSO the keyboard's own
+// Options action (O by default), so it may only be consumed while the pad's
+// Back is physically down — the same twin test the stick-press code below needs.
+constexpr int kPadClientBack      = 0x0b;
 // R3 — engine: First-Person View. This code is ALSO **MOUSE_BUTTON1**, the
 // right mouse button: mouse-look. Never consume it without first checking
 // that the physical button is up (TranslateClientEvent does).
@@ -188,6 +193,17 @@ bool IsPhysicalF1();
 //   LT + LB         audio beacon to the focused object
 //   RT + RB         walk to the focused object
 //   LT + RT         the current screen's keys (the keyboard's Ctrl+F1)
+//   LT + X          own status (the keyboard's H)
+//   RT + X          the action queue (the keyboard's Shift+H)
+//   LT + A          clear the whole action queue, while it is open (the
+//                   keyboard's Shift+Enter there)
+//
+// The two X chords are on the triggers because every button on the pad already
+// has a job the player uses — Start pauses, Back opens Options, the stick
+// presses flourish and orient the camera — and the one button that is genuinely
+// spare, the Series pad's Share, is not reported by any input API available to
+// a game (Windows keeps it for the Game Bar capture; see the Share note in
+// docs/llm-docs/k2-controller-support.md). Bare X keeps Switch Party Leader.
 //
 // The solo job fires on RELEASE, and any chord taken during the hold cancels
 // it. That is not a timing rule and there is nothing for the user to learn —
@@ -222,6 +238,32 @@ void PollButtons();
 // runs). Ordering it after the button dispatch is deliberate too: a menu opened
 // this tick must not also be acted on by an A press sampled in the same tick.
 void PollTriggers();
+
+// ---------------------------------------------------------------------------
+// The buttons the mod reads from XInput itself
+// ---------------------------------------------------------------------------
+// X held with a trigger is the pad's H key: LT + X is the self-status readout
+// (the keyboard's H), RT + X is the action queue (Shift+H). Bare X is untouched
+// and stays the engine's Switch Party Leader.
+//
+// Read through XInput on BOTH games rather than from the engine's X event,
+// because a chord has to be decided from the TRIGGER STATE, which only XInput
+// reports (the engine never reads the trigger axis at all) — and because the
+// status readout has to work on every screen, including the ones the pad's own
+// X event does not reach. On KOTOR 2 the engine's X event is consumed while a
+// trigger is held so the party leader does not also switch under the chord.
+//
+// Call from the input-poll slot next to PollButtons: these presses open an
+// overlay, which is what the keyboard poll does from exactly there.
+void PollXInputButtons();
+
+// True while the pad's Y button is held. Y is what a controller has instead of
+// Shift — holding it turns the D-Pad's up / down into the description peek,
+// exactly as holding Shift turns the arrow keys' (peek_description). Read from
+// XInput for the same reason the stick press is, plus one of its own: a
+// modifier has to be answerable as a STATE ("is it held right now"), which an
+// edge-delivered engine event cannot do.
+bool PeekModifierHeld();
 
 bool LeftTriggerHeld();
 bool RightTriggerHeld();
