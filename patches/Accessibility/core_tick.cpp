@@ -15,6 +15,7 @@
 #include "combat_queue.h"
 #include "combat_special_watch.h"
 #include "cycle_input.h"
+#include "engine_keymap.h"  // FirstMovementKeyHeld — dead-keyboard watchdog probe
 #include "focus_guard.h"
 #include "dialog_speech.h"
 #include "discovery.h"
@@ -52,6 +53,7 @@
 #include "probe_camera_state.h"
 #include "engine_input.h"
 #include "spatial_change_detector.h"
+#include "speech_clipboard.h"
 #include "stealth_watch.h"
 #include "minigame_swoop_race.h"
 #include "trap_watch.h"
@@ -228,6 +230,83 @@ void RetryColdStartReacquire() {
     acc::engine::ForceReacquireInput();
 }
 
+// ---------------------------------------------------------------------------
+// Dead-keyboard watchdog (mid-session)
+// ---------------------------------------------------------------------------
+// RetryColdStartReacquire above latches permanently once the pump goes live, so
+// it only ever protects the launch window. The same failure recurs mid-session:
+// an alt-tab out and back makes the engine recreate its Render Window, the
+// focus-gain path fires ONE SetActive(0)->(1) cycle, and when that single shot
+// doesn't take the engine's keyboard stays dead for the rest of the session.
+//
+// Witnessed in patch-20260809-090145.log: window recreated at 09:03:23, the
+// focus-gain reacquire fired at 09:03:26, and then ZERO key presses reached the
+// engine (no Diag.ClientHIE val=128, no Menus.Input) until a second alt-tab at
+// 09:03:59. The engine's quit-confirm popup was up, correctly announced, with
+// OK and Abbrechen focusable — and unreachable, because no keystroke could get
+// to it. Cold start needed 13 retries that same session; one shot was never
+// going to be enough.
+//
+// Detection is the asymmetry itself: mod hotkeys are polled through
+// GetAsyncKeyState and keep working when the engine's DirectInput is dead. So
+// "an ENGINE-BOUND key is held according to Win32, while the engine has not
+// seen a key press for a good while" means the keyboard died, and nothing else
+// produces that combination. Keys the engine does not bind are excluded — the
+// mod's own cycle keys (`,` `.` `-`) legitimately never reach the engine, and
+// treating those as evidence would fire the recovery constantly.
+constexpr ULONGLONG kDeadKeyboardMs   = 1500;  // silence that counts as dead
+constexpr ULONGLONG kDeadRecoveryMs   = 700;   // between recovery cycles
+
+// Engine-bound keys a player actually presses when nothing is responding. All
+// are real engine binds (GUI confirm/cancel/nav, leader cycle, movement), so a
+// healthy engine answers them within a frame and the watchdog never arms.
+int HeldEngineBoundKey() {
+    static const int kProbe[] = {
+        VK_RETURN, VK_ESCAPE, VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT, VK_TAB, VK_SPACE
+    };
+    for (int vk : kProbe) {
+        if (GetAsyncKeyState(vk) & 0x8000) return vk;
+    }
+    return acc::engine_keymap::FirstMovementKeyHeld();
+}
+
+void WatchDeadKeyboard() {
+    static ULONGLONG s_heldSince = 0;
+    static ULONGLONG s_lastCycle = 0;
+    static int       s_cycles    = 0;
+
+    // Never acquire under another app — same rule as the cold-start retry.
+    if (!acc::focus_guard::GameOwnsForeground()) {
+        s_heldSince = 0;
+        return;
+    }
+
+    const ULONGLONG now = GetTickCount64();
+    if (HeldEngineBoundKey() == 0) {
+        s_heldSince = 0;
+        s_cycles    = 0;   // released: a fresh episode starts its count over
+        return;
+    }
+    if (s_heldSince == 0) s_heldSince = now;
+
+    // The engine is hearing keys — nothing wrong, whatever else is going on.
+    const ULONGLONG lastKey = acc::engine::LastEngineKeyEventMs();
+    if (lastKey != 0 && now - lastKey < kDeadKeyboardMs) return;
+
+    // Give the press time to land before calling it dead.
+    if (now - s_heldSince < kDeadKeyboardMs) return;
+    if (s_lastCycle != 0 && now - s_lastCycle < kDeadRecoveryMs) return;
+    s_lastCycle = now;
+
+    ++s_cycles;
+    acclog::Write("EngineInput",
+        "dead-keyboard watchdog: vk=0x%02x held %llums, engine silent %llums "
+        "— driving recovery cycle #%d",
+        HeldEngineBoundKey(), now - s_heldSince,
+        lastKey ? now - lastKey : 0ull, s_cycles);
+    acc::engine::ForceReacquireInput();
+}
+
 }  // namespace
 
 void Dispatch() {
@@ -258,6 +337,11 @@ void Dispatch() {
     // recreation moments later), leaving the keyboard dead for tens of
     // seconds. Re-drive the edge until the pump is provably live, then stop.
     RetryColdStartReacquire();
+
+    // Mid-session counterpart: the cold-start net latches off once the pump has
+    // ever been live, and the engine's keyboard can die again on any later
+    // focus regain. Fires only on the dead-keyboard fingerprint — see above.
+    WatchDeadKeyboard();
 
     // The Endar Spire opening holds the global fade at alpha=1.0 (engine
     // re-asserts it every frame) after the fade finishes, while the player still
@@ -299,6 +383,12 @@ void Dispatch() {
     // Enter/Esc) before those consumers sample them. After pazaak so the
     // minigame keeps its own keys.
     PHASE("help", acc::help::PollWin32());
+
+    // Ctrl+R copies the last spoken text to the clipboard. Position in the
+    // phase order doesn't matter — Ctrl+R is bound to nothing else, so there is no
+    // shared edge to arbitrate — but it belongs with the other always-on mod
+    // services rather than with the state-gated world/menu pollers.
+    PHASE("speech_clipboard", acc::speech_clipboard::PollWin32());
 
     // Menu monitors (focus/contents/listbox change detection, give-mode poll).
     PHASE("menus.TickMonitors", acc::menus::TickMonitors());

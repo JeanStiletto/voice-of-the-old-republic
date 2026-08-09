@@ -102,6 +102,7 @@ El mod deja intacto el mapa de teclas predeterminado del juego, con un cambio er
 - Mayús+H — Abrir la cola de acciones (revisar o vaciar las acciones en cola)
 - Mayús+L — Abrir el panel de subida de nivel
 - F1 — Abrir o cerrar la lista completa de teclas; Ctrl+F1 — leer las teclas de la pantalla actual
+- Ctrl+R — Copiar al portapapeles el último texto leído (una línea de diálogo, una entrada del diario, el nombre de un PNJ: lo último que se haya leído)
 
 <h3>Teclas del mod — ciclo de objetos descubiertos</h3>
 

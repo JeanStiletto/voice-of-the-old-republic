@@ -544,12 +544,12 @@ bool ForwardBackwardKeyHeld() {
     return false;
 }
 
-bool AnyMovementKeyHeld() {
+int FirstMovementKeyHeld() {
     if (!s_gameLoaded) ReloadGameConfig();
     // The four directional buckets (bound move/turn keys + WASD defaults)…
     for (int a = 0; a < kMoveAxisCount; ++a) {
         for (int i = 0; i < s_axisVkCount[a]; ++i) {
-            if (IsDownVk(s_axisVks[a][i])) return true;
+            if (IsDownVk(s_axisVks[a][i])) return s_axisVks[a][i];
         }
     }
     // …plus the legacy extras the German QWERTZ set relies on that aren't in
@@ -557,9 +557,13 @@ bool AnyMovementKeyHeld() {
     // this never regresses below the old hardcoded {W,S,A,D,C,Y} check.
     static const int kExtra[] = {'C', 'Y', 'Z'};
     for (int vk : kExtra) {
-        if (IsDownVk(vk)) return true;
+        if (IsDownVk(vk)) return vk;
     }
-    return false;
+    return 0;
+}
+
+bool AnyMovementKeyHeld() {
+    return FirstMovementKeyHeld() != 0;
 }
 
 bool ForwardBackwardCommanded() {

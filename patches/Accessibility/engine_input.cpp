@@ -233,7 +233,20 @@ namespace {
 // gain->loss) flip collapses to its final state at drain — input ends up
 // matching the foreground state that actually settled.
 std::atomic<int> g_pendingInputState{0};
+
+// Last engine-delivered key PRESS, GetTickCount64 (0 = none yet). Written from
+// the input hooks (engine thread), read by the tick — atomic so the read can
+// never tear across the 64-bit value.
+std::atomic<unsigned long long> g_lastEngineKeyMs{0};
 }  // namespace
+
+void NoteEngineKeyEvent() {
+    g_lastEngineKeyMs.store(GetTickCount64(), std::memory_order_relaxed);
+}
+
+unsigned long long LastEngineKeyEventMs() {
+    return g_lastEngineKeyMs.load(std::memory_order_relaxed);
+}
 
 void RequestInputReacquire() {
     g_pendingInputState.store(1, std::memory_order_relaxed);

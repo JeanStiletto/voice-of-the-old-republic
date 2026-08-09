@@ -102,6 +102,7 @@ Le mod conserve la disposition des touches par défaut du jeu, avec une modifica
 - Maj+H — Ouvrir la file d'actions (consulter ou vider les actions en attente)
 - Maj+L — Ouvrir l'écran de montée de niveau
 - F1 — Ouvrir ou fermer la liste complète des touches ; Ctrl+F1 — lire les touches de l'écran actuel
+- Ctrl+R — Copier le dernier texte lu dans le presse-papiers (une ligne de dialogue, une entrée du journal, le nom d'un PNJ — ce qui vient d'être lu)
 
 <h3>Touches du mod — cycle des objets découverts</h3>
 

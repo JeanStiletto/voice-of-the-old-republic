@@ -102,6 +102,7 @@ Mod zostawia domyślny układ klawiszy gry bez zmian, z jednym ergonomicznym wyj
 - Shift+H — Otwarcie kolejki akcji (przegląd lub wyczyszczenie zakolejkowanych akcji)
 - Shift+L — Otwarcie panelu awansu na poziom
 - F1 — Otwarcie lub zamknięcie pełnej listy klawiszy; Ctrl+F1 — odczytanie klawiszy bieżącego ekranu
+- Ctrl+R — Skopiowanie do schowka ostatnio wypowiedzianego tekstu (kwestii dialogowej, wpisu w dzienniku, imienia NPC — tego, co przeczytano ostatnio)
 
 <h3>Klawisze moda — cykl odkrytych obiektów</h3>
 

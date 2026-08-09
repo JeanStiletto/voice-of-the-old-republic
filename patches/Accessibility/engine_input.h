@@ -88,6 +88,25 @@ void RequestInputRelease();
 // ReleaseInput on a pending focus-loss.
 void DrainPendingReacquire();
 
+// ---- Engine keyboard liveness -------------------------------------------
+//
+// Called from both input hooks (the in-world CClientExoAppInternal route and
+// the CSWGuiManager route) whenever the ENGINE delivers a real key PRESS. Not
+// releases, and not the mouse-axis codes that share the input-index space —
+// only evidence that a keypress made it from DirectInput into the engine.
+//
+// Exists because the mod's own hotkeys are polled through GetAsyncKeyState and
+// therefore keep working when the engine's DirectInput keyboard is dead. That
+// asymmetry is the fingerprint of the recurring input-death bug: the patch log
+// keeps showing mod speech and mod hotkeys while Diag.ClientHIE / Menus.Input
+// go completely silent, so the player can still hear the mod but cannot press
+// a button on a panel. WatchDeadKeyboard (core_tick.cpp) compares this stamp
+// against Win32 key state to detect exactly that and drive a recovery cycle.
+void NoteEngineKeyEvent();
+
+// GetTickCount64() at the last NoteEngineKeyEvent, 0 if none this session.
+unsigned long long LastEngineKeyEventMs();
+
 }  // namespace acc::engine
 
 // Pre-translation codes received by CSWGuiManager::HandleInputEvent.

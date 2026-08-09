@@ -135,6 +135,12 @@ int TurnScancode(bool left);
 // never regresses below the old hardcoded {W,S,A,D,C,Y} movement check.
 bool AnyMovementKeyHeld();
 
+// Same scan, but returns the VK that answered (0 when none). Diagnostic twin of
+// AnyMovementKeyHeld: a key that is stuck down in the OS async state cancels
+// every mod-armed walk on arrival, and the log needs to NAME it — "the walk was
+// cancelled" without the culprit is a dead end.
+int FirstMovementKeyHeld();
+
 // True iff a bound forward/backward key is currently held (the walk axes,
 // including the arrow alternates) — deliberately EXCLUDING the turn/strafe
 // buckets. This is the "the player is commanding translation" signal: the

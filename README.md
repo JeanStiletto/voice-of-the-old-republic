@@ -102,6 +102,7 @@ The mod keeps the game's default key map intact, with one ergonomic change the i
 - Shift+H — Open the action queue (review or clear queued actions)
 - Shift+L — Open the level-up panel
 - F1 — Open or close the full key list; Ctrl+F1 — read the keys for the current screen
+- Ctrl+R — Copy the last spoken text to the clipboard (a dialogue line, a journal entry, an NPC name — whatever was read out last)
 
 <h3>Mod keys — discovered-object cycle</h3>
 

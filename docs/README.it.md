@@ -102,6 +102,7 @@ La mod lascia intatta la mappatura dei tasti predefinita del gioco, con una modi
 - Maiusc+H — Aprire la coda delle azioni (rivedere o svuotare le azioni in coda)
 - Maiusc+L — Aprire il pannello di avanzamento di livello
 - F1 — Aprire o chiudere l'elenco completo dei tasti; Ctrl+F1 — leggere i tasti della schermata corrente
+- Ctrl+R — Copiare negli appunti l'ultimo testo letto (una battuta di dialogo, una voce del diario, il nome di un PNG: qualunque cosa sia stata letta per ultima)
 
 <h3>Tasti della mod — ciclo degli oggetti scoperti</h3>
 

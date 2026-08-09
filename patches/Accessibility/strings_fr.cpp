@@ -590,6 +590,7 @@ const char* Get(Id id) {
 
 
         case Id::HelpKeyModSettings:     return "Les r\xE9glages du mod sont dans les Options, en bas de la liste";
+        case Id::HelpKeyCopyLastSpoken:  return "Ctrl plus R : copier le dernier texte lu dans le presse-papiers";
         case Id::HelpKeyPadMenuNav:          return "Dans les menus : croix directionnelle ou stick gauche pour se d\xE9placer, A valide, B revient en arri\xE8re";
         case Id::HelpKeyPadTooltip:          return "Maintenir Y et appuyer sur la croix directionnelle vers le haut ou le bas : lire toute la description sans changer d'entr\xE9" "e";
         case Id::HelpKeyPadInteract:          return "A : action par d\xE9" "faut sur la cible actuelle (attaquer, ouvrir, parler, ramasser)";
@@ -731,6 +732,12 @@ const char* Get(Id id) {
         case Id::KbNameHelpContext:         return "Aide contextuelle";
         case Id::KbNameCheckForUpdate:      return "Rechercher une mise \xE0 jour";
         case Id::KbNameDialogRepeatLine:    return "R\xE9p\xE9ter la ligne de dialogue";
+        case Id::KbNameCopyLastSpoken:      return "Copier le dernier texte lu";
+
+        // ---- Presse-papiers ----
+        case Id::ClipboardCopied:        return "Copi\xE9 dans le presse-papiers";
+        case Id::ClipboardNothingToCopy: return "Rien \xE0 copier";
+        case Id::ClipboardFailed:        return "Presse-papiers indisponible";
 
         // ---- Endar Spire tutorial keyboard hints (Surface 1: popups) ----
         case Id::TutHintCombatFeat:

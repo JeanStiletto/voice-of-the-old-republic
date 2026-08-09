@@ -209,6 +209,38 @@ LRESULT CALLBACK SubclassProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 "WM_KILLFOCUS nextHwnd=%p hwnd=%p [%s]",
                 reinterpret_cast<void*>(wp), hwnd, tag);
             break;
+        case WM_SYSCOMMAND:
+            // Kill the Alt menu. Alt is a SYSTEM key: DefWindowProc answers
+            // Alt (alone or with a letter) by sending SC_KEYMENU to open the
+            // window's menu bar. KOTOR has no menu bar, but the window still
+            // enters the OS keyboard-menu mode, which swallows keyboard input
+            // until Alt is pressed a second time — the user-visible symptom
+            // was "Alt+R blocks input until I tap Alt again", with the log
+            // going completely silent in between because the keys never
+            // reached the engine at all.
+            //
+            // NOTE: this swallow alone did NOT clear that block — a live round
+            // logged the swallow firing and the input still died, so Alt has
+            // more going on here than menu mode (the engine's own WM_SYSKEYDOWN
+            // / DirectInput handling is the remaining suspect, unexamined).
+            // CopyLastSpoken moved to Ctrl+R rather than chase it. This stays
+            // because it is correct on its own terms and PathfindFocusForce
+            // (Alt+`-`) is still an Alt binding.
+            //
+            // This is above the engine, not inside it: the mod's own
+            // modifier-shadow gates (input_pipeline / menus_dispatch) never
+            // see these presses, so no amount of hotkey-registry work could
+            // have prevented it. Swallowing SC_KEYMENU is the standard fix and
+            // is what every fullscreen game does. SC_MOUSEMENU (clicking a
+            // menu bar that does not exist) goes with it. Alt+F4 is SC_CLOSE
+            // and is deliberately left alone.
+            if ((wp & 0xFFF0) == SC_KEYMENU || (wp & 0xFFF0) == SC_MOUSEMENU) {
+                acclog::Trace("Focus",
+                    "SC_KEYMENU swallowed hwnd=%p [%s] — Alt must not open a "
+                    "menu mode that eats keyboard input", hwnd, tag);
+                return 0;
+            }
+            break;
         default:
             break;
     }

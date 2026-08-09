@@ -591,6 +591,7 @@ const char* Get(Id id) {
 
 
         case Id::HelpKeyModSettings:     return "Los ajustes del mod est\xE1n en Opciones, al final de la lista";
+        case Id::HelpKeyCopyLastSpoken:  return "Ctrl m\xE1s R: copiar al portapapeles el \xFAltimo texto le\xED" "do";
         case Id::HelpKeyPadMenuNav:          return "En los men\xFAs: cruceta o palanca izquierda para moverte, A confirma, B vuelve atr\xE1s";
         case Id::HelpKeyPadTooltip:          return "Mant\xE9n pulsado Y y pulsa la cruceta arriba o abajo: leer toda la descripci\xF3n sin cambiar de entrada";
         case Id::HelpKeyPadInteract:          return "A: acci\xF3n por defecto sobre el objetivo enfocado (atacar, abrir, hablar, recoger)";
@@ -733,6 +734,12 @@ const char* Get(Id id) {
         case Id::KbNameHelpContext:         return "Ayuda contextual";
         case Id::KbNameCheckForUpdate:      return "Buscar actualizaci\xF3n";
         case Id::KbNameDialogRepeatLine:    return "Repetir l\xEDnea de di\xE1logo";
+        case Id::KbNameCopyLastSpoken:      return "Copiar el \xFAltimo texto le\xED" "do";
+
+        // ---- Portapapeles ----
+        case Id::ClipboardCopied:        return "Copiado al portapapeles";
+        case Id::ClipboardNothingToCopy: return "Nada que copiar";
+        case Id::ClipboardFailed:        return "Portapapeles no disponible";
 
         // ---- Endar Spire tutorial keyboard hints (Surface 1: popups) ----
         case Id::TutHintCombatFeat:

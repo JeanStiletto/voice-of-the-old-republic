@@ -589,6 +589,7 @@ const char* Get(Id id) {
 
 
         case Id::HelpKeyModSettings:     return "Le impostazioni della mod sono nelle Opzioni, in fondo all'elenco";
+        case Id::HelpKeyCopyLastSpoken:  return "Ctrl pi\xF9 R: copia negli appunti l'ultimo testo letto";
         case Id::HelpKeyPadMenuNav:          return "Nei menu: croce direzionale o levetta sinistra per muoverti, A conferma, B torna indietro";
         case Id::HelpKeyPadTooltip:          return "Tieni premuto Y e premi il D-pad su o gi\xF9: leggi tutta la descrizione senza cambiare voce";
         case Id::HelpKeyPadInteract:          return "A: azione predefinita sul bersaglio selezionato (attaccare, aprire, parlare, raccogliere)";
@@ -730,6 +731,12 @@ const char* Get(Id id) {
         case Id::KbNameHelpContext:         return "Aiuto contestuale";
         case Id::KbNameCheckForUpdate:      return "Cerca aggiornamenti";
         case Id::KbNameDialogRepeatLine:    return "Ripeti battuta di dialogo";
+        case Id::KbNameCopyLastSpoken:      return "Copia l'ultimo testo letto";
+
+        // ---- Appunti ----
+        case Id::ClipboardCopied:        return "Copiato negli appunti";
+        case Id::ClipboardNothingToCopy: return "Niente da copiare";
+        case Id::ClipboardFailed:        return "Appunti non disponibili";
 
         // ---- Endar Spire tutorial keyboard hints (Surface 1: popups) ----
         case Id::TutHintCombatFeat:

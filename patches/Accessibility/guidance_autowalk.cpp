@@ -16,6 +16,7 @@
                       // so keys pressed in another app while Alt+Tabbed out
                       // don't kill an in-flight autowalk silently.
 #include "log.h"
+#include "pad_input.h"  // StickMoving — the pad half of AnyMovementCommanded
 #include "engine_rebase.h"
 #include "engine_offsets_select.h"
 
@@ -356,7 +357,19 @@ void PollMovementKeysCancel() {
     // out. The arm grace that prevents a pre-dispatch key from cancelling too
     // early lives in CancelByMovement (kCancelGraceMs), keyed off the tracker's
     // arm time.
-    if (!acc::engine_keymap::AnyMovementCommanded()) return;
+    const int heldVk = acc::engine_keymap::FirstMovementKeyHeld();
+    const bool stick = acc::pad::StickMoving();
+    if (heldVk == 0 && !stick) return;
+
+    // Name the culprit. A movement key stuck down in the OS async state (a
+    // keyup lost to a focus switch, a synthetic SendInput press whose release
+    // never landed) cancels EVERY mod-armed walk the moment the grace expires,
+    // which reads as "the mod refuses to walk to anything" with nothing in the
+    // log to explain it. Trace-deduped, so a genuinely held key logs once.
+    acclog::Trace("Autowalk", "movement-cancel source: vk=0x%02x ('%c') stick=%d",
+                  heldVk,
+                  (heldVk >= 32 && heldVk < 127) ? (char)heldVk : '?',
+                  stick ? 1 : 0);
 
     acc::guidance::CancelByMovement();
 }

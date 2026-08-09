@@ -133,6 +133,9 @@ enum class Action : int {
     // ----- Dialog (polled only while a dialog panel is foreground) -----
     DialogRepeatLine,      // R          (re-speak the current NPC dialog line)
 
+    // ----- Clipboard (polled everywhere) -----
+    CopyLastSpoken,        // Ctrl+R     (copy the last spoken text to the clipboard)
+
     // ----- Sentinel -----
     COUNT
 };

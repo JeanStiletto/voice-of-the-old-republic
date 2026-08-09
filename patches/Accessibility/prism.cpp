@@ -204,6 +204,40 @@ bool ReencodeAcpToUtf8(const char* in, char* outBuf, size_t outBufSize) {
     return got > 0;
 }
 
+// ---- Last-utterance capture ---------------------------------------------
+//
+// Held in the game codepage — the same bytes the caller handed us — so
+// consumers can re-widen with the codepage of their choice. Sized well above
+// kAnnounceTextMax (1024) so we never truncate an utterance the speech path
+// itself carried in full; over-long text is truncated rather than dropped.
+char s_lastSpoken[4096] = {0};
+bool s_suppressNextCapture = false;
+
+void CaptureSpoken(const char* text) {
+    if (s_suppressNextCapture) {
+        s_suppressNextCapture = false;
+        return;
+    }
+    if (!text) return;
+    strncpy_s(s_lastSpoken, text, _TRUNCATE);
+}
+
+// Wide path: fold back to the game codepage so LastSpoken() has one encoding
+// regardless of which overload produced it. WC_NO_BEST_FIT_CHARS is
+// deliberately NOT set — a best-fit approximation is better than losing the
+// utterance for a codepoint the game codepage can't represent.
+void CaptureSpokenW(const wchar_t* text) {
+    if (s_suppressNextCapture) {
+        s_suppressNextCapture = false;
+        return;
+    }
+    if (!text) return;
+    int got = WideCharToMultiByte(g_speechCodepage, 0, text, -1, s_lastSpoken,
+                                  (int)sizeof(s_lastSpoken), nullptr, nullptr);
+    if (got <= 0) s_lastSpoken[0] = '\0';
+    s_lastSpoken[sizeof(s_lastSpoken) - 1] = '\0';
+}
+
 // ---- SEH guards around prism backend calls -----------------------------
 //
 // Some screen-reader backends delay-load a vendor DLL inside their
@@ -510,6 +544,7 @@ void Speak(const wchar_t* text, bool interrupt) {
     if (conv > 0) {
         acclog::Trace("Speech.spoke", "%s%s", interrupt ? "[!] " : "", audit);
     }
+    CaptureSpokenW(text);
 
     // Speech path: re-use the UTF-8 buffer we just built for the audit log
     // when it succeeded; otherwise allocate a fresh small one. Prism backends
@@ -537,6 +572,7 @@ unsigned GetSpeechCodepage() { return g_speechCodepage; }
 void Speak(const char* text, bool interrupt) {
     if (!g_normalReady || !text || !*text) return;
     acclog::Trace("Speech.spoke", "%s%s", interrupt ? "[!] " : "", text);
+    CaptureSpoken(text);
 
     // Game codepage → UTF-8 via heap when needed. Chargen skill descriptions
     // are ~600+ narrow chars, so we size dynamically.
@@ -567,6 +603,12 @@ void Speak(const char* text, bool interrupt) {
 // path doesn't pay for set_voice on every utterance.
 static void SpeakUrgentImpl(const char* text, size_t voiceId, bool applyVoice) {
     if (!g_normalReady || !text || !*text) return;
+
+    // Capture before the dispatch, not inside the rc==kPrismOk branch: the
+    // one-shot suppress flag has to be consumed by exactly this call whether
+    // or not the backend accepted the utterance, otherwise a dropped urgent
+    // line would leave the flag armed and swallow the NEXT real capture.
+    CaptureSpoken(text);
 
     // Re-encode CP_ACP → UTF-8 before dispatch. See ReencodeAcpToUtf8 doc
     // comment for the rc=13 (INVALID_UTF8) failure mode this guards.
@@ -641,6 +683,10 @@ const wchar_t* ActiveScreenReader() {
     if (!g_normalReady) return L"none";
     return g_activeNameW;
 }
+
+const char* LastSpoken() { return s_lastSpoken; }
+
+void SuppressNextCapture() { s_suppressNextCapture = true; }
 
 void Shutdown() {
     // Deliberately do not free backends / shut down the context here —

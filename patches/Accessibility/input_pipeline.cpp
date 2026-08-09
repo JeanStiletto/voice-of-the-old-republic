@@ -199,6 +199,10 @@ extern "C" int __cdecl OnClientHandleInputEvent(void* this_ptr,
     }
 
     unsigned int seq = acc::input::NextSeq();
+    // Keyboard-liveness stamp. 128 is the raw DirectInput press value; releases
+    // are 0 and the mouse axes (codes 65/66, see below) carry pixel positions,
+    // so this counts key presses only. See engine_input.h NoteEngineKeyEvent.
+    if (param_2 == 128) acc::engine::NoteEngineKeyEvent();
     int translated = acc::engine::ManagerTranslateCode(param_1);
     if (translated != param_1) {
         acclog::Write("Diag.ClientHIE",

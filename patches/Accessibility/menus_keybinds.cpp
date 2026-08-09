@@ -112,6 +112,7 @@ constexpr ActionEntry kGeneral[] = {
     { A::HelpContext,      S::KbNameHelpContext },
     { A::CheckForUpdate,   S::KbNameCheckForUpdate },
     { A::DialogRepeatLine, S::KbNameDialogRepeatLine },
+    { A::CopyLastSpoken,   S::KbNameCopyLastSpoken },
 };
 
 struct Category { S name; const ActionEntry* entries; int count; };

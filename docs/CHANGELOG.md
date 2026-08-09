@@ -53,6 +53,14 @@ and add the German in parentheses if it genuinely aids clarity.
 
 - Two new entries sit at the bottom of the Mod settings list: "Support the modder", which opens my Ko-fi page, and "Latest changes", which opens the release page of the newest version and the notes that come with it. Enter on either opens the address in your default browser.
 
+<h3>Clipboard:</h3>
+
+- Ctrl+R copies the last thing the mod spoke to the Windows clipboard. It was built for the computer terminals whose riddles ask you to do arithmetic on figures you have only heard, but it is not tied to dialogue: whatever was read out last — a journal entry, an NPC's name off the object cycle, a line on your character sheet — is what lands on the clipboard, ready to paste into a calculator or a notes file. The confirmation it speaks is never itself copied, so pressing the key twice gives you the same text both times. Rebindable, and listed in the key list under Mod features.
+
+<h3>Input recovery:</h3>
+
+- The keyboard now recovers on its own when the game stops answering it, instead of staying dead for the rest of the session. Switching to another window and back makes the game rebuild its own window, and the single attempt the mod made to wake the keyboard afterwards did not always land. The symptom was easy to misread: the mod kept speaking and its own keys kept working, because those are read separately, so everything sounded alive while nothing on screen would respond. The worst case was a confirmation popup — "Do you really want to quit?" — read out correctly, with both buttons where they should be, and impossible to press. The mod now spots the mismatch (you are holding a key the game knows, the game has heard nothing for a while) and re-wakes the keyboard until it answers.
+
 <h3>KOTOR 2 — action menu:</h3>
 
 - KOTOR 2's fifth action-bar column is reachable. The second game gives every character a combat-behaviour setting — Aggressive and three siblings — in a column the first game does not have, and the mod had no name and no key for it. It is now called Combat Behaviour, sits in the action menu alongside the others, and answers to 8 (apply the current setting) and Shift+8 (open it to pick another), both rebindable. Neither game binds anything to 8 on its own, so this key is the mod's rather than the game's; on KOTOR 1 nothing changes.

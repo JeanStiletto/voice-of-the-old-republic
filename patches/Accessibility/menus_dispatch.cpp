@@ -644,6 +644,12 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
     // dispatcher reads as the linear stage list it always was.
     acc::menus::chain::HandleEsc(activePanel, param_1, param_2, consumed);
 
+    // Keyboard-liveness stamp — see engine_input.h NoteEngineKeyEvent. Both
+    // routes stamp it: a key can reach the manager without reaching the
+    // in-world handler and vice versa, and either one proves the engine's
+    // keyboard is alive.
+    if (param_2 == 128) acc::engine::NoteEngineKeyEvent();
+
     int translated = acc::engine::ManagerTranslateCode(param_1);
     const char* tag = consumed ? " CONSUMED" : "";
     if (translated != param_1) {

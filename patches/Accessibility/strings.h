@@ -1694,6 +1694,7 @@ enum class Id : int {
     HelpKeyMapPosition,
     // Mod features.
     HelpKeyModSettings,
+    HelpKeyCopyLastSpoken,
     // Controller (either game, pad present). Order is the reading order: what
     // the pad does in menus first, then the D-Pad's world job, then the action
     // menu, then the trigger chords, then the remaining buttons.
@@ -1887,6 +1888,13 @@ enum class Id : int {
     KbNameHelpContext,
     KbNameCheckForUpdate,
     KbNameDialogRepeatLine,
+    KbNameCopyLastSpoken,
+
+    // ---- Clipboard (Ctrl+R copies the last spoken text). Feedback only —
+    //      the copied text itself is never re-spoken.
+    ClipboardCopied,
+    ClipboardNothingToCopy,
+    ClipboardFailed,
 
     // ---- Endar Spire tutorial keyboard hints. The vanilla tutorial popups
     //      (tutorial.2da → TutorialBox) and Trask's guided-conversation lines

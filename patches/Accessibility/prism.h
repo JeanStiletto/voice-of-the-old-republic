@@ -62,6 +62,23 @@ int  GetUrgentVolumePercent();
 // Cancel in-progress speech on both channels.
 void Silence();
 
+// ---- Last-utterance capture --------------------------------------------
+//
+// Every Speak/SpeakUrgent that actually reaches a backend records its text
+// here, so a hotkey can act on "the thing I just heard" without each
+// subsystem keeping its own copy. See speech_clipboard.cpp (Ctrl+R).
+//
+// Returns the bytes the caller passed, in the *game* codepage (not the UTF-8
+// the backend receives) — widen with GetSpeechCodepage(). Never null; "" when
+// nothing has been spoken yet. Stable until the next utterance.
+const char* LastSpoken();
+
+// One-shot: the next Speak/SpeakUrgent call does not overwrite LastSpoken().
+// For the mod's own meta-announcements ("copied to clipboard") which would
+// otherwise become the very text the user wanted to act on. Set it
+// immediately before the speak call so exactly that call consumes it.
+void SuppressNextCapture();
+
 // e.g. L"NVDA"; L"none" on init failure. Stable for process lifetime.
 const wchar_t* ActiveScreenReader();
 

@@ -608,6 +608,7 @@ const char* Get(Id id) {
 
 
         case Id::HelpKeyModSettings:     return "Mod-Einstellungen findest du in den Optionen, ganz unten in der Liste";
+        case Id::HelpKeyCopyLastSpoken:  return "Strg und R: den zuletzt gesprochenen Text in die Zwischenablage kopieren";
         case Id::HelpKeyPadMenuNav:          return "In Men\xFCs: Steuerkreuz oder linker Stick bewegen, A best\xE4tigt, B geht zur\xFC" "ck";
         case Id::HelpKeyPadTooltip:          return "Y halten und Steuerkreuz hoch oder runter: ganze Beschreibung vorlesen, ohne zu wechseln";
         case Id::HelpKeyPadInteract:          return "A: Standardaktion am fokussierten Ziel (angreifen, \xF6" "ffnen, sprechen, aufheben)";
@@ -749,6 +750,12 @@ const char* Get(Id id) {
         case Id::KbNameHelpContext:         return "Kontexthilfe";
         case Id::KbNameCheckForUpdate:      return "Nach Update suchen";
         case Id::KbNameDialogRepeatLine:    return "Dialogzeile wiederholen";
+        case Id::KbNameCopyLastSpoken:      return "Zuletzt gesprochenen Text kopieren";
+
+        // ---- Zwischenablage ----
+        case Id::ClipboardCopied:        return "In die Zwischenablage kopiert";
+        case Id::ClipboardNothingToCopy: return "Nichts zu kopieren";
+        case Id::ClipboardFailed:        return "Zwischenablage nicht verf\xFCgbar";
 
         // ---- Endar Spire tutorial keyboard hints (Surface 1: popups) ----
         case Id::TutHintCombatFeat:

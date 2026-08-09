@@ -102,6 +102,7 @@ Die Mod lässt das Standard-Tastaturlayout des Spiels unverändert, mit einer er
 - Shift+H — Die Aktionswarteschlange öffnen (Warteschlange prüfen oder leeren)
 - Shift+L — Stufenaufstieg-Bildschirm öffnen
 - F1 — Die vollständige Tastenliste öffnen oder schließen; Ctrl+F1 — die Tasten für den aktuellen Bildschirm vorlesen
+- Strg+R — Den zuletzt gesprochenen Text in die Zwischenablage kopieren (eine Dialogzeile, einen Journaleintrag, einen NPC-Namen — was zuletzt vorgelesen wurde)
 
 <h3>Mod-Tasten — Zyklus entdeckter Objekte</h3>
 

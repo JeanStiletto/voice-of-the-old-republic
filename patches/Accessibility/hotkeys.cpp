@@ -43,6 +43,17 @@ Binding g_defaults[static_cast<int>(Action::COUNT)] = {};
 struct EdgeState {
     bool now;
     bool last;
+    // Raw physical key state, modifier-blind, for the same binding. Needed
+    // because two Actions can share one key and differ only in modifiers
+    // (Alt+R copies the last spoken text, bare R repeats the dialog line).
+    // Releasing the modifier while the key is still held used to hand the
+    // bare Action a rising edge it never earned: its `now` was false while the
+    // modifier was down, so the moment the modifier lifted it read as a fresh
+    // press. Requiring the KEY to have been up last tick kills that whole
+    // class of leak — a rising edge now means "this key just went down", and
+    // the modifier mask only decides which Action owns that press.
+    bool keyNow;
+    bool keyLast;
     bool claimed;
     // One-shot rising edge from a non-keyboard source (the KOTOR 2 gamepad).
     // Set by PadPress, cleared by the Pressed() that reports it — see the
@@ -130,6 +141,7 @@ const char* const kActionNames[static_cast<int>(Action::COUNT)] = {
     "TurretCyclePrev",
     "TurretCycleNext",
     "DialogRepeatLine",
+    "CopyLastSpoken",
 };
 
 bool IsDownVk(int vk) {
@@ -161,6 +173,12 @@ uint32_t ReadModifiers() {
 
 // Match a binding against the current keyboard state. VK pressed (primary
 // or alt) AND every required mod held AND no forbidden mod held.
+// Modifier-blind half of BindingMatches — is the binding's physical key down?
+bool BindingKeyDown(const Binding& b) {
+    if (b.vk == 0 && b.altVk == 0) return false;
+    return IsDownVk(b.vk) || (b.altVk != 0 && IsDownVk(b.altVk));
+}
+
 bool BindingMatches(const Binding& b, uint32_t mods) {
     if (b.vk == 0 && b.altVk == 0) return false;
     bool keyDown = IsDownVk(b.vk) || (b.altVk != 0 && IsDownVk(b.altVk));
@@ -396,6 +414,22 @@ void InitDefaults() {
     // modifier so it stays distinct from any future Shift/Ctrl+R combo.
     bind(Action::DialogRepeatLine,  'R',       0, 0,         kModShift | kModCtrl | kModAlt | kModAltGr);
 
+    // ----- Clipboard -----
+    // Ctrl+R copies whatever was spoken last (dialog line, journal entry, an NPC
+    // name off the cycle keys) to the Windows clipboard. Sits on the same key as
+    // the two other "repeat/act on what I just heard" binds — bare R re-speaks,
+    // Shift+R is InteractForceRadialSecondary — so the R key reads as one family.
+    //
+    // Ctrl and not Alt: Alt is a Windows SYSTEM key, and Alt+letter left the
+    // game window in the OS keyboard-menu mode that eats input until Alt is
+    // tapped again. Swallowing SC_KEYMENU (focus_guard.cpp) demonstrably did
+    // not clear it — two live rounds still blocked — so the key moved off Alt
+    // entirely. Alt stays viable only for punctuation (PathfindFocusForce).
+    //
+    // AltGr is forbidden alongside Alt: on QWERTZ, AltGr raises kModAlt plus a
+    // phantom Ctrl, so without this AltGr+R would copy.
+    bind(Action::CopyLastSpoken,    'R',       0, kModCtrl,  kModShift | kModAlt | kModAltGr);
+
     // Seed the live table from the freshly-built defaults. User overrides (if
     // any) are layered on top later by EnsureOverridesLoaded once the settings
     // file is reachable (PatchDir known) — see BeginTick.
@@ -471,13 +505,15 @@ void BeginTick() {
     EnsureOverridesLoaded();
     uint32_t mods = ReadModifiers();
     for (int i = 0; i < static_cast<int>(Action::COUNT); ++i) {
-        g_edge[i].now = BindingMatches(g_bindings[i], mods);
+        g_edge[i].now    = BindingMatches(g_bindings[i], mods);
+        g_edge[i].keyNow = BindingKeyDown(g_bindings[i]);
     }
 }
 
 void EndTick() {
     for (int i = 0; i < static_cast<int>(Action::COUNT); ++i) {
-        g_edge[i].last = g_edge[i].now;
+        g_edge[i].last    = g_edge[i].now;
+        g_edge[i].keyLast = g_edge[i].keyNow;
         g_edge[i].claimed = false;
     }
 }
@@ -502,6 +538,8 @@ bool Pressed(Action a) {
         return IsForegroundGame();
     }
     if (!g_edge[idx].now || g_edge[idx].last) return false;
+    // The key itself must have been up last tick — see EdgeState::keyLast.
+    if (g_edge[idx].keyLast) return false;
     return IsForegroundGame();
 }
 

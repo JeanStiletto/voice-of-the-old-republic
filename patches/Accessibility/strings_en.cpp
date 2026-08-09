@@ -589,6 +589,7 @@ const char* Get(Id id) {
 
 
         case Id::HelpKeyModSettings:     return "Mod settings are in Options, at the bottom of the list";
+        case Id::HelpKeyCopyLastSpoken:  return "Control plus R: copy the last spoken text to the clipboard";
         case Id::HelpKeyPadMenuNav:          return "In menus: D-pad or left stick move, A confirms, B goes back";
         case Id::HelpKeyPadTooltip:          return "Hold Y and press the D-pad up or down: read the full description without moving";
         case Id::HelpKeyPadInteract:          return "A: default action on the focused target (attack, open, talk, pick up)";
@@ -729,6 +730,12 @@ const char* Get(Id id) {
         case Id::KbNameHelpContext:         return "Context help";
         case Id::KbNameCheckForUpdate:      return "Check for update";
         case Id::KbNameDialogRepeatLine:    return "Repeat dialog line";
+        case Id::KbNameCopyLastSpoken:      return "Copy last spoken text";
+
+        // ---- Clipboard ----
+        case Id::ClipboardCopied:        return "Copied to clipboard";
+        case Id::ClipboardNothingToCopy: return "Nothing to copy";
+        case Id::ClipboardFailed:        return "Clipboard not available";
 
         // ---- Endar Spire tutorial keyboard hints (Surface 1: popups) ----
         case Id::TutHintCombatFeat:

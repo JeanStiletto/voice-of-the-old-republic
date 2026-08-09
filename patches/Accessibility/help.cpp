@@ -208,6 +208,10 @@ constexpr Entry kEntries[] = {
     // ---- Mod features ----
     // F1-list only — Ctrl+F1 deliberately doesn't mention mod settings.
     { S::HelpKeyModSettings,     Grp::Mod, 0 },
+    // Ctrl+R works on every screen, but Ctrl+F1 only volunteers it where a
+    // player actually wants text out of the game: a dialog line (the
+    // number-heavy terminal riddles), a menu entry, an object announcement.
+    { S::HelpKeyCopyLastSpoken,  Grp::Mod, kWorld | kDialog | kMenu },
 
     // ---- Controller (either game, pad present) ----
     // This section is the ONLY way a blind pad player learns the bindings: on

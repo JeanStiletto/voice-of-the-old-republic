@@ -585,6 +585,7 @@ const char* Get(Id id) {
 
 
         case Id::HelpKeyModSettings:     return "Ustawienia moda s\xB9 w Opcjach, na dole listy";
+        case Id::HelpKeyCopyLastSpoken:  return "Ctrl i R: skopiuj do schowka ostatnio wypowiedziany tekst";
         case Id::HelpKeyPadMenuNav:          return "W menu: krzy\xBF" "ak lub lewa ga\xB3ka przesuwaj\xB9, A zatwierdza, B cofa";
         case Id::HelpKeyPadTooltip:          return "Przytrzymaj Y i naci\x9Cnij krzy\xBF" "ak w g\xF3r\xEA lub w d\xF3\xB3: przeczytaj ca\xB3y opis bez zmiany pozycji";
         case Id::HelpKeyPadInteract:          return "A: domy\x9Clna akcja na wybranym celu (atak, otwarcie, rozmowa, podniesienie)";
@@ -727,6 +728,12 @@ const char* Get(Id id) {
         case Id::KbNameHelpContext:         return "Pomoc kontekstowa";
         case Id::KbNameCheckForUpdate:      return "Sprawd\x9F aktualizacje";
         case Id::KbNameDialogRepeatLine:    return "Powt\xF3rz kwesti\xEA";
+        case Id::KbNameCopyLastSpoken:      return "Skopiuj ostatnio wypowiedziany tekst";
+
+        // ---- Clipboard ----
+        case Id::ClipboardCopied:        return "Skopiowano do schowka";
+        case Id::ClipboardNothingToCopy: return "Nie ma czego kopiowa\xE6";
+        case Id::ClipboardFailed:        return "Schowek niedost\xEApny";
 
         // ---- Endar Spire tutorial keyboard hints (Surface 1: popups) ----
         case Id::TutHintCombatFeat:
