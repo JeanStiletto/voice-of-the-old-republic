@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#include "backend.h"
-#include "backend_registry.h"
-#include "utils.h"
-#include <concurrentqueue/concurrentqueue.h>
-#include <simdutf/simdutf.h>
 #if (defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__) ||      \
      defined(__OpenBSD__) || defined(__DragonFly__)) &&                        \
     !defined(__ANDROID__)
-#ifndef NO_LIBSPIEL
+#ifdef PRISM_HAVE_SPIEL
+#include "../backend.h"
+#include "../backend_catalog.h"
+#include "../utils.h"
 #include <atomic>
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
 #include <gio/gio.h>
 #include <memory>
+#include <moodycamel/concurrentqueue.h>
 #include <mutex>
 #include <optional>
+#include <simdutf.h>
 #include <spiel/spiel.h>
 #include <string>
 #include <thread>
@@ -530,7 +530,7 @@ public:
     const auto snap = voices_snapshot.load(std::memory_order_acquire);
     if (snap == nullptr || snap->empty())
       return std::unexpected(BackendError::InternalBackendError);
-    const size_t i = voice_idx.load(std::memory_order_acquire);
+    const auto i = voice_idx.load(std::memory_order_acquire);
     if (i >= snap->size())
       return std::unexpected(BackendError::InternalBackendError);
     return i;

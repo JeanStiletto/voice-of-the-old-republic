@@ -4,11 +4,11 @@
 #if defined(__x86_64) || defined(__x86_64__) || defined(__amd64__) ||          \
     defined(__amd64) || defined(_M_X64) || defined(_M_IX86) ||                 \
     defined(__i386__)
-#include "backend.h"
-#include "backend_registry.h"
+#include "../backend.h"
+#include "../backend_catalog.h"
 #include <array>
 #include <raw/zdsr.h>
-#include <simdutf/simdutf.h>
+#include <simdutf.h>
 #include <string_view>
 #include <tchar.h>
 #include <tlhelp32.h>
@@ -47,6 +47,11 @@ public:
     }
     features |=
         SUPPORTS_SPEAK | SUPPORTS_OUTPUT | SUPPORTS_IS_SPEAKING | SUPPORTS_STOP;
+    // Advertised only when the installed ZDSRAPI actually exports Braille —
+    // it is resolved optionally, so this cannot be unconditional the way it is
+    // upstream.
+    if (load() && Braille != nullptr)
+      features |= SUPPORTS_BRAILLE;
     return features;
   }
 
@@ -61,9 +66,10 @@ public:
   }
 
   BackendResult<> speak(std::string_view text, bool interrupt) override {
+    // Upstream dropped its GetSpeakState() availability check here in 0.17.3;
+    // the load() guard stays, because with the entry points resolved at runtime
+    // these are null pointers until it has run.
     if (!load())
-      return std::unexpected(BackendError::BackendNotAvailable);
-    if (const auto res = GetSpeakState(); res == 1 || res == 2)
       return std::unexpected(BackendError::BackendNotAvailable);
     const auto len = simdutf::utf16_length_from_utf8(text.data(), text.size());
     std::wstring wstr;
@@ -79,14 +85,37 @@ public:
     return {};
   }
 
+  BackendResult<> braille(std::string_view text) override {
+    // Braille is resolved optionally: a ZDSRAPI predating it must still be able
+    // to speak, so a missing export costs braille alone.
+    if (!load() || Braille == nullptr)
+      return std::unexpected(BackendError::NotImplemented);
+    const auto len = simdutf::utf16_length_from_utf8(text.data(), text.size());
+    std::wstring wstr;
+    wstr.resize(len);
+    if (const auto res = simdutf::convert_utf8_to_utf16le(
+            text.data(), text.size(),
+            reinterpret_cast<char16_t *>(wstr.data()));
+        res == 0)
+      return std::unexpected(BackendError::InvalidUtf8);
+    if (const auto res = Braille(wstr.c_str(), FALSE); res > 0)
+      return std::unexpected(BackendError::InternalBackendError);
+    return {};
+  }
+
   BackendResult<> output(std::string_view text, bool interrupt) override {
-    return speak(text, interrupt);
+    if (const auto res = speak(text, interrupt); !res)
+      return res;
+    // A ZDSRAPI without the Braille export still spoke the text, so the call
+    // succeeded as far as the caller is concerned.
+    if (const auto res = braille(text);
+        !res && res.error() != BackendError::NotImplemented)
+      return res;
+    return {};
   }
 
   BackendResult<> stop() override {
     if (!load())
-      return std::unexpected(BackendError::BackendNotAvailable);
-    if (const auto res = GetSpeakState(); res == 1 || res == 2)
       return std::unexpected(BackendError::BackendNotAvailable);
     StopSpeak();
     return {};
@@ -96,9 +125,6 @@ public:
     if (!load())
       return std::unexpected(BackendError::BackendNotAvailable);
     switch (GetSpeakState()) {
-    case 1:
-    case 2:
-      return std::unexpected(BackendError::BackendNotAvailable);
     case 3:
       return true;
     default:

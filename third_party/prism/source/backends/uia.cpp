@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
 #ifdef _WIN32
-#include "backend.h"
-#include "backend_registry.h"
-#include <simdutf/simdutf.h>
+#include "../backend.h"
+#include "../backend_catalog.h"
+#include <simdutf.h>
 #ifdef _MSC_VER
 #pragma warning(push, 0)
 #pragma warning(disable : 28182)
 #endif
-#include <concurrentqueue/concurrentqueue.h>
+#include <moodycamel/concurrentqueue.h>
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif
@@ -18,7 +18,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
-#include <format>
+#include <fmt/xchar.h>
 #include <moderncom/com_ptr.h>
 #include <moderncom/interfaces.h>
 #include <optional>
@@ -153,8 +153,9 @@ public:
         SysFreeString(bstr_activity);
       return E_OUTOFMEMORY;
     }
-    const auto processing = interrupt ? NotificationProcessing_ImportantAll
-                                      : NotificationProcessing_All;
+    const auto processing = interrupt
+                                ? NotificationProcessing_ImportantMostRecent
+                                : NotificationProcessing_All;
     const auto hr = UiaRaiseNotificationEvent(
         static_cast<IRawElementProviderSimple *>(this),
         NotificationKind_ActionCompleted, processing, bstr_text, bstr_activity);
@@ -229,7 +230,7 @@ private:
         CloseDesktop(target_desktop);
         target_desktop.store(nullptr, std::memory_order_release);
         {
-          std::lock_guard g(ready_mtx);
+          std::scoped_lock g(ready_mtx);
           ready = false;
         }
         ready_cv.notify_all();
@@ -241,7 +242,7 @@ private:
     handle_guard stop_event(CreateEvent(nullptr, TRUE, FALSE, nullptr));
     if (stop_event.h == nullptr) {
       {
-        std::lock_guard g(ready_mtx);
+        std::scoped_lock g(ready_mtx);
         ready = false;
       }
       ready_cv.notify_all();
@@ -254,14 +255,14 @@ private:
       const bool should_uninit = SUCCEEDED(coinit_hr);
       if (FAILED(coinit_hr) && coinit_hr != RPC_E_CHANGED_MODE) {
         {
-          std::lock_guard g(ready_mtx);
+          std::scoped_lock g(ready_mtx);
           ready = false;
         }
         ready_cv.notify_all();
         return;
       }
       const HINSTANCE hinst = GetModuleHandle(nullptr);
-      window_class_name = std::format(L"PrismUIANotificationWindow_{}",
+      window_class_name = fmt::format(L"PrismUIANotificationWindow_{}",
                                       reinterpret_cast<uintptr_t>(this));
       WNDCLASSEX wc{};
       wc.cbSize = sizeof(wc);
@@ -272,7 +273,7 @@ private:
         if (should_uninit)
           CoUninitialize();
         {
-          std::lock_guard g(ready_mtx);
+          std::scoped_lock g(ready_mtx);
           ready = false;
         }
         ready_cv.notify_all();
@@ -289,7 +290,7 @@ private:
         if (should_uninit)
           CoUninitialize();
         {
-          std::lock_guard g(ready_mtx);
+          std::scoped_lock g(ready_mtx);
           ready = false;
         }
         ready_cv.notify_all();
@@ -302,7 +303,7 @@ private:
       p->AddRef();
       provider.store(p, std::memory_order_release);
       {
-        std::lock_guard g(ready_mtx);
+        std::scoped_lock g(ready_mtx);
         ready = true;
       }
       ready_cv.notify_all();

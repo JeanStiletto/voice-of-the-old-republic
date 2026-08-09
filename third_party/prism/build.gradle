@@ -1,7 +1,7 @@
 import com.android.build.api.artifact.SingleArtifact
 plugins {
     id "com.android.library" version "9.2.1"
-    id "com.diffplug.spotless" version "8.4.0"
+    id "com.diffplug.spotless" version "8.8.0"
 }
 layout.buildDirectory.set(layout.projectDirectory.dir("build/android/gradle"))
 dependencies {
@@ -151,6 +151,7 @@ spotless {
     }
     java {
         target 'source/**/*.java', 'tests/**/*.java'
+        targetExclude '**/build/**', 'source/backends/android/BackendError.java', 'source/backends/android/BackendFeatures.java', 'source/backends/android/Unit.java', 'source/backends/android/AudioCallback.java', 'source/backends/android/AbstractTextToSpeechBackend.java', 'source/backends/android/TtsBackendModule.java'
         cleanthat()
         googleJavaFormat()
         leadingTabsToSpaces(4)

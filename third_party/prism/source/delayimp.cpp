@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 
 #ifdef _WIN32
+#include "logging.h"
+#include <windows.h>
 #include <array>
 #include <cstring>
 #include <cwchar>
+#include <delayimp.h>
 #include <filesystem>
 #include <tchar.h>
 #include <utility>
-#include <windows.h>
-#include <delayimp.h>
 
 template <typename T> static constexpr FARPROC stub_cast(T func) {
   // NOLINTNEXTLINE(bugprone-casting-through-void)
@@ -53,6 +54,11 @@ static int WINAPI stub_zdsr_Speak([[maybe_unused]] const WCHAR *text,
 static int WINAPI stub_zdsr_GetSpeakState() { return 2; }
 
 static void WINAPI stub_zdsr_StopSpeak() {}
+
+static int WINAPI stub_zdsr_Braille([[maybe_unused]] const WCHAR *text,
+                                    [[maybe_unused]] BOOL bFlashMessage) {
+  return 8; // Command not successfully delivered
+}
 } // namespace zdsr
 
 namespace boy_pc_reader {
@@ -155,7 +161,7 @@ static bool __stdcall stub_BoyCtrlVerify([[maybe_unused]] const char *key) {
 }
 
 static bool __stdcall
-stub_BoyCtrlSetAnyKeyStopSpeaking([[maybe_unused]] bool withSlave) {
+stub_BoyCtrlSetAnyKeyBreak([[maybe_unused]] bool withSlave) {
   return false;
 }
 
@@ -430,360 +436,365 @@ prism_speechd_stop_stub([[maybe_unused]] PrismSpeechDispatcherInstance *h) {
 }
 } // namespace prism_speech_dispatcher_bridge
 
-static const
-#if defined(__x86_64) || defined(__x86_64__) || defined(__amd64__) ||          \
-    defined(__amd64) || defined(_M_X64) || defined(_M_IX86) ||                 \
-    defined(__i386__)
-    auto stubs = std::to_array<StubEntry>({
-        {.dll = ZDSR_DLL,
-         .func = "InitTTS",
-         .stub = stub_cast(zdsr::stub_zdsr_InitTTS)},
-        {.dll = ZDSR_DLL,
-         .func = "Speak",
-         .stub = stub_cast(zdsr::stub_zdsr_Speak)},
-        {.dll = ZDSR_DLL,
-         .func = "GetSpeakState",
-         .stub = stub_cast(zdsr::stub_zdsr_GetSpeakState)},
-        {.dll = ZDSR_DLL,
-         .func = "StopSpeak",
-         .stub = stub_cast(zdsr::stub_zdsr_StopSpeak)},
-        {.dll = BOY_PC_READER_DLL,
-         .func = "BoyCtrlInitialize",
-         .stub = stub_cast(boy_pc_reader::stub_BoyCtrlInitialize)},
-        {.dll = BOY_PC_READER_DLL,
-         .func = "BoyCtrlInitializeAnsi",
-         .stub = stub_cast(boy_pc_reader::stub_BoyCtrlInitializeAnsi)},
-        {.dll = BOY_PC_READER_DLL,
-         .func = "BoyCtrlInitializeU8",
-         .stub = stub_cast(boy_pc_reader::stub_BoyCtrlInitializeU8)},
-        {.dll = BOY_PC_READER_DLL,
-         .func = "BoyCtrlSpeak",
-         .stub = stub_cast(boy_pc_reader::stub_BoyCtrlSpeak)},
-        {.dll = BOY_PC_READER_DLL,
-         .func = "BoyCtrlSpeakEx",
-         .stub = stub_cast(boy_pc_reader::stub_BoyCtrlSpeakEx)},
-        {.dll = BOY_PC_READER_DLL,
-         .func = "BoyCtrlSpeakAnsi",
-         .stub = stub_cast(boy_pc_reader::stub_BoyCtrlSpeakAnsi)},
-        {.dll = BOY_PC_READER_DLL,
-         .func = "BoyCtrlSpeakU8",
-         .stub = stub_cast(boy_pc_reader::stub_BoyCtrlSpeakU8)},
-        {.dll = BOY_PC_READER_DLL,
-         .func = "BoyCtrlStopSpeaking",
-         .stub = stub_cast(boy_pc_reader::stub_BoyCtrlStopSpeaking)},
-        {.dll = BOY_PC_READER_DLL,
-         .func = "BoyCtrlStopSpeakingEx",
-         .stub = stub_cast(boy_pc_reader::stub_BoyCtrlStopSpeakingEx)},
-        {.dll = BOY_PC_READER_DLL,
-         .func = "BoyCtrlPauseScreenReader",
-         .stub = stub_cast(boy_pc_reader::stub_BoyCtrlPauseScreenReader)},
-        {.dll = BOY_PC_READER_DLL,
-         .func = "BoyCtrlUninitialize",
-         .stub = stub_cast(boy_pc_reader::stub_BoyCtrlUninitialize)},
-        {.dll = BOY_PC_READER_DLL,
-         .func = "BoyCtrlIsReaderRunning",
-         .stub = stub_cast(boy_pc_reader::stub_BoyCtrlIsReaderRunning)},
-        {.dll = BOY_PC_READER_DLL,
-         .func = "BoyCtrlGetReaderState",
-         .stub = stub_cast(boy_pc_reader::stub_BoyCtrlGetReaderState)},
-        {.dll = BOY_PC_READER_DLL,
-         .func = "BoyCtrlVerify",
-         .stub = stub_cast(boy_pc_reader::stub_BoyCtrlVerify)},
-        {.dll = BOY_PC_READER_DLL,
-         .func = "BoyCtrlSetAnyKeyStopSpeaking",
-         .stub = stub_cast(boy_pc_reader::stub_BoyCtrlSetAnyKeyStopSpeaking)},
-        {.dll = BOY_PC_READER_DLL,
-         .func = "BoyCtrlReportInfo",
-         .stub = stub_cast(boy_pc_reader::stub_BoyCtrlReportInfo)},
-        {.dll = BOY_PC_READER_DLL,
-         .func = "BoyCtrlStartTextToAudio",
-         .stub = stub_cast(boy_pc_reader::stub_BoyCtrlStartTextToAudio)},
-        {.dll = BOY_PC_READER_DLL,
-         .func = "BoyCtrlCancelTextToAudio",
-         .stub = stub_cast(boy_pc_reader::stub_BoyCtrlCancelTextToAudio)},
-        {.dll = BOY_PC_READER_DLL,
-         .func = "BoyCtrlActivateYTApp",
-         .stub = stub_cast(boy_pc_reader::stub_BoyCtrlActivateYTApp)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKStatus",
-         .stub = stub_cast(pctalker::stub_PCTKStatus)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKGetVersion",
-         .stub = stub_cast(pctalker::stub_PCTKGetVersion)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKPRead",
-         .stub = stub_cast(pctalker::stub_PCTKPRead)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKPReadEx",
-         .stub = stub_cast(pctalker::stub_PCTKPReadEx)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKPReadW",
-         .stub = stub_cast(pctalker::stub_PCTKPReadW)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKPReadExW",
-         .stub = stub_cast(pctalker::stub_PCTKPReadExW)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKVReset",
-         .stub = stub_cast(pctalker::stub_PCTKVReset)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKGetVStatus",
-         .stub = stub_cast(pctalker::stub_PCTKGetVStatus)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKVoiceGuide",
-         .stub = stub_cast(pctalker::stub_PCTKVoiceGuide)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKBeep",
-         .stub = stub_cast(pctalker::stub_PCTKBeep)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKCGuide",
-         .stub = stub_cast(pctalker::stub_PCTKCGuide)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKCGuideEx",
-         .stub = stub_cast(pctalker::stub_PCTKCGuideEx)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKCGuideW",
-         .stub = stub_cast(pctalker::stub_PCTKCGuideW)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKCGuideExW",
-         .stub = stub_cast(pctalker::stub_PCTKCGuideExW)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKGetStatus",
-         .stub = stub_cast(pctalker::stub_PCTKGetStatus)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKSetStatus",
-         .stub = stub_cast(pctalker::stub_PCTKSetStatus)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKCommand",
-         .stub = stub_cast(pctalker::stub_PCTKCommand)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKLoadUserDict",
-         .stub = stub_cast(pctalker::stub_PCTKLoadUserDict)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKPinStatus",
-         .stub = stub_cast(pctalker::stub_PCTKPinStatus)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKPinFocus",
-         .stub = stub_cast(pctalker::stub_PCTKPinFocus)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKPinFocusW",
-         .stub = stub_cast(pctalker::stub_PCTKPinFocusW)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKPinIsFocus",
-         .stub = stub_cast(pctalker::stub_PCTKPinIsFocus)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKPinWrite",
-         .stub = stub_cast(pctalker::stub_PCTKPinWrite)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKPinWriteW",
-         .stub = stub_cast(pctalker::stub_PCTKPinWriteW)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKPinEDWrite",
-         .stub = stub_cast(pctalker::stub_PCTKPinEDWrite)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKPinEDWriteW",
-         .stub = stub_cast(pctalker::stub_PCTKPinEDWriteW)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKPinStatusCell",
-         .stub = stub_cast(pctalker::stub_PCTKPinStatusCell)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKPinStatusCellW",
-         .stub = stub_cast(pctalker::stub_PCTKPinStatusCellW)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKPinReset",
-         .stub = stub_cast(pctalker::stub_PCTKPinReset)},
-        {.dll = PCTK_DLL,
-         .func = "SoundMessage",
-         .stub = stub_cast(pctalker::stub_SoundMessage)},
-        {.dll = PCTK_DLL,
-         .func = "SoundStatus",
-         .stub = stub_cast(pctalker::stub_SoundStatus)},
-        {.dll = PCTK_DLL,
-         .func = "SoundModifyMode",
-         .stub = stub_cast(pctalker::stub_SoundModifyMode)},
-        {.dll = PCTK_DLL,
-         .func = "SoundPause",
-         .stub = stub_cast(pctalker::stub_SoundPause)},
-        {.dll = PCTK_DLL,
-         .func = "AGSEvent",
-         .stub = stub_cast(pctalker::stub_AGSEvent)},
-        {.dll = PCTK_DLL,
-         .func = "GetUIActionMode",
-         .stub = stub_cast(pctalker::stub_GetUIActionMode)},
-        {.dll = PCTK_DLL,
-         .func = "IsImmInput",
-         .stub = stub_cast(pctalker::stub_IsImmInput)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKEventHook",
-         .stub = stub_cast(pctalker::stub_PCTKEventHook)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKGetVoiceLog",
-         .stub = stub_cast(pctalker::stub_PCTKGetVoiceLog)},
-        {.dll = PCTK_DLL,
-         .func = "SetKeyBreak",
-         .stub = stub_cast(pctalker::stub_SetKeyBreak)},
-        {.dll = PCTK_DLL,
-         .func = "EncodeFlags",
-         .stub = stub_cast(pctalker::stub_EncodeFlags)},
-        {.dll = PCTK_DLL,
-         .func = "dic_regist",
-         .stub = stub_cast(pctalker::stub_dic_regist)},
-        {.dll = PCTK_DLL,
-         .func = "dic_regist_detail",
-         .stub = stub_cast(pctalker::stub_dic_regist_detail)},
-        {.dll = PCTK_DLL,
-         .func = "dic_reg_from_file",
-         .stub = stub_cast(pctalker::stub_dic_reg_from_file)},
-        {.dll = PCTK_DLL,
-         .func = "dic_text_out",
-         .stub = stub_cast(pctalker::stub_dic_text_out)},
-        {.dll = PCTK_DLL,
-         .func = "dic_reg_detail_from_file",
-         .stub = stub_cast(pctalker::stub_dic_reg_detail_from_file)},
-        {.dll = PCTK_DLL,
-         .func = "dic_detail_text_out",
-         .stub = stub_cast(pctalker::stub_dic_detail_text_out)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKSTATUS",
-         .stub = stub_cast(pctalker::stub_PCTKStatus)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKGETVERSION",
-         .stub = stub_cast(pctalker::stub_PCTKGetVersion)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKGETVSTATUS",
-         .stub = stub_cast(pctalker::stub_PCTKGetVStatus)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKGETSTATUS",
-         .stub = stub_cast(pctalker::stub_PCTKGetStatus)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKSETSTATUS",
-         .stub = stub_cast(pctalker::stub_PCTKSetStatus)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKPREAD",
-         .stub = stub_cast(pctalker::stub_PCTKPRead)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKPREADEX",
-         .stub = stub_cast(pctalker::stub_PCTKPReadEx)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKPREADW",
-         .stub = stub_cast(pctalker::stub_PCTKPReadW)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKPREADEXW",
-         .stub = stub_cast(pctalker::stub_PCTKPReadExW)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKCGUIDE",
-         .stub = stub_cast(pctalker::stub_PCTKCGuide)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKCGUIDEEX",
-         .stub = stub_cast(pctalker::stub_PCTKCGuideEx)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKCGUIDEW",
-         .stub = stub_cast(pctalker::stub_PCTKCGuideW)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKCGUIDEEXW",
-         .stub = stub_cast(pctalker::stub_PCTKCGuideExW)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKCOMMAND",
-         .stub = stub_cast(pctalker::stub_PCTKCommand)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKVOICEGUIDE",
-         .stub = stub_cast(pctalker::stub_PCTKVoiceGuide)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKVRESET",
-         .stub = stub_cast(pctalker::stub_PCTKVReset)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKBEEP",
-         .stub = stub_cast(pctalker::stub_PCTKBeep)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKLOADUSERDICT",
-         .stub = stub_cast(pctalker::stub_PCTKLoadUserDict)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKEVENTHOOK",
-         .stub = stub_cast(pctalker::stub_PCTKEventHook)},
-        {.dll = PCTK_DLL,
-         .func = "PCTKGETVOICELOG",
-         .stub = stub_cast(pctalker::stub_PCTKGetVoiceLog)},
-        {.dll = PRISM_ORCA_BRIDGE_DLL,
-         .func = "prism_orca_available",
-         .stub = stub_cast(prism_orca_bridge::prism_orca_available_stub)},
-        {.dll = PRISM_ORCA_BRIDGE_DLL,
-         .func = "prism_orca_create",
-         .stub = stub_cast(prism_orca_bridge::prism_orca_create_stub)},
-        {.dll = PRISM_ORCA_BRIDGE_DLL,
-         .func = "prism_orca_destroy",
-         .stub = stub_cast(prism_orca_bridge::prism_orca_destroy_stub)},
-        {.dll = PRISM_ORCA_BRIDGE_DLL,
-         .func = "prism_orca_speak",
-         .stub = stub_cast(prism_orca_bridge::prism_orca_speak_stub)},
-        {.dll = PRISM_ORCA_BRIDGE_DLL,
-         .func = "prism_orca_stop",
-         .stub = stub_cast(prism_orca_bridge::prism_orca_stop_stub)},
-        {.dll = PRISM_SPEECH_DISPATCHER_BRIDGE_DLL,
-         .func = "prism_speechd_available",
-         .stub = stub_cast(
-             prism_speech_dispatcher_bridge::prism_speechd_available_stub)},
-        {.dll = PRISM_SPEECH_DISPATCHER_BRIDGE_DLL,
-         .func = "prism_speechd_create",
-         .stub = stub_cast(
-             prism_speech_dispatcher_bridge::prism_speechd_create_stub)},
-        {.dll = PRISM_SPEECH_DISPATCHER_BRIDGE_DLL,
-         .func = "prism_speechd_destroy",
-         .stub = stub_cast(
-             prism_speech_dispatcher_bridge::prism_speechd_destroy_stub)},
-        {.dll = PRISM_SPEECH_DISPATCHER_BRIDGE_DLL,
-         .func = "prism_speechd_speak",
-         .stub = stub_cast(
-             prism_speech_dispatcher_bridge::prism_speechd_speak_stub)},
-        {.dll = PRISM_SPEECH_DISPATCHER_BRIDGE_DLL,
-         .func = "prism_speechd_stop",
-         .stub = stub_cast(
-             prism_speech_dispatcher_bridge::prism_speechd_stop_stub)},
-    });
-#else
-    auto stubs = std::to_array<StubEntry>({
-        {.dll = PRISM_ORCA_BRIDGE_DLL,
-         .func = "prism_orca_available",
-         .stub = stub_cast(prism_orca_bridge::prism_orca_available_stub)},
-        {.dll = PRISM_ORCA_BRIDGE_DLL,
-         .func = "prism_orca_create",
-         .stub = stub_cast(prism_orca_bridge::prism_orca_create_stub)},
-        {.dll = PRISM_ORCA_BRIDGE_DLL,
-         .func = "prism_orca_destroy",
-         .stub = stub_cast(prism_orca_bridge::prism_orca_destroy_stub)},
-        {.dll = PRISM_ORCA_BRIDGE_DLL,
-         .func = "prism_orca_speak",
-         .stub = stub_cast(prism_orca_bridge::prism_orca_speak_stub)},
-        {.dll = PRISM_ORCA_BRIDGE_DLL,
-         .func = "prism_orca_stop",
-         .stub = stub_cast(prism_orca_bridge::prism_orca_stop_stub)},
-        {.dll = PRISM_SPEECH_DISPATCHER_BRIDGE_DLL,
-         .func = "prism_speechd_available",
-         .stub = stub_cast(
-             prism_speech_dispatcher_bridge::prism_speechd_available_stub)},
-        {.dll = PRISM_SPEECH_DISPATCHER_BRIDGE_DLL,
-         .func = "prism_speechd_create",
-         .stub = stub_cast(
-             prism_speech_dispatcher_bridge::prism_speechd_create_stub)},
-        {.dll = PRISM_SPEECH_DISPATCHER_BRIDGE_DLL,
-         .func = "prism_speechd_destroy",
-         .stub = stub_cast(
-             prism_speech_dispatcher_bridge::prism_speechd_destroy_stub)},
-        {.dll = PRISM_SPEECH_DISPATCHER_BRIDGE_DLL,
-         .func = "prism_speechd_speak",
-         .stub = stub_cast(
-             prism_speech_dispatcher_bridge::prism_speechd_speak_stub)},
-        {.dll = PRISM_SPEECH_DISPATCHER_BRIDGE_DLL,
-         .func = "prism_speechd_stop",
-         .stub = stub_cast(
-             prism_speech_dispatcher_bridge::prism_speechd_stop_stub)},
-    });
-#endif
-
-static int dummy_count = 0;
+static std::atomic_unsigned_lock_free dummy_count = 0;
 
 static FARPROC WINAPI DelayLoadFailureHook(unsigned dliNotify,
                                            PDelayLoadInfo pdli) {
+  static const LogSource log{"prism/delayimp"};
+  static const
+#if defined(__x86_64) || defined(__x86_64__) || defined(__amd64__) ||          \
+    defined(__amd64) || defined(_M_X64) || defined(_M_IX86) ||                 \
+    defined(__i386__)
+      auto stubs = std::to_array<StubEntry>({
+          {.dll = ZDSR_DLL,
+           .func = "InitTTS",
+           .stub = stub_cast(zdsr::stub_zdsr_InitTTS)},
+          {.dll = ZDSR_DLL,
+           .func = "Speak",
+           .stub = stub_cast(zdsr::stub_zdsr_Speak)},
+          {.dll = ZDSR_DLL,
+           .func = "GetSpeakState",
+           .stub = stub_cast(zdsr::stub_zdsr_GetSpeakState)},
+          {.dll = ZDSR_DLL,
+           .func = "StopSpeak",
+           .stub = stub_cast(zdsr::stub_zdsr_StopSpeak)},
+          {.dll = ZDSR_DLL,
+           .func = "Braille",
+           .stub = stub_cast(zdsr::stub_zdsr_Braille)},
+          {.dll = BOY_PC_READER_DLL,
+           .func = "BoyCtrlInitialize",
+           .stub = stub_cast(boy_pc_reader::stub_BoyCtrlInitialize)},
+          {.dll = BOY_PC_READER_DLL,
+           .func = "BoyCtrlInitializeAnsi",
+           .stub = stub_cast(boy_pc_reader::stub_BoyCtrlInitializeAnsi)},
+          {.dll = BOY_PC_READER_DLL,
+           .func = "BoyCtrlInitializeU8",
+           .stub = stub_cast(boy_pc_reader::stub_BoyCtrlInitializeU8)},
+          {.dll = BOY_PC_READER_DLL,
+           .func = "BoyCtrlSpeak",
+           .stub = stub_cast(boy_pc_reader::stub_BoyCtrlSpeak)},
+          {.dll = BOY_PC_READER_DLL,
+           .func = "BoyCtrlSpeakEx",
+           .stub = stub_cast(boy_pc_reader::stub_BoyCtrlSpeakEx)},
+          {.dll = BOY_PC_READER_DLL,
+           .func = "BoyCtrlSpeakAnsi",
+           .stub = stub_cast(boy_pc_reader::stub_BoyCtrlSpeakAnsi)},
+          {.dll = BOY_PC_READER_DLL,
+           .func = "BoyCtrlSpeakU8",
+           .stub = stub_cast(boy_pc_reader::stub_BoyCtrlSpeakU8)},
+          {.dll = BOY_PC_READER_DLL,
+           .func = "BoyCtrlStopSpeaking",
+           .stub = stub_cast(boy_pc_reader::stub_BoyCtrlStopSpeaking)},
+          {.dll = BOY_PC_READER_DLL,
+           .func = "BoyCtrlStopSpeakingEx",
+           .stub = stub_cast(boy_pc_reader::stub_BoyCtrlStopSpeakingEx)},
+          {.dll = BOY_PC_READER_DLL,
+           .func = "BoyCtrlPauseScreenReader",
+           .stub = stub_cast(boy_pc_reader::stub_BoyCtrlPauseScreenReader)},
+          {.dll = BOY_PC_READER_DLL,
+           .func = "BoyCtrlUninitialize",
+           .stub = stub_cast(boy_pc_reader::stub_BoyCtrlUninitialize)},
+          {.dll = BOY_PC_READER_DLL,
+           .func = "BoyCtrlIsReaderRunning",
+           .stub = stub_cast(boy_pc_reader::stub_BoyCtrlIsReaderRunning)},
+          {.dll = BOY_PC_READER_DLL,
+           .func = "BoyCtrlGetReaderState",
+           .stub = stub_cast(boy_pc_reader::stub_BoyCtrlGetReaderState)},
+          {.dll = BOY_PC_READER_DLL,
+           .func = "BoyCtrlVerify",
+           .stub = stub_cast(boy_pc_reader::stub_BoyCtrlVerify)},
+          {.dll = BOY_PC_READER_DLL,
+           .func = "BoyCtrlSetAnyKeyBreak",
+           .stub = stub_cast(boy_pc_reader::stub_BoyCtrlSetAnyKeyBreak)},
+          {.dll = BOY_PC_READER_DLL,
+           .func = "BoyCtrlReportInfo",
+           .stub = stub_cast(boy_pc_reader::stub_BoyCtrlReportInfo)},
+          {.dll = BOY_PC_READER_DLL,
+           .func = "BoyCtrlStartTextToAudio",
+           .stub = stub_cast(boy_pc_reader::stub_BoyCtrlStartTextToAudio)},
+          {.dll = BOY_PC_READER_DLL,
+           .func = "BoyCtrlCancelTextToAudio",
+           .stub = stub_cast(boy_pc_reader::stub_BoyCtrlCancelTextToAudio)},
+          {.dll = BOY_PC_READER_DLL,
+           .func = "BoyCtrlActivateYTApp",
+           .stub = stub_cast(boy_pc_reader::stub_BoyCtrlActivateYTApp)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKStatus",
+           .stub = stub_cast(pctalker::stub_PCTKStatus)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKGetVersion",
+           .stub = stub_cast(pctalker::stub_PCTKGetVersion)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKPRead",
+           .stub = stub_cast(pctalker::stub_PCTKPRead)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKPReadEx",
+           .stub = stub_cast(pctalker::stub_PCTKPReadEx)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKPReadW",
+           .stub = stub_cast(pctalker::stub_PCTKPReadW)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKPReadExW",
+           .stub = stub_cast(pctalker::stub_PCTKPReadExW)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKVReset",
+           .stub = stub_cast(pctalker::stub_PCTKVReset)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKGetVStatus",
+           .stub = stub_cast(pctalker::stub_PCTKGetVStatus)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKVoiceGuide",
+           .stub = stub_cast(pctalker::stub_PCTKVoiceGuide)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKBeep",
+           .stub = stub_cast(pctalker::stub_PCTKBeep)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKCGuide",
+           .stub = stub_cast(pctalker::stub_PCTKCGuide)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKCGuideEx",
+           .stub = stub_cast(pctalker::stub_PCTKCGuideEx)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKCGuideW",
+           .stub = stub_cast(pctalker::stub_PCTKCGuideW)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKCGuideExW",
+           .stub = stub_cast(pctalker::stub_PCTKCGuideExW)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKGetStatus",
+           .stub = stub_cast(pctalker::stub_PCTKGetStatus)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKSetStatus",
+           .stub = stub_cast(pctalker::stub_PCTKSetStatus)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKCommand",
+           .stub = stub_cast(pctalker::stub_PCTKCommand)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKLoadUserDict",
+           .stub = stub_cast(pctalker::stub_PCTKLoadUserDict)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKPinStatus",
+           .stub = stub_cast(pctalker::stub_PCTKPinStatus)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKPinFocus",
+           .stub = stub_cast(pctalker::stub_PCTKPinFocus)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKPinFocusW",
+           .stub = stub_cast(pctalker::stub_PCTKPinFocusW)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKPinIsFocus",
+           .stub = stub_cast(pctalker::stub_PCTKPinIsFocus)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKPinWrite",
+           .stub = stub_cast(pctalker::stub_PCTKPinWrite)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKPinWriteW",
+           .stub = stub_cast(pctalker::stub_PCTKPinWriteW)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKPinEDWrite",
+           .stub = stub_cast(pctalker::stub_PCTKPinEDWrite)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKPinEDWriteW",
+           .stub = stub_cast(pctalker::stub_PCTKPinEDWriteW)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKPinStatusCell",
+           .stub = stub_cast(pctalker::stub_PCTKPinStatusCell)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKPinStatusCellW",
+           .stub = stub_cast(pctalker::stub_PCTKPinStatusCellW)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKPinReset",
+           .stub = stub_cast(pctalker::stub_PCTKPinReset)},
+          {.dll = PCTK_DLL,
+           .func = "SoundMessage",
+           .stub = stub_cast(pctalker::stub_SoundMessage)},
+          {.dll = PCTK_DLL,
+           .func = "SoundStatus",
+           .stub = stub_cast(pctalker::stub_SoundStatus)},
+          {.dll = PCTK_DLL,
+           .func = "SoundModifyMode",
+           .stub = stub_cast(pctalker::stub_SoundModifyMode)},
+          {.dll = PCTK_DLL,
+           .func = "SoundPause",
+           .stub = stub_cast(pctalker::stub_SoundPause)},
+          {.dll = PCTK_DLL,
+           .func = "AGSEvent",
+           .stub = stub_cast(pctalker::stub_AGSEvent)},
+          {.dll = PCTK_DLL,
+           .func = "GetUIActionMode",
+           .stub = stub_cast(pctalker::stub_GetUIActionMode)},
+          {.dll = PCTK_DLL,
+           .func = "IsImmInput",
+           .stub = stub_cast(pctalker::stub_IsImmInput)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKEventHook",
+           .stub = stub_cast(pctalker::stub_PCTKEventHook)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKGetVoiceLog",
+           .stub = stub_cast(pctalker::stub_PCTKGetVoiceLog)},
+          {.dll = PCTK_DLL,
+           .func = "SetKeyBreak",
+           .stub = stub_cast(pctalker::stub_SetKeyBreak)},
+          {.dll = PCTK_DLL,
+           .func = "EncodeFlags",
+           .stub = stub_cast(pctalker::stub_EncodeFlags)},
+          {.dll = PCTK_DLL,
+           .func = "dic_regist",
+           .stub = stub_cast(pctalker::stub_dic_regist)},
+          {.dll = PCTK_DLL,
+           .func = "dic_regist_detail",
+           .stub = stub_cast(pctalker::stub_dic_regist_detail)},
+          {.dll = PCTK_DLL,
+           .func = "dic_reg_from_file",
+           .stub = stub_cast(pctalker::stub_dic_reg_from_file)},
+          {.dll = PCTK_DLL,
+           .func = "dic_text_out",
+           .stub = stub_cast(pctalker::stub_dic_text_out)},
+          {.dll = PCTK_DLL,
+           .func = "dic_reg_detail_from_file",
+           .stub = stub_cast(pctalker::stub_dic_reg_detail_from_file)},
+          {.dll = PCTK_DLL,
+           .func = "dic_detail_text_out",
+           .stub = stub_cast(pctalker::stub_dic_detail_text_out)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKSTATUS",
+           .stub = stub_cast(pctalker::stub_PCTKStatus)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKGETVERSION",
+           .stub = stub_cast(pctalker::stub_PCTKGetVersion)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKGETVSTATUS",
+           .stub = stub_cast(pctalker::stub_PCTKGetVStatus)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKGETSTATUS",
+           .stub = stub_cast(pctalker::stub_PCTKGetStatus)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKSETSTATUS",
+           .stub = stub_cast(pctalker::stub_PCTKSetStatus)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKPREAD",
+           .stub = stub_cast(pctalker::stub_PCTKPRead)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKPREADEX",
+           .stub = stub_cast(pctalker::stub_PCTKPReadEx)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKPREADW",
+           .stub = stub_cast(pctalker::stub_PCTKPReadW)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKPREADEXW",
+           .stub = stub_cast(pctalker::stub_PCTKPReadExW)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKCGUIDE",
+           .stub = stub_cast(pctalker::stub_PCTKCGuide)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKCGUIDEEX",
+           .stub = stub_cast(pctalker::stub_PCTKCGuideEx)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKCGUIDEW",
+           .stub = stub_cast(pctalker::stub_PCTKCGuideW)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKCGUIDEEXW",
+           .stub = stub_cast(pctalker::stub_PCTKCGuideExW)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKCOMMAND",
+           .stub = stub_cast(pctalker::stub_PCTKCommand)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKVOICEGUIDE",
+           .stub = stub_cast(pctalker::stub_PCTKVoiceGuide)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKVRESET",
+           .stub = stub_cast(pctalker::stub_PCTKVReset)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKBEEP",
+           .stub = stub_cast(pctalker::stub_PCTKBeep)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKLOADUSERDICT",
+           .stub = stub_cast(pctalker::stub_PCTKLoadUserDict)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKEVENTHOOK",
+           .stub = stub_cast(pctalker::stub_PCTKEventHook)},
+          {.dll = PCTK_DLL,
+           .func = "PCTKGETVOICELOG",
+           .stub = stub_cast(pctalker::stub_PCTKGetVoiceLog)},
+          {.dll = PRISM_ORCA_BRIDGE_DLL,
+           .func = "prism_orca_available",
+           .stub = stub_cast(prism_orca_bridge::prism_orca_available_stub)},
+          {.dll = PRISM_ORCA_BRIDGE_DLL,
+           .func = "prism_orca_create",
+           .stub = stub_cast(prism_orca_bridge::prism_orca_create_stub)},
+          {.dll = PRISM_ORCA_BRIDGE_DLL,
+           .func = "prism_orca_destroy",
+           .stub = stub_cast(prism_orca_bridge::prism_orca_destroy_stub)},
+          {.dll = PRISM_ORCA_BRIDGE_DLL,
+           .func = "prism_orca_speak",
+           .stub = stub_cast(prism_orca_bridge::prism_orca_speak_stub)},
+          {.dll = PRISM_ORCA_BRIDGE_DLL,
+           .func = "prism_orca_stop",
+           .stub = stub_cast(prism_orca_bridge::prism_orca_stop_stub)},
+          {.dll = PRISM_SPEECH_DISPATCHER_BRIDGE_DLL,
+           .func = "prism_speechd_available",
+           .stub = stub_cast(
+               prism_speech_dispatcher_bridge::prism_speechd_available_stub)},
+          {.dll = PRISM_SPEECH_DISPATCHER_BRIDGE_DLL,
+           .func = "prism_speechd_create",
+           .stub = stub_cast(
+               prism_speech_dispatcher_bridge::prism_speechd_create_stub)},
+          {.dll = PRISM_SPEECH_DISPATCHER_BRIDGE_DLL,
+           .func = "prism_speechd_destroy",
+           .stub = stub_cast(
+               prism_speech_dispatcher_bridge::prism_speechd_destroy_stub)},
+          {.dll = PRISM_SPEECH_DISPATCHER_BRIDGE_DLL,
+           .func = "prism_speechd_speak",
+           .stub = stub_cast(
+               prism_speech_dispatcher_bridge::prism_speechd_speak_stub)},
+          {.dll = PRISM_SPEECH_DISPATCHER_BRIDGE_DLL,
+           .func = "prism_speechd_stop",
+           .stub = stub_cast(
+               prism_speech_dispatcher_bridge::prism_speechd_stop_stub)},
+      });
+#else
+      auto stubs = std::to_array<StubEntry>({
+          {.dll = PRISM_ORCA_BRIDGE_DLL,
+           .func = "prism_orca_available",
+           .stub = stub_cast(prism_orca_bridge::prism_orca_available_stub)},
+          {.dll = PRISM_ORCA_BRIDGE_DLL,
+           .func = "prism_orca_create",
+           .stub = stub_cast(prism_orca_bridge::prism_orca_create_stub)},
+          {.dll = PRISM_ORCA_BRIDGE_DLL,
+           .func = "prism_orca_destroy",
+           .stub = stub_cast(prism_orca_bridge::prism_orca_destroy_stub)},
+          {.dll = PRISM_ORCA_BRIDGE_DLL,
+           .func = "prism_orca_speak",
+           .stub = stub_cast(prism_orca_bridge::prism_orca_speak_stub)},
+          {.dll = PRISM_ORCA_BRIDGE_DLL,
+           .func = "prism_orca_stop",
+           .stub = stub_cast(prism_orca_bridge::prism_orca_stop_stub)},
+          {.dll = PRISM_SPEECH_DISPATCHER_BRIDGE_DLL,
+           .func = "prism_speechd_available",
+           .stub = stub_cast(
+               prism_speech_dispatcher_bridge::prism_speechd_available_stub)},
+          {.dll = PRISM_SPEECH_DISPATCHER_BRIDGE_DLL,
+           .func = "prism_speechd_create",
+           .stub = stub_cast(
+               prism_speech_dispatcher_bridge::prism_speechd_create_stub)},
+          {.dll = PRISM_SPEECH_DISPATCHER_BRIDGE_DLL,
+           .func = "prism_speechd_destroy",
+           .stub = stub_cast(
+               prism_speech_dispatcher_bridge::prism_speechd_destroy_stub)},
+          {.dll = PRISM_SPEECH_DISPATCHER_BRIDGE_DLL,
+           .func = "prism_speechd_speak",
+           .stub = stub_cast(
+               prism_speech_dispatcher_bridge::prism_speechd_speak_stub)},
+          {.dll = PRISM_SPEECH_DISPATCHER_BRIDGE_DLL,
+           .func = "prism_speechd_stop",
+           .stub = stub_cast(
+               prism_speech_dispatcher_bridge::prism_speechd_stop_stub)},
+      });
+#endif
   switch (dliNotify) {
   case dliFailLoadLib: {
+    log.trace("delay-load of '{}' failed (LastError={}); attempting recovery",
+              pdli->szDll, pdli->dwLastError);
     namespace fs = std::filesystem;
     static const int anchor = 0;
     HMODULE hModule = nullptr;
@@ -798,15 +809,21 @@ static FARPROC WINAPI DelayLoadFailureHook(unsigned dliNotify,
         path_buffer.resize(len);
         const auto dll_path =
             fs::path(path_buffer).replace_filename(pdli->szDll);
+        log.trace("trying side-by-side load of '{}' from module directory",
+                  pdli->szDll);
         if (auto *const h = LoadLibrary(dll_path.c_str()); h != nullptr) {
+          log.info("recovered '{}' from module directory", pdli->szDll);
           return reinterpret_cast<FARPROC>(h);
         }
+        log.trace("side-by-side load of '{}' failed (LastError={})",
+                  pdli->szDll, GetLastError());
       }
     }
 #if defined(__x86_64) || defined(__x86_64__) || defined(__amd64__) ||          \
     defined(__amd64) || defined(_M_X64) || defined(_M_IX86) ||                 \
     defined(__i386__)
     if (_stricmp(pdli->szDll, ZDSR_DLL) == 0) {
+      log.trace("attempting ZDSR registry lookup for '{}'", pdli->szDll);
       HKEY zdsr_key;
 #if defined(_M_X64) || defined(__x86_64__)
       if (const auto res = RegOpenKeyEx(
@@ -819,6 +836,23 @@ static FARPROC WINAPI DelayLoadFailureHook(unsigned dliNotify,
                            KEY_QUERY_VALUE | KEY_READ, &zdsr_key);
           res == ERROR_SUCCESS) {
 #endif
+        std::wstring cls(4096, _T('\0'));
+        DWORD cls_size = cls.size();
+        DWORD subkeys_count = 0;
+        DWORD values_count = 0;
+        if (const auto res2 =
+                RegQueryInfoKey(zdsr_key, cls.data(), &cls_size, nullptr,
+                                &subkeys_count, nullptr, nullptr, &values_count,
+                                nullptr, nullptr, nullptr, nullptr);
+            res2 == ERROR_SUCCESS) {
+          log.trace(_T("Opened ZDSR registry key at {} with {} subkeys and {} ")
+                    _T("values"),
+                    cls, subkeys_count, values_count);
+        } else {
+          log.trace(
+              "Could not read key info for ZDSR registry key, code = {:X}",
+              res2);
+        }
         std::wstring path;
         path.resize(MAX_PATH);
         DWORD size = MAX_PATH * sizeof(wchar_t);
@@ -831,14 +865,21 @@ static FARPROC WINAPI DelayLoadFailureHook(unsigned dliNotify,
             path += _T('\\');
           }
           path += fs::path(ZDSR_DLL).wstring();
+          log.trace(_T("Trying to load ZDSR dll from {}"), path);
           auto *const h = LoadLibrary(path.c_str());
           RegCloseKey(zdsr_key);
           if (h != nullptr) {
+            log.info("recovered '{}' via ZDSR registry path", pdli->szDll);
             return reinterpret_cast<FARPROC>(h);
           }
+          log.trace("ZDSR registry path load of '{}' failed (LastError={})",
+                    pdli->szDll, GetLastError());
         } else {
           RegCloseKey(zdsr_key);
+          log.trace("ZDSR registry 'path' value missing for '{}'", pdli->szDll);
         }
+      } else {
+        log.trace("ZDSR registry key not present for '{}'", pdli->szDll);
       }
     }
 #endif
@@ -846,6 +887,8 @@ static FARPROC WINAPI DelayLoadFailureHook(unsigned dliNotify,
     defined(__amd64) || defined(_M_X64) || defined(_M_IX86) ||                 \
     defined(__i386__)
     if (_stricmp(pdli->szDll, BOY_PC_READER_DLL) == 0) {
+      log.trace("attempting Boy PC Reader registry lookup for '{}'",
+                pdli->szDll);
       HKEY boy_pc_reader_key;
 #if defined(_M_X64) || defined(__x86_64__)
       if (const auto res = RegOpenKeyEx(
@@ -862,6 +905,24 @@ static FARPROC WINAPI DelayLoadFailureHook(unsigned dliNotify,
               0, KEY_QUERY_VALUE | KEY_READ, &boy_pc_reader_key);
           res == ERROR_SUCCESS) {
 #endif
+        std::wstring cls(4096, _T('\0'));
+        DWORD cls_size = cls.size();
+        DWORD subkeys_count = 0;
+        DWORD values_count = 0;
+        if (const auto res2 = RegQueryInfoKey(
+                boy_pc_reader_key, cls.data(), &cls_size, nullptr,
+                &subkeys_count, nullptr, nullptr, &values_count, nullptr,
+                nullptr, nullptr, nullptr);
+            res2 == ERROR_SUCCESS) {
+          log.trace(
+              _T("Opened BoyPCReader registry key at {} with {} subkeys and "
+                 "{} values"),
+              cls, subkeys_count, values_count);
+        } else {
+          log.trace("Could not read key info for BoyPCReader registry key, "
+                    "code = {:X}",
+                    res2);
+        }
         std::wstring path;
         path.resize(MAX_PATH);
         DWORD size = MAX_PATH * sizeof(wchar_t);
@@ -874,33 +935,97 @@ static FARPROC WINAPI DelayLoadFailureHook(unsigned dliNotify,
             path += _T('\\');
           }
           path += fs::path(BOY_PC_READER_DLL).wstring();
+          log.trace(_T("Trying to load BoyPCReader dll from {}"), path);
           auto *const h = LoadLibrary(path.c_str());
           RegCloseKey(boy_pc_reader_key);
           if (h != nullptr) {
+            log.info(
+                "recovered '{}' via Boy PC Reader registry InstallLocation",
+                pdli->szDll);
             return reinterpret_cast<FARPROC>(h);
           }
+          log.trace("Boy PC Reader registry load of '{}' failed (LastError={})",
+                    pdli->szDll, GetLastError());
         } else {
           RegCloseKey(boy_pc_reader_key);
+          log.trace("Boy PC Reader 'InstallLocation' value missing for '{}'",
+                    pdli->szDll);
         }
+      } else {
+        log.trace("Boy PC Reader registry key not present for '{}'",
+                  pdli->szDll);
       }
     }
 #endif
-    if (dummy_count < 512) {
+    if (dummy_count <
+        std::numeric_limits<std::atomic_unsigned_lock_free>::max()) {
+      log.debug("no installation of '{}' found; substituting stubs",
+                pdli->szDll);
       // NOLINTNEXTLINE(performance-no-int-to-ptr)
       auto *dummy = reinterpret_cast<HMODULE>(
           static_cast<uintptr_t>(0xDEAD0000 + dummy_count));
       dummy_count++;
       return reinterpret_cast<FARPROC>(dummy);
     }
+    log.warn("delay-load dummy handle pool exhausted after {} modules; '{}' "
+             "left unresolved",
+             std::numeric_limits<std::atomic_unsigned_lock_free>::max().load(),
+             pdli->szDll);
     return reinterpret_cast<FARPROC>(reinterpret_cast<HMODULE>(1));
   } break;
   case dliFailGetProc: {
-    for (const auto &e : stubs) {
-      if (_stricmp(pdli->szDll, e.dll) == 0 &&
-          strcmp(pdli->dlp.szProcName, e.func) == 0) {
-        return e.stub;
+    if (pdli->dlp.fImportByName == 0) {
+      log.error("delay-load of '{}!#{}' imported by ordinal; unsupported",
+                pdli->szDll, pdli->dlp.dwOrdinal);
+      return nullptr; // see below re: what this actually does
+    }
+#if defined(_M_IX86) || defined(__i386__)
+    if (pdli->dlp.fImportByName != 0) {
+      const auto name = std::string_view(pdli->dlp.szProcName);
+      const auto at = name.find('@');
+      if (at != std::string_view::npos) {
+        const std::string undecorated(name.substr(0, at));
+        if (auto const *real =
+                GetProcAddress(pdli->hmodCur, undecorated.c_str());
+            real != nullptr) {
+          log.info("recovered '{}!{}' via undecorated name", pdli->szDll,
+                   undecorated);
+          return real;
+        }
       }
     }
+#endif
+    for (const auto &e : stubs) {
+      if (_stricmp(pdli->szDll, e.dll) == 0) {
+#if defined(_M_IX86) || defined(__i386__)
+        auto procName = std::string_view(pdli->dlp.szProcName);
+        auto stubName = std::string_view(e.func);
+        const auto procAt = procName.find('@');
+        const auto stubAt = stubName.find('@');
+        if (procAt != std::string_view::npos)
+          procName = procName.substr(0, procAt);
+        if (stubAt != std::string_view::npos)
+          stubName = stubName.substr(0, stubAt);
+        if (procName == stubName) {
+          log.trace("substituting stub for '{}!{}'", pdli->szDll, e.func);
+          return e.stub;
+        }
+#else
+        if (std::string_view{pdli->dlp.szProcName} ==
+            std::string_view{e.func}) {
+          log.trace("substituting stub for '{}!{}'", pdli->szDll, e.func);
+          return e.stub;
+        }
+#endif
+      }
+    }
+    if (pdli->dlp.fImportByName != 0)
+      log.error("no stub for '{}!{}'; delay-load will fail", pdli->szDll,
+                pdli->dlp.szProcName);
+    else
+      log.error("no stub for '{}!#{}' (imported by ordinal); delay-load will "
+                "fail",
+                pdli->szDll, pdli->dlp.dwOrdinal);
     return nullptr;
   } break;
   default:
@@ -910,5 +1035,6 @@ static FARPROC WINAPI DelayLoadFailureHook(unsigned dliNotify,
 }
 
 const PfnDliHook __pfnDliFailureHook2 = DelayLoadFailureHook;
+const BOOL __bChangeProtectionOfWholeDloadSection = TRUE;
 }
 #endif

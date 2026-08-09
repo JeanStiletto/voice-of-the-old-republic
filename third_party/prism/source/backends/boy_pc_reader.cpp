@@ -6,8 +6,8 @@
 #if defined(__x86_64) || defined(__x86_64__) || defined(__amd64__) ||          \
     defined(__amd64) || defined(_M_X64) || defined(_M_IX86) ||                 \
     defined(__i386__)
-#include "backend.h"
-#include "backend_registry.h"
+#include "../backend.h"
+#include "../backend_catalog.h"
 #include <array>
 #include <atomic>
 #include <bitset>
@@ -17,7 +17,7 @@
 #include <mutex>
 #include <raw/boy_pc_reader.h>
 #include <shared_mutex>
-#include <simdutf/simdutf.h>
+#include <simdutf.h>
 #include <string_view>
 #include <tchar.h>
 #include <thread>
@@ -49,7 +49,7 @@ template <std::size_t... Is> struct SlotTableImpl {
             .func = &CallbackSlot<Is>::callback}...};
 
   static BoyCtrlSpeakCompleteFunc acquire(BoyPCReaderBackend *obj) {
-    std::lock_guard lock(mtx);
+    std::scoped_lock lock(mtx);
     for (auto &e : entries) {
       if (*e.instance == nullptr) {
         *e.instance = obj;
@@ -61,7 +61,7 @@ template <std::size_t... Is> struct SlotTableImpl {
 
   static void release(BoyPCReaderBackend *obj) {
     assert(obj != nullptr);
-    std::lock_guard lock(mtx);
+    std::scoped_lock lock(mtx);
     for (auto &e : entries) {
       if (*e.instance == obj) {
         *e.instance = nullptr;
@@ -79,7 +79,7 @@ struct MakeSlotTable<N, std::index_sequence<Is...>> {
   using type = SlotTableImpl<Is...>;
 };
 
-template <std::size_t N> using SlotTable = typename MakeSlotTable<N>::type;
+template <std::size_t N> using SlotTable = MakeSlotTable<N>::type;
 
 class BoyPCReaderBackend final : public TextToSpeechBackend {
 private:
@@ -87,42 +87,10 @@ private:
   // The objective is to have a limit so high that you are in practice never
   // going to hit it unless you are deliberately trying to do so
   using Slots = SlotTable<128>;
+  template <int Slot> friend struct CallbackSlot;
   std::atomic_flag initialized;
   std::atomic_flag speaking;
   BoyCtrlSpeakCompleteFunc complete_callback{nullptr};
-  mutable std::shared_mutex lifecycle_mtx;
-  std::thread watchdog_thread;
-  std::mutex watchdog_wake_mtx;
-  std::condition_variable watchdog_wake;
-  std::atomic_flag watchdog_running;
-
-  bool try_reinit() {
-    BoyCtrlUninitialize();
-    initialized.clear();
-    if (BoyCtrlInitializeU8(nullptr) != e_bcerr_success)
-      return false;
-    if (!BoyCtrlIsReaderRunning()) {
-      BoyCtrlUninitialize();
-      return false;
-    }
-    if (!BoyCtrlSetAnyKeyStopSpeaking(false)) {
-      BoyCtrlUninitialize();
-      return false;
-    }
-    initialized.test_and_set();
-    return true;
-  }
-
-  bool attempt_recovery() {
-    std::unique_lock lock(lifecycle_mtx);
-    if (initialized.test() && BoyCtrlIsReaderRunning())
-      return true;
-    return try_reinit();
-  }
-
-  static bool is_recoverable(BoyCtrlError err) {
-    return err == e_bcerr_fail || err == e_bcerr_unavailable;
-  }
 
   static BackendError map_error(BoyCtrlError err) {
     switch (err) {
@@ -136,64 +104,10 @@ private:
     }
   }
 
-  void watchdog_loop() {
-    constexpr auto healthy_interval = std::chrono::seconds(2);
-    constexpr auto retry_interval = std::chrono::milliseconds(500);
-    constexpr std::uint16_t max_burst = 6;
-    constexpr auto backoff_interval = std::chrono::seconds(5);
-    std::uint16_t consecutive_failures = 0;
-    while (watchdog_running.test(std::memory_order_acquire)) {
-      std::chrono::milliseconds interval = healthy_interval;
-      if (consecutive_failures > 0)
-        interval = consecutive_failures < max_burst ? retry_interval
-                                                    : backoff_interval;
-      {
-        std::unique_lock lock(watchdog_wake_mtx);
-        watchdog_wake.wait_for(lock, interval, [this] {
-          return !watchdog_running.test(std::memory_order_acquire);
-        });
-      }
-      if (!watchdog_running.test(std::memory_order_acquire))
-        break;
-      if (!initialized.test())
-        continue;
-      {
-        std::shared_lock lock(lifecycle_mtx);
-        if (BoyCtrlIsReaderRunning()) {
-          consecutive_failures = 0;
-          continue;
-        }
-      }
-      std::unique_lock lock(lifecycle_mtx);
-      if (initialized.test() && BoyCtrlIsReaderRunning()) {
-        consecutive_failures = 0;
-        continue;
-      }
-      speaking.clear();
-      if (try_reinit())
-        consecutive_failures = 0;
-      else
-        ++consecutive_failures;
-    }
-  }
-
-public:
   void handle_speak_complete([[maybe_unused]] int reason) { speaking.clear(); }
 
+public:
   ~BoyPCReaderBackend() override {
-    if (watchdog_running.test()) {
-      watchdog_running.clear();
-      watchdog_wake.notify_all();
-      if (watchdog_thread.joinable())
-        watchdog_thread.join();
-    }
-    {
-      std::unique_lock lock(lifecycle_mtx);
-      if (initialized.test()) {
-        BoyCtrlUninitialize();
-        initialized.clear();
-      }
-    }
     if (complete_callback != nullptr) {
       Slots::release(this);
       complete_callback = nullptr;
@@ -249,13 +163,7 @@ public:
       BoyCtrlUninitialize();
       return std::unexpected(BackendError::BackendNotAvailable);
     }
-    if (const auto res = BoyCtrlSetAnyKeyStopSpeaking(false); !res) {
-      BoyCtrlUninitialize();
-      return std::unexpected(BackendError::BackendNotAvailable);
-    }
     initialized.test_and_set();
-    watchdog_running.test_and_set(std::memory_order_release);
-    watchdog_thread = std::thread(&BoyPCReaderBackend::watchdog_loop, this);
     return {};
   }
 
@@ -270,46 +178,11 @@ public:
             reinterpret_cast<char16_t *>(wstr.data()));
         res == 0)
       return std::unexpected(BackendError::InvalidUtf8);
-    bool needs_recovery = false;
-    {
-      std::shared_lock lock(lifecycle_mtx);
-      if (!BoyCtrlIsReaderRunning()) {
-        needs_recovery = true;
-      } else {
-        // Temporary workaround to ensure interrupt always stops
-        // Todo: remove this when fixed upstream
-        if (interrupt) {
-          if (const auto res = BoyCtrlStopSpeaking(); res != e_bcerr_success) {
-            if (!is_recoverable(res))
-              return std::unexpected(map_error(res));
-            needs_recovery = true;
-          }
-        }
-        if (!needs_recovery) {
-          const auto res =
-              BoyCtrlSpeak(wstr.c_str(), !interrupt, complete_callback);
-          if (res == e_bcerr_success) {
-            speaking.test_and_set();
-            return {};
-          }
-          if (!is_recoverable(res))
-            return std::unexpected(map_error(res));
-          needs_recovery = true;
-        }
-      }
-    }
-    if (needs_recovery) {
-      if (!attempt_recovery())
-        return std::unexpected(BackendError::BackendNotAvailable);
-      std::shared_lock lock(lifecycle_mtx);
-      if (interrupt)
-        BoyCtrlStopSpeaking();
-      if (const auto res =
-              BoyCtrlSpeak(wstr.c_str(), !interrupt, complete_callback);
-          res != e_bcerr_success)
-        return std::unexpected(map_error(res));
-      speaking.test_and_set();
-    }
+    if (const auto res =
+            BoyCtrlSpeak(wstr.c_str(), !interrupt, complete_callback);
+        res != e_bcerr_success)
+      return std::unexpected(map_error(res));
+    speaking.test_and_set();
     return {};
   }
 
@@ -320,7 +193,6 @@ public:
   BackendResult<bool> is_speaking() override {
     if (!initialized.test())
       return std::unexpected(BackendError::NotInitialized);
-    std::shared_lock lock(lifecycle_mtx);
     if (!BoyCtrlIsReaderRunning())
       return std::unexpected(BackendError::BackendNotAvailable);
     return speaking.test();
@@ -329,21 +201,6 @@ public:
   BackendResult<> stop() override {
     if (!initialized.test())
       return std::unexpected(BackendError::NotInitialized);
-    {
-      std::shared_lock lock(lifecycle_mtx);
-      if (BoyCtrlIsReaderRunning()) {
-        const auto res = BoyCtrlStopSpeaking();
-        if (res == e_bcerr_success) {
-          speaking.clear();
-          return {};
-        }
-        if (!is_recoverable(res))
-          return std::unexpected(map_error(res));
-      }
-    }
-    if (!attempt_recovery())
-      return std::unexpected(BackendError::BackendNotAvailable);
-    std::shared_lock lock(lifecycle_mtx);
     if (const auto res = BoyCtrlStopSpeaking(); res != e_bcerr_success)
       return std::unexpected(map_error(res));
     speaking.clear();

@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
 #ifdef _WIN32
-#include "backend.h"
-#include "backend_registry.h"
+#include "../backend.h"
+#include "../backend_catalog.h"
 #include <cstdlib>
-#include <format>
+#include <fmt/xchar.h>
 #include <nvda_controller.h>
 #include <shared_mutex>
-#include <simdutf/simdutf.h>
+#include <simdutf.h>
 #include <tchar.h>
 #include <windows.h>
 
@@ -46,6 +46,7 @@ error_status_t __stdcall nvdaController_setOnSsmlMarkReachedCallback(
 class NvdaBackend final : public TextToSpeechBackend {
 private:
   handle_t controller_handle;
+  std::atomic_flag supports_is_speaking;
 
   static bool server_supports_interface(handle_t binding,
                                         RPC_IF_HANDLE ifspec) {
@@ -100,11 +101,14 @@ public:
       return features;
     desktop_name.resize((bytes_written / sizeof(wchar_t)) - 1);
     const auto endpoint =
-        std::format(_T("NvdaCtlr.{}.{}"), session_id, desktop_name);
+        fmt::format(_T("NvdaCtlr.{}.{}"), session_id, desktop_name);
     RPC_WSTR string_binding = nullptr;
-    if (RpcStringBindingCompose(nullptr, RPC_WSTR(_T("ncalrpc")), nullptr,
-                                RPC_WSTR(endpoint.c_str()), nullptr,
-                                &string_binding) != RPC_S_OK)
+    if (RpcStringBindingCompose(
+            nullptr,
+            reinterpret_cast<RPC_WSTR>(const_cast<wchar_t *>(_T("ncalrpc"))),
+            nullptr,
+            reinterpret_cast<RPC_WSTR>(const_cast<wchar_t *>(endpoint.c_str())),
+            nullptr, &string_binding) != RPC_S_OK)
       return features;
     handle_t handle = nullptr;
     if (RpcBindingFromStringBinding(string_binding, &handle) != RPC_S_OK) {
@@ -139,33 +143,37 @@ public:
             static_cast<DWORD>(desktop_name.size()) * sizeof(wchar_t), nullptr);
         res == 0)
       return std::unexpected(BackendError::BackendNotAvailable);
-    const std::wstring desktop_ns = std::format(_T("{}.{}"), sid, desktop_name);
+    const std::wstring desktop_ns = fmt::format(_T("{}.{}"), sid, desktop_name);
     RPC_STATUS status;
-    const auto endpoint = std::format(_T("NvdaCtlr.{}"), desktop_ns);
+    const auto endpoint = fmt::format(_T("NvdaCtlr.{}"), desktop_ns);
     RPC_WSTR string_binding = nullptr;
-    status = RpcStringBindingCompose(nullptr, RPC_WSTR(_T("ncalrpc")), nullptr,
-                                     RPC_WSTR(endpoint.c_str()), nullptr,
-                                     &string_binding);
+    status = RpcStringBindingCompose(
+        nullptr,
+        reinterpret_cast<RPC_WSTR>(const_cast<wchar_t *>(_T("ncalrpc"))),
+        nullptr,
+        reinterpret_cast<RPC_WSTR>(const_cast<wchar_t *>(endpoint.c_str())),
+        nullptr, &string_binding);
     if (status != RPC_S_OK)
       return std::unexpected(BackendError::BackendNotAvailable);
     status = RpcBindingFromStringBinding(string_binding, &controller_handle);
     RpcStringFree(&string_binding);
     if (status != RPC_S_OK) {
-      RpcStringFree(&string_binding);
+      return std::unexpected(BackendError::BackendNotAvailable);
+    }
+    if (nvdaController_testIfRunning(controller_handle) != ERROR_SUCCESS ||
+        !server_supports_interface(
+            controller_handle, nvdaController_NvdaController_v1_0_c_ifspec)) {
       return std::unexpected(BackendError::BackendNotAvailable);
     }
     if (server_supports_interface(
-            controller_handle, nvdaController_NvdaController_v1_0_c_ifspec)) {
-      if (nvdaController_testIfRunning(controller_handle) != ERROR_SUCCESS) {
-        return std::unexpected(BackendError::BackendNotAvailable);
-      }
+            controller_handle, nvdaController_NvdaController3_v1_0_c_ifspec)) {
+      supports_is_speaking.test_and_set();
     }
     return {};
   }
 
   BackendResult<> speak(std::string_view text, bool interrupt) override {
-    if (controller_handle == nullptr ||
-        nvdaController_testIfRunning(controller_handle) != ERROR_SUCCESS)
+    if (controller_handle == nullptr)
       return std::unexpected(BackendError::BackendNotAvailable);
     if (interrupt) {
       if (nvdaController_cancelSpeech(controller_handle) != ERROR_SUCCESS)
@@ -186,8 +194,7 @@ public:
   }
 
   BackendResult<> braille(std::string_view text) override {
-    if (controller_handle == nullptr ||
-        nvdaController_testIfRunning(controller_handle) != ERROR_SUCCESS)
+    if (controller_handle == nullptr)
       return std::unexpected(BackendError::BackendNotAvailable);
     const auto len = simdutf::utf16_length_from_utf8(text.data(), text.size());
     std::wstring wstr;
@@ -212,8 +219,7 @@ public:
   }
 
   BackendResult<> stop() override {
-    if (controller_handle == nullptr ||
-        nvdaController_testIfRunning(controller_handle) != ERROR_SUCCESS)
+    if (controller_handle == nullptr)
       return std::unexpected(BackendError::BackendNotAvailable);
     if (nvdaController_cancelSpeech(controller_handle) != ERROR_SUCCESS)
       return std::unexpected(BackendError::InternalBackendError);
@@ -221,11 +227,9 @@ public:
   }
 
   BackendResult<bool> is_speaking() override {
-    if (controller_handle == nullptr ||
-        nvdaController_testIfRunning(controller_handle) != ERROR_SUCCESS)
+    if (controller_handle == nullptr)
       return std::unexpected(BackendError::BackendNotAvailable);
-    if (!server_supports_interface(
-            controller_handle, nvdaController_NvdaController3_v1_0_c_ifspec))
+    if (!supports_is_speaking.test())
       return std::unexpected(BackendError::NotImplemented);
     BOOLEAN speaking = FALSE;
     if (nvdaController_isSpeaking(controller_handle, &speaking) !=

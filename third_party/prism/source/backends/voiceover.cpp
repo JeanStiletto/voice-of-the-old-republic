@@ -2,9 +2,9 @@
 
 #ifdef __OBJC__
 #ifdef __APPLE__
-#include "backend.h"
-#include "backend_registry.h"
-#include <simdutf/simdutf.h>
+#include "../backend.h"
+#include "../backend_catalog.h"
+#include <simdutf.h>
 #if !TARGET_OS_WATCH
 #import <Foundation/Foundation.h>
 #include <TargetConditionals.h>

@@ -1,203 +1,24 @@
+from __future__ import annotations
+
+import logging
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass, field, fields
-from enum import IntEnum
+from typing import TYPE_CHECKING
 
-from .lib import ffi, lib
+from ._dispatch import _Dispatcher
+from ._prism_cffi import ffi, lib
+from .common import (
+    BackendFeatures,
+    BackendId,
+    PrismInvalidParamError,
+    _check_error,
+)
+
+if TYPE_CHECKING:
+    from ._dispatch import AvailabilityCallback
+    from .custom import Registry
 
 AudioCallback = Callable[[list[float], int, int], None]
-
-
-class BackendId(IntEnum):
-    INVALID = 0
-    SAPI = 0x1D6DF72422CEEE66
-    AV_SPEECH = 0x28E3429577805C24
-    VOICE_OVER = 0xCB4897961A754BCB
-    SPEECH_DISPATCHER = 0xE3D6F895D949EBFE
-    NVDA = 0x89CC19C5C4AC1A56
-    JAWS = 0xAC3D60E9BD84B53E
-    ONE_CORE = 0x6797D32F0D994CB4
-    ORCA = 0x10AA1FC05A17F96C
-    ANDROID_SCREEN_READER = 0xD199C175AEEC494B
-    ANDROID_TTS = 0xBC175831BFE4E5CC
-    WEB_SPEECH = 0x3572538D44D44A8F
-    UIA = 0x6238F019DB678F8E
-    ZDSR = 0x3D93C56C9E7F2A2E
-    ZOOM_TEXT = 0xAE439D62DC7B1479
-    BOY_PC_READER = 0x285ABA1C16F3300F
-    PC_TALKER = 0x344B951962E3B835
-    SENSE_READER = 0xED4760890B55C2F2
-    SYSTEM_ACCESS = 0x8380F2A37B2C3EB6
-    WINDOW_EYES = 0x9120D89908785C13
-    SPIEL = 0x478B44F14AD3D89C
-
-
-class PrismError(Exception):
-    """Base class for all Prism-related errors."""
-
-    def __init__(self, code: int, message: str | None = None) -> None:
-        self.code = code
-        self.message = message
-        super().__init__(message or f"Prism Error Code: {code}")
-
-
-class PrismNotInitializedError(PrismError, RuntimeError):
-    """PRISM_ERROR_NOT_INITIALIZED"""
-
-
-class PrismAlreadyInitializedError(PrismError, RuntimeError):
-    """PRISM_ERROR_ALREADY_INITIALIZED"""
-
-
-class PrismInvalidOperationError(PrismError, RuntimeError):
-    """PRISM_ERROR_INVALID_OPERATION"""
-
-
-class PrismInternalError(PrismError, RuntimeError):
-    """PRISM_ERROR_INTERNAL"""
-
-
-class PrismBackendNotAvailableError(PrismError, RuntimeError):
-    """PRISM_ERROR_BACKEND_NOT_AVAILABLE"""
-
-
-class PrismNotImplementedError(PrismError, NotImplementedError):
-    """PRISM_ERROR_NOT_IMPLEMENTED"""
-
-
-class PrismInvalidParamError(PrismError, ValueError):
-    """PRISM_ERROR_INVALID_PARAM"""
-
-
-class PrismRangeError(PrismError, IndexError):
-    """PRISM_ERROR_RANGE_OUT_OF_BOUNDS"""
-
-
-class PrismInvalidUtf8Error(PrismError, UnicodeError):
-    """PRISM_ERROR_INVALID_UTF8"""
-
-
-class PrismNotSpeakingError(PrismError):
-    """PRISM_ERROR_NOT_SPEAKING"""
-
-
-class PrismNotPausedError(PrismError):
-    """PRISM_ERROR_NOT_PAUSED"""
-
-
-class PrismAlreadyPausedError(PrismError):
-    """PRISM_ERROR_ALREADY_PAUSED"""
-
-
-class PrismSpeakError(PrismError, IOError):
-    """PRISM_ERROR_SPEAK_FAILURE"""
-
-
-class PrismNoVoicesError(PrismError):
-    """PRISM_ERROR_NO_VOICES"""
-
-
-class PrismVoiceNotFoundError(PrismError, LookupError):
-    """PRISM_ERROR_VOICE_NOT_FOUND"""
-
-
-class PrismMemoryError(PrismError, MemoryError):
-    """PRISM_ERROR_MEMORY_FAILURE"""
-
-
-class PrismUnknownError(PrismError):
-    """PRISM_ERROR_UNKNOWN"""
-
-
-class PrismInvalidAudioFormatError(PrismError, RuntimeError):
-    """PRISM_ERROR_INVALID_AUDIO_FORMAT"""
-
-
-class PrismInternalBackendLimitExceededError(PrismError, RuntimeError):
-    """PRISM_ERROR_INVALID_AUDIO_FORMAT"""
-
-
-class PrismBackendEnteredUndefinedStateError(PrismError, RuntimeError):
-    """PRISM_ERROR_BACKEND_ENTERED_UNDEFINED_STATE"""
-
-
-_ERROR_MAP = {
-    lib.PRISM_ERROR_NOT_INITIALIZED: PrismNotInitializedError,
-    lib.PRISM_ERROR_INVALID_PARAM: PrismInvalidParamError,
-    lib.PRISM_ERROR_NOT_IMPLEMENTED: PrismNotImplementedError,
-    lib.PRISM_ERROR_NO_VOICES: PrismNoVoicesError,
-    lib.PRISM_ERROR_VOICE_NOT_FOUND: PrismVoiceNotFoundError,
-    lib.PRISM_ERROR_SPEAK_FAILURE: PrismSpeakError,
-    lib.PRISM_ERROR_MEMORY_FAILURE: PrismMemoryError,
-    lib.PRISM_ERROR_RANGE_OUT_OF_BOUNDS: PrismRangeError,
-    lib.PRISM_ERROR_INTERNAL: PrismInternalError,
-    lib.PRISM_ERROR_NOT_SPEAKING: PrismNotSpeakingError,
-    lib.PRISM_ERROR_NOT_PAUSED: PrismNotPausedError,
-    lib.PRISM_ERROR_ALREADY_PAUSED: PrismAlreadyPausedError,
-    lib.PRISM_ERROR_INVALID_UTF8: PrismInvalidUtf8Error,
-    lib.PRISM_ERROR_INVALID_OPERATION: PrismInvalidOperationError,
-    lib.PRISM_ERROR_ALREADY_INITIALIZED: PrismAlreadyInitializedError,
-    lib.PRISM_ERROR_BACKEND_NOT_AVAILABLE: PrismBackendNotAvailableError,
-    lib.PRISM_ERROR_UNKNOWN: PrismUnknownError,
-    lib.PRISM_ERROR_INVALID_AUDIO_FORMAT: PrismInvalidAudioFormatError,
-    lib.PRISM_ERROR_INTERNAL_BACKEND_LIMIT_EXCEEDED: PrismInternalBackendLimitExceededError,
-    lib.PRISM_ERROR_BACKEND_ENTERED_UNDEFINED_STATE: PrismBackendEnteredUndefinedStateError,
-}
-
-
-def _check_error(error_code: int) -> None:
-    """
-    Checks the error code. If it is OK, returns None.
-    Otherwise, raises the appropriate PrismError.
-    """
-    if error_code == 0:
-        return
-    exc_class = _ERROR_MAP.get(error_code, PrismUnknownError)
-    msg_ptr = lib.prism_error_string(error_code)
-    msg = ffi.string(msg_ptr).decode("utf-8")
-    raise exc_class(error_code, msg)
-
-
-def _bit(position: int) -> field:
-    return field(default=False, metadata={"bit": position})
-
-
-@dataclass(frozen=True, slots=True)
-class BackendFeatures:
-    is_supported_at_runtime: bool = _bit(0)
-    supports_speak: bool = _bit(2)
-    supports_speak_to_memory: bool = _bit(3)
-    supports_braille: bool = _bit(4)
-    supports_output: bool = _bit(5)
-    supports_is_speaking: bool = _bit(6)
-    supports_stop: bool = _bit(7)
-    supports_pause: bool = _bit(8)
-    supports_resume: bool = _bit(9)
-    supports_set_volume: bool = _bit(10)
-    supports_get_volume: bool = _bit(11)
-    supports_set_rate: bool = _bit(12)
-    supports_get_rate: bool = _bit(13)
-    supports_set_pitch: bool = _bit(14)
-    supports_get_pitch: bool = _bit(15)
-    supports_refresh_voices: bool = _bit(16)
-    supports_count_voices: bool = _bit(17)
-    supports_get_voice_name: bool = _bit(18)
-    supports_get_voice_language: bool = _bit(19)
-    supports_get_voice: bool = _bit(20)
-    supports_set_voice: bool = _bit(21)
-    supports_get_channels: bool = _bit(22)
-    supports_get_sample_rate: bool = _bit(23)
-    supports_get_bit_depth: bool = _bit(24)
-    performs_silence_trimming_on_speak: bool = _bit(25)
-    performs_silence_trimming_on_speak_to_memory: bool = _bit(26)
-    supports_speak_ssml: bool = _bit(27)
-    supports_speak_to_memory_ssml: bool = _bit(28)
-
-    @classmethod
-    def from_bits(cls, bits: int) -> "BackendFeatures":
-        return cls(
-            **{f.name: bool(bits & (1 << f.metadata["bit"])) for f in fields(cls)},
-        )
 
 
 class Backend:
@@ -227,6 +48,11 @@ class Backend:
                 lib.PRISM_ERROR_INVALID_PARAM,
                 "Text MUST NOT be empty",
             )
+        if "\x00" in text:
+            raise PrismInvalidParamError(
+                lib.PRISM_ERROR_INVALID_PARAM,
+                "Text MUST NOT contain embedded NULLs",
+            )
         return _check_error(
             lib.prism_backend_speak(self._raw, text.encode("utf-8"), interrupt),
         )
@@ -237,6 +63,12 @@ class Backend:
                 lib.PRISM_ERROR_INVALID_PARAM,
                 "Text MUST NOT be empty",
             )
+        if "\x00" in text:
+            raise PrismInvalidParamError(
+                lib.PRISM_ERROR_INVALID_PARAM,
+                "Text MUST NOT contain embedded NULLs",
+            )
+        captured: BaseException | None = None
 
         @ffi.callback("void(void *, const float *, size_t, size_t, size_t)")
         def audio_callback_shim(
@@ -246,24 +78,36 @@ class Backend:
             channels: int,
             rate: int,
         ) -> None:
-            pcm_data = ffi.unpack(samples_ptr, count)
-            on_audio_data(pcm_data, channels, rate)
+            nonlocal captured
+            if captured is not None:
+                return
+            try:
+                pcm_data = ffi.unpack(samples_ptr, count) if count > 0 else []
+                on_audio_data(pcm_data, channels, rate)
+            except BaseException as exc:  # noqa: BLE001
+                captured = exc
 
         self._active_callback = audio_callback_shim
-        return _check_error(
-            lib.prism_backend_speak_to_memory(
-                self._raw,
-                text.encode("utf-8"),
-                audio_callback_shim,
-                ffi.NULL,
-            ),
+        res = lib.prism_backend_speak_to_memory(
+            self._raw,
+            text,
+            audio_callback_shim,
+            ffi.NULL,
         )
+        if captured is not None:
+            raise captured
+        _check_error(res)
 
     def braille(self, text: str) -> None:
         if len(text) == 0:
             raise PrismInvalidParamError(
                 lib.PRISM_ERROR_INVALID_PARAM,
                 "Text MUST NOT be empty",
+            )
+        if "\x00" in text:
+            raise PrismInvalidParamError(
+                lib.PRISM_ERROR_INVALID_PARAM,
+                "Text MUST NOT contain embedded NULLs",
             )
         return _check_error(lib.prism_backend_braille(self._raw, text.encode("utf-8")))
 
@@ -272,6 +116,11 @@ class Backend:
             raise PrismInvalidParamError(
                 lib.PRISM_ERROR_INVALID_PARAM,
                 "Text MUST NOT be empty",
+            )
+        if "\x00" in text:
+            raise PrismInvalidParamError(
+                lib.PRISM_ERROR_INVALID_PARAM,
+                "Text MUST NOT contain embedded NULLs",
             )
         return _check_error(
             lib.prism_backend_output(self._raw, text.encode("utf-8"), interrupt),
@@ -376,40 +225,99 @@ class Backend:
 
 class Context:
     _ctx: ffi.CData = None
+    _registry: Registry | None
+    _dispatcher: _Dispatcher | None
+    _availability_cb: ffi.CData | None
+    _on_availability: AvailabilityCallback | None
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        registry: Registry | None = None,
+        *,
+        on_availability: AvailabilityCallback | None = None,
+        poll_interval_ms: int = 0,
+        debounce_samples: int = 0,
+        backoff_max_ms: int = 0,
+        auto_power_manage: bool = True,
+    ) -> None:
+        self._ctx = None
+        self._registry = registry
+        self._dispatcher = None
+        self._availability_cb = None
+        self._on_availability = on_availability
         config = lib.prism_config_init()
-        self._ctx = lib.prism_init(ffi.new("PrismConfig *", config))
+        cfg = ffi.new("PrismConfig *", config)
+        if registry is not None:
+            cfg.registry = registry._ptr  # noqa: SLF001
+        if on_availability is not None:
+            self._dispatcher = _Dispatcher()
+            dispatcher: _Dispatcher = self._dispatcher
+            user_cb: AvailabilityCallback = on_availability
+
+            @ffi.callback("void(void*, PrismBackendId, const char*, bool)")
+            def _availability_trampoline(
+                _userdata: ffi.CData,
+                backend: int,
+                name_ptr: ffi.CData,
+                available: bool,
+            ) -> None:
+                try:
+                    name: str = (
+                        ffi.string(name_ptr).decode("utf-8", "replace")
+                        if name_ptr != ffi.NULL
+                        else ""
+                    )
+                    dispatcher.submit(
+                        user_cb, BackendId(backend), name, bool(available)
+                    )
+                except BaseException:
+                    logging.getLogger("prism.dispatch").exception(
+                        "availability trampoline failed"
+                    )
+
+            self._availability_cb = _availability_trampoline
+            cfg.availability_callback = _availability_trampoline
+            cfg.availability_userdata = ffi.NULL
+            cfg.availability_poll_interval_ms = poll_interval_ms
+            cfg.availability_debounce_samples = debounce_samples
+            cfg.availability_backoff_max_ms = backoff_max_ms
+            cfg.availability_auto_power_manage = auto_power_manage
+        self._ctx = lib.prism_init(cfg)
         if self._ctx == ffi.NULL:
+            if self._dispatcher is not None:
+                self._dispatcher.close()
+                self._dispatcher = None
             raise RuntimeError("Prism could not be initialized")
 
     def __del__(self) -> None:
         if sys.is_finalizing():
             return
-        if hasattr(self, "_ctx") and self._ctx:
+        if getattr(self, "_ctx", None):
             lib.prism_shutdown(self._ctx)
             self._ctx = None
+        if getattr(self, "_dispatcher", None) is not None:
+            self._dispatcher.close()
+            self._dispatcher = None
 
     @property
     def backends_count(self) -> int:
         return lib.prism_registry_count(self._ctx)
 
     def id_of(self, index_or_name: int | str) -> BackendId:
-        if isinstance(index_or_name, int):
+        if isinstance(index_or_name, int) and not isinstance(index_or_name, bool):
             res = lib.prism_registry_id_at(self._ctx, index_or_name)
         elif isinstance(index_or_name, str):
             res = lib.prism_registry_id(self._ctx, index_or_name.encode("utf-8"))
         else:
             raise TypeError("Expected int or string")
-        try:
-            return BackendId(res)
-        except ValueError as e:
-            raise ValueError(f"Prism returned unknown backend ID: {res:#x}") from e
+        if res == 0:
+            raise KeyError(f"No backend matching {index_or_name!r}")
+        return BackendId(res)
 
     def name_of(self, backend_id: BackendId) -> str:
         c_ptr = lib.prism_registry_name(self._ctx, backend_id)
         if c_ptr == ffi.NULL:
-            raise ValueError("Backend ID not found")
+            raise KeyError("Backend ID not found")
         return ffi.string(c_ptr).decode("utf-8")
 
     def priority_of(self, backend_id: BackendId) -> int:
@@ -441,3 +349,13 @@ class Context:
         if res == ffi.NULL:
             raise ValueError("Invalid or unsupported backend")
         return Backend(res)
+
+    def pause_availability_polling(self) -> None:
+        lib.prism_availability_poll_pause(self._ctx)
+
+    def resume_availability_polling(self) -> None:
+        lib.prism_availability_poll_resume(self._ctx)
+
+    @staticmethod
+    def auto_power_supported() -> bool:
+        return bool(lib.prism_availability_auto_power_supported())

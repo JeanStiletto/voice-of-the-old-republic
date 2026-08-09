@@ -42,9 +42,13 @@ inline BoyCtrlError(__stdcall *BoyCtrlSpeak)(
 inline BoyCtrlError(__stdcall *BoyCtrlStopSpeaking)() = nullptr;
 inline void(__stdcall *BoyCtrlUninitialize)() = nullptr;
 inline bool(__stdcall *BoyCtrlIsReaderRunning)() = nullptr;
-inline bool(__stdcall *BoyCtrlSetAnyKeyStopSpeaking)(bool withSlave) = nullptr;
 
 // Optional; may be null even when load() succeeded, so check before calling.
+// Upstream renamed this export BoyCtrlSetAnyKeyBreak in 0.17.3. Which spelling
+// a given BoyCtrl build exports is not something we can verify from here, and
+// no backend method calls it, so both names are tried and neither is allowed to
+// decide whether the library loaded at all.
+inline bool(__stdcall *BoyCtrlSetAnyKeyBreak)(bool withSlave) = nullptr;
 inline BoyCtrlError(__stdcall *BoyCtrlInitialize)(const wchar_t *logPath) =
     nullptr;
 inline BoyCtrlError(__stdcall *BoyCtrlInitializeAnsi)(const char *logPath) =
@@ -119,13 +123,13 @@ inline bool load() {
     resolve(module, BoyCtrlStartTextToAudio, "BoyCtrlStartTextToAudio");
     resolve(module, BoyCtrlCancelTextToAudio, "BoyCtrlCancelTextToAudio");
     resolve(module, BoyCtrlActivateYTApp, "BoyCtrlActivateYTApp");
+    if (!resolve(module, BoyCtrlSetAnyKeyBreak, "BoyCtrlSetAnyKeyBreak"))
+      resolve(module, BoyCtrlSetAnyKeyBreak, "BoyCtrlSetAnyKeyStopSpeaking");
     return resolve(module, BoyCtrlInitializeU8, "BoyCtrlInitializeU8") &&
            resolve(module, BoyCtrlSpeak, "BoyCtrlSpeak") &&
            resolve(module, BoyCtrlStopSpeaking, "BoyCtrlStopSpeaking") &&
            resolve(module, BoyCtrlUninitialize, "BoyCtrlUninitialize") &&
-           resolve(module, BoyCtrlIsReaderRunning, "BoyCtrlIsReaderRunning") &&
-           resolve(module, BoyCtrlSetAnyKeyStopSpeaking,
-                   "BoyCtrlSetAnyKeyStopSpeaking");
+           resolve(module, BoyCtrlIsReaderRunning, "BoyCtrlIsReaderRunning");
   }();
   return loaded;
 }

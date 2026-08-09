@@ -11,11 +11,18 @@
 
 namespace prism::raw::zdsr {
 
+// Required by the backend; non-null once load() has returned true.
 inline int(WINAPI *InitTTS)(int type, const WCHAR *channelName,
                             BOOL bKeyDownInterrupt) = nullptr;
 inline int(WINAPI *Speak)(const WCHAR *text, BOOL bInterrupt) = nullptr;
 inline int(WINAPI *GetSpeakState)() = nullptr;
 inline void(WINAPI *StopSpeak)() = nullptr;
+
+// Optional; may be null even when load() succeeded, so check before calling.
+// Upstream 0.17.3 imports Braille unconditionally, which would make an older
+// ZDSRAPI that predates it fail to bind and cost those users speech as well as
+// braille. Resolved separately so a missing Braille costs only braille.
+inline int(WINAPI *Braille)(const WCHAR *text, BOOL bFlashMessage) = nullptr;
 
 // Resolves the entry points above on first call; thread-safe and idempotent.
 // The module is deliberately left loaded for the lifetime of the process,
@@ -38,6 +45,7 @@ inline bool load() {
                                                  L"path", file_name);
     if (module == nullptr)
       return false;
+    resolve(module, Braille, "Braille");
     return resolve(module, InitTTS, "InitTTS") &&
            resolve(module, Speak, "Speak") &&
            resolve(module, GetSpeakState, "GetSpeakState") &&

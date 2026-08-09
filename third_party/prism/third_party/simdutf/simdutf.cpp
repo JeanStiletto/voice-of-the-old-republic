@@ -1,4 +1,4 @@
-/* auto-generated on 2026-05-19 11:29:43 -0400. Do not edit! */
+/* auto-generated on 2026-04-21 17:01:59 -0400. Do not edit! */
 /* begin file src\simdutf.cpp */
 #include "simdutf.h"
 
@@ -27259,10 +27259,8 @@ compress_decode_base64(char *dst, const chartype *src, size_t srclen,
           last_chunk_options == last_chunk_handling_options::strict &&
           (idx >= 2) && ((idx + padding_characters) & 3) != 0) {
         // The partial chunk was at src - idx
-        if (output_len > 0) {
-          _mm512_mask_storeu_epi8((__m512i *)dst, output_mask, shuffled);
-          dst += output_len;
-        }
+        _mm512_mask_storeu_epi8((__m512i *)dst, output_mask, shuffled);
+        dst += output_len;
         return {BASE64_INPUT_REMAINDER, equallocation, size_t(dst - dstinit),
                 true};
       } else
@@ -27276,10 +27274,8 @@ compress_decode_base64(char *dst, const chartype *src, size_t srclen,
             (last_chunk_options ==
                  last_chunk_handling_options::only_full_chunks &&
              (idx >= 2 || padding_characters == 0))) {
-          if (output_len > 0) {
-            _mm512_mask_storeu_epi8((__m512i *)dst, output_mask, shuffled);
-            dst += output_len;
-          }
+          _mm512_mask_storeu_epi8((__m512i *)dst, output_mask, shuffled);
+          dst += output_len;
           // we need to rewind src to before the partial chunk
           size_t characters_to_skip = idx;
           while (characters_to_skip > 0) {
@@ -27308,11 +27304,8 @@ compress_decode_base64(char *dst, const chartype *src, size_t srclen,
               uint32_t triple = (uint32_t(bufferptr[-2]) << 3 * 6) +
                                 (uint32_t(bufferptr[-1]) << 2 * 6);
               if (triple & 0xffff) {
-                if (output_len > 0) {
-                  _mm512_mask_storeu_epi8((__m512i *)dst, output_mask,
-                                          shuffled);
-                  dst += output_len;
-                }
+                _mm512_mask_storeu_epi8((__m512i *)dst, output_mask, shuffled);
+                dst += output_len;
                 return {BASE64_EXTRA_BITS, size_t(src - srcinit),
                         size_t(dst - dstinit)};
               }
@@ -27328,11 +27321,8 @@ compress_decode_base64(char *dst, const chartype *src, size_t srclen,
                                 (uint32_t(bufferptr[-2]) << 2 * 6) +
                                 (uint32_t(bufferptr[-1]) << 1 * 6);
               if (triple & 0xff) {
-                if (output_len > 0) {
-                  _mm512_mask_storeu_epi8((__m512i *)dst, output_mask,
-                                          shuffled);
-                  dst += output_len;
-                }
+                _mm512_mask_storeu_epi8((__m512i *)dst, output_mask, shuffled);
+                dst += output_len;
                 return {BASE64_EXTRA_BITS, size_t(src - srcinit),
                         size_t(dst - dstinit)};
               }
@@ -27345,24 +27335,18 @@ compress_decode_base64(char *dst, const chartype *src, size_t srclen,
                      (!is_partial(last_chunk_options) ||
                       (is_partial(last_chunk_options) &&
                        padding_characters > 0))) {
-            if (output_len > 0) {
-              _mm512_mask_storeu_epi8((__m512i *)dst, output_mask, shuffled);
-              dst += output_len;
-            }
+            _mm512_mask_storeu_epi8((__m512i *)dst, output_mask, shuffled);
+            dst += output_len;
             return {BASE64_INPUT_REMAINDER, size_t(src - srcinit),
                     size_t(dst - dstinit)};
           } else if (!ignore_garbage && idx == 0 && padding_characters > 0) {
-            if (output_len > 0) {
-              _mm512_mask_storeu_epi8((__m512i *)dst, output_mask, shuffled);
-              dst += output_len;
-            }
+            _mm512_mask_storeu_epi8((__m512i *)dst, output_mask, shuffled);
+            dst += output_len;
             return {INVALID_BASE64_CHARACTER, equallocation,
                     size_t(dst - dstinit), true};
           } else {
-            if (output_len > 0) {
-              _mm512_mask_storeu_epi8((__m512i *)dst, output_mask, shuffled);
-              dst += output_len;
-            }
+            _mm512_mask_storeu_epi8((__m512i *)dst, output_mask, shuffled);
+            dst += output_len;
           }
         }
     if (!ignore_garbage && !is_partial(last_chunk_options) &&
