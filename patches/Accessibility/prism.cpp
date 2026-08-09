@@ -31,7 +31,6 @@ namespace {
 // Subset of Prism's C ABI we use. Matches third_party/prism-dist/include/prism.h
 // verbatim. We declare the function-pointer types here rather than including
 // prism.h so the patch DLL build has no header dependency on the upstream tree.
-struct PrismConfig { uint8_t version; };
 typedef struct PrismContext PrismContext;
 typedef struct PrismBackend PrismBackend;
 typedef uint64_t PrismBackendId;
@@ -39,8 +38,18 @@ typedef int PrismError;  // 0 == PRISM_OK
 
 constexpr PrismError kPrismOk                     = 0;
 constexpr PrismError kPrismErrAlreadyInitialized  = 15;  // see PrismError enum
+constexpr PrismError kPrismErrBackendNotAvailable = 16;
 constexpr PrismError kPrismErrUnknown             = 17;  // sentinel for SEH faults
 constexpr uint64_t  kPrismBackendIdSapi           = 0x1D6DF72422CEEE66ull;
+
+// PrismBackendFeature bits. IS_SUPPORTED_AT_RUNTIME is set only while the
+// backend's reader is genuinely reachable — every Windows backend recomputes it
+// on each call (NVDA queries its RPC endpoint, SAPI asks COM for the SpVoice
+// class object, ZDSR and BoyPC scan the process list). Unlike a successful
+// initialize() it is trustworthy; PickNormal explains why that distinction
+// decides whether the mod speaks at all.
+constexpr uint64_t kPrismFeatureSupportedAtRuntime = 1ull << 0;
+constexpr uint64_t kPrismFeatureSupportsSpeak      = 1ull << 2;
 
 // MSVC delay-load helper exceptions. A backend whose vendor DLL is present but
 // exports a mismatched symbol set raises PROC_NOT_FOUND; a missing DLL raises
@@ -55,12 +64,26 @@ constexpr DWORD kVcppDelayLoadProcNotFound = 0xC06D007F;
 // still well within intelligibility for the bundled Microsoft voices.
 constexpr float kPrismSapiUrgentRate = 0.8f;
 
-typedef PrismConfig    (__cdecl* PFN_prism_config_init)(void);
-typedef PrismContext*  (__cdecl* PFN_prism_init)(PrismConfig*);
+// prism_init takes a void* and is always handed nullptr. It reads nothing from
+// a NULL config and falls back to the global backend registry, which is exactly
+// what we want — and that avoids declaring PrismConfig at all. That struct is
+// version-specific in a way no single declaration survives: in 0.16.5 it was a
+// lone version byte and prism_init required version == PRISM_CONFIG_VERSION
+// exactly; in 0.17.3 it carries a registry pointer, an availability callback
+// plus userdata, three uint32 tuning fields and a bool, and the check relaxed
+// to ">". A config built for either version is rejected outright by the other.
+// prism_config_init is deliberately not resolved for the same reason: it
+// returns PrismConfig by value, so its calling convention changes shape with
+// the struct — under 0.17.3 it returns through a hidden pointer this code
+// would never pass, which corrupts the stack rather than failing cleanly.
+typedef PrismContext*  (__cdecl* PFN_prism_init)(void*);
 typedef void           (__cdecl* PFN_prism_shutdown)(PrismContext*);
 typedef bool           (__cdecl* PFN_prism_registry_exists)(PrismContext*, PrismBackendId);
+typedef size_t         (__cdecl* PFN_prism_registry_count)(PrismContext*);
+typedef PrismBackendId (__cdecl* PFN_prism_registry_id_at)(PrismContext*, size_t);
 typedef PrismBackend*  (__cdecl* PFN_prism_registry_acquire)(PrismContext*, PrismBackendId);
 typedef PrismBackend*  (__cdecl* PFN_prism_registry_acquire_best)(PrismContext*);
+typedef uint64_t       (__cdecl* PFN_prism_backend_get_features)(PrismBackend*);
 typedef PrismError     (__cdecl* PFN_prism_backend_initialize)(PrismBackend*);
 typedef PrismError     (__cdecl* PFN_prism_backend_speak)(PrismBackend*, const char*, bool);
 typedef PrismError     (__cdecl* PFN_prism_backend_stop)(PrismBackend*);
@@ -112,12 +135,14 @@ void EnsureSapiVolumeLoaded() {
 // every call. L"none" if no backend resolved.
 wchar_t g_activeNameW[64] = L"none";
 
-PFN_prism_config_init           pPrism_config_init            = nullptr;
 PFN_prism_init                  pPrism_init                   = nullptr;
 PFN_prism_shutdown              pPrism_shutdown               = nullptr;
 PFN_prism_registry_exists       pPrism_registry_exists        = nullptr;
+PFN_prism_registry_count        pPrism_registry_count         = nullptr;
+PFN_prism_registry_id_at        pPrism_registry_id_at         = nullptr;
 PFN_prism_registry_acquire      pPrism_registry_acquire       = nullptr;
 PFN_prism_registry_acquire_best pPrism_registry_acquire_best  = nullptr;
+PFN_prism_backend_get_features  pPrism_backend_get_features   = nullptr;
 PFN_prism_backend_initialize    pPrism_backend_initialize     = nullptr;
 PFN_prism_backend_speak         pPrism_backend_speak          = nullptr;
 PFN_prism_backend_stop          pPrism_backend_stop           = nullptr;
@@ -382,31 +407,102 @@ bool TryAcquireSapi() {
     return true;
 }
 
-// Pick the best-available screen-reader / TTS backend for the normal channel.
-// This is the whole normal-channel contract: hand the job to prism. acquire_best
-// walks every registered backend in priority order (NVDA / JAWS / ZDSR /
-// PC-Talker / OneCore / UIA / SAPI / ...) and returns the first whose
-// initialize() succeeds — including SAPI as the universal catch-all at the
-// bottom of the priority list. Backends from acquire_best are already
-// initialised per Prism's docs. Prism owns per-backend vendor-DLL loading and
-// (as of our backend_registry.cpp fix) skips a backend whose initialize()
-// faults, so we deliberately do NOT reimplement any priority walk or
-// per-backend probing here.
+// True iff this backend can speak AND its reader is reachable right now.
 //
-// The single acquire_best call is SEH-wrapped only as a belt-and-suspenders
-// net for a deployed prism.dll that predates that fix; normally it can't fault.
+// A successful initialize() is not enough, which is the whole reason this
+// check exists. Prism 0.16.5's NVDA backend returns success when NVDA is not
+// running: its testIfRunning check sits behind an RPC interface query that
+// itself fails when there is no server to answer, so with NVDA absent the
+// check is skipped and start-up counts as successful. NVDA holds the highest
+// priority of any backend, so it won acquire_best on every machine and then
+// refused every utterance with BACKEND_NOT_AVAILABLE — total silence for
+// anyone running JAWS, Narrator, ZDSR or nothing at all. Upstream fixed that
+// in 0.17.x, but the gate stays: it costs one call, it is correct either way,
+// and it is the only thing standing between a user and silence if a deployed
+// prism.dll turns out to be older than the one we ship.
+bool BackendIsUsable(PrismBackend* be) {
+    if (!be || !pPrism_backend_get_features) return be != nullptr;
+    const uint64_t want = kPrismFeatureSupportsSpeak | kPrismFeatureSupportedAtRuntime;
+    return (pPrism_backend_get_features(be) & want) == want;
+}
+
+// Walk the registry ourselves and take the first backend that is live and
+// initialises. Registry order is descending priority, so this reproduces
+// acquire_best's ordering — which cannot simply be called again, because it
+// caches its first pick and would hand back the same dead backend.
+//
+// Liveness is checked before initialize(), never after, so a reader that is
+// not running never has its vendor client library touched. That matters here:
+// this walk is the path that reaches ZDSR / PC-Talker / BoyPC, and skipping
+// them outright is stronger than relying on the SEH guard to survive them.
+PrismBackend* WalkForLiveBackend() {
+    if (!pPrism_registry_count || !pPrism_registry_id_at || !pPrism_backend_get_features) {
+        acclog::Write("Speech",
+                      "prism.dll lacks the registry-walk exports; cannot look "
+                      "past acquire_best's choice");
+        return nullptr;
+    }
+
+    const size_t count = pPrism_registry_count(g_prismCtx);
+    for (size_t i = 0; i < count; ++i) {
+        const PrismBackendId id = pPrism_registry_id_at(g_prismCtx, i);
+        if (id == 0) continue;
+
+        DWORD seh = 0;
+        PrismBackend* be = SehAcquire(g_prismCtx, id, &seh);
+        if (!be) continue;
+        if (!BackendIsUsable(be)) continue;
+
+        const PrismError rc = SehInitialize(be, &seh);
+        if (seh) {
+            acclog::Write("Speech",
+                          "prism_backend_initialize faulted for a live backend "
+                          "(%s 0x%08lX); trying the next one",
+                          SehCodeName(seh), seh);
+            continue;
+        }
+        if (rc != kPrismOk && rc != kPrismErrAlreadyInitialized) {
+            acclog::Write("Speech",
+                          "backend reported itself live but initialize failed "
+                          "rc=%d; trying the next one", rc);
+            continue;
+        }
+        return be;
+    }
+    return nullptr;
+}
+
+// Pick the screen-reader / TTS backend for the normal channel. Prism's
+// acquire_best gets first say — it owns the priority walk and skips a backend
+// whose vendor DLL faults during initialize() — but whatever it returns still
+// has to pass BackendIsUsable, and WalkForLiveBackend takes over when it does
+// not. SAPI remains the universal catch-all at the bottom of the order, so a
+// machine with no screen reader running still speaks.
 bool TryAcquireNormal() {
     DWORD seh = 0;
-    g_prismNormal = SehAcquireBest(g_prismCtx, &seh);
-    if (g_prismNormal) return true;
-
+    PrismBackend* best = SehAcquireBest(g_prismCtx, &seh);
     if (seh) {
         acclog::Write("Speech",
                       "prism_registry_acquire_best faulted (%s 0x%08lX); "
-                      "running silent", SehCodeName(seh), seh);
-    } else {
-        acclog::Write("Speech", "no speech backend available; running silent");
+                      "walking the registry instead", SehCodeName(seh), seh);
     }
+
+    if (best && BackendIsUsable(best)) {
+        g_prismNormal = best;
+        return true;
+    }
+
+    if (best) {
+        const char* nameA = pPrism_backend_name ? pPrism_backend_name(best) : nullptr;
+        acclog::Write("Speech",
+                      "acquire_best chose %s but its reader is not running; "
+                      "walking the registry", nameA ? nameA : "?");
+    }
+
+    g_prismNormal = WalkForLiveBackend();
+    if (g_prismNormal) return true;
+
+    acclog::Write("Speech", "no live speech backend available; running silent");
     return false;
 }
 
@@ -468,7 +564,6 @@ bool Init() {
     SetDllDirectoryA(prevLen > 0 ? prevDir : nullptr);
 
     bool ok =
-        Resolve(g_prismLib, pPrism_config_init,           "prism_config_init")           &&
         Resolve(g_prismLib, pPrism_init,                  "prism_init")                  &&
         Resolve(g_prismLib, pPrism_shutdown,              "prism_shutdown")              &&
         Resolve(g_prismLib, pPrism_registry_exists,       "prism_registry_exists")       &&
@@ -491,9 +586,18 @@ bool Init() {
                   /*required=*/false);
     (void)Resolve(g_prismLib, pPrism_backend_count_voices, "prism_backend_count_voices",
                   /*required=*/false);
+    // Optional so an older prism.dll still loads and speaks. Without them the
+    // liveness gate degrades to acquire_best's unchecked answer — logged by
+    // WalkForLiveBackend rather than failing silently.
+    (void)Resolve(g_prismLib, pPrism_backend_get_features, "prism_backend_get_features",
+                  /*required=*/false);
+    (void)Resolve(g_prismLib, pPrism_registry_count,       "prism_registry_count",
+                  /*required=*/false);
+    (void)Resolve(g_prismLib, pPrism_registry_id_at,       "prism_registry_id_at",
+                  /*required=*/false);
 
-    PrismConfig cfg = pPrism_config_init();
-    g_prismCtx = pPrism_init(&cfg);
+    // NULL config on purpose — see the PFN_prism_init declaration.
+    g_prismCtx = pPrism_init(nullptr);
     if (!g_prismCtx) {
         acclog::Write("Speech", "prism_init returned NULL; running silent");
         return false;

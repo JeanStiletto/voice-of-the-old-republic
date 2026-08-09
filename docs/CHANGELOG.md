@@ -35,6 +35,12 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h2>v0.7.0</h2>
 
+<h3>Speech:</h3>
+
+- The mod speaks for people who do not use NVDA. If you use JAWS, Narrator, ZDSR, PC-Talker or no screen reader at all, it was silent from the moment it loaded. The mod picks a speech output by asking each supported reader in turn, highest priority first, whether it started up successfully, and takes the first that says yes. NVDA is asked first, and its support answered yes whether or not NVDA was running — the check for a running NVDA sat behind a query that itself only works when NVDA is running, so with NVDA absent the check was skipped. Everything was then handed to an output that refused all of it. The mod now also asks whether the reader is genuinely running, which is a live check that is answered correctly, and moves on to the next one when the answer is no.
+- The speech library is updated to Prism 0.17.3, which fixes the same fault at its source. Both checks are kept, so speech no longer depends on either one of them being right on its own. The local fixes the shipped library carries were re-applied on top of the new version, including the one that keeps the game from crashing at startup when ZDSR, PC-Talker or BoyPC Reader is installed at a version whose files do not match.
+- ZDSR braille output is supported where the installed ZDSR provides it, and a ZDSR too old to provide it loses only braille rather than failing to load at all.
+
 <h3>KOTOR 1 — controller support:</h3>
 
 - KOTOR 1 can be played with a controller, with the same layout KOTOR 2 has. The first game has no gamepad support of its own — its input layer only ever creates a keyboard and a mouse — so the mod reads the pad itself and, wherever the game rather than the mod has to act, presses your own bound key for you. Everything that made KOTOR 2 playable on a pad works here: the D-pad's object cycle, the action menu on the left trigger, the trigger chords for the beacon, autowalk, degrees and screen help, and one-entry-per-press navigation in menus.
