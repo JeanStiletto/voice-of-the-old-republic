@@ -12,6 +12,13 @@
 //                            character cancel — the bypass we rely on for
 //                            map-cursor / compass / walking cues.
 //
+// Braille: Tolk's Tolk_Output spoke and brailled in one call; Prism splits
+// those. The normal channel therefore dispatches through DispatchNormal —
+// prism_backend_output (the Tolk_Output equivalent) where the backend offers
+// it, else speak plus a braille flash message — and SpeakUrgent mirrors its
+// SAPI alerts to the normal backend's braille channel, since SAPI has no
+// braille display of its own.
+//
 // All Prism functions are resolved at runtime via LoadLibrary +
 // GetProcAddress so a missing prism.dll degrades silently (no speech).
 #include "prism.h"
@@ -37,6 +44,10 @@ typedef uint64_t PrismBackendId;
 typedef int PrismError;  // 0 == PRISM_OK
 
 constexpr PrismError kPrismOk                     = 0;
+// The backend has no implementation of the entry point — e.g. braille on a
+// speech-only backend, or ZDSR running against a ZDSRAPI that predates its
+// Braille export.
+constexpr PrismError kPrismErrNotImplemented      = 3;
 constexpr PrismError kPrismErrAlreadyInitialized  = 15;  // see PrismError enum
 constexpr PrismError kPrismErrBackendNotAvailable = 16;
 constexpr PrismError kPrismErrUnknown             = 17;  // sentinel for SEH faults
@@ -50,6 +61,11 @@ constexpr uint64_t  kPrismBackendIdSapi           = 0x1D6DF72422CEEE66ull;
 // decides whether the mod speaks at all.
 constexpr uint64_t kPrismFeatureSupportedAtRuntime = 1ull << 0;
 constexpr uint64_t kPrismFeatureSupportsSpeak      = 1ull << 2;
+// Braille-only entry point (prism_backend_braille).
+constexpr uint64_t kPrismFeatureSupportsBraille    = 1ull << 4;
+// Combined speech+braille entry point (prism_backend_output) — the
+// Tolk_Output equivalent.
+constexpr uint64_t kPrismFeatureSupportsOutput     = 1ull << 5;
 
 // MSVC delay-load helper exceptions. A backend whose vendor DLL is present but
 // exports a mismatched symbol set raises PROC_NOT_FOUND; a missing DLL raises
@@ -86,6 +102,8 @@ typedef PrismBackend*  (__cdecl* PFN_prism_registry_acquire_best)(PrismContext*)
 typedef uint64_t       (__cdecl* PFN_prism_backend_get_features)(PrismBackend*);
 typedef PrismError     (__cdecl* PFN_prism_backend_initialize)(PrismBackend*);
 typedef PrismError     (__cdecl* PFN_prism_backend_speak)(PrismBackend*, const char*, bool);
+typedef PrismError     (__cdecl* PFN_prism_backend_output)(PrismBackend*, const char*, bool);
+typedef PrismError     (__cdecl* PFN_prism_backend_braille)(PrismBackend*, const char*);
 typedef PrismError     (__cdecl* PFN_prism_backend_stop)(PrismBackend*);
 typedef PrismError     (__cdecl* PFN_prism_backend_set_rate)(PrismBackend*, float);
 typedef PrismError     (__cdecl* PFN_prism_backend_set_volume)(PrismBackend*, float);
@@ -100,6 +118,12 @@ PrismBackend* g_prismSapi      = nullptr;   // urgent channel; SAPI bypass
 bool          g_initTried      = false;
 bool          g_normalReady    = false;
 bool          g_sapiReady      = false;
+
+// Braille channels the normal backend advertised when it was adopted. Either
+// flag can latch off later if a call comes back NOT_IMPLEMENTED — an older
+// vendor client DLL can advertise a bit its export set cannot honour.
+bool g_normalSupportsOutput  = false;  // combined speak+braille call (Tolk_Output equivalent)
+bool g_normalSupportsBraille = false;  // braille-only call
 
 // Tracks the SAPI voice id last applied via prism_backend_set_voice. SIZE_MAX
 // = "unknown / not yet set"; first call will always issue set_voice so the
@@ -145,6 +169,8 @@ PFN_prism_registry_acquire_best pPrism_registry_acquire_best  = nullptr;
 PFN_prism_backend_get_features  pPrism_backend_get_features   = nullptr;
 PFN_prism_backend_initialize    pPrism_backend_initialize     = nullptr;
 PFN_prism_backend_speak         pPrism_backend_speak          = nullptr;
+PFN_prism_backend_output        pPrism_backend_output         = nullptr;
+PFN_prism_backend_braille       pPrism_backend_braille        = nullptr;
 PFN_prism_backend_stop          pPrism_backend_stop           = nullptr;
 PFN_prism_backend_set_rate      pPrism_backend_set_rate       = nullptr;
 PFN_prism_backend_set_volume    pPrism_backend_set_volume     = nullptr;
@@ -426,6 +452,73 @@ bool BackendIsUsable(PrismBackend* be) {
     return (pPrism_backend_get_features(be) & want) == want;
 }
 
+// Install `be` as the normal backend and record which braille channels it
+// offers, so Speak can reach a braille display and not just the synthesizer.
+// Without get_features (older prism.dll) both flags stay off and dispatch
+// degrades to plain speak — exactly the pre-braille behaviour.
+void AdoptNormal(PrismBackend* be) {
+    g_prismNormal = be;
+    const uint64_t features =
+        pPrism_backend_get_features ? pPrism_backend_get_features(be) : 0;
+    g_normalSupportsOutput  = (features & kPrismFeatureSupportsOutput)  != 0;
+    g_normalSupportsBraille = (features & kPrismFeatureSupportsBraille) != 0;
+}
+
+// How the adopted backend reaches a braille display, for the log — the line a
+// braille user's report gets checked against. Keyed on SUPPORTS_BRAILLE, not
+// SUPPORTS_OUTPUT: every backend advertises output() (on the speech-only ones
+// its braille half is a no-op), so only the braille bit says whether a display
+// can actually be reached.
+const char* BrailleModeText() {
+    if (!g_normalSupportsBraille)
+        return "no braille";
+    return (g_normalSupportsOutput && pPrism_backend_output)
+               ? "braille via output()"
+               : "braille supported";
+}
+
+// Mirrors text to the braille display through the normal backend, when it has
+// one. Quiet by design: braille is supplementary on this path, so a failure
+// must never cost speech or spam the log — only a NOT_IMPLEMENTED is noted,
+// once, when latching the capability off. `utf8` must already be UTF-8.
+void BrailleNormal(const char* utf8) {
+    if (!g_normalSupportsBraille || !pPrism_backend_braille || !g_prismNormal)
+        return;
+    PrismError rc = pPrism_backend_braille(g_prismNormal, utf8);
+    if (rc == kPrismErrNotImplemented) {
+        // Advertised but not really there — e.g. a ZDSRAPI predating its
+        // Braille export.
+        g_normalSupportsBraille = false;
+        acclog::Write("Speech",
+                      "normal backend advertises braille but reports "
+                      "NotImplemented; braille off for this backend");
+    }
+}
+
+// Sends one announcement to the normal backend on every channel it offers.
+// Tolk's Tolk_Output spoke and brailled in one call; Prism splits those, so a
+// backend advertising SUPPORTS_OUTPUT gets prism_backend_output (the direct
+// equivalent) and the rest get speak plus, where supported, a braille flash
+// message. An older prism.dll without the output export (null pointer) takes
+// the speak path from the start.
+PrismError DispatchNormal(const char* utf8, bool interrupt) {
+    if (g_normalSupportsOutput && pPrism_backend_output) {
+        PrismError rc = pPrism_backend_output(g_prismNormal, utf8, interrupt);
+        if (rc != kPrismErrNotImplemented) return rc;
+
+        // The feature bit promised output() but the call disagreed — an older
+        // vendor client DLL can do that. Take speak (+ braille) from here on.
+        g_normalSupportsOutput = false;
+        acclog::Write("Speech",
+                      "normal backend advertises output() but reports "
+                      "NotImplemented; switching to speak (%s)",
+                      BrailleModeText());
+    }
+    PrismError rcSpeak = pPrism_backend_speak(g_prismNormal, utf8, interrupt);
+    BrailleNormal(utf8);
+    return rcSpeak;
+}
+
 // Walk the registry ourselves and take the first backend that is live and
 // initialises. Registry order is descending priority, so this reproduces
 // acquire_best's ordering — which cannot simply be called again, because it
@@ -488,7 +581,7 @@ bool TryAcquireNormal() {
     }
 
     if (best && BackendIsUsable(best)) {
-        g_prismNormal = best;
+        AdoptNormal(best);
         return true;
     }
 
@@ -499,8 +592,11 @@ bool TryAcquireNormal() {
                       "walking the registry", nameA ? nameA : "?");
     }
 
-    g_prismNormal = WalkForLiveBackend();
-    if (g_prismNormal) return true;
+    PrismBackend* walked = WalkForLiveBackend();
+    if (walked) {
+        AdoptNormal(walked);
+        return true;
+    }
 
     acclog::Write("Speech", "no live speech backend available; running silent");
     return false;
@@ -586,6 +682,13 @@ bool Init() {
                   /*required=*/false);
     (void)Resolve(g_prismLib, pPrism_backend_count_voices, "prism_backend_count_voices",
                   /*required=*/false);
+    // Braille entry points — optional so an older prism.dll (pre-0.17.x)
+    // still loads and speaks; DispatchNormal falls back to plain speak when
+    // either pointer is null.
+    (void)Resolve(g_prismLib, pPrism_backend_output,       "prism_backend_output",
+                  /*required=*/false);
+    (void)Resolve(g_prismLib, pPrism_backend_braille,      "prism_backend_braille",
+                  /*required=*/false);
     // Optional so an older prism.dll still loads and speaks. Without them the
     // liveness gate degrades to acquire_best's unchecked answer — logged by
     // WalkForLiveBackend rather than failing silently.
@@ -613,9 +716,10 @@ bool Init() {
         MultiByteToWideChar(CP_UTF8, 0, nameA, -1, g_activeNameW,
                             sizeof(g_activeNameW) / sizeof(g_activeNameW[0]));
         acclog::Write("Speech",
-                      "ready — normal backend = %s, urgent backend = %s",
-                      nameA, g_sapiReady ? "SAPI" : "(SAPI unavailable, "
-                                                    "urgent falls back to normal)");
+                      "ready — normal backend = %s (%s), urgent backend = %s",
+                      nameA, BrailleModeText(),
+                      g_sapiReady ? "SAPI" : "(SAPI unavailable, "
+                                             "urgent falls back to normal)");
     }
 
     return g_normalReady;
@@ -654,11 +758,10 @@ void Speak(const wchar_t* text, bool interrupt) {
     // when it succeeded; otherwise allocate a fresh small one. Prism backends
     // expect UTF-8.
     if (conv > 0) {
-        PrismError rc = pPrism_backend_speak(g_prismNormal, audit, interrupt);
+        PrismError rc = DispatchNormal(audit, interrupt);
         if (rc != kPrismOk) {
             acclog::Trace("Speech",
-                          "prism_backend_speak(normal) rc=%d; dropping utterance",
-                          rc);
+                          "normal dispatch rc=%d; dropping utterance", rc);
         }
     }
     if (heap_audit) free(heap_audit);
@@ -692,11 +795,10 @@ void Speak(const char* text, bool interrupt) {
         buf = heap_buf;
     }
     if (ReencodeAcpToUtf8(text, buf, heap_buf ? need_cap : sizeof(stack_buf))) {
-        PrismError rc = pPrism_backend_speak(g_prismNormal, buf, interrupt);
+        PrismError rc = DispatchNormal(buf, interrupt);
         if (rc != kPrismOk) {
             acclog::Trace("Speech",
-                          "prism_backend_speak(normal) rc=%d; dropping utterance",
-                          rc);
+                          "normal dispatch rc=%d; dropping utterance", rc);
         }
     }
     if (heap_buf) free(heap_buf);
@@ -730,14 +832,21 @@ static void SpeakUrgentImpl(const char* text, size_t voiceId, bool applyVoice) {
     // of this entry point. If SAPI didn't acquire (no Prism SAPI backend
     // registered on this system, init failed, etc.) fall back to the normal
     // backend so the announce still lands somewhere.
-    PrismBackend* target = g_sapiReady ? g_prismSapi : g_prismNormal;
-    const char*   tag    = g_sapiReady ? "[SAPI]"    : "[normal-fallback]";
+    const char* tag = g_sapiReady ? "[SAPI]" : "[normal-fallback]";
 
-    if (applyVoice && g_sapiReady) {
-        EnsureSapiVoice(voiceId);
+    PrismError rc;
+    if (g_sapiReady) {
+        if (applyVoice) EnsureSapiVoice(voiceId);
+        rc = pPrism_backend_speak(g_prismSapi, speakText, /*interrupt=*/true);
+        // SAPI has no braille display, so mirror the alert through the normal
+        // backend's braille channel — braille() makes no sound, so unlike a
+        // speech fallback this cannot say the text twice.
+        BrailleNormal(speakText);
+    } else {
+        // The normal-backend fallback goes through DispatchNormal so the
+        // alert reaches a braille display the same way ordinary speech does.
+        rc = DispatchNormal(speakText, /*interrupt=*/true);
     }
-
-    PrismError rc = pPrism_backend_speak(target, speakText, /*interrupt=*/true);
     if (rc == kPrismOk) {
         // Log the original CP_ACP text so the patch log stays readable
         // in the same encoding as every other log line.
@@ -749,8 +858,8 @@ static void SpeakUrgentImpl(const char* text, size_t voiceId, bool applyVoice) {
         // normal backend would produce double-speak. Drop the utterance;
         // the next SpeakUrgent call retries naturally.
         acclog::Trace("Speech",
-                      "SpeakUrgent: prism_backend_speak rc=%d; "
-                      "dropping utterance (no double-speak fallback)", rc);
+                      "SpeakUrgent: %s dispatch rc=%d; "
+                      "dropping utterance (no double-speak fallback)", tag, rc);
     }
 }
 
