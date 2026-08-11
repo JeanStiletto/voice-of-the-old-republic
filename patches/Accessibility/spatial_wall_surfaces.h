@@ -89,4 +89,18 @@ bool GetSurfaceDesc(int idx, WallSurfaceDesc& outDesc);
 bool SegmentCrossesSurface(const Vector& a, const Vector& b,
                            Vector& outHitPoint);
 
+// Sized like the global tri-edge index in engine_area_walls (16384 edges
+// ≈ 5500 faces for K1's densest observed area, ~3× headroom over the
+// Peragus builds). 8192 × 36 B ≈ 290 KB static. Overflow logged once
+// per area-change.
+constexpr int kMaxFloorTris = 8192;
+
+// Floor heights of the walkmesh triangles containing (x,y), one entry
+// per stacked storey (bridge over tunnel), exact on ramps via plane
+// interpolation. Fills outZ ascending, returns the count (0 when the
+// point is off-mesh or before the first RebuildForArea). Primary source
+// for wall_probe::ResolveProbeZ — the walls-only height vote is its
+// fallback.
+int FloorZCandidatesAt(float x, float y, float* outZ, int maxOut);
+
 }  // namespace acc::spatial::wall_surfaces

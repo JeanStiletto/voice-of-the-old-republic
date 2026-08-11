@@ -720,6 +720,24 @@ struct WallEdge {
 // per area-load (doors are separate collision meshes), so cache once.
 int BuildAreaWallCache(void* area, WallEdge* outBuf, int maxEdges);
 
+// One walkmesh floor triangle, all three corners in WORLD space
+// (LocalToWorld applied at extraction, same as WallEdge). The .wok mesh
+// is a 2.5D floor surface — no ceilings — so the triangle under an
+// (x,y) point IS the floor there; a plane interpolation over the three
+// corners gives the exact height even on ramps.
+struct FloorTri {
+    Vector a;
+    Vector b;
+    Vector c;
+};
+
+// Walks every room's surface mesh and emits every face as a FloorTri.
+// No material or adjacency filtering — non-walkable faces (grates,
+// hazard strips) still sit at floor height and are valid height
+// witnesses. Returns the discovered count; writes up to maxTris.
+// SEH-guarded per room, same contract as BuildAreaWallCache.
+int BuildAreaFloorCache(void* area, FloorTri* outBuf, int maxTris);
+
 // Same-floor z tolerance for the segment-vs-wall test below (world units
 // = metres). A wall edge whose z at the crossing point differs from the
 // ray's z by more than this is on another floor and is not a blocker —

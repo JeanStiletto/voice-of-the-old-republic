@@ -182,6 +182,64 @@ int ScanRoomWallEdges(void* surfaceMesh, int roomId,
     return emitted;
 }
 
+// Walk every face of one room's surface mesh, emit each as a FloorTri
+// with world-space corners. Mirror of ScanRoomAllTriangleEdges at face
+// granularity; no adjacency or material filtering (see the header
+// contract). Returns the count this room contributed (written to outBuf
+// only while there's space).
+int ScanRoomFloorTris(void* surfaceMesh, FloorTri* outBuf, int maxTris,
+                      int alreadyWritten) {
+    if (!surfaceMesh) return 0;
+    auto* mesh = reinterpret_cast<unsigned char*>(surfaceMesh);
+
+    Vector*   vertices    = nullptr;
+    uint32_t  faceCount   = 0;
+    void*     faceIndices = nullptr;
+    __try {
+        vertices    = *reinterpret_cast<Vector**>(
+            mesh + kCollisionMeshVerticesOffset);
+        faceCount   = *reinterpret_cast<uint32_t*>(
+            mesh + kCollisionMeshFaceCountOffset);
+        faceIndices = *reinterpret_cast<void**>(
+            mesh + kCollisionMeshFacesOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+    if (!vertices || !faceIndices || faceCount == 0) return 0;
+
+    auto fnLocalToWorld = reinterpret_cast<PFN_CollisionMeshLocalToWorld>(
+        kAddrCollisionMeshLocalToWorld);
+    auto* faces = reinterpret_cast<unsigned char*>(faceIndices);
+
+    int emitted = 0;
+    for (uint32_t f = 0; f < faceCount; ++f) {
+        uint32_t v[3] = {0, 0, 0};
+        if (!ReadFaceVertexIndices(faces, f, v)) continue;
+        Vector localA = {0, 0, 0}, localB = {0, 0, 0}, localC = {0, 0, 0};
+        __try {
+            localA = vertices[v[0]];
+            localB = vertices[v[1]];
+            localC = vertices[v[2]];
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            continue;
+        }
+        Vector worldA, worldB, worldC;
+        TransformEdgeEndpoints(surfaceMesh, fnLocalToWorld,
+                               localA, localB, worldA, worldB);
+        TransformEdgeEndpoints(surfaceMesh, fnLocalToWorld,
+                               localC, localC, worldC, worldC);
+
+        int slot = alreadyWritten + emitted;
+        if (outBuf && slot < maxTris) {
+            outBuf[slot].a = worldA;
+            outBuf[slot].b = worldB;
+            outBuf[slot].c = worldC;
+        }
+        ++emitted;
+    }
+    return emitted;
+}
+
 }  // namespace
 
 // Global triangle-edge index used by the portal-coincidence filter in
@@ -496,6 +554,31 @@ int BuildAreaWallCache(void* area, WallEdge* outBuf, int maxEdges) {
     }
 
     return kept;
+}
+
+int BuildAreaFloorCache(void* area, FloorTri* outBuf, int maxTris) {
+    if (!area) return 0;
+
+    void*    rooms     = nullptr;
+    uint32_t roomCount = 0;
+    __try {
+        auto* base = reinterpret_cast<unsigned char*>(area);
+        rooms     = *reinterpret_cast<void**>(base + kAreaRoomsOffset);
+        roomCount = *reinterpret_cast<uint32_t*>(base + kAreaRoomCountOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+    if (!rooms || roomCount == 0) return 0;
+
+    auto* roomBase = reinterpret_cast<unsigned char*>(rooms);
+    int total = 0;
+    for (uint32_t i = 0; i < roomCount; ++i) {
+        void* room = roomBase + static_cast<size_t>(i) * kRoomStride;
+        void* sm   = GetRoomSurfaceMesh(room);
+        if (!sm) continue;
+        total += ScanRoomFloorTris(sm, outBuf, maxTris, total);
+    }
+    return total;
 }
 
 

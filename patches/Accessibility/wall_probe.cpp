@@ -17,6 +17,7 @@
 #include "engine_area.h"               // WallEdge, SegmentCrossesWalkmesh
 #include "engine_offsets.h"            // Vector
 #include "spatial_change_detector.h"   // GetCachedWalls — seam-filtered cache
+#include "spatial_wall_surfaces.h"     // FloorZCandidatesAt — floor-tri cache
 
 namespace acc::wall_probe {
 
@@ -34,6 +35,124 @@ namespace acc::wall_probe {
 // region module was retired in favour of pure nav-graph classification.
 
 constexpr float kProbeLenWu = 25.0f;
+
+// Probe-height vote (see wall_probe.h). Nav-graph nodes carry z=0 (the
+// .pth has no height) while SegmentCrossesWalkmesh rejects walls outside
+// its z-guard — unlifted probes on any elevated floor report open space
+// everywhere. This broke the alcove gate for EVERY degree-1 node on the
+// Peragus Minenschächte floor (z≈3.4) and made the corridor dead-mark
+// beyond-probe always clear (2026-08-11).
+//
+// The clearance dump's earlier per-caller lift used the single NEAREST
+// endpoint's z, which latches onto multi-storey anomaly walls the moment
+// a closer wall leaves the cache — opening a door reclassified a
+// Sackgasse pocket as open space because its probe jumped to a leftover
+// edge 4m overhead. So: vote instead of nearest. Endpoints within
+// kZVoteRadiusM are bucketed into 1m height bands; the winner is the
+// band with the most support including its two adjacent bands (floor
+// edges straddling a band boundary must not split their vote and lose
+// to a balcony). Fallbacks: nearest endpoint z when the radius is
+// empty, pos.z when the cache is empty.
+float ResolveProbeZ(const acc::engine::WallEdge* walls, int wallCount,
+                    const Vector& pos) {
+    constexpr float kZKeepCallerM = 2.0f;  // ≈ the walkmesh z-guard
+
+    // Primary source: the walkmesh floor triangle under (x,y) — ground
+    // truth, exact on ramps (plane interpolation), no statistics
+    // involved. Multiple candidates = genuinely stacked storeys; a
+    // caller z that sees one of them picks its storey, otherwise the
+    // wall-band vote below breaks the tie. Off-mesh points (a centroid
+    // synthesized outside the walkable surface) fall through to the
+    // vote.
+    float cand[4];
+    int candCount = acc::spatial::wall_surfaces::FloorZCandidatesAt(
+        pos.x, pos.y, cand, 4);
+    if (candCount > 0) {
+        for (int i = 0; i < candCount; ++i) {
+            if (std::fabs(pos.z - cand[i]) <= kZKeepCallerM) return pos.z;
+        }
+        if (candCount == 1) return cand[0];
+    }
+
+    if (!walls || wallCount <= 0) {
+        return (candCount > 0) ? cand[0] : pos.z;
+    }
+    constexpr float kZVoteRadiusM = 10.0f;
+    constexpr float kZBandM       = 1.0f;
+    constexpr int   kMaxBands     = 32;
+    float bandSum[kMaxBands];
+    int   bandCount[kMaxBands];
+    int   bandKey[kMaxBands];
+    int   bands = 0;
+    float nearestZ  = pos.z;
+    float nearestSq = 1e30f;
+    const float radiusSq = kZVoteRadiusM * kZVoteRadiusM;
+    for (int w = 0; w < wallCount; ++w) {
+        for (int e = 0; e < 2; ++e) {
+            const Vector& p = e ? walls[w].b : walls[w].a;
+            float dx = p.x - pos.x;
+            float dy = p.y - pos.y;
+            float sq = dx * dx + dy * dy;
+            if (sq < nearestSq) { nearestSq = sq; nearestZ = p.z; }
+            if (sq > radiusSq) continue;
+            int key = static_cast<int>(std::floor(p.z / kZBandM));
+            int b = 0;
+            for (; b < bands; ++b) {
+                if (bandKey[b] == key) break;
+            }
+            if (b == bands) {
+                if (bands >= kMaxBands) continue;
+                bandKey[bands]   = key;
+                bandSum[bands]   = 0.0f;
+                bandCount[bands] = 0;
+                ++bands;
+            }
+            bandSum[b]   += p.z;
+            bandCount[b] += 1;
+        }
+    }
+    if (bands == 0) return (candCount > 0) ? cand[0] : nearestZ;
+    // Winner by supported count = own band + the two adjacent bands, so
+    // a floor whose endpoints straddle a band boundary still outvotes a
+    // sparse elevated band. The returned z is the mean over the same
+    // supporting bands.
+    int   bestSupport = -1;
+    float bestSum     = 0.0f;
+    int   bestCount   = 0;
+    for (int b = 0; b < bands; ++b) {
+        int   support = 0;
+        float sum     = 0.0f;
+        int   cnt     = 0;
+        for (int o = 0; o < bands; ++o) {
+            int d = bandKey[o] - bandKey[b];
+            if (d < -1 || d > 1) continue;
+            support += bandCount[o];
+            sum     += bandSum[o];
+            cnt     += bandCount[o];
+        }
+        if (support > bestSupport) {
+            bestSupport = support;
+            bestSum     = sum;
+            bestCount   = cnt;
+        }
+    }
+    float votedZ = bestSum / static_cast<float>(bestCount);
+    // Stacked storeys: the vote only picks WHICH floor candidate wins;
+    // the returned height is the exact triangle plane, not the vote's
+    // wall-endpoint approximation. (The keep-caller rule already ran in
+    // the candidate loop above.)
+    if (candCount > 1) {
+        int best = 0;
+        for (int i = 1; i < candCount; ++i) {
+            if (std::fabs(cand[i] - votedZ) < std::fabs(cand[best] - votedZ)) {
+                best = i;
+            }
+        }
+        return cand[best];
+    }
+    if (std::fabs(pos.z - votedZ) <= kZKeepCallerM) return pos.z;
+    return votedZ;
+}
 
 float ProbeWall(const acc::engine::WallEdge* walls, int wallCount,
                 const Vector& origin, float dx, float dy) {
@@ -62,7 +181,9 @@ float ProbeDistance(const Vector& pos, float dx, float dy) {
     }
     float mag = std::sqrt(dx * dx + dy * dy);
     if (mag < 1e-6f) return -1.0f;
-    return ProbeWall(walls, wallCount, pos, dx / mag, dy / mag);
+    Vector origin = pos;
+    origin.z = ResolveProbeZ(walls, wallCount, pos);
+    return ProbeWall(walls, wallCount, origin, dx / mag, dy / mag);
 }
 
 // Dead-end shape gate, a 4-ray probe rotated to align with
@@ -107,10 +228,12 @@ bool IsAlcoveAlongAxis(const Vector& pos, float forwardX, float forwardY) {
     float fy  = forwardY * inv;
     float px  = fy;
     float py  = -fx;
-    float dF = ProbeWall(walls, wallCount, pos,  fx,  fy);
-    float dB = ProbeWall(walls, wallCount, pos, -fx, -fy);
-    float dR = ProbeWall(walls, wallCount, pos,  px,  py);
-    float dL = ProbeWall(walls, wallCount, pos, -px, -py);
+    Vector origin = pos;
+    origin.z = ResolveProbeZ(walls, wallCount, pos);
+    float dF = ProbeWall(walls, wallCount, origin,  fx,  fy);
+    float dB = ProbeWall(walls, wallCount, origin, -fx, -fy);
+    float dR = ProbeWall(walls, wallCount, origin,  px,  py);
+    float dL = ProbeWall(walls, wallCount, origin, -px, -py);
     return dF > kDeadEndForwardM &&
            dB <= kDeadEndBackM &&
            dR <= kDeadEndSideM &&
@@ -131,8 +254,10 @@ void ProbeClearance8(const acc::engine::WallEdge* walls, int wallCount,
                                    -1.0f, -0.70710678f, 0.0f,  0.70710678f};
     static const float kDirY[8] = { 0.0f,  0.70710678f, 1.0f,  0.70710678f,
                                     0.0f, -0.70710678f,-1.0f, -0.70710678f};
+    Vector origin = pos;
+    origin.z = ResolveProbeZ(walls, wallCount, pos);
     for (int k = 0; k < 8; ++k) {
-        outRays[k] = ProbeWall(walls, wallCount, pos, kDirX[k], kDirY[k]);
+        outRays[k] = ProbeWall(walls, wallCount, origin, kDirX[k], kDirY[k]);
     }
 }
 

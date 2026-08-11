@@ -24,6 +24,18 @@ namespace acc::engine { struct WallEdge; }
 
 namespace acc::wall_probe {
 
+// Resolve the height a probe from `pos` should cast at. Wall rays only
+// see walls within the walkmesh z-guard of their own height, and many
+// callers (nav-graph nodes, cluster centroids) carry z=0 — on any floor
+// above the guard those rays fly under the whole map. Votes on the wall
+// endpoints around (x,y) and returns the dominant height band; keeps
+// pos.z untouched when it already sees that band (engine-sourced
+// positions are correct and must not be dragged onto another storey).
+// Every entry point below applies this itself; callers only need it
+// directly when they log the resolved height.
+float ResolveProbeZ(const acc::engine::WallEdge* walls, int wallCount,
+                    const Vector& pos);
+
 // Distance to the first wall along (dx,dy) from `pos`. Returns the probe
 // range when the ray clears it, -1.0 when the wall cache is empty.
 float ProbeDistance(const Vector& pos, float dx, float dy);

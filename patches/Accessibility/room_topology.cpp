@@ -511,17 +511,13 @@ void ComputeNodeShapeFeatures(const acc::engine::navgraph::NavGraphSnapshot& g,
                   "(feeds open + room coalesce)");
     for (int i = 0; i < n; ++i) {
         Vector probePos = g.nodes[i].pos;
-        float bestEndSq = 1e30f;
-        for (int w = 0; w < cwCount; ++w) {
-            float ex0 = cw[w].a.x - probePos.x;
-            float ey0 = cw[w].a.y - probePos.y;
-            float s0  = ex0 * ex0 + ey0 * ey0;
-            if (s0 < bestEndSq) { bestEndSq = s0; probePos.z = cw[w].a.z; }
-            float ex1 = cw[w].b.x - probePos.x;
-            float ey1 = cw[w].b.y - probePos.y;
-            float s1  = ex1 * ex1 + ey1 * ey1;
-            if (s1 < bestEndSq) { bestEndSq = s1; probePos.z = cw[w].b.z; }
-        }
+        // Height-band vote (wall_probe::ResolveProbeZ). Replaced the
+        // single-nearest-endpoint lift that lived here: when a door
+        // opening dropped the nearest wall from the cache, the lift
+        // latched onto a multi-storey anomaly edge 4m overhead and the
+        // all-clear probe reclassified a Sackgasse pocket as open space
+        // (Minenschächte node 76, 2026-08-11).
+        probePos.z = acc::wall_probe::ResolveProbeZ(cw, cwCount, probePos);
         nodeFloorZ[i] = probePos.z;
         float r[8];
         ProbeClearance8(cw, cwCount, probePos, r);
@@ -1150,6 +1146,10 @@ std::string RenderDoorDirection(int doorIdx, const char* dirWord) {
     return acc::strfmt::Format("%s %s", noun, dirWord);
 }
 
+// Defined below (junction emit section); corridors reuse it so a
+// dead-end arm reads identically in both cluster shapes.
+std::string DirEntry(acc::strings::Id dirId, bool markDeadEnd);
+
 // Render a corridor's axis label into outBuf. Branches by corridor
 // symmetry so the spoken form stays terse for clean axes but exposes
 // both endpoints when the corridor turns:
@@ -1174,11 +1174,18 @@ std::string RenderDoorDirection(int doorIdx, const char* dirWord) {
 // RenderDoorDirection, so a corridor whose ends are different doors
 // keeps both names ("Sicherheitstür Ost, Tür West nach Treibstoffdepot")
 // instead of collapsing onto whichever door was collected first.
-std::string RenderCorridorAxis(int bitA, int doorA, int bitB, int doorB) {
+// `deadA` / `deadB` mark an end whose neighbour leads nowhere onward:
+// that direction word is wrapped "Sackgasse %s", same as junction
+// dead-end octants. Without the marker the Peragus Minenschächte droid
+// pocket announced as a plain "Ost" exit and the player searched the
+// east wall for a way out that never existed (2026-08-11 session).
+std::string RenderCorridorAxis(int bitA, int doorA, bool deadA,
+                               int bitB, int doorB, bool deadB) {
     using acc::strings::Id;
     if (bitA < 0 || bitB < 0 || bitA == bitB) return std::string();
 
     bool anyDoor = (doorA >= 0) || (doorB >= 0);
+    bool anyDead = deadA || deadB;
 
     // The axis collapse names the RUN, not its ends, so it can only be
     // used when neither end is a door. Folding a door into it drops the
@@ -1187,9 +1194,12 @@ std::string RenderCorridorAxis(int bitA, int doorA, int bitB, int doorB) {
     // octant happened to sort first: "Tür Ost-West" for a corridor whose
     // east end is a Sicherheitstür and whose west end is a plain Tür.
     // Same reasoning that already un-collapsed the diagonal pairs below.
+    // A dead-end arm disqualifies the collapse for the same reason a
+    // door does: "Nord-Süd" names the run and would swallow the one
+    // fact that matters — which end is the cul-de-sac.
     bool cardinalPair = ((bitA ^ bitB) == 4) &&
                         (bitA == 2 || bitB == 2 || bitA == 0 || bitB == 0);
-    if (cardinalPair && !anyDoor) {
+    if (cardinalPair && !anyDoor && !anyDead) {
         Id wordId = (bitA == 2 || bitB == 2) ? Id::AxisNorthSouth   // N <-> S
                                              : Id::AxisEastWest;    // E <-> W
         const char* word = acc::strings::Get(wordId);
@@ -1208,27 +1218,30 @@ std::string RenderCorridorAxis(int bitA, int doorA, int bitB, int doorB) {
     static const int octant_x[8] = { 2,  1,  0, -1, -2, -1,  0,  1};
     int first  = bitA, firstDoor  = doorA;
     int second = bitB, secondDoor = doorB;
+    bool firstDead = deadA, secondDead = deadB;
     if (octant_y[bitB] > octant_y[first] ||
         (octant_y[bitB] == octant_y[first] &&
          octant_x[bitB] >  octant_x[first])) {
-        first  = bitB; firstDoor  = doorB;
-        second = bitA; secondDoor = doorA;
+        first  = bitB; firstDoor  = doorB; firstDead  = deadB;
+        second = bitA; secondDoor = doorA; secondDead = deadA;
     }
     const char* wordA = acc::strings::Get(BitToOctant(first));
     const char* wordB = acc::strings::Get(BitToOctant(second));
     if (!wordA[0] || !wordB[0]) return std::string();
 
     // One entry per end, each naming its own door (noun + landmark or
-    // transition destination) or just its direction. Matches the way
-    // ClassifyAsArea already renders per-octant exits, so a two-door
-    // corridor keeps both door names instead of losing one.
+    // transition destination), its dead-end marker, or just its
+    // direction. Matches the way ClassifyAsArea already renders
+    // per-octant exits, so a two-door corridor keeps both door names
+    // instead of losing one. Door wins over the dead-end marker, same
+    // rule as the junction emit loop.
     std::string combo;
     AppendListEntry(combo, (firstDoor >= 0)
                                ? RenderDoorDirection(firstDoor, wordA)
-                               : std::string(wordA));
+                               : DirEntry(BitToOctant(first), firstDead));
     AppendListEntry(combo, (secondDoor >= 0)
                                ? RenderDoorDirection(secondDoor, wordB)
-                               : std::string(wordB));
+                               : DirEntry(BitToOctant(second), secondDead));
     if (combo.empty()) return std::string();
 
     if (anyDoor) return combo;
@@ -1620,6 +1633,34 @@ void ClassifyAsDeadEnd(const acc::engine::navgraph::NavGraphSnapshot& g, int n,
     return;
 }
 
+// Is this corridor end a cul-de-sac worth flagging? True when the end
+// neighbour has no further graph edges, carries no area-transition
+// trigger (the ClassifyAsDeadEnd exemption — the walkmesh ends because
+// the AREA ends), and the walkmesh confirms the deadness: either the
+// end forms a genuine alcove (same gate junctions use) or a probe cast
+// onward past the end hits a wall within a few metres. The probe is
+// what a bare degree test can't provide — a degree-1 patrol anchor
+// sitting in CONTINUING open space (wall-curve artefact) probes long
+// and stays unmarked, so the marker can never hide a real way onward.
+bool CorridorEndIsDead(const acc::engine::navgraph::NavGraphSnapshot& g,
+                       int nb, const Vector& centroid) {
+    if (Degree(g, nb) >= 2) return false;
+    for (int t = 0; t < g_graph.transition_count; ++t) {
+        if (g_graph.transitions[t].nearestNode == nb) return false;
+    }
+    if (WalkmeshAgreesDeadEnd(g.nodes[nb].pos, centroid)) return true;
+    // Beyond-probe: continue the corridor axis past the end node. A
+    // terminus wall sits close (Minenschächte droid pocket: 3.3m); a
+    // continuing space probes past the threshold. -1 (no wall cache)
+    // leaves the end unmarked — a wrong "Sackgasse" on the only onward
+    // arm is the inverse of the bug this fixes, so fail toward silence.
+    const float kBeyondWallMaxM = 6.0f;
+    float bx = g.nodes[nb].pos.x - centroid.x;
+    float by = g.nodes[nb].pos.y - centroid.y;
+    float d = acc::wall_probe::ProbeDistance(g.nodes[nb].pos, bx, by);
+    return d >= 0.0f && d <= kBeyondWallMaxM;
+}
+
 // Exactly two external edges — a corridor run, announced by the axis
 // its two ends lie on.
 void ClassifyAsCorridor(const acc::engine::navgraph::NavGraphSnapshot& g, int n,
@@ -1664,20 +1705,30 @@ void ClassifyAsCorridor(const acc::engine::navgraph::NavGraphSnapshot& g, int n,
             else                                        doorB = spanDoor;
         }
     }
-    outLabel = RenderCorridorAxis(bitA, doorA, bitB, doorB);
+    // Dead-end marker per end, door wins (a named gateway is the
+    // actionable information; what's behind it is the next cluster's
+    // business). Evaluated after the span-door fallback so a door
+    // found on the span still suppresses the marker for its end.
+    bool deadA = (doorA < 0) && CorridorEndIsDead(g, nbA, centroid);
+    bool deadB = (doorB < 0) && CorridorEndIsDead(g, nbB, centroid);
+    outLabel = RenderCorridorAxis(bitA, doorA, deadA, bitB, doorB, deadB);
     AppendListEntry(outLabel, trigEntries);
-    if (doorA >= 0 || doorB >= 0) {
+    if (doorA >= 0 || doorB >= 0 || deadA || deadB) {
         acclog::Write(
             "WallTopo",
             "ClassifyCluster: degree-2 corridor at (%.1f,%.1f,%.1f) "
-            "HIT door A=%d B=%d on segment → \"%s\"",
+            "HIT door A=%d B=%d dead A=%d B=%d on segment → \"%s\"",
             centroid.x, centroid.y, centroid.z, doorA, doorB,
-            outLabel.c_str());
+            deadA ? 1 : 0, deadB ? 1 : 0, outLabel.c_str());
     }
     outKind = kKindCorridor;
-    int sigBit = (bitA < bitB) ? bitA : bitB;
-    outSig = (kKindCorridor & 0xff) | ((sigBit & 0xff) << 8) |
-             ((((bitA < bitB) ? bitB : bitA) & 0xff) << 16);
+    bool loIsA = (bitA < bitB);
+    int deadMask = ((loIsA ? deadA : deadB) ? 1 : 0) |
+                   ((loIsA ? deadB : deadA) ? 2 : 0);
+    outSig = (kKindCorridor & 0xff) |
+             (((loIsA ? bitA : bitB) & 0xff) << 8) |
+             (((loIsA ? bitB : bitA) & 0xff) << 16) |
+             (deadMask << 24);
     return;
 }
 
@@ -1744,10 +1795,13 @@ void ClassifyDemotedToCorridor(const Vector& centroid,
     int bitA = realExitBits[0];
     int bitB = realExitBits[1];
     // octantDoorIdx is already per-octant here — index it by each end's
-    // own octant instead of collapsing onto the first door found.
+    // own octant instead of collapsing onto the first door found. No
+    // dead-end marks: the demote gate only kept octants with an onward
+    // exit or a door, so neither surviving end is a cul-de-sac.
     int doorA = (bitA >= 0 && bitA < 8) ? octantDoorIdx[bitA] : -1;
     int doorB = (bitB >= 0 && bitB < 8) ? octantDoorIdx[bitB] : -1;
-    outLabel = RenderCorridorAxis(bitA, doorA, bitB, doorB);
+    outLabel = RenderCorridorAxis(bitA, doorA, /*deadA=*/false,
+                                  bitB, doorB, /*deadB=*/false);
     AppendListEntry(outLabel, trigEntries);
     outKind = kKindCorridor;
     int sigBitLo = (bitA < bitB) ? bitA : bitB;
