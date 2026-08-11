@@ -33,7 +33,13 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
-<h2>v0.7.0</h2>
+<h2>Unreleased</h2>
+
+<h3>KOTOR 2:</h3>
+
+- Status effects on KOTOR 2 now speak the same rich names as on KOTOR 1. The target brief, the bare-H self status and the examine view name the actual buffs and debuffs a sighted player sees on the portrait — "Energy Shield", "Force Speed", "Battle Meditation", including KOTOR 2's own additions (Force Body, Fury, Force Barrier, the new droid shields) — where they previously fell back to generic engine categories like "State" and "Immunity". The names come from the game's own data in the installed language.
+- Health condition works on KOTOR 2. Target briefs and the examine view's condition row speak the wound-state word ("wounded", "badly wounded", …) exactly as on KOTOR 1; before, the condition was silently missing on KOTOR 2.
+- The examine view's Level, Faction and Blinded rows and the feat list now fill in on KOTOR 2. Level uses the engine's own reader, so scaled enemy levels match what the game displays. The faction fix also restores hostile/friendly classification everywhere it is used on KOTOR 2.
 
 <h3>Speech:</h3>
 

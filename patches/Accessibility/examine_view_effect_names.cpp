@@ -16,7 +16,10 @@
 #include "examine_view.h"
 
 #include <cstdint>
+#include <cstring>
 
+#include "engine_game.h"   // IsKotor2 — K2 icon names resolve via TLK
+#include "engine_reads.h"  // LookupTlk
 #include "strings.h"
 
 namespace acc::examine_view {
@@ -875,9 +878,94 @@ const char* EffectIconNamePl(int id) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// KOTOR 2 effect-icon names.
+//
+// K2's effecticon.2da carries a `namestrref` column (K1's does not — its
+// names were mined by hand from spells.2da, which is why the K1 tables
+// above are static per-language switches). So the K2 table is a single
+// language-independent row -> strref map, resolved through the dual-game
+// TLK path at speak time — automatically localized to whatever language
+// the user's K2 install has. Extracted from K2's effecticon.2da 2026-08-11.
+// Rows 0/60/62 (NULL_ICON and the two alignment gauges) carry no strref
+// and stay unmapped, matching the K1 tables' skip set.
+
+constexpr uint32_t kEffectIconStrRefK2[] = {
+    /*  0 */ 0,      266,    267,    268,    271,    272,    275,    276,
+    /*  8 */ 277,    279,    281,    282,    283,    285,    286,    288,
+    /* 16 */ 289,    290,    291,    292,    293,    295,    296,    297,
+    /* 24 */ 299,    300,    301,    303,    304,    305,    306,    309,
+    /* 32 */ 1263,   1271,   1272,   1273,   1274,   1275,   1264,   1276,
+    /* 40 */ 1277,   31401,  31404,  31405,  31406,  32136,  32137,  32138,
+    /* 48 */ 32139,  32140,  32141,  32142,  32143,  32144,  32184,  32183,
+    /* 56 */ 32192,  32197,  32198,  32199,  0,      32201,  0,      108169,
+    /* 64 */ 48363,  48364,  48365,  48399,  48400,  48401,  48101,  48102,
+    /* 72 */ 48103,  48104,  48105,  48414,  48452,  48453,  48454,  48482,
+    /* 80 */ 48483,  48484,  48494,  48495,  48496,  48500,  48501,  48502,
+    /* 88 */ 48503,  48504,  48505,  48336,  106491, 32185,  32186,  32188,
+    /* 96 */ 32190,  32191,  48668,  48669,  32200,  49137,  49138,  32202,
+    /*104 */ 48356,  42426,  42429,  48402,  48403,  48404,  108170, 121910,
+    /*112 */ 132463, 42429,
+};
+
+// The German TLK abbreviates two shield names ("Mand. Nahkampfschild" /
+// "Mand. Energieschild"). Expand them the way the hand-tuned K1 DE table
+// does — abbreviations are banned in speech output. Exact-match on the
+// full German string, so other locales pass through untouched.
+struct TlkSpeechFixup {
+    const char* tlk;
+    const char* spoken;
+};
+constexpr TlkSpeechFixup kEffectIconFixupsK2[] = {
+    {"Mand. Nahkampfschild", "Mandalorianischer Nahkampfschild"},
+    {"Mand. Energieschild",  "Mandalorianischer Energieschild"},
+};
+
+// Resolves into a file-static buffer: every caller copies the name into
+// its own output before the next EffectIconName call (both consumers are
+// single-threaded snprintf-join loops), so one slot is enough.
+char g_tlkNameK2[128];
+
+const char* EffectIconNameK2(int id) {
+    constexpr int kRows =
+        static_cast<int>(sizeof(kEffectIconStrRefK2) /
+                         sizeof(kEffectIconStrRefK2[0]));
+    if (id < 0 || id >= kRows) return nullptr;
+    uint32_t strref = kEffectIconStrRefK2[id];
+    if (strref == 0) return nullptr;
+    if (!acc::engine::LookupTlk(strref, g_tlkNameK2, sizeof(g_tlkNameK2)) ||
+        g_tlkNameK2[0] == '\0') {
+        return nullptr;
+    }
+    for (const TlkSpeechFixup& f : kEffectIconFixupsK2) {
+        if (std::strcmp(g_tlkNameK2, f.tlk) == 0) return f.spoken;
+    }
+    return g_tlkNameK2;
+}
+
 }  // namespace
 
 const char* EffectName(int type) {
+    // EFFECT_TYPES numbering is IDENTICAL across both games for the shared
+    // range: the K1 handler-table registration (InitializeEffects
+    // @0x004e4a10) and the K2 twin (0x00593a30) assign matching handlers to
+    // matching indices for 3..109 — EFFECTICON is 67 in both. K2 appends
+    // 110..117; the only persistent named state among them is 111
+    // (Fury / Wookiee Rage — its apply handler 0x00594f50 keys off the
+    // Fury/Rage spell rows and writes the stats FuryDamageBonus field), so
+    // it resolves via the K2 TLK like the icon names. 110/112..114 are
+    // registered as null markers and 115..117 are transient mechanics
+    // (instant damage / cleanup) that never sit in an effect list long
+    // enough to be spoken; they fall through to the caller's "Effect #N".
+    if (type == 111 && acc::game::IsKotor2()) {
+        constexpr uint32_t kFuryNameStrRef = 48494;  // spells.2da FORCE_POWER_FURY
+        if (acc::engine::LookupTlk(kFuryNameStrRef, g_tlkNameK2,
+                                   sizeof(g_tlkNameK2)) &&
+            g_tlkNameK2[0] != '\0') {
+            return g_tlkNameK2;
+        }
+        return nullptr;
+    }
     switch (acc::strings::GetLanguage()) {
         case acc::strings::Lang::De: return EffectNameDe(type);
         case acc::strings::Lang::Fr: return EffectNameFr(type);
@@ -892,6 +980,10 @@ const char* EffectName(int type) {
 }
 
 const char* EffectIconName(int iconId) {
+    // KOTOR 2 keys a different (larger) effecticon.2da and names its rows
+    // itself via namestrref — the per-language tables below are K1's rows
+    // and would name the wrong effect on K2.
+    if (acc::game::IsKotor2()) return EffectIconNameK2(iconId);
     switch (acc::strings::GetLanguage()) {
         case acc::strings::Lang::De: return EffectIconNameDe(iconId);
         case acc::strings::Lang::Fr: return EffectIconNameFr(iconId);

@@ -1015,7 +1015,9 @@ const size_t kStatsAttrTotalsOffset               = acc::off::Todo(0x34);  // 6 
 // INVALID_FACTION=0xFFFF. The player + party share PLAYER (commonly
 // faction id 0, not in the enum). Direct field read — no engine call,
 // safe for auto-firing paths.
-const size_t kStatsFactionIdOffset                = acc::off::Todo(0x78);
+// K2 same offset: the stats GFF saver 0x006b3d10 writes
+// `stats+0x78 & 0xffff` as "FactionID" (decompiled 2026-08-11).
+const size_t kStatsFactionIdOffset                = acc::off::Same(0x78);
 
 // CSWRules.spells — the spells array. CSWSpellArray* at offset 0x8c
 // (140 bytes) per SARIF layout dump. The array exposes GetSpell(id) ->
@@ -1071,16 +1073,18 @@ const size_t    kGameEffectTypeOffset             = acc::off::Same(0x8);
 // and OnRemoveEffectIcon walks the same raw offsets — both decompile-
 // verified 2026-07-17. Each CEffectIconObject (0x20 bytes): +0x0 ushort
 // effecticon.2da row id, +0x2 CResRef icon resref, +0x18 ushort priority.
-// DELIBERATELY still Todo on KOTOR 2 (Batch 4): the K2 icon-apply chain
-// routes the array through a passed-in list rather than fixed creature
-// offsets (K2 CEffectIconObject ctor 0x006ECC90, apply walker 0x006E7610
-// — no creature-relative displacement in either), so the K1-style offsets
-// have no confirmed K2 twin yet. Consumers are SEH-guarded and degrade:
-// the examine view simply lists no buff icons on KOTOR 2 until this is
-// resolved from a live probe or a deeper caller decompile.
-const size_t    kCreatureEffectIconsDataOffset    = acc::off::Todo(0x8f4);
-const size_t    kCreatureEffectIconsSizeOffset    = acc::off::Todo(0x8f8);
-const size_t    kEffectIconObjectIdOffset         = acc::off::Todo(0x0);
+// KOTOR 2 resolved 2026-08-11 from the REAL apply twin: OnApplyEffectIcon
+// is 0x005A43C0 (found via its "IconResRef" string ref — the previously
+// examined 0x006ECC90/0x006E7610 pair is the 2DA loader, not the apply
+// chain). It computes `creature + 0xffc` as the CExoArrayList and runs
+// K1's exact dedup/priority-insert against [list+0]=data / [list+4]=size,
+// reading each entry's icon id as `word [obj+0x0]`. K2's CEffectIconObject
+// grew 0x20 -> 0x24 (alloc `push 0x24`) but the id field stayed at +0x0.
+// Registered at index 67 in the K2 handler table (0x00593a30) — same
+// EFFECTICON slot as KOTOR 1.
+const size_t    kCreatureEffectIconsDataOffset    = acc::off::Pick(0x8f4, 0xffc);
+const size_t    kCreatureEffectIconsSizeOffset    = acc::off::Pick(0x8f8, 0x1000);
+const size_t    kEffectIconObjectIdOffset         = acc::off::Same(0x0);
 
 // CSWSCreature.inventory @+0xa2c → CSWInventory*. Server-side equipment
 // container. Combined with CSWInventory::GetItemInSlot below this gives
@@ -1329,7 +1333,11 @@ const size_t    kGuiInGameAbilitiesTabOffset      = acc::off::Pick(0xbc0, 0xfc0)
 // at +0x4 (size field of the list). Static feat list (granted at level-
 // up + class); doesn't drift mid-combat. Used by the Ö examine view to communicate
 // "this creature has N feats" without enumerating them.
-const size_t    kStatsFeatsListOffset             = acc::off::Todo(0x0);
+// K2 same offset: the stats FeatList GFF saver (0x006B4EA0) loops
+// `i < [stats+4]` fetching each id via GetFeatAtIndex 0x006BC430, which
+// is a bounds-checked `((ushort*)[stats+0])[i]` — the identical
+// CExoArrayList<ushort> at stats+0x0 (decompiled 2026-08-11).
+const size_t    kStatsFeatsListOffset             = acc::off::Same(0x0);
 
 // CSWGuiExamine.message_box.listbox_message lives at panel +0x67c. Kept
 // for the kExamineSpec ListBoxPanelSpec entry — if the engine itself ever

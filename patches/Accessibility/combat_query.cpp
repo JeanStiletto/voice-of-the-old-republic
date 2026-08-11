@@ -24,8 +24,6 @@ namespace acc::combat::query {
 
 namespace {
 
-typedef int (__thiscall* PFN_GetIntThiscall)(void* this_);
-
 // HP read helpers — direct CSWCCreatureStats reads, the same struct
 // the engine's character-sheet panel renders from. Path:
 //
@@ -306,28 +304,6 @@ bool BuildEffectsSummary(void* serverObject, char* outBuf, size_t outBufSize) {
     return outBuf[0] != '\0';
 }
 
-// CSWSObject::GetDamageLevel @0x4cb020 — `ulong __thiscall(this)`.
-// Returns the 0..5 wound-state bucket (decompile-verified thresholds:
-// >=95 healthy, >=75 light, >=50 wounded, >=25 badly, >0 dying, <=0 dead).
-// Validated 2026-05-22 live; safe for auto-firing brief path.
-int ReadDamageLevelDirect(void* serverObject) {
-    if (!serverObject) return -1;
-    __try {
-        auto fn = reinterpret_cast<PFN_GetIntThiscall>(
-            kAddrCSWSObjectGetDamageLevel);
-        // GetDamageLevel returns ulong, but the 0..5 bucket is only the low
-        // byte (AL). For buckets 0..3 the engine leaves comparison-flag
-        // garbage in the upper 3 bytes (decompile @0x4cb020), so reading the
-        // full 32-bit value blows past the range check and clamps to -1 —
-        // only the clean dying/dead returns (4/5) survived. Mask to AL.
-        int v = fn(serverObject) & 0xFF;
-        if (v < 0 || v > 5) return -1;
-        return v;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return -1;
-    }
-}
-
 acc::strings::Id DamageLevelStringIdFor(int level) {
     using S = acc::strings::Id;
     switch (level) {
@@ -442,11 +418,10 @@ bool BuildTargetCombatBrief(void* targetServerObject,
                 targetName ? targetName : "?");
 
     // 2. Condition (damage-level bucket) — mirrors what the sighted
-    //    player reads from the HP-bar colour. GetDamageLevel @0x4cb020
-    //    returns 0..5 across exact hp/maxhp ratio thresholds
-    //    (95/75/50/25/0%); skip when healthy (0) so common in-combat
-    //    transitions stay silent.
-    int dl = ReadDamageLevelDirect(targetServerObject);
+    //    player reads from the HP-bar colour. 0..5 across exact hp/maxhp
+    //    ratio thresholds (95/75/50/25/0%); skip when healthy (0) so
+    //    common in-combat transitions stay silent.
+    int dl = acc::engine::ReadObjectDamageLevel(targetServerObject);
     if (dl > 0) {
         BriefAppend(b, acc::strings::Get(S::FmtBriefCondition),
                     acc::strings::Get(DamageLevelStringIdFor(dl)));

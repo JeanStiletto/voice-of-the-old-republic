@@ -275,4 +275,14 @@ bool IsInventoryItemRow(void* control);
 // creature pointer at +0x59e4).
 bool ReadCreatureForcePoints(void* clientCreature, int* outCur, int* outMax);
 
+// The 0..5 visible wound-state bucket for a server object (0 healthy,
+// 1 light, 2 wounded, 3 badly wounded, 4 dying, 5 dead), -1 when
+// unreadable. KOTOR 1: CSWSObject::GetDamageLevel engine accessor.
+// KOTOR 2: that accessor has no located twin, so this replicates its
+// decompiled ratio bucketing from the two Pick'd HP accessors instead
+// — same inputs (current+temporary HP over GetMaxHitPoints(1)), same
+// thresholds (95/75/50/25/0%). Shared by combat_query's target brief
+// and the examine view's condition row.
+int ReadObjectDamageLevel(void* serverObject);
+
 }  // namespace acc::engine

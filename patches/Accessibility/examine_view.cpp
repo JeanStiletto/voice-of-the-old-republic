@@ -114,20 +114,21 @@ int ReadHpMax(void* serverCreature) {
 int ReadLevel(void* serverCreature) {
     void* stats = ReadCreatureStats(serverCreature);
     // GetLevel(0) — raw total class levels (no negative-level subtract).
+    // Both games return the level in AL with incidental upper bytes (K1's
+    // loop counter, K2's level-scaling float-conversion leftovers), so
+    // mask to the low byte before the range check — same trap the
+    // damage-level accessor had.
     int v = CallIntThisInt(stats, 0,
                            kAddrCSWSCreatureStatsGetLevel);
-    if (v < 0 || v > 60) return -1;
+    if (v == -1) return -1;
+    v &= 0xFF;
+    if (v <= 0 || v > 60) return -1;
     return v;
 }
 
 int ReadDamageLevel(void* obj) {
-    // Mask to the low byte: GetDamageLevel returns ulong but only AL holds the
-    // 0..5 bucket; buckets 0..3 carry flag garbage in the upper bytes that
-    // otherwise trips the range check (see ReadDamageLevelDirect in
-    // combat_query.cpp / decompile @0x4cb020).
-    int v = CallIntThis(obj, kAddrCSWSObjectGetDamageLevel) & 0xFF;
-    if (v < 0 || v > 5) return -1;
-    return v;
+    // Shared dual-game reader: K1 engine accessor, K2 ratio replica.
+    return acc::engine::ReadObjectDamageLevel(obj);
 }
 
 bool ReadDeadFlag(void* serverCreature) {

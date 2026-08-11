@@ -14,6 +14,71 @@ plan.
 
 ## WHERE TO RESUME (read this first)
 
+**Examine/status accessor batch (the Batch-4 "later pass") — IMPLEMENTED
+2026-08-11. Built green, applied, awaiting test.** Closes the whole
+"deliberately unresolved (guarded degrades)" list from Batch 4: rich
+status-effect names and the wound-state condition now work on KOTOR 2
+instead of degrading (the degrade was user-visible as generic
+raw-EFFECT_TYPES names — "Zustand"/"Immunität" — where KOTOR 1 speaks the
+portrait icon names, and as a silently missing condition row/clause).
+All rounds ran offline (three kotor2 Ghidra rounds, one kotor1 round,
+capstone scans, zero test rounds). What landed:
+
+- **Effect-icon trio resolved — the Batch-4 "passed-in list" note was a
+  wrong turn.** The functions examined then (0x006ECC90/0x006E7610) are
+  the effecticon.2da LOADER; the real apply twin is **OnApplyEffectIcon
+  0x005A43C0** (found via its "IconResRef" string xref), and it is
+  creature-relative after all: list data Pick(0x8f4, **0xffc**), size
+  Pick(0x8f8, **0x1000**), icon id Same(0x0) (K2's CEffectIconObject grew
+  0x20→0x24 but the id stayed at +0x0). Registered at handler index 67 —
+  same EFFECTICON slot as K1.
+- **EFFECT_TYPES numbering verified identical for 3..109** by diffing the
+  two games' full handler-registration tables (K1 InitializeEffects
+  0x004E4A10 decompile vs K2 twin 0x00593A30 extracted by capstone). K2
+  appends 110–117: only **111 (Fury / Wookiee Rage)** is a nameable
+  persistent state — its apply handler 0x00594F50 keys off the Fury/Rage
+  spell rows and writes the stats FuryDamageBonus byte; named at runtime
+  via TLK 48494. 110/112–114 are null markers, 115–117 transient
+  mechanics (instant damage/cleanup) — left unmapped by design.
+- **K2 effect-icon NAMES come from the TLK, not a hand-built table.**
+  K2's effecticon.2da has a namestrref column (K1's does not), so
+  examine_view_effect_names.cpp carries one language-independent
+  row→strref map (114 rows, extracted 2026-08-11) resolved through
+  LookupTlk at speak time — localized to the installed language for free.
+  Two German TLK abbreviations ("Mand. Nahkampfschild"/"Mand.
+  Energieschild") are expanded via exact-match fixups per the
+  no-abbreviations speech rule.
+- **GetDamageLevel is a REPLICA on K2, not an address.** The 0.95f
+  constant scan and the vtable+0x9c shape scan both missed (K2
+  restructured or inlined it; its only K1 callers are CSWSMessage
+  writers). New shared reader `acc::engine::ReadObjectDamageLevel`
+  (engine_reads.cpp): K1 calls the engine accessor as before, K2
+  recomputes the decompiled bucketing — GetCurrentHitPoints(0) /
+  GetMaxHitPoints(1), thresholds 0.95/0.75/0.5/0.25/0 — from the two
+  already-Pick'd accessors. combat_query and examine_view both route
+  through it now (their duplicate local readers were collapsed).
+- **GetLevel Pick(0x005a5fd0, 0x006A4E00)** — the K2 twin's tail applies
+  the MultiplierSet/PCLevelAtSpawn scaling for non-PCs, so it returns the
+  correct DISPLAYED level. Both games return the level in AL with
+  incidental upper bytes; ReadLevel now masks (the same trap
+  GetDamageLevel had).
+- **GetBlind Pick(0x004ee210, 0x00585420)** — byte-identical bit logic on
+  the flag byte at creature+0xff4 (K1 +0x8ec; found by shape scan, and
+  the disp sits 8 below the icon array in both games).
+- **Faction id Same(0x78)** (stats GFF saver 0x006B3D10 writes
+  `stats+0x78` as "FactionID") — this also un-breaks IsHostileCreature on
+  K2. **Feats list Same(0x0)** (FeatList saver loops `[stats+4]` via
+  GetFeatAtIndex 0x006BC430 = `((ushort*)[stats+0])[i]`).
+- Test items for the next K2 round: cycle onto a buffed/wounded enemy —
+  the brief should append the condition word and the icon names a sighted
+  player sees on the portrait (e.g. "Energieschild" instead of
+  "Immunität"); bare-H self status after using a shield/stim speaks the
+  item's own name; Ö examine on a creature shows Condition, Level,
+  Faction rows and per-effect rows with real names; a feat-bearing
+  creature lists feats. K1 regression: same probes on any save — nothing
+  should change ("Zustand"/damage-level wording, icon names, level,
+  blind row).
+
 **Character-creation batch, round 3 — IMPLEMENTED 2026-08-03 (sixteenth
 session). Built green, applied to both games, awaiting test.** Round 2's
 test (`patch-20260803-102731.log`) confirmed the Attribute and Fähigkeiten
@@ -1975,6 +2040,11 @@ and `combat_queue_hooks.cpp`. What landed:
   creature-relative witness), faction id, stats feats list, stealth mode,
   GetDamageLevel/GetLevel/GetBlind/Get{Feat,Spell}NameText accessors
   (examine-view extras; CallIntThis guards them).
+  **ALL RESOLVED SINCE:** Get{Feat,Spell}NameText 2026-08-04, stealth in
+  the stealth_watch session, and the rest 2026-08-11 — see the
+  examine/status accessor batch in WHERE TO RESUME (note the
+  "passed-in list" claim above was wrong; the apply twin 0x005A43C0 is
+  creature-relative).
 
 **Batch 5 — Audio. IMPLEMENTED 2026-08-02 (same sitting).**
 `OnSetListenerPosition` + `OnCalculatePitchVarianceFrequency` live;

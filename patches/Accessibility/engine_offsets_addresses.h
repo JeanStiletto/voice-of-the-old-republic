@@ -663,20 +663,37 @@ const uintptr_t kAddrCSWSObjectGetCurrentHitPoints = acc::addr::Pick(0x004caec0,
 //   5 = dead      (<= 0%)
 // No accessor-validation concern — this is a pure ratio computation
 // over fields we already trust.
+// KOTOR 2: no address — the 0.95f-constant scan and the vtable+0x9c shape
+// scan both came up empty (the K2 build restructured or inlined it), and
+// its only K1 callers are CSWSMessage writers with no cheap K2 twins. The
+// shared reader (engine_reads' ReadObjectDamageLevel) instead REPLICATES
+// the decompiled ratio bucketing on KOTOR 2 from the two Pick'd accessors
+// above: GetCurrentHitPoints(0) / GetMaxHitPoints(1).
 const uintptr_t kAddrCSWSObjectGetDamageLevel = acc::addr::R(0x004cb020);
 
 // CSWSCreatureStats::GetLevel @0x005a5fd0 — `int __thiscall(this, int subNegLevels)`.
 // Sums level over each entry in CSWSCreatureStats.classes[2]. param_1=0
 // → raw total (don't subtract negative levels from drain effects);
 // param_1=1 → effective level. Use 0 for the displayed level.
-const uintptr_t kAddrCSWSCreatureStatsGetLevel = acc::addr::R(0x005a5fd0);
+// K2 twin 0x006A4E00 (decompiled 2026-08-11): same per-class sum core
+// (count byte stats+0x8d, GetClassLevel 0x006AD2F0 over stride-0x28
+// entries), then K2's non-PC level scaling on top (the MultiplierSet /
+// PCLevelAtSpawn bytes the stats GFF saver names) — so it returns the
+// creature's correct DISPLAYED level. Both games return the level in AL
+// with incidental upper bytes; callers mask to the low byte.
+const uintptr_t kAddrCSWSCreatureStatsGetLevel = acc::addr::Pick(0x005a5fd0, 0x006A4E00);
 
 // CSWSCreature::GetInvisible @0x00501950 / GetBlind @0x004ee210 — bool
 // __thiscall(this). Direct flag accessors; safe to call from manual
 // paths. We only emit a row when the flag is set (no need to announce
 // "not invisible").
 const uintptr_t kAddrCSWSCreatureGetInvisible = acc::addr::R(0x00501950);
-const uintptr_t kAddrCSWSCreatureGetBlind = acc::addr::R(0x004ee210);
+// K2 twin 0x00585420: byte-identical logic on the flag byte at
+// creature+0xff4 (K1 +0x8ec) — `(b & 0x10) || ((b & 8) && !(b & 2))`.
+// Found by shape scan (tiny fn testing 0x10/8/2 on a big-disp byte);
+// the +0xff4 disp sits 8 below the effect-icon array at +0xffc, exactly
+// mirroring K1's +0x8ec / +0x8f4 spacing.
+const uintptr_t kAddrCSWSCreatureGetBlind = acc::addr::Pick(0x004ee210, 0x00585420);
 
 // CSWSCreatureStats getters — saves + attribute scores. CSWSCreatureStats
 // lives at CSWSCreature +0xa74 (kCreatureStatsPtrOffset).
