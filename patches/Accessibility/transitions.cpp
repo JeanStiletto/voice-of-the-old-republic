@@ -92,15 +92,25 @@ int   g_pending_cluster_count = 0;
 // only announces after the player has actually STAYED in it for
 // kMinorClusterDwellMs. Passing through keeps the previous region
 // committed (no announce, no re-announce of the neighbour on exit).
-// Stop anywhere and the local label still arrives within ~2s, and the
+// Stop anywhere and the local label still arrives within ~1s, and the
 // on-demand facing+region query is unaffected.
 //
 // Unlike the retired 2026-05-13 coordinate hysteresis this can't
 // permanently silence a new label — the gate is purely "linger vs
 // pass-through", keyed to time inside the cluster, not displacement.
 // Friendly-name changes (authored content) bypass the gate entirely.
+//
+// Dwell tuning: 1800ms (original, sized against Lehon beach noise)
+// swallowed real indoor shapes — at walk speed it spans 3.4m, longer
+// than most corridor pieces and every single-node Kreuzung, so the
+// Peragus Minenschächte west Kreuzung was crossed three times in one
+// session without speaking, and borderline clusters flickered between
+// spoken and silent with pace (2026-08-11). 1000ms ≈ 2m: shapes from
+// ~3m up announce reliably in stride; corner-clips and sub-stride
+// slivers stay silent. If outdoor fragment noise returns at this
+// setting, fix the clustering — don't re-lengthen the gate.
 constexpr float kMinorClusterExtentM = 12.0f;
-constexpr DWORD kMinorClusterDwellMs = 1800;
+constexpr DWORD kMinorClusterDwellMs = 1000;
 DWORD g_pending_cluster_since_ms = 0;
 bool  g_pending_cluster_minor    = false;
 
