@@ -183,8 +183,8 @@ const char* Get(Id id) {
         case Id::FmtMapStateOriented:    return "%s. Kierunek %d stopni na mapie, %s.";
         case Id::FmtMapStateUnknownRoom: return "Kierunek %d stopni na mapie, %s.";
 
-        case Id::FmtWorldStateOriented:       return "%s. %s.";
-        case Id::FmtWorldStateUnknownCluster: return "%s.";
+        case Id::FmtWorldStateOriented:       return "Kierunek %s.\n%s.";
+        case Id::FmtWorldStateUnknownCluster: return "Kierunek %s.";
 
         case Id::MouseLookOn:          return "Rozgl\xB9""danie mysz\xB9 w\xB3\xB9""czone";
         case Id::MouseLookOff:         return "Rozgl\xB9""danie mysz\xB9 wy\xB3\xB9""czone";
@@ -355,6 +355,10 @@ const char* Get(Id id) {
         case Id::FmtAreaAxisExits:           return "%s %s. Wyj\x9C""cia: %s";
         case Id::FmtAreaExits:               return "%s. Wyj\x9C""cia: %s";
         case Id::FmtAreaAxisOnly:            return "%s %s";
+        case Id::FarAtNorth:                 return "daleko na p\xF3\xB3nocy";
+        case Id::FarAtSouth:                 return "daleko na po\xB3udniu";
+        case Id::FarAtEast:                  return "daleko na wschodzie";
+        case Id::FarAtWest:                  return "daleko na zachodzie";
 
         case Id::FmtStorePriceBuyFinite:    return "Cena %d kredyt\xF3w, w zapasie %d";
         case Id::FmtStorePriceBuyUnlimited: return "Cena %d kredyt\xF3w, zapas nieograniczony";

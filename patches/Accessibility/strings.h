@@ -1216,6 +1216,20 @@ enum class Id : int {
     FmtAreaAxisExits,    // "%s %s. Ausgänge: %s" — noun + axis + exit list
     FmtAreaExits,        // "%s. Ausgänge: %s"    — noun + exit list (no axis)
     FmtAreaAxisOnly,     // "%s %s"               — noun + axis (no exits)
+    // Far-end exit qualifier for zone-scale areas. An exit's direction
+    // word is the bearing from the zone centre rounded to an octant; in
+    // a large zone that rounding can hide that the exit sits at one END
+    // of the zone (a west exit 17m up at the north edge still rounds to
+    // "West"). When the exit lies in the outer band of a long-enough
+    // axis AND its word lacks that end's cardinal, the matching suffix
+    // is appended: "West weit im Norden". Full declined phrases per
+    // direction because the preposition varies by language (FR: au nord
+    // / à l'est). Appended with a space — never a comma, which would
+    // read as an extra exit in the comma-separated list.
+    FarAtNorth,          // "weit im Norden" / "far to the north"
+    FarAtSouth,
+    FarAtEast,
+    FarAtWest,
 
     // ---- Store / trading panel (CSWGuiStore).
     //      The store has two modes (Buy / Sell) toggled by the

@@ -162,8 +162,8 @@ const char* Get(Id id) {
         case Id::FmtMapStateOriented:    return "%s. Facing %d degrees on the map, %s.";
         case Id::FmtMapStateUnknownRoom: return "Facing %d degrees on the map, %s.";
 
-        case Id::FmtWorldStateOriented:       return "%s. %s.";
-        case Id::FmtWorldStateUnknownCluster: return "%s.";
+        case Id::FmtWorldStateOriented:       return "Facing %s.\n%s.";
+        case Id::FmtWorldStateUnknownCluster: return "Facing %s.";
 
         case Id::MouseLookOn:          return "Mouse Look on";
         case Id::MouseLookOff:         return "Mouse Look off";
@@ -345,6 +345,10 @@ const char* Get(Id id) {
         case Id::FmtAreaAxisExits:           return "%s %s. Exits: %s";
         case Id::FmtAreaExits:               return "%s. Exits: %s";
         case Id::FmtAreaAxisOnly:            return "%s %s";
+        case Id::FarAtNorth:                 return "far to the north";
+        case Id::FarAtSouth:                 return "far to the south";
+        case Id::FarAtEast:                  return "far to the east";
+        case Id::FarAtWest:                  return "far to the west";
 
         case Id::FmtStorePriceBuyFinite:    return "Price %d credits, stock %d";
         case Id::FmtStorePriceBuyUnlimited: return "Price %d credits, unlimited stock";

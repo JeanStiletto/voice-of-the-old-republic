@@ -1438,6 +1438,57 @@ int AxisOctantMask(acc::strings::Id axisId) {
 // the nav graph at all.
 // ---------------------------------------------------------------------
 
+// Far-end exit qualifier (see the FarAt* string ids). An exit's octant
+// word is its bearing from the zone centre; octant rounding swallows up
+// to 22.5°, which across a zone-scale footprint hides that the exit
+// sits at one END of the zone. Returns the localized suffix ("weit im
+// Norden") when the exit lies in the outer band of a long-enough axis
+// AND the announced word lacks that end's cardinal component — the
+// component check is what keeps expected corner exits ("Süd-West" exit
+// in the far south-west) unqualified. At most one axis can ever
+// qualify: the word's own components are suppressed, and the bearing
+// guarantees the word contains the dominant axis. nullptr = no
+// qualifier (including every not-sure case — silence over speculation).
+const char* FarEndSuffix(int bit, const Vector& exitPos,
+                         const float* bboxXY) {
+    using acc::strings::Id;
+    if (!bboxXY || bit < 0 || bit > 7) return nullptr;
+    constexpr float kFarAxisMinM   = 20.0f;
+    constexpr float kFarBandFrac   = 0.6f;
+    // Octant → axis components, index order E,NE,N,NW,W,SW,S,SE.
+    static const int kOctY[8] = { 0,  1,  2,  1,  0, -1, -2, -1};
+    static const int kOctX[8] = { 2,  1,  0, -1, -2, -1,  0,  1};
+
+    float lenX = bboxXY[2] - bboxXY[0];
+    float lenY = bboxXY[3] - bboxXY[1];
+    float cx   = 0.5f * (bboxXY[0] + bboxXY[2]);
+    float cy   = 0.5f * (bboxXY[1] + bboxXY[3]);
+
+    Id    bestId  = Id::FarAtNorth;
+    float bestF   = 0.0f;
+    if (lenY >= kFarAxisMinM) {
+        float fy = (exitPos.y - cy) / (0.5f * lenY);
+        if (fy >= kFarBandFrac && kOctY[bit] <= 0 && fy > bestF) {
+            bestF = fy; bestId = Id::FarAtNorth;
+        }
+        if (-fy >= kFarBandFrac && kOctY[bit] >= 0 && -fy > bestF) {
+            bestF = -fy; bestId = Id::FarAtSouth;
+        }
+    }
+    if (lenX >= kFarAxisMinM) {
+        float fx = (exitPos.x - cx) / (0.5f * lenX);
+        if (fx >= kFarBandFrac && kOctX[bit] <= 0 && fx > bestF) {
+            bestF = fx; bestId = Id::FarAtEast;
+        }
+        if (-fx >= kFarBandFrac && kOctX[bit] >= 0 && -fx > bestF) {
+            bestF = -fx; bestId = Id::FarAtWest;
+        }
+    }
+    if (bestF <= 0.0f) return nullptr;
+    const char* sfx = acc::strings::Get(bestId);
+    return sfx[0] ? sfx : nullptr;
+}
+
 // Area path: probe-owned merged spaces (open / room / merged big
 // junction). One neutral "Bereich" label, long-axis cue only when
 // elongated, then the exit list — door rewrites kept (the navigational
@@ -1447,46 +1498,72 @@ void ClassifyAsArea(const acc::engine::navgraph::NavGraphSnapshot& g, int n,
                     const int* externalNbs, const int* externalSrcs,
                     const int* externalDoorIdx, int externalCount,
                     int areaHint, bool isLargeArea,
+                    const float* bboxXY,
                     const std::string& trigEntries,
                     std::string& outLabel, int& outKind, int& outSig) {
     using acc::strings::Id;
-    bool octHas[8]  = {false, false, false, false, false, false, false, false};
-    int  octDoor[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
+    bool   octHas[8]  = {false, false, false, false, false, false, false, false};
+    int    octDoor[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
+    Vector octPos[8]  = {};
     for (int k = 0; k < externalCount; ++k) {
         int nb = externalNbs[k];
         if (nb < 0 || nb >= n) continue;
         int bit = OctantBit(OctantFromVector(g.nodes[nb].pos.x - centroid.x,
                                              g.nodes[nb].pos.y - centroid.y));
         if (bit < 0) continue;
+        // Far-qualifier anchor: the IN-ZONE end of the exit edge (the
+        // member you must reach to leave), not the outside neighbour.
+        // Boundary edges run long diagonals; the Strand west exit's
+        // neighbour sits vertically mid-zone while its member anchor is
+        // the far north-west corner — the anchor is what the player
+        // has to find.
+        // Centroid fallback keeps both consumers conservative: the
+        // alcove gate gets a real probe axis, and a centroid anchor
+        // sits mid-zone so the qualifier stays silent.
+        int src = externalSrcs ? externalSrcs[k] : -1;
+        Vector edgeStart = (src >= 0 && src < n) ? g.nodes[src].pos
+                                                 : centroid;
         int door = externalDoorIdx ? externalDoorIdx[k] : -1;
         if (door >= 0) {
             if (octDoor[bit] < 0) octDoor[bit] = door;
+            if (!octHas[bit]) octPos[bit] = edgeStart;
             octHas[bit] = true;
             continue;
         }
         int deg = Degree(g, nb);
-        int src = externalSrcs ? externalSrcs[k] : -1;
-        Vector edgeStart = (src >= 0 && src < n) ? g.nodes[src].pos : centroid;
         bool realExit = (deg >= 2) ||
                         (deg == 1 &&
                          WalkmeshAgreesDeadEnd(g.nodes[nb].pos, edgeStart));
-        if (realExit) octHas[bit] = true;
+        if (realExit) {
+            if (!octHas[bit]) octPos[bit] = edgeStart;
+            octHas[bit] = true;
+        }
     }
 
     std::string dirList;
     int mask = 0;
+    bool anyFar = false;
     for (int idx = 0; idx < 8; ++idx) {
         int bit = kOctantEmitOrder[idx];
         if (!octHas[bit]) continue;
         mask |= (1 << bit);
         Id dirId = BitToOctant(bit);
         const char* dirWord = acc::strings::Get(dirId);
+        std::string entry;
         if (octDoor[bit] >= 0 && dirWord[0]) {
-            AppendListEntry(dirList,
-                            RenderDoorDirection(octDoor[bit], dirWord));
+            entry = RenderDoorDirection(octDoor[bit], dirWord);
         } else {
-            AppendListEntry(dirList, DirEntry(dirId, /*markDeadEnd=*/false));
+            entry = DirEntry(dirId, /*markDeadEnd=*/false);
         }
+        // Space-joined, never comma — a comma inside an entry would read
+        // as an extra exit in the comma-separated list.
+        const char* farSfx = FarEndSuffix(bit, octPos[bit], bboxXY);
+        if (farSfx && !entry.empty()) {
+            entry += ' ';
+            entry += farSfx;
+            anyFar = true;
+        }
+        AppendListEntry(dirList, entry);
     }
 
     // Attached transition triggers are exits like any other — appended
@@ -1513,7 +1590,9 @@ void ClassifyAsArea(const acc::engine::navgraph::NavGraphSnapshot& g, int n,
     // the axis pair, so the common case (exits differ from elongation)
     // is untouched.
     bool axisCoversExits = false;
-    if (elong && trigEntries.empty()) {
+    if (elong && trigEntries.empty() && !anyFar) {
+        // anyFar: a far-end qualifier is information the axis word can't
+        // carry, so a qualified exit list is never collapsed away.
         int axisMask = AxisOctantMask(axisId);
         if (axisMask != 0 && mask == axisMask) {
             bool anyDoor = false;
@@ -1898,6 +1977,7 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
                      const int* trigIdxs, int trigCount,
                      int areaHint, float centroidFloorZ,
                      bool isLargeArea,
+                     const float* bboxXY,
                      std::string& outLabel,
                      int& outKind, int& outSig,
                      bool& outFiltered) {
@@ -1921,7 +2001,7 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
     if (areaHint != 0) {
         ClassifyAsArea(g, n, centroid, centroidFloorZ, externalNbs,
                        externalSrcs, externalDoorIdx, externalCount,
-                       areaHint, isLargeArea, trigEntries,
+                       areaHint, isLargeArea, bboxXY, trigEntries,
                        outLabel, outKind, outSig);
         return;
     }
@@ -3287,10 +3367,12 @@ void PassClassifyClusters(void* area,
         std::string label;
         int kind = kKindOpenArea, sig = 0;
         bool filtered = false;
+        float bboxXY[4] = {minX, minY, maxX, maxY};
         ClassifyCluster(g, centroid, externalNbs, externalSrcs,
                         externalDoorIdx, externalCount,
                         trigIdxs, trigCount,
                         areaHint, centroidFloorZ, isLargeArea,
+                        (size > 0) ? bboxXY : nullptr,
                         label, kind, sig, filtered);
 
         switch (kind) {
