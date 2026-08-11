@@ -230,6 +230,19 @@ constexpr float kAxisElongRatio = 1.8f;
 // large open spaces trip it; raise/lower after in-game feedback.
 constexpr float kLargeAreaExtentMeters = 40.0f;
 
+// Zone-scale hub threshold: a merged junction web (3+ external exits,
+// no open/room member) whose member-node bounding box exceeds this
+// renders through the area path ("Bereich. Ausgänge: ...") instead of
+// "Kreuzung". The word "Kreuzung" promises a decision point a few steps
+// wide; the Lehon Südlicher Strand rock-web cluster spans 46m and its
+// re-announcement on every re-entry from a fringe channel read as
+// discovering a new crossing each time — four phantom crossings in 80s
+// (2026-08-11). Step-scale merged hubs (double junctions, ~5m) stay
+// Kreuzung. Sized between the biggest legitimate crossing (<10m) and
+// the smallest observed zone-web (46m); node-bbox under-reads true
+// footprint, so 15m of node spread is already a place, not a point.
+constexpr float kJunctionZoneExtentMeters = 15.0f;
+
 // Kind values now live in the public header (room_topology.h) so
 // transitions.cpp can branch on Platz for the delayed-announce path.
 // Aliases here keep the local code compact.
@@ -3239,6 +3252,24 @@ void PassClassifyClusters(void* area,
         bool isArea = (externalCount == 0) || hasOpen ||
                       (size > 1 && hasRoom);
         if (isArea) areaHint = (hasRoom && !hasOpen) ? 1 : 2;
+
+        // Zone-scale refinement of that dropped clause: a junction web
+        // whose footprint exceeds kJunctionZoneExtentMeters is a place,
+        // not a crossing — render it as a Bereich (see the constant's
+        // comment for the Lehon evidence). externalCount >= 3 keeps
+        // long merged corridor CHAINS (2 exits, routinely >15m) and
+        // dead-end runs out of the override; small merged hubs stay
+        // Kreuzung per the original decision.
+        if (areaHint == 0 && externalCount >= 3 &&
+            bboxExtent >= kJunctionZoneExtentMeters) {
+            areaHint = 2;
+            acclog::Write("WallTopo",
+                          "  zone-hub: cluster=%d size=%d extent=%.1fm "
+                          "(>= %.1fm, exits=%d) — junction web rendered "
+                          "as Bereich",
+                          root, size, bboxExtent,
+                          kJunctionZoneExtentMeters, externalCount);
+        }
 
         // Transition triggers whose nearest nav node is a member of this
         // cluster become named exits in its label.
