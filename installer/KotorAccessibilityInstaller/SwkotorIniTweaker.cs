@@ -105,13 +105,23 @@ namespace KotorAccessibilityInstaller
         };
 
         /// <summary>
-        /// Apply the mod's movement keybinds (strafe on A/D, camera turn on Y/C) to
-        /// the <c>[Keymapping]</c> section of the target's ini.
-        /// Full-install only — the caller must skip this on the update path so a
-        /// returning player's customised bindings are never overwritten.
+        /// Apply the mod's movement keybinds (strafe on A/D, camera turn on Y/C)
+        /// plus the target's <see cref="GameTarget.KeymapExtras"/> (KOTOR 2:
+        /// SwitchWeaps off H) to the <c>[Keymapping]</c> section of the target's
+        /// ini. Full-install only — the caller must skip this on the update path
+        /// so a returning player's customised bindings are never overwritten.
         /// </summary>
         public static Result ApplyKeymapDefaults(GameTarget target, string gameDir)
-            => ApplySectionPairs(gameDir, target.IniFileName, KeymappingSectionHeader, KeymapTweaks);
+            => ApplySectionPairs(gameDir, target.IniFileName, KeymappingSectionHeader,
+                                 KeymapTweaksFor(target));
+
+        /// <summary>Shared movement pairs plus the target's per-game extras.</summary>
+        private static (string Key, string Value)[] KeymapTweaksFor(GameTarget target)
+        {
+            var all = new List<(string Key, string Value)>(KeymapTweaks);
+            if (target.KeymapExtras != null) all.AddRange(target.KeymapExtras);
+            return all.ToArray();
+        }
 
         /// <summary>
         /// Remove the mod's movement keybind lines from <c>[Keymapping]</c>, so
@@ -132,11 +142,12 @@ namespace KotorAccessibilityInstaller
         /// </summary>
         public static Result RemoveKeymapDefaults(GameTarget target, string gameDir)
         {
+            var ourTweaks = KeymapTweaksFor(target);
             var ourKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var (key, _) in KeymapTweaks) ourKeys.Add(key);
+            foreach (var (key, _) in ourTweaks) ourKeys.Add(key);
 
             return RemoveSectionKeys(gameDir, target.IniFileName, KeymappingSectionHeader, ourKeys,
-                                     onlyWhenValueIs: KeymapTweaks);
+                                     onlyWhenValueIs: ourTweaks);
         }
 
         /// <summary>

@@ -1107,6 +1107,14 @@ const size_t    kCreatureInventoryOffset          = acc::off::Pick(0xa2c, 0x1150
 // (left weapon) — the identical bit→field table.
 const size_t    kInventoryRightWeaponHandleOffset = acc::off::Same(0x14);  // main hand
 const size_t    kInventoryLeftWeaponHandleOffset  = acc::off::Same(0x18);  // off hand
+// KOTOR 2's secondary weapon pair (inventory slots 18/19, the equip
+// screen's second weapon rows; SwitchWeaps exchanges their contents with
+// the active pair). Witnessed in the K2 slot mapper 0x006D0670: bit
+// 0x40000 → +0x40, bit 0x80000 → +0x44 (slots 14..17 fill 0x30..0x3c
+// first — the pair is NOT at naive slot*4+4). Consumed by
+// weapon_set_watch's swap detection.
+const size_t    kInventoryRightWeapon2HandleOffset = acc::off::Kotor2Only(0x40);
+const size_t    kInventoryLeftWeapon2HandleOffset  = acc::off::Kotor2Only(0x44);
 // Same on KOTOR 2 — the K2 slot mapper 0x006D0670 maps slot bits to the
 // identical field table (bit0→+4, bit1→+8, bit3→+0x10, ...).
 const size_t    kInventoryHeadHandleOffset        = acc::off::Same(0x4);

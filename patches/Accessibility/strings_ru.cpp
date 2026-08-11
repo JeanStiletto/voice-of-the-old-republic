@@ -154,6 +154,11 @@ const char* Get(Id id) {
         case Id::FmtEquipSlotItem:     return "%s, %s";
         case Id::FmtEquipSlotEmpty:    return "%s, \xEF\xF3\xF1\xF2\xEE";
         case Id::EquipUnequipped:      return "\xD1\xED\xE0\xF0\xFF\xE6\xE5\xED\xE8\xE5 \xF1\xED\xFF\xF2\xEE";
+        case Id::FmtWeaponSwitchedOne: return "\xCE\xF0\xF3\xE6\xE8\xE5 \xF1\xEC\xE5\xED\xE5\xED\xEE: %s";
+        case Id::FmtWeaponSwitchedTwo: return "\xCE\xF0\xF3\xE6\xE8\xE5 \xF1\xEC\xE5\xED\xE5\xED\xEE: %s \xE8 %s";
+        case Id::WeaponSwitchedBare:   return "\xCE\xF0\xF3\xE6\xE8\xE5 \xF1\xEC\xE5\xED\xE5\xED\xEE";
+        case Id::EquipSetActive:       return "\xE0\xEA\xF2\xE8\xE2\xED\xEE\xE5";
+        case Id::EquipSetSecondary:    return "\xE7\xE0\xEF\xE0\xF1\xED\xEE\xE5";
         case Id::FmtEquipVitality:     return "\xC6\xE8\xE2\xF3\xF7\xE5\xF1\xF2\xFC %s";
         case Id::FmtEquipDefense:      return "\xC7\xE0\xF9\xE8\xF2\xE0 %s";
         case Id::FmtEquipAttack:       return "\xC0\xF2\xE0\xEA\xE0 %s";

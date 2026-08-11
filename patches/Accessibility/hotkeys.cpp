@@ -234,12 +234,13 @@ void InitDefaults() {
     bind(Action::TargetActionOpen2,    '2',       0, kModShift, 0);
     bind(Action::TargetActionOpen3,    '3',       0, kModShift, 0);
     bind(Action::LevelUpOpen,          'L',       0, kModShift, 0);
-    // Bare Ö (VK_OEM_3 on the German layout — the right-pinky home key).
-    // The engine binds every quick-menu *letter* (J/K/L/M, U/I/O/P), so a
-    // Shift+letter open would leak to the engine's screen on the bare key
-    // (e.g. Shift+K still opened Skills). Ö is engine-unbound, so a bare
-    // press is safe; forbid every modifier so it stays distinct.
-    bind(Action::ExamineOpen,          VK_OEM_3,  0, 0,
+    // Unbound by default — Examine is a dev/power-user surface, and the
+    // physical Ö key it used to sit on (VK_OEM_3 on the German layout) is
+    // now where the installer moves KOTOR 2's SwitchWeaps game binding
+    // (swkotor2.ini Action265; every letter key is engine-bound on K2, so
+    // the freed Ö was the only comfortable spot). Rebindable through the
+    // keybind configurator for anyone who wants the panel back.
+    bind(Action::ExamineOpen,          0,         0, 0,
                                        kModShift | kModCtrl | kModAlt | kModAltGr);
     // Shift+H — H is engine-unbound, so Shift+H does NOT leak to any engine
     // screen (unlike the former Shift+K, which the engine read as plain K =

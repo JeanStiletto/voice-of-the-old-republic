@@ -70,6 +70,13 @@ namespace KotorAccessibilityInstaller
         public IReadOnlyList<(string Section, string Key, string Value)> IniDefaults { get; private init; }
 
         /// <summary>
+        /// Per-game additions to the shared <c>[Keymapping]</c> defaults in
+        /// <see cref="SwkotorIniTweaker"/>. Same full-install-only / removed-on-
+        /// uninstall lifecycle as the shared movement pairs.
+        /// </summary>
+        public IReadOnlyList<(string Key, string Value)> KeymapExtras { get; private init; }
+
+        /// <summary>
         /// Third-party <c>.kpatch</c> files bundled with the installer and offered
         /// alongside our own, as (embedded-resource name, patch id). Each is
         /// included only when its manifest declares this exact executable's
@@ -135,6 +142,8 @@ namespace KotorAccessibilityInstaller
                 ("[Graphics Options]", "Disable Vertex Buffer Objects", "1"),
                 ("[Graphics Options]", "FullScreen", "0"),
             },
+
+            KeymapExtras = Array.Empty<(string, string)>(),
         };
 
         /// <summary>
@@ -191,6 +200,17 @@ namespace KotorAccessibilityInstaller
                 ("[Graphics Options]", "FullScreen", "0"),
                 ("[Graphics Options]", "AllowWindowedMode", "1"),
                 ("[Display Options]", "FullScreen", "0"),
+            },
+
+            // KOTOR 2 binds every letter key (its keymap.2da rows leave only N
+            // free, which the mod already uses), and its SwitchWeaps action sits
+            // on H — colliding with the mod's self-status / combat-queue keys.
+            // Move SwitchWeaps (keymap.2da row 65 → Action265) to InputIndex 99,
+            // the key right of L: Ö on a German keyboard, semicolon on US. The
+            // mod freed that key by unbinding its dev-only Examine default.
+            KeymapExtras = new[]
+            {
+                ("Action265", "99"),  // SwitchWeaps = physical Ö / semicolon
             },
         };
 

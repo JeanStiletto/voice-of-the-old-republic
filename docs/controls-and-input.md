@@ -32,6 +32,16 @@ bottom-left/C. `Action283` (`MGActionLeft/Right` = minigame steer) stays A/D, so
 swoop/turret are unaffected. The update path deliberately leaves bindings alone.
 See `installer/.../SwkotorIniTweaker.cs` (`ApplyKeymapDefaults`).
 
+**KOTOR 2 extra remap: SwitchWeaps moves off H.** KOTOR 2's keymap binds every
+letter key except N (which the mod uses), and its `SwitchWeaps` action
+(keymap.2da row 65 → `Action265`, swaps the active weapon set) defaults to H —
+colliding with the mod's bare-H self-status and Shift+H combat queue. The
+installer writes `Action265=99` into `swkotor2.ini` on a full K2 install: 99 is
+the engine key code for the key right of L (Ö on a German keyboard, semicolon
+on US), which the mod freed by unbinding its dev-only Examine default (see
+below). Same full-install-only / removed-on-uninstall lifecycle as the movement
+pairs; per-game data lives in `GameTarget.KeymapExtras`.
+
 ### Interacting with the world
 - Spacebar (or Pause/Break) — Pause game
 - Q — Cycle targets to the left
@@ -185,7 +195,9 @@ Both surfaces share one tagged catalog in `help.cpp` (`kEntries`): `grp` chooses
 - Shift+4 / Shift+5 / Shift+6 / Shift+7 — Open the action-bar submenu for column N (cycle column variants).
 - 8 / Shift+8 — **KOTOR 2 only**, and the one action-bar key the engine does not own. KOTOR 2's main interface fills a fifth personal column, the party-AI combat stance ("Aggressive" and three siblings; confirmed live, `UnifiedMenu.cols` read `[4]=4`). Neither game binds an action-bar action to key 8 — in both, 1–9 are solely the dialogue-reply keys — so bare 8 *fires* the column's selected entry itself rather than announcing an engine dispatch, and Shift+8 opens it. On KOTOR 1 the column is never populated, so both decline and the help list omits the line.
 - Shift+L — Open the engine's level-up panel directly (bypass chargen-tab chain — escape hatch for the tutorial level).
-- Ö — Open the Examine panel for the currently-selected target (toggle).
+- Examine panel (dev feature) — **unbound by default** since the physical Ö key
+  went to KOTOR 2's SwitchWeaps remap (see the keymap note at the top). Rebind
+  it in the mod's keybind configurator to use the panel; it was Ö before.
 - Shift+H — Open the combat-queue submenu (review / clear queued actions).
 
 ### In-world cycle (Pillar 4)

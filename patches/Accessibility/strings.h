@@ -435,6 +435,17 @@ enum class Id : int {
     EquipSlotBelt,
     EquipSlotHands,
 
+    //      KOTOR 2 weapon-set qualifier appended to the two weapon-slot
+    //      pairs ("Rechte Waffe, aktiv" / "Rechte Waffe, sekund\xE4r").
+    //      Deliberately NOT the engine's own "Konfig 1"/"Konfig 2"
+    //      (dialog.tlk 49038/49039): the numbers suggest two persistent
+    //      loadouts, but the engine has no active-set state — a swap
+    //      moves the items, so the first pair is always what you hold
+    //      and the second pair is always the stored one. Named for what
+    //      the slots ARE.
+    EquipSetActive,
+    EquipSetSecondary,
+
     //      Slot announce composition. The per-kind slot extractor reads
     //      the equipped item handle from the panel's cached slot fields
     //      (CSWGuiInGameEquip @+0x427c..+0x429c) and resolves it via the
@@ -451,6 +462,23 @@ enum class Id : int {
     //      (the "(Ausgew.)" item) in the LB_ITEMS picker unequips it.
     //      No args. Ex: "Ausr\xFCstung abgelegt".
     EquipUnequipped,
+
+    //      In-world announcement when the weapon sets swap (KOTOR 2 only
+    //      — SwitchWeaps, the action the installer moves from H to the
+    //      physical \xD6/semicolon key; also the equip screen's swap
+    //      button and scripted ActionSwitchWeapons). The engine stores no
+    //      "active set" flag — a swap physically exchanges the items
+    //      between the active pair (slots 4/5) and the secondary pair
+    //      (slots 18/19) — so weapon_set_watch detects the cross-exchange
+    //      of the four slot handles and speaks what the leader now holds.
+    //   FmtWeaponSwitchedOne — 1 `%s` (the one equipped weapon).
+    //                          Ex: "Waffen gewechselt: Doppelklinge".
+    //   FmtWeaponSwitchedTwo — 2 `%s` (main hand, off hand).
+    //   WeaponSwitchedBare   — no args; both new slots empty or names
+    //                          unresolvable. Ex: "Waffen gewechselt".
+    FmtWeaponSwitchedOne,
+    FmtWeaponSwitchedTwo,
+    WeaponSwitchedBare,
 
     //      Virtual stat-row chain entries appended at the END of the
     //      Equip panel chain (after the 9 slot buttons + Back/Change*).

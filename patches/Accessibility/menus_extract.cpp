@@ -1467,10 +1467,14 @@ const char* TryInGameMenuIcon(void* control, void* owner,
 //
 //     Both sets carry a set qualifier on KOTOR 2, not just the second one:
 //     the two rows are otherwise identical ("Linke Waffe" twice), and the
-//     panel itself labels the columns. The qualifier text is the engine's
-//     own — dialog.tlk 49038 / 49039, which is what LBL_TOHIT / LBL_DAMAGE
-//     render as the on-screen "Konfig 1" / "Konfig 2" headers — so it is
-//     localised for free. Digits are the fallback if that lookup fails.
+//     panel itself labels the columns. The qualifier words are the mod's
+//     own "aktiv" / "sekund\xE4r" (EquipSetActive / EquipSetSecondary), NOT
+//     the engine's on-screen "Konfig 1" / "Konfig 2" (dialog.tlk
+//     49038/49039): the engine keeps no active-set state — SwitchWeaps
+//     physically moves the items between the slot pairs — so the first
+//     pair is by construction what the character holds and the second
+//     pair the stored one. Numbered configs would wrongly suggest a
+//     persistent "which set am I on".
 struct EquipSlotName {
     int           btnId;
     int           lblId;
@@ -1479,10 +1483,8 @@ struct EquipSlotName {
     size_t        itemIdOffset;  // CSWGuiInGameEquip-relative
     // Weapon-set qualifier, KOTOR 2 only. 0 = no qualifier (every slot on
     // KOTOR 1, and the non-weapon slots on KOTOR 2, which are shared
-    // between the two sets). Otherwise the dialog.tlk strref for the
-    // set name, with `setFallback` as the language-neutral last resort.
-    uint32_t      qualifierStrref;
-    const char*   setFallback;
+    // between the two sets); 1 = active pair, 2 = secondary pair.
+    int           setQualifier;
     bool          k2Only;     // entry does not exist on KOTOR 1
 };
 // Namespace scope, not function-local static: the initializers are runtime
@@ -1491,23 +1493,20 @@ struct EquipSlotName {
 // guard needs unwinding). Same workaround as the rest of the patch.
 namespace {
 const bool kEquipTableIsK2 = acc::game::IsKotor2();
-// "Konfig 1" / "Konfig 2" as the engine renders them on the panel itself.
-const uint32_t kEquipSet1Strref = 49038u;
-const uint32_t kEquipSet2Strref = 49039u;
 const EquipSlotName k_equipSlots[] = {
-    { kEquipBtnHeadId,     kEquipTableIsK2 ? 10 : kEquipBtnHeadId    + 1, 31375u,      acc::strings::Id::EquipSlotHead,    kEquipPanelHeadIdOffset,         0,                0,    false },
-    { kEquipBtnImplantId,  kEquipTableIsK2 ? 16 : kEquipBtnImplantId + 1, 0xFFFFFFFFu, acc::strings::Id::EquipSlotImplant, kEquipPanelImplantIdOffset,      0,                0,    false },
-    { kEquipBtnBodyId,     kEquipTableIsK2 ?  7 : kEquipBtnBodyId    + 1, 31380u,      acc::strings::Id::EquipSlotBody,    kEquipPanelArmorIdOffset,        0,                0,    false },
-    { kEquipBtnArmLId,     kEquipTableIsK2 ?  8 : kEquipBtnArmLId    + 1, 31376u,      acc::strings::Id::EquipSlotArmL,    kEquipPanelLeftArmbandIdOffset,  0,                0,    false },
-    { kEquipBtnArmRId,     kEquipTableIsK2 ?  6 : kEquipBtnArmRId    + 1, 31377u,      acc::strings::Id::EquipSlotArmR,    kEquipPanelRightArmbandIdOffset, 0,                0,    false },
-    { kEquipBtnWeapLId,    kEquipTableIsK2 ?  4 : kEquipBtnWeapLId   + 1, 31378u,      acc::strings::Id::EquipSlotWeapL,   kEquipPanelLeftWeaponIdOffset,   kEquipSet1Strref, "1",  false },
-    { kEquipBtnWeapRId,    kEquipTableIsK2 ?  3 : kEquipBtnWeapRId   + 1, 31379u,      acc::strings::Id::EquipSlotWeapR,   kEquipPanelRightWeaponIdOffset,  kEquipSet1Strref, "1",  false },
-    { kEquipBtnBeltId,     kEquipTableIsK2 ?  5 : kEquipBtnBeltId    + 1, 31382u,      acc::strings::Id::EquipSlotBelt,    kEquipPanelBeltIdOffset,         0,                0,    false },
-    { kEquipBtnHandsId,    kEquipTableIsK2 ?  9 : kEquipBtnHandsId   + 1, 31383u,      acc::strings::Id::EquipSlotHands,   kEquipPanelGlovesIdOffset,       0,                0,    false },
-    // KOTOR 2 only — the "Konfig 2" weapon pair. Same slot names as set 1,
-    // separated by the qualifier.
-    { 20,                  2,                                             31378u,      acc::strings::Id::EquipSlotWeapL,   kEquipPanelLeftWeapon2IdOffset,  kEquipSet2Strref, "2",  true  },
-    { 21,                  1,                                             31379u,      acc::strings::Id::EquipSlotWeapR,   kEquipPanelRightWeapon2IdOffset, kEquipSet2Strref, "2",  true  },
+    { kEquipBtnHeadId,     kEquipTableIsK2 ? 10 : kEquipBtnHeadId    + 1, 31375u,      acc::strings::Id::EquipSlotHead,    kEquipPanelHeadIdOffset,         0, false },
+    { kEquipBtnImplantId,  kEquipTableIsK2 ? 16 : kEquipBtnImplantId + 1, 0xFFFFFFFFu, acc::strings::Id::EquipSlotImplant, kEquipPanelImplantIdOffset,      0, false },
+    { kEquipBtnBodyId,     kEquipTableIsK2 ?  7 : kEquipBtnBodyId    + 1, 31380u,      acc::strings::Id::EquipSlotBody,    kEquipPanelArmorIdOffset,        0, false },
+    { kEquipBtnArmLId,     kEquipTableIsK2 ?  8 : kEquipBtnArmLId    + 1, 31376u,      acc::strings::Id::EquipSlotArmL,    kEquipPanelLeftArmbandIdOffset,  0, false },
+    { kEquipBtnArmRId,     kEquipTableIsK2 ?  6 : kEquipBtnArmRId    + 1, 31377u,      acc::strings::Id::EquipSlotArmR,    kEquipPanelRightArmbandIdOffset, 0, false },
+    { kEquipBtnWeapLId,    kEquipTableIsK2 ?  4 : kEquipBtnWeapLId   + 1, 31378u,      acc::strings::Id::EquipSlotWeapL,   kEquipPanelLeftWeaponIdOffset,   1, false },
+    { kEquipBtnWeapRId,    kEquipTableIsK2 ?  3 : kEquipBtnWeapRId   + 1, 31379u,      acc::strings::Id::EquipSlotWeapR,   kEquipPanelRightWeaponIdOffset,  1, false },
+    { kEquipBtnBeltId,     kEquipTableIsK2 ?  5 : kEquipBtnBeltId    + 1, 31382u,      acc::strings::Id::EquipSlotBelt,    kEquipPanelBeltIdOffset,         0, false },
+    { kEquipBtnHandsId,    kEquipTableIsK2 ?  9 : kEquipBtnHandsId   + 1, 31383u,      acc::strings::Id::EquipSlotHands,   kEquipPanelGlovesIdOffset,       0, false },
+    // KOTOR 2 only — the secondary weapon pair (inventory slots 18/19).
+    // Same slot names as the active pair, separated by the qualifier.
+    { 20,                  2,                                             31378u,      acc::strings::Id::EquipSlotWeapL,   kEquipPanelLeftWeapon2IdOffset,  2, true  },
+    { 21,                  1,                                             31379u,      acc::strings::Id::EquipSlotWeapR,   kEquipPanelRightWeapon2IdOffset, 2, true  },
 };
 }  // namespace
 
@@ -1546,17 +1545,13 @@ const char* TryEquipSlot(void* control, void* owner,
             if (slotLabel[0] == '\0') break;
 
             // Weapon-set qualifier (KOTOR 2's two weapon rows). Appended to
-            // the slot name so the pair reads "Linke Waffe Konfig 1" /
-            // "Linke Waffe Konfig 2" instead of the same words twice.
-            if (kEquipTableIsK2 && s.qualifierStrref != 0) {
-                char setText[64];
-                setText[0] = '\0';
-                if (!LookupTlk(s.qualifierStrref, setText, sizeof(setText)) ||
-                    setText[0] == '\0') {
-                    if (s.setFallback) {
-                        strncpy_s(setText, s.setFallback, _TRUNCATE);
-                    }
-                }
+            // the slot name so the pair reads "Linke Waffe aktiv" /
+            // "Linke Waffe sekund\xE4r" instead of the same words twice.
+            if (kEquipTableIsK2 && s.setQualifier != 0) {
+                const char* setText = acc::strings::Get(
+                    s.setQualifier == 1
+                        ? acc::strings::Id::EquipSetActive
+                        : acc::strings::Id::EquipSetSecondary);
                 size_t slen = strnlen(slotLabel, sizeof(slotLabel));
                 size_t qlen = strlen(setText);
                 if (qlen > 0 && slen + 1 + qlen + 1 <= sizeof(slotLabel)) {

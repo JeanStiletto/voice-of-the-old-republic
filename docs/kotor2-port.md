@@ -14,6 +14,92 @@ plan.
 
 ## WHERE TO RESUME (read this first)
 
+**Weapon-set swap batch (SwitchWeaps rebind + announcement) — IMPLEMENTED
+2026-08-11, offline (four kotor2 Ghidra decompiles + one kotor1, one
+capstone immediate-pair scan; zero test rounds). Built green, NOT tested.**
+K2's SwitchWeaps (keymap.2da row 65, default H) collided with the mod's
+bare-H self status / Shift+H queue — every H press silently swapped the
+weapon set. What landed:
+
+- **Rebind:** installer writes `Action265=99` (physical Ö / US semicolon)
+  into `swkotor2.ini` on full installs (`GameTarget.KeymapExtras` +
+  `SwkotorIniTweaker.KeymapTweaksFor`; removed on uninstall like the
+  movement pairs). The mod freed the key by unbinding its dev-only
+  ExamineOpen default (rebindable via configurator). The DEV machine's
+  live swkotor2.ini was already rewritten this session. NOTE: the stock
+  ini only ever holds letter/digit/modifier codes — first live round must
+  confirm the engine accepts a punctuation InputIndex from the ini.
+- **CONCLUSION OF THE RE HUNT: there is NO active-weapon-set flag.**
+  Four independent witnesses: nwscript.nss has fixed slots
+  (INVENTORY_SLOT_RIGHTWEAPON2=18 / LEFTWEAPON2=19) and documents
+  ActionSwitchWeapons (command 853) as "switch between Config 1 and
+  Config 2 of their equipment" with NO getter; the exe has no
+  active-set GFF save label; all equip machinery treats 0x40000/0x80000
+  as plain slots; the swap executes as combat-round steps calling the
+  per-slot equip primitive 0x0056D6F0. A swap PHYSICALLY EXCHANGES the
+  items between the pairs — "which set am I on" is never stored, and
+  the equip screen always shows the held pair in its first rows.
+- **Announcement (user decision 2026-08-11):** `weapon_set_watch.{h,cpp}`
+  (K2-gated per-tick poll, core_tick slot after stealth_watch) reads the
+  four weapon-slot handles off the leader's CSWInventory and detects the
+  per-pair cross-exchange (old main-hand now in the secondary slot and
+  vice versa; normal re-equips can't produce it — the displaced item
+  goes to the backpack). On detect it speaks the new loadout via
+  FmtWeaponSwitchedOne/Two / WeaponSwitchedBare (7 languages), using
+  combat_query::ReadEquippedItemName (made public for this). 800ms
+  collapse window in case the two pairs land on different server ticks.
+  Secondary-pair handle offsets witnessed in the K2 slot mapper
+  0x006D0670: bit 0x40000 → inventory+0x40, 0x80000 → +0x44 (slots
+  14..17 fill 0x30..0x3c first; NOT naive slot*4+4) —
+  kInventoryRight/LeftWeapon2HandleOffset, Kotor2Only.
+- **Equip screen relabel (same user decision):** the two weapon-slot
+  pairs now read "aktiv" / "sekund\xE4r" (EquipSetActive/Secondary, mod
+  strings) instead of the engine's "Konfig 1/2" strrefs 49038/49039 —
+  numbered configs imply a persistent set choice the engine doesn't
+  have. menus_extract's EquipSlotName qualifier became an int code
+  (0/1/2); the strref+fallback fields are gone.
+- **Test items for the next K2 round:** (1) press Ö in-world — swap
+  fires (proves the engine accepts a punctuation InputIndex from the
+  ini) and the mod speaks "Waffen gewechselt: <weapon>" once, ~3s after
+  the press (round end); (2) swap back — names of the other pair; (3)
+  swap via the equip screen's swap button — same announcement; (4) equip
+  a different weapon from inventory — NO swap announcement; (5) equip
+  rows read "… aktiv" / "… sekund\xE4r"; (6) bare H = self status only,
+  no weapon swap; (7) K1 regression: equip rows unchanged (no
+  qualifier), no watcher activity in the log.
+- **RE trail (kotor2 program):** in-world dispatcher case 0x109 (= ini
+  Action id 265 — command codes ARE the Action ids) → client request
+  0x0077da50 (cooldown gate at client+0x464, 1000ms stamp) → message
+  writer 0x00879c50 sending header (0x70, major 6, minor 0x26) →
+  **CSWSMessage::HandlePlayerToServerInputMessage twin = 0x0065BE70**
+  (found via the AddAttackActions constant pair 0x2719/0x5dc — its minor
+  switch is NOT a dense jump table, so the bounds-check scan missed it;
+  cases run 0..0x26, K1 tops out at 0x24) → case 0x26 reads (byte, oid)
+  and calls **server swap worker 0x00566410**, which does NOT flip state
+  inline: it schedules timed event 10001 (+3000ms, builder 0x00590d10)
+  and enqueues **AI action 0x3f** (= script-constant 39, the first
+  K2-only ACTION_ id — unnamed in nwscript.nss; internal→script remap
+  witnessed in 0x006afcd0), then pumps **RunActions twin 0x0057AC30**
+  (K1 0x0057F4A0 — that address is NOT the pump; see below). The real
+  **RunActions twin is 0x005D56B0** — found by enumerating in-.text
+  jump tables and ranking by entry count (its table has exactly 0x47
+  entries; the bounds-check scans missed it). Node layout from enqueue
+  twin 0x0053F7F0: 0x74-byte CSWSObjectActionNode, **id at +0x0**,
+  group short at +0x6c. Case 0x3f (creature-gated) calls **0x006D9500 —
+  the COMBAT-ROUND processor** (action 0x3f = combat round, which is why
+  the swap takes ~3s): it walks round steps by type byte, and step type
+  13 is the weapon-switch step, which re-enters 0x00566410 and drives
+  the per-slot equips. No state is written anywhere — see the CONCLUSION
+  bullet below. Refuted en
+  route: 0x0057ac30 is a combat-range notifier, not the pump; the
+  76-entry code-pointer table at .rdata 0x0098bb44 is NOT the action
+  table (its 0x3f entry 0x004687e0 is a distance-culling loop); the
+  9.3KB switch at 0x00648cc0 is the EVENT dispatcher (its 0x3f
+  compares are animation ids).
+- K2 also natively binds **B = WALKMODIFY (keymap row 66, Action268)**
+  under the mod's view-mode B — untested collision, decide rebind vs
+  move in a later batch. (K1 binds row 65 to B, inert there.)
+
 **Examine/status accessor batch (the Batch-4 "later pass") — IMPLEMENTED
 2026-08-11. Built green, applied, awaiting test.** Closes the whole
 "deliberately unresolved (guarded degrades)" list from Batch 4: rich

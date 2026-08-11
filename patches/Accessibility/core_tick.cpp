@@ -55,6 +55,7 @@
 #include "spatial_change_detector.h"
 #include "speech_clipboard.h"
 #include "stealth_watch.h"
+#include "weapon_set_watch.h"
 #include "minigame_swoop_race.h"
 #include "trap_watch.h"
 #include "minigame_turret.h"
@@ -595,6 +596,13 @@ void Dispatch() {
     // focus). Both games since the K2 systems pass (2026-08-02):
     // stealth_mode witnessed at K2 creature+0x511 (see stealth_watch.cpp).
     PHASE("stealth_watch", acc::stealth_watch::Tick());
+
+    // Weapon-set swap announcement — KOTOR 2 only (gated inside; KOTOR 1
+    // has no second weapon pair). Detects the cross-exchange of the four
+    // weapon-slot handles (the engine stores no active-set flag), so the
+    // SwitchWeaps key, the equip screen's swap button and scripted swaps
+    // all announce what the leader now holds.
+    PHASE("weapon_set_watch", acc::weapon_set_watch::Tick());
 
     // Dialog screen + bark bubble narration. Both games since Batch 3b —
     // its whole constant closure is resolved for KOTOR 2 (12/12; the reply

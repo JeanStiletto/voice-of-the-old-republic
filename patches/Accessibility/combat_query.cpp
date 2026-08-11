@@ -98,6 +98,8 @@ int ReadMaxHpFromClient(void* clientLeader) {
     }
 }
 
+}  // namespace
+
 // Walk CSWSCreature.inventory @+0xa2c → CSWInventory.<slot>_handle →
 // CClientExoApp::GetObjectName(handle). SEH-guarded at every hop.
 // `slotHandleOffset` is one of kInventory*HandleOffset (e.g.
@@ -105,6 +107,8 @@ int ReadMaxHpFromClient(void* clientLeader) {
 // writes a null-terminated display name on success; false on any
 // null link, empty slot, sentinel handle, or name-resolution miss.
 // Logs the slot handle so an unresolved item leaves a breadcrumb.
+// Public (not file-local): weapon_set_watch names the post-swap weapons
+// through the same walk.
 bool ReadEquippedItemName(void* serverCreature, size_t slotHandleOffset,
                           const char* slotLabel,
                           char* outBuf, size_t outBufSize) {
@@ -142,6 +146,8 @@ bool ReadEquippedItemName(void* serverCreature, size_t slotHandleOffset,
     }
     return true;
 }
+
+namespace {
 
 // 2D distance (horizontal plane) from player to target in metres. Matches
 // the cycle_state convention — z deliberately ignored so multi-storey

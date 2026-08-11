@@ -751,11 +751,11 @@ void PollWin32Hotkey() {
     Vector unused;
     if (!acc::engine::GetPlayerPosition(unused)) return;
 
-    // Toggle: pressing Ö while the view is open closes it.
+    // Toggle: pressing the ExamineOpen key while the view is open closes it.
     if (g_state.active) {
         prism::Speak(acc::strings::Get(acc::strings::Id::ExamineViewClosed),
                     /*interrupt=*/true);
-        acclog::Write("Examine.View", "OEM_3 (Oe) -> close (toggle)");
+        acclog::Write("Examine.View", "ExamineOpen key -> close (toggle)");
         ForceDisarm("toggle");
         return;
     }
