@@ -111,12 +111,14 @@ const MsgStrings kEn = {
     // ---- Engine-side parse anchors (extracted from EN dialog.tlk)
     " succeeds with attack on ",   // phrase_hit       (template 42042 + verb 42043)
     " fails with attack on ",      // phrase_miss      (template 42042 + verb 42044)
-    " with ",                      // phrase_mit       (42119; EN is the ONLY locale that fills the
-                                   //   suffix's <CUSTOM0> hit/miss tag — strref 42133 "Hit" / 42134
-                                   //   "Miss" (empty in DE/FR/IT/ES). So EN renders "...on <target>.
-                                   //   Hit with N vs..." — a single-space " with " connector, NOT the
-                                   //   glued double-space the extractor assumes for empty-<CUSTOM0>
-                                   //   locales. Single leading space here matches both Hit and Miss.)
+    " with ",                      // phrase_mit       (42119; EN fills the suffix's <CUSTOM0>
+                                   //   hit/miss tag — strref 42133 "Hit" / 42134 "Miss" — as do RU
+                                   //   ("\xD3\xE4\xE0\xF0"/"\xCF\xF0\xEE\xEC\xE0\xF5") and PL
+                                   //   ("Trafienie"/"Miss"); only DE/FR/IT/ES leave them empty. A
+                                   //   filled tag renders "...on <target>. Hit with N vs..." — a
+                                   //   single-space connector, NOT the glued double-space of the
+                                   //   empty-<CUSTOM0> locales. The extractor derives this from the
+                                   //   tag slots since 2026-08-12; single space matches both tags.)
     "Defense ",                    // word_verteidigung (42119 gap CUSTOM1..CUSTOM2)
     "damage ",                     // word_schaden_colon (42119 gap CUSTOM2..CUSTOM3)
     " used.",                      // feat_marker      (42046 + engine-appended ".")
@@ -463,9 +465,10 @@ const MsgStrings kEs = {
 //      because Russian drops "to be" in the present tense, so the rendered
 //      line is "<target> <status>" with only a space between them. A single
 //      space is unusable as an anchor: RuleAttackSummary searches for
-//      "<target>" + marker inside the summary, and 42119's gap after the
-//      target is "  \xF1 " (glue space + "with"), so a " " marker would
-//      match there and capture the entire rest of the line as the status.
+//      "<target>" + marker inside the summary, and after the target the
+//      line continues ". \xD3\xE4\xE0\xF0 \xF1 " (glue + hit tag + "with"),
+//      so a " " marker would match there and capture the entire rest of
+//      the line as the status.
 //      Per combat_strings.h's documented fallback for locales with a
 //      different construction, we use a byte the TLK can never contain: the
 //      status word is simply not extracted, the line is still claimed and
@@ -475,7 +478,13 @@ const MsgStrings kRu = {
     // ---- Engine-side parse anchors (extracted from Allard dialog.tlk)
     " \xF3\xF1\xEF\xE5\xF8\xED\xEE \xE0\xF2\xE0\xEA\xF3\xE5\xF2 ",  // phrase_hit  (42042 + adverb 42043)
     " \xE1\xE5\xE7\xF3\xF1\xEF\xE5\xF8\xED\xEE \xE0\xF2\xE0\xEA\xF3\xE5\xF2 ",  // phrase_miss (42042 + adverb 42044)
-    "  \xF1 ",                                  // phrase_mit        (42119, +1 glue space)
+    // Single leading space, NOT the +1 glue space of the empty-tag locales:
+    // the Allard TLK FILLS the 42133/42134 hit/miss tags ("\xD3\xE4\xE0\xF0"/
+    // "\xCF\xF0\xEE\xEC\xE0\xF5"), so the render is ". \xD3\xE4\xE0\xF0 \xF1 N"
+    // — same mechanism as kEn's " with ". The original "  \xF1 " double-space
+    // form could never match (found 2026-08-12 by the tag-aware extractor);
+    // every RU attack summary fell through to raw speech.
+    " \xF1 ",                                   // phrase_mit        (42119)
     "\xC7\xE0\xF9\xE8\xF2\xFB ",                // word_verteidigung (42119 gap CUSTOM1..CUSTOM2)
     "\xEF\xEE\xE2\xF0\xE5\xE6\xE4\xE5\xED\xE8\xFF ",  // word_schaden_colon (42119 gap CUSTOM2..CUSTOM3)
     " \xE8\xF1\xEF\xEE\xEB\xFC\xE7\xEE\xE2\xE0\xED\xEE.",  // feat_marker (42046 + engine-appended ".")
@@ -618,7 +627,12 @@ const MsgStrings kPl = {
     // ---- Engine-side parse anchors (LEM dialog.tlk)
     "trafia",                                   // phrase_hit   (42043, bare verb — see quirk (a))
     "nie trafia",                               // phrase_miss  (42044)
-    "  za ",                                    // phrase_mit          (42119, +1 glue space)
+    // Single leading space: the LEM TLK FILLS the 42133/42134 tags
+    // ("Trafienie" / untranslated "Miss"), so the render is
+    // ". Trafienie za N" — the original "  za " double-space form could
+    // never match (found 2026-08-12 by the tag-aware extractor); every PL
+    // attack summary fell through to raw speech.
+    " za ",                                     // phrase_mit          (42119)
     "obrona ",                                  // word_verteidigung   (42119 gap CUSTOM1..CUSTOM2)
     "obra\xBF""e\xF1: ",                                // word_schaden_colon  (42119 gap CUSTOM2..CUSTOM3)
     "U\xBFyto atutu: ",                            // feat_marker         (42046, leading label)
@@ -753,13 +767,71 @@ MsgStrings BuildDeK2() {
     return m;
 }
 
+// The K2 Russian TSLRCM TLK (Workshop item 2143250983, cached 2026-08-12 as
+// dialog_ru_k2.tlk) is a from-scratch re-translation relative to K1's Allard
+// TLK — unlike German's four-anchor drift, nearly every engine anchor
+// differs, which is why this delta touches most of the parse fields.
+// Extracted mechanically (`kdev combat-strings-extract --lang ru_k2` diffed
+// against `--lang ru`); UNTESTED against a live RU K2 combat capture, but a
+// wrong anchor falls through to raw speech, never crashes.
+//
+// Template shapes behind the less obvious anchors (from the raw TLK):
+//   42042 "<C0> <C1> \xF1 \xED\xE0\xEF\xE0\xE4\xE5\xED\xE8\xE5\xEC \xED\xE0: <C2>"
+//   42119 "<C0> (<C1>) \xEF\xF0\xEE\xF2\xE8\xE2 \xC7\xE0\xF9\xE8\xF2\xFB (<C2>), \xE8\xF2\xEE\xE3\xEE <C3> \xF3\xF0\xEE\xED\xE0. "
+//   — the hit tag is "\xCF\xEE\xEF\xE0\xE4\xE0\xED\xE8\xE5" (filled, as in
+//   K1-ru), and the suffix brackets its numbers, so phrase_mit is " (" and
+//   the defence locator is the second "(".
+// The K2 feat label LEADS its name ("\xC8\xF1\xEF\xEE\xEB\xFC\xE7\xEE\xE2\xE0\xED\xEE: <name>"),
+// which the classic-layout parser cannot slice (it expects name-then-marker);
+// the marker below therefore never matches and the feat is simply not spoken
+// — harmless, the summary still parses.
+MsgStrings BuildRuK2() {
+    MsgStrings m = kRu;
+    m.phrase_hit         = " \xE4\xEE\xF1\xF2\xE8\xE3\xE0\xE5\xF2 \xF3\xF1\xEF\xE5\xF5\xE0 \xF1 \xED\xE0\xEF\xE0\xE4\xE5\xED\xE8\xE5\xEC \xED\xE0: ";
+    m.phrase_miss        = " \xF2\xE5\xF0\xEF\xE8\xF2 \xED\xE5\xF3\xE4\xE0\xF7\xF3 \xF1 \xED\xE0\xEF\xE0\xE4\xE5\xED\xE8\xE5\xEC \xED\xE0: ";
+    m.phrase_mit         = " (";
+    m.word_verteidigung  = "(";
+    m.word_schaden_colon = "\xE8\xF2\xEE\xE3\xEE ";
+    m.feat_marker        = "\xC8\xF1\xEF\xEE\xEB\xFC\xE7\xEE\xE2\xE0\xED\xEE: .";
+    m.prefix_angriff     = "\xD1\xE2\xEE\xE4\xEA\xE0 \xEF\xEE \xE0\xF2\xE0\xEA\xE5: ";
+    m.prefix_abwehr      = "\xD1\xE2\xEE\xE4\xEA\xE0 \xEF\xEE \xE7\xE0\xF9\xE8\xF2\xE5: (";
+    m.prefix_schaden     = "\xD1\xE2\xEE\xE4\xEA\xE0 \xEF\xEE \xEF\xEE\xE2\xF0\xE5\xE6\xE4\xE5\xED\xE8\xFF\xEC: ";
+    m.prefix_bedrohung   = "\xD1\xE2\xEE\xE4\xEA\xE0 \xEF\xEE \xF3\xF0\xEE\xE2\xED\xFE \xF3\xE3\xF0\xEE\xE7\xFB:";
+    m.tag_krit_summary   = "\xCA\xF0\xE8\xF2\xE8\xF7\xE5\xF1\xEA\xEE\xE5 \xEF\xEE\xEF\xE0\xE4\xE0\xED\xE8\xE5!";
+    m.tag_auto_hit       = "\xC0\xE2\xF2\xEE\xEC\xE0\xF2\xE8\xF7\xE5\xF1\xEA\xEE\xE5 \xEF\xEE\xEF\xE0\xE4\xE0\xED\xE8\xE5!";
+    m.token_wuerfel      = "\xE1\xF0\xEE\xF1\xEE\xEA (";
+    m.token_gesch_mod    = "\xEC\xEE\xE4\xE8\xF4\xE8\xEA\xE0\xF2\xEE\xF0 \xCB\xEE\xE2\xEA\xEE\xF1\xF2\xE8 (";
+    m.token_entfernung   = "\xF1\xF2\xF0\xE5\xEB\xEA\xEE\xE2\xFB\xE9 \xE1\xEE\xED\xF3\xF1 \xE1\xEB\xE8\xE7\xEA\xEE\xE9 \xE4\xE8\xF1\xF2\xE0\xED\xF6\xE8\xE8 (";
+    m.token_effekt       = "\xE1\xEE\xED\xF3\xF1 \xFD\xF4\xF4\xE5\xEA\xF2\xE0 (";
+    m.krit_x_prefix      = "\xCA\xF0\xE8\xF2\xE8\xF7\xE5\xF1\xEA\xE8\xE9 \xF3\xF0\xEE\xED \xF5";
+    m.phrase_fuer        = " \xE4\xEB\xFF ";
+    m.token_bonusschaden = "\xE1\xEE\xED\xF3\xF1\xED\xFB\xE9 \xF3\xF0\xEE\xED";
+    m.hand_main          = "\xC3\xEB\xE0\xE2\xED\xE0\xFF \xF0\xF3\xEA\xE0";
+    m.prefix_auswirkung  = "\xD0\xE0\xE7\xE1\xEE\xF0 \xED\xE0\xEB\xE0\xE3\xE0\xE5\xEC\xFB\xF5 \xFD\xF4\xF4\xE5\xEA\xF2\xEE\xE2:";
+    m.absorb_anchor      = "\xEE\xF7\xEA\xEE\xE2:";
+    m.ability_use_marker = " \xE8\xF1\xEF\xEE\xEB\xFC\xE7\xF3\xE5\xF2: ";
+    m.save_success       = "\xD3\xF1\xEF\xE5\xF5!";
+    m.damage_marker      = " \xED\xE0\xED\xEE\xF1\xE8\xF2 \xEF\xEE\xE2\xF0\xE5\xE6\xE4\xE5\xED\xE8\xFF: ";
+    m.kill_marker        = "\xF3\xE1\xE8\xE2\xE0\xE5\xF2:";
+    return m;
+}
+
 }  // namespace
 
 const MsgStrings& Get() {
-    if (acc::game::IsKotor2() &&
-        acc::strings::GetLanguage() == acc::strings::Lang::De) {
-        static const MsgStrings kDeK2 = BuildDeK2();
-        return kDeK2;
+    if (acc::game::IsKotor2()) {
+        switch (acc::strings::GetLanguage()) {
+            case acc::strings::Lang::De: {
+                static const MsgStrings kDeK2 = BuildDeK2();
+                return kDeK2;
+            }
+            case acc::strings::Lang::Ru: {
+                static const MsgStrings kRuK2 = BuildRuK2();
+                return kRuK2;
+            }
+            default:
+                break;  // fr/it/es pending vanilla-TLK capture; pl has no K2 source
+        }
     }
     switch (acc::strings::GetLanguage()) {
         case acc::strings::Lang::En: return kEn;

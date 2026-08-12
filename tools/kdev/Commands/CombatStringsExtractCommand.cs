@@ -566,6 +566,10 @@ public static class CombatStringsExtractCommand
         int c2 = IndexOfAscii(template, "<CUSTOM2>");
         int c1 = IndexOfAscii(template, "<CUSTOM1>");
         if (c0 < 0 || c1 < 0 || c2 < 0) return null;
+        // Locales can reorder the placeholders (pl puts the verb last);
+        // this reconstruction only models the 0 < 1 < 2 layout — anything
+        // else is a hand-built table (see kPl quirk (a)), so fail soft.
+        if (c1 < c0 || c2 < c1) return null;
 
         int from = c0 + "<CUSTOM0>".Length;   // start after CUSTOM0
         int to = c2;                          // stop before CUSTOM2

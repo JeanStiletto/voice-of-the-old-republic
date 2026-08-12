@@ -761,7 +761,14 @@ equip-panel id family found on the way. The ledger:
   Steam-language one, captured via language swap; Russian's item is the
   TLK source; German came from the install). Workflow + item ids in
   data/dialog-tlk/MANIFEST.txt (K2 section); the FR/IT/ES finding also
-  exposed an installer harvest bug, recorded in docs/known-issues.md. The extractor is now
+  exposed an installer harvest bug, recorded in docs/known-issues.md.
+  **ru_k2 DONE 2026-08-12** (BuildRuK2 — a from-scratch re-translation,
+  nearly every anchor differs; UNTESTED in game, falls back to raw speech
+  on mismatch). The same tag-aware pass found and fixed a latent K1 bug:
+  the RU and PL TLKs FILL the 42133/42134 hit/miss tags, so their shipped
+  double-space phrase_mit could never match — both dropped to the
+  single-space form. Remaining: fr/it/es via one vanilla-TLK language-swap
+  session. The extractor is now
   42133/42134 tag-aware (`--lang de_k2` reproduces BuildDeK2 exactly,
   phrase_mit's single space included — the delta the plain TLK diff missed);
   `--lang <code>_k2` emits a snippet to diff against the K1 snippet into a

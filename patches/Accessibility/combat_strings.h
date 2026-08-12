@@ -25,7 +25,9 @@ struct MsgStrings {
     //      emitted text exactly (case + spaces + trailing punctuation).
     const char* phrase_hit;          // " ist erfolgreich mit Angriff auf "
     const char* phrase_miss;         // " scheitert mit Angriff auf "
-    const char* phrase_mit;          // "  mit "   (note: 2 leading spaces)
+    const char* phrase_mit;          // "  mit "   (2 leading spaces ONLY when the
+                                     //   locale's 42133/42134 hit/miss tags are empty;
+                                     //   filled tags render single-spaced — see kEn note)
     const char* word_verteidigung;   // "Verteidigung "
     const char* word_schaden_colon;  // "Schaden: "
     const char* feat_marker;         // " verwendet."

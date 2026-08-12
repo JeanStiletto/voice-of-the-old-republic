@@ -33,6 +33,23 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>Unreleased</h2>
+
+<h3>Bug fixes:</h3>
+
+- Russian and Polish KOTOR 1: shortened combat messages work now. Both
+  community translations fill the hit/miss tag of the combat stats line, which
+  renders the connector after the target with a single space — the parser
+  expected the double-space form and every attack summary silently fell back
+  to the full raw combat text being spoken.
+
+<h3>KOTOR 2:</h3>
+
+- Russian: shortened combat messages now match the Russian TSLRCM text
+  (Workshop translation), which re-translated nearly every combat template
+  compared to the KOTOR 1 community translation. Untested in game yet; any
+  anchor that doesn't match falls back to speaking the raw combat text.
+
 <h2>v0.7.1</h2>
 
 <h3>KOTOR 2:</h3>
