@@ -755,9 +755,13 @@ equip-panel id family found on the way. The ledger:
   **Localisation plan (2026-08-12):** extrapolating the DE deltas is NOT
   well-founded (32292's verb swap is a per-language editorial change; the
   trailing-space drift is per-string noise) — but no guessing is needed:
-  the K2 runtime TLKs for fr/it/es/ru are the TSLRCM per-language Steam
-  Workshop items the installer harvests for end users. Workflow + item ids
-  in data/dialog-tlk/MANIFEST.txt (K2 section). The extractor is now
+  every locale's K2 runtime TLK is obtainable. Per-locale sources differ
+  (found 2026-08-12: the FR/IT/ES TSLRCM Workshop items ship NO TLK —
+  inline-dlg translations — so those locales' runtime TLK is the VANILLA
+  Steam-language one, captured via language swap; Russian's item is the
+  TLK source; German came from the install). Workflow + item ids in
+  data/dialog-tlk/MANIFEST.txt (K2 section); the FR/IT/ES finding also
+  exposed an installer harvest bug, recorded in docs/known-issues.md. The extractor is now
   42133/42134 tag-aware (`--lang de_k2` reproduces BuildDeK2 exactly,
   phrase_mit's single space included — the delta the plain TLK diff missed);
   `--lang <code>_k2` emits a snippet to diff against the K1 snippet into a
