@@ -33,7 +33,7 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
-<h2>Unreleased</h2>
+<h2>v0.7.0</h2>
 
 <h3>KOTOR 2:</h3>
 
