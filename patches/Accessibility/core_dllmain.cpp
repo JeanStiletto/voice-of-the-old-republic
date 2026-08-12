@@ -1,9 +1,10 @@
 // DLL entry + lazy-init plumbing.
 //
 // DllMain runs under the loader lock — no LoadLibrary, no COM init, no
-// file I/O here. Prism is initialised lazily on the first hook fire,
-// after which we also detect the user's installed language from
-// dialog.tlk and select the matching strings + combat-anchor tables.
+// file I/O here. Prism is initialised lazily on the first hook fire;
+// that same once-only init detects the user's installed language from
+// dialog.tlk and selects the matching strings + combat-anchor tables
+// (and speech codepage) before the first utterance — on both games.
 
 #include <windows.h>
 #include <cstdint>
@@ -169,6 +170,22 @@ void EnsurePrismInitialized() {
     static bool done = false;
     if (done) return;
     done = true;
+    // Detect + pin the language before the first utterance. This lives here —
+    // the single once-only funnel every speech surface passes through — rather
+    // than in OnRulesInit, because OnRulesInit is a KOTOR-1-only hook: KOTOR 2
+    // has no rules-init detour, so detection parked there left K2 on the
+    // compiled-in German default for every user. Order matters: the narrow-text
+    // codepage must be pinned from the detected language before the greeting
+    // below, so the very first utterance is already widened correctly. Russian
+    // is CP1251 and Polish CP1250 — neither may go through CP_ACP; see
+    // prism::SetSpeechCodepage. File I/O is safe at every caller (all speech
+    // surfaces fire well past loader lock, same argument as prism::Init's
+    // LoadLibrary).
+    {
+        const acc::strings::Lang lang = DetectLanguageFromTlk();
+        acc::strings::SetLanguage(lang);
+        prism::SetSpeechCodepage(acc::strings::CodepageFor(lang));
+    }
     if (prism::Init()) {
         // Localised: this is the first thing every player hears on every
         // launch, so it must follow the configured language like all other
@@ -279,9 +296,9 @@ void InstallMouseGuard() {
 }  // namespace
 
 // CSWRules::CSWRules construction detour (hooks.toml @ 0x00552c9a).
-// First fire is the "patch alive" signal, Prism-init trigger, and the
-// point at which we detect the user's installed language. File I/O is
-// safe here (we're well past loader lock by the time CSWRules runs).
+// First fire is the "patch alive" signal and Prism-init trigger (which
+// also detects the user's installed language). File I/O is safe here
+// (we're well past loader lock by the time CSWRules runs).
 extern "C" void __cdecl OnRulesInit(void* /*rulesThis*/) {
     if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
     static bool fired = false;
@@ -290,15 +307,9 @@ extern "C" void __cdecl OnRulesInit(void* /*rulesThis*/) {
     acclog::BringupMark("rules_init");
     InstallMouseGuard();
     acc::save_guard::InstallSaveScreenshotGuard();
-    // Order matters: pin the narrow-text codepage from the detected language
-    // before Prism comes up, so the very first utterance (the version greeting
-    // in EnsurePrismInitialized) is already widened correctly. Russian is
-    // CP1251 and must not go through CP_ACP — see prism::SetSpeechCodepage.
-    {
-        const acc::strings::Lang lang = DetectLanguageFromTlk();
-        acc::strings::SetLanguage(lang);
-        prism::SetSpeechCodepage(acc::strings::CodepageFor(lang));
-    }
+    // Language detection + codepage pinning happen inside
+    // EnsurePrismInitialized (before its greeting), so KOTOR 2 — which has no
+    // rules-init hook — gets them too.
     EnsurePrismInitialized();
     // Baseline snapshot of swkotor.ini + install-root DLLs so every support
     // bundle from now on carries the user's full config without needing a

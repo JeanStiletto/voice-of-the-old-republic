@@ -33,6 +33,17 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>v0.7.1</h2>
+
+<h3>KOTOR 2:</h3>
+
+- The mod now speaks your installed language instead of always German. Language
+  detection ran only from a KOTOR-1-only startup hook, so on KOTOR 2 the string
+  table stayed on its compiled-in German default for everyone; detection (and
+  the Russian CP1251 / Polish CP1250 speech-codepage pinning that comes with it)
+  now runs as part of the one-time speech init both games share, before the
+  first spoken word.
+
 <h2>v0.7.0</h2>
 
 <h3>KOTOR 2:</h3>
