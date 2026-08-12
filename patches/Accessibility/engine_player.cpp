@@ -46,6 +46,26 @@ void* GetPlayerServerObject() {
     }
 }
 
+void* ClientToServerCreature(void* clientCreature) {
+    if (!clientCreature) return nullptr;
+    __try {
+        // Same dual path as GetPlayerServerObject above: KOTOR 2's client
+        // layout shift makes the field read unsafe there, so use the
+        // engine's own virtual-dispatching resolver; KOTOR 1 keeps the
+        // tested field read.
+        if (acc::game::IsKotor2()) {
+            using PFN_GetServerCreature = void* (__thiscall*)(void*);
+            return reinterpret_cast<PFN_GetServerCreature>(
+                kAddrGetServerCreature)(clientCreature);
+        }
+        return *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(clientCreature) +
+            kClientObjectServerObjectOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
 bool GetPlayerPosition(Vector& out) {
     void* obj = GetPlayerServerObject();
     if (!obj) return false;

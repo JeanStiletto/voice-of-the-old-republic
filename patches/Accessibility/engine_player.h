@@ -88,6 +88,12 @@ void* GetClientLeader();
 // slot 0). nullptr on KOTOR 1, empty slot, or fault.
 void* GetPartyCreatureBySlotK2(int slot);
 
+// CSWCCreature* → its CSWSCreature*, game-appropriately: KOTOR 1 reads the
+// tested server_object field, KOTOR 2 calls the engine's own
+// CSWCCreature::GetServerCreature (the client layout shifted there — same
+// dual path GetPlayerServerObject uses for the leader). nullptr on fault.
+void* ClientToServerCreature(void* clientCreature);
+
 // Active leader's action-queue "append" knob — CSWCCreature.field200_0x440
 // bit 0 (the combat-mode bit combat_diag reads as `cm`).
 // CSWGuiMainInterface::DoPersonalAction and CSWGuiTargetActionMenu::

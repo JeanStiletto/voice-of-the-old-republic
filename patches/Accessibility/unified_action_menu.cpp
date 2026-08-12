@@ -55,8 +55,14 @@ struct MedPicker {
     bool active = false;
     int  count  = 0;              // populated rows (party members present)
     int  sel    = 0;              // focused row
-    uint32_t handles[3] = {0, 0, 0};  // client handle per row (re-resolved
-                                      // at Enter — creatures can despawn)
+    uint32_t handles[3] = {0, 0, 0};  // client handle per row (preselect
+                                      // matching; Enter fallback resolve)
+    int  slots[3]      = {0, 0, 0};   // engine party slot per row — Enter
+                                      // re-resolves through the slot, not
+                                      // the handle: the PC's client handle
+                                      // is a floating pseudo-id the object
+                                      // array won't look up (the "cannot
+                                      // aim at the PC" round, 2026-08-12)
     char names[3][64]  = {"", "", ""};
     Cat  itemCat{};               // the Medicine-row entry to fire
     int  itemSel = 0;
@@ -1160,12 +1166,33 @@ bool OpenMedPicker(void* mi, const Cat& c, int sel, const char* itemLabel) {
         if (id == 0) continue;
         int row = g.med.count;
         g.med.handles[row] = id;
-        if (!acc::engine::GetObjectDisplayNameByHandle(
-                id, g.med.names[row], sizeof(g.med.names[row])) ||
-            !g.med.names[row][0]) {
-            // Nameless resolve — speak the slot number rather than nothing.
-            std::snprintf(g.med.names[row], sizeof(g.med.names[row]),
-                          "%d", s + 1);
+        g.med.slots[row]   = s;
+        // Name chain, PC-aware (the PC's display name never resolves by
+        // handle — its chargen name lives in the client app, not the
+        // creature stats; same layering the Tab announce solved):
+        //   1. universal display-name accessor (companions resolve here)
+        //   2. server-object name via the engine's own client→server
+        //      resolver (the Q/E-cycle path that reads the PC correctly)
+        //   3. leader row → GetActiveLeaderName (the shipped Tab solution)
+        //   4. chargen-name slot, then the bare slot number as last resort.
+        char* nm = g.med.names[row];
+        const size_t nmSize = sizeof(g.med.names[row]);
+        bool named = acc::engine::GetObjectDisplayNameByHandle(id, nm, nmSize)
+                     && nm[0];
+        if (!named) {
+            void* srv = acc::engine::ClientToServerCreature(cre);
+            named = srv && acc::engine::GetObjectName(srv, nm, nmSize) &&
+                    nm[0];
+        }
+        if (!named && leaderId != 0 &&
+            ((leaderId ^ id) & ~0x80000000u) == 0) {
+            named = acc::engine::GetActiveLeaderName(nm, nmSize) && nm[0];
+        }
+        if (!named) {
+            named = acc::engine::GetPlayerCharacterName(nm, nmSize) && nm[0];
+        }
+        if (!named) {
+            std::snprintf(nm, nmSize, "%d", s + 1);
         }
         if (narrated != 0 &&
             ((narrated ^ id) & ~0x80000000u) == 0) narratedRow = row;
@@ -1219,12 +1246,21 @@ bool HandleMedPickerInput(int code) {
             void* mi = acc::engine_actionbar::ResolveMainInterface();
             if (!mi) return true;
             // Shift+Enter = instant self (the controlled leader); plain
-            // Enter re-resolves the focused row's handle (creatures can
-            // despawn while the picker sits open).
-            void* cre = acc::hotkeys::ShiftHeld()
-                ? acc::engine::GetClientLeader()
-                : acc::engine::ResolveClientObject(
-                      g.med.handles[g.med.sel]);
+            // Enter re-resolves the focused row through the engine's own
+            // party-slot accessor — the PC's pseudo-handle won't resolve
+            // through the object array (the "cannot aim at the PC" round),
+            // but its slot always does. Handle resolve stays as fallback.
+            void* cre = nullptr;
+            if (acc::hotkeys::ShiftHeld()) {
+                cre = acc::engine::GetClientLeader();
+            } else {
+                cre = acc::engine::GetPartyCreatureBySlotK2(
+                    g.med.slots[g.med.sel]);
+                if (!cre) {
+                    cre = acc::engine::ResolveClientObject(
+                        g.med.handles[g.med.sel]);
+                }
+            }
             (void)FireMedicalDirect(mi, g.med.itemCat, g.med.itemSel, cre,
                                     "picker");
             return true;
