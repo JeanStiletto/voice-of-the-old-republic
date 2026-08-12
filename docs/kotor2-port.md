@@ -749,9 +749,21 @@ equip-panel id family found on the way. The ledger:
   (42157 — anchor must carry it or every extracted target name starts with
   a space), ability_use_marker swapped verbs "benutzt" → "verwendet"
   (32292). Auto-hit/-fail tags kept the K1 form deliberately (strstr'd
-  substrings — match either way). Non-DE locales stay on K1 anchors (no K2
-  TLKs locally; mismatch falls through to raw speech). Glue-order caveat as
+  substrings — match either way). Non-DE locales stay on K1 anchors (mismatch
+  falls through to raw speech). Glue-order caveat as
   ever: confirm with one K2 combat capture (`MsgBuf: raw:` vs `emit-*`).
+  **Localisation plan (2026-08-12):** extrapolating the DE deltas is NOT
+  well-founded (32292's verb swap is a per-language editorial change; the
+  trailing-space drift is per-string noise) — but no guessing is needed:
+  the K2 runtime TLKs for fr/it/es/ru are the TSLRCM per-language Steam
+  Workshop items the installer harvests for end users. Workflow + item ids
+  in data/dialog-tlk/MANIFEST.txt (K2 section). The extractor is now
+  42133/42134 tag-aware (`--lang de_k2` reproduces BuildDeK2 exactly,
+  phrase_mit's single space included — the delta the plain TLK diff missed);
+  `--lang <code>_k2` emits a snippet to diff against the K1 snippet into a
+  BuildXxK2 delta. Polish has no K2 source (no Steam/TSLRCM Polish) and
+  stays K1-anchored deliberately. Pending: user subscribes to the four
+  Workshop items, then extract + wire the four deltas.
 - **Subtitle-suppress data (dialog_speech.cpp) went per game.** The
   human-appearance bitmask was REGENERATED from K2's own appearance.2da
   (424 human rows of 671; build/dump-2da now takes a k1|k2 arg — the K1

@@ -732,9 +732,14 @@ const MsgStrings kPl = {
 //
 // Reconstruction caveat as in the header: glue order is assumed identical to
 // K1; confirm with one K2 combat capture (grep `MsgBuf: raw:` vs `emit-*`).
-// Non-DE locales: no K2 TLKs locally (same Steam language-swap workflow as
-// K1); they stay on the K1 anchors, where any mismatch falls through to raw
-// speech — no regression.
+// Non-DE locales: still on the K1 anchors (mismatch falls through to raw
+// speech — no regression). The K2 TLKs for fr/it/es/ru are the TSLRCM
+// per-language Steam Workshop items — the very files the installer puts on
+// end-user installs. Capture per data/dialog-tlk/MANIFEST.txt (K2 section),
+// then `kdev combat-strings-extract --lang <code>_k2`, diff against the K1
+// snippet, and add BuildXxK2 deltas here (the extractor is 42133/42134
+// tag-aware since 2026-08-12 and reproduces BuildDeK2 exactly, phrase_mit
+// included). No Polish K2 source exists — pl stays K1-anchored by design.
 MsgStrings BuildDeK2() {
     MsgStrings m = kDe;
     m.phrase_hit         = " ist erfolgreich  mit Angriff auf ";

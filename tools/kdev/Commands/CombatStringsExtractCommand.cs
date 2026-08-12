@@ -28,14 +28,25 @@ namespace Kdev.Commands;
 /// -----
 ///   kdev combat-strings-extract                  # uses install dialog.tlk
 ///   kdev combat-strings-extract --lang en        # uses data/dialog-tlk/dialog_en.tlk
+///   kdev combat-strings-extract --lang fr_k2     # KOTOR 2 locale (dialog_fr_k2.tlk)
 ///   kdev combat-strings-extract --tlk path.tlk   # explicit file
 ///   kdev combat-strings-extract --output kEn.txt # to file (else stdout)
 ///
 /// The --lang shorthand reads from a local per-locale TLK cache populated
-/// by manual Steam language swaps. See data/dialog-tlk/MANIFEST.txt for
-/// the recognised codes and how to add new ones. Useful so we don't have
+/// by manual Steam language swaps (K1) or the TSLRCM per-language Steam
+/// Workshop items (K2). See data/dialog-tlk/MANIFEST.txt for the
+/// recognised codes and how to add new ones. Useful so we don't have
 /// to round-trip Steam every time we want to look at a non-DE locale's
 /// strings (combat or otherwise).
+///
+/// K2 locale codes end in "_k2" and change the output shape: the snippet
+/// is meant to be DIFFED against the same locale's K1 table to produce a
+/// BuildXxK2 delta function (see BuildDeK2 in combat_strings.cpp), not
+/// pasted wholesale. The hit/miss tag strrefs (42133/42134, empty in K1,
+/// filled with untranslated English "Hit"/"Miss" in K2-DE) are dumped in
+/// the header and drive phrase_mit's spacing automatically — this was the
+/// delta the plain TLK diff missed on the German round because the tags
+/// only glue into the rendered line at runtime.
 ///
 /// Workflow per locale
 /// -------------------
@@ -69,7 +80,7 @@ public static class CombatStringsExtractCommand
 
         var langOpt = new Option<string?>(
             name: "--lang",
-            description: "Locale code (en/de/fr/it/es). Resolves to data/dialog-tlk/dialog_<code>.tlk in the project root.");
+            description: "Locale code (en/de/fr/it/es/pl/ru; K2 variants de_k2/fr_k2/it_k2/es_k2/ru_k2). Resolves to data/dialog-tlk/dialog_<code>.tlk in the project root.");
 
         var outOpt = new Option<string?>(
             name: "--output",
@@ -114,7 +125,7 @@ public static class CombatStringsExtractCommand
             if (!File.Exists(tlkPath))
             {
                 Console.Error.WriteLine($"No cached TLK for --lang {langCode}: expected {tlkPath}");
-                Console.Error.WriteLine($"Populate it via: Steam language swap → copy dialog.tlk to that path.");
+                Console.Error.WriteLine($"Populate it per data/dialog-tlk/MANIFEST.txt (K1: Steam language swap; K2: TSLRCM workshop item).");
                 return 1;
             }
         }
@@ -146,8 +157,10 @@ public static class CombatStringsExtractCommand
             return 1;
         }
 
-        var detectedLang = LanguageIdToCode(tlk.LanguageId);
-        var snippet = EmitSnippet(tlk, detectedLang, tlkPath);
+        // Prefer the explicit --lang code: workshop/community TLKs can lie
+        // about their language id (the Russian ones claim English, id 0).
+        var effectiveLang = langCode ?? LanguageIdToCode(tlk.LanguageId);
+        var snippet = EmitSnippet(tlk, effectiveLang, tlkPath);
 
         if (outPath == null)
         {
@@ -195,6 +208,16 @@ public static class CombatStringsExtractCommand
         public const int TagAutoFail = 42391;       // "Automatischer Fehlschlag!"
         public const int KritXPrefix = 42386;       // "Kritischer Treffer x<CUSTOM0> für "
 
+        // Hit/miss tag slot (the <CUSTOM0> of the stats-line suffix 42119).
+        // EMPTY in every K1 locale — the summary line's trailing space plus
+        // the suffix's leading " mit " then render as a double space, which
+        // is why the K1 phrase_mit anchors carry two leading spaces. K2
+        // FILLS them (DE: untranslated English "Hit"/"Miss"), collapsing
+        // the connector to a single space. Found 2026-08-04 from a live K2
+        // combat capture; see BuildDeK2 in combat_strings.cpp.
+        public const int TagHit = 42133;
+        public const int TagMiss = 42134;
+
         // Per-component breakdown labels (drop trailing " <CUSTOM0>").
         public const int TokenWuerfel = 42316;      // " Würfelergebnis <CUSTOM0>"  (note leading space)
         public const int TokenGeschMod = 42339;     // "+ Geschicklichkeit-Mod. <CUSTOM0>"
@@ -240,8 +263,9 @@ public static class CombatStringsExtractCommand
             t => ReconstructHitMissPhrase(t, StrrefMap.SummaryTemplate, StrrefMap.VerbHit)),
         new("phrase_miss", " scheitert mit Angriff auf ",
             t => ReconstructHitMissPhrase(t, StrrefMap.SummaryTemplate, StrrefMap.VerbMiss)),
-        new("phrase_mit",  "leading 2 spaces — engine glues suffix to summary with 1 extra space",
-            t => SuffixLiteral(t, StrrefMap.SuffixTemplate, "<CUSTOM0>", "<CUSTOM1>", prefixSpaces: 1)),
+        new("phrase_mit",  "gap between <CUSTOM0> and <CUSTOM1> of the stats suffix; +1 leading space only while the hit/miss tags (42133/42134) are empty (K1) — filled tags (K2) eat the double space",
+            t => SuffixLiteral(t, StrrefMap.SuffixTemplate, "<CUSTOM0>", "<CUSTOM1>",
+                               prefixSpaces: HitMissTagsFilled(t) ? 0 : 1)),
         new("word_verteidigung", "last word in template gap between <CUSTOM1> and <CUSTOM2>",
             t => LastWordBeforePlaceholder(t.Get(StrrefMap.SuffixTemplate), "<CUSTOM1>", "<CUSTOM2>")),
         new("word_schaden_colon", "last word in template gap between <CUSTOM2> and <CUSTOM3> (keeps trailing ':' if present)",
@@ -515,6 +539,16 @@ public static class CombatStringsExtractCommand
         return result;
     }
 
+    // True when the hit/miss tag slots carry text (K2 TLKs). Either one
+    // filled is enough: the connector after the tag is the anchor, and it
+    // renders single-spaced as soon as tag text precedes it.
+    private static bool HitMissTagsFilled(TlkFile t)
+    {
+        var hit = t.Get(StrrefMap.TagHit);
+        var miss = t.Get(StrrefMap.TagMiss);
+        return (hit != null && hit.Length > 0) || (miss != null && miss.Length > 0);
+    }
+
     /// <summary>
     /// Reconstruct " VERB mit Angriff auf " by substituting the verb
     /// strref into the summary template's CUSTOM1 slot, then extracting
@@ -743,12 +777,25 @@ public static class CombatStringsExtractCommand
     private static string EmitSnippet(TlkFile tlk, string langCode, string tlkPath)
     {
         var sb = new StringBuilder();
-        var tableName = "k" + char.ToUpperInvariant(langCode[0]) + langCode.Substring(1);
+        bool isK2 = langCode.EndsWith("_k2", StringComparison.OrdinalIgnoreCase);
+        var baseCode = isK2 ? langCode[..^3] : langCode;
+        var baseCamel = char.ToUpperInvariant(baseCode[0]) + baseCode.Substring(1);
+        var tableName = "k" + baseCamel + (isK2 ? "K2" : "");
 
         sb.AppendLine($"// === {tableName} table — extracted by `kdev combat-strings-extract` ===");
         sb.AppendLine($"// Source TLK: {tlkPath}");
-        sb.AppendLine($"// TLK languageId: {tlk.LanguageId} ({langCode})");
+        sb.AppendLine($"// TLK languageId: {tlk.LanguageId} (treated as {langCode})");
         sb.AppendLine($"// Generated: {DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC");
+        sb.AppendLine($"//");
+        var tagHit = tlk.Get(StrrefMap.TagHit);
+        var tagMiss = tlk.Get(StrrefMap.TagMiss);
+        bool tagsFilled = HitMissTagsFilled(tlk);
+        sb.AppendLine($"// Hit/miss tag slots (42133/42134): {(tagsFilled ? "FILLED" : "empty")}");
+        sb.AppendLine($"//   hit = {CppLiteral(tagHit)}");
+        sb.AppendLine($"//   miss = {CppLiteral(tagMiss)}");
+        sb.AppendLine(tagsFilled
+            ? "//   -> phrase_mit emitted WITHOUT the K1 leading double-space (tag text precedes the connector at render time)."
+            : "//   -> phrase_mit emitted with the K1 leading double-space (empty tag collapses against the summary line's trailing space).");
         sb.AppendLine($"//");
         sb.AppendLine($"// Speech-side fields (verb_hit … short_bonus, plus word_failed/");
         sb.AppendLine($"// word_resists/word_save_failed) are placeholders copied from kDe —");
@@ -792,13 +839,30 @@ public static class CombatStringsExtractCommand
         }
         sb.AppendLine($"}};");
         sb.AppendLine();
-        sb.AppendLine($"// === Wiring checklist ===");
-        sb.AppendLine($"// 1. Add Lang::{char.ToUpperInvariant(langCode[0])}{langCode.Substring(1)} to strings.h.");
-        sb.AppendLine($"// 2. Add namespace lang_{langCode} + Get(Id) to strings.h / strings_{langCode}.cpp.");
-        sb.AppendLine($"// 3. Add `case Lang::{char.ToUpperInvariant(langCode[0])}{langCode.Substring(1)}: return {tableName};`");
-        sb.AppendLine($"//    in combat_strings.cpp::Get().");
-        sb.AppendLine($"// 4. Add `case Lang::{char.ToUpperInvariant(langCode[0])}{langCode.Substring(1)}: return lang_{langCode}::Get(id);`");
-        sb.AppendLine($"//    in strings.cpp::Get().");
+        if (isK2)
+        {
+            sb.AppendLine($"// === Wiring checklist (K2 delta) ===");
+            sb.AppendLine($"// Do NOT paste this table wholesale. Diff its engine anchors against");
+            sb.AppendLine($"// k{baseCamel} (e.g. extract both `--lang {baseCode}` and `--lang {langCode}`");
+            sb.AppendLine($"// and diff the two snippets) and express only the differing fields as");
+            sb.AppendLine($"// a Build{baseCamel}K2() delta in combat_strings.cpp, mirroring BuildDeK2.");
+            sb.AppendLine($"// Then extend Get()'s IsKotor2 branch to select it for Lang::{baseCamel}.");
+            sb.AppendLine($"// Speech-side fields stay on the K1 table — never diff those.");
+            sb.AppendLine($"// Trailing-space-only growth on pure-substring anchors (tag_auto_hit,");
+            sb.AppendLine($"// tag_auto_fail) needs NO delta — the shorter K1 form matches either way.");
+            sb.AppendLine($"// Validate with one in-locale K2 combat capture:");
+            sb.AppendLine($"//   grep 'MsgBuf: raw:' <k2 install>/logs/patch-*.log");
+        }
+        else
+        {
+            sb.AppendLine($"// === Wiring checklist ===");
+            sb.AppendLine($"// 1. Add Lang::{baseCamel} to strings.h.");
+            sb.AppendLine($"// 2. Add namespace lang_{langCode} + Get(Id) to strings.h / strings_{langCode}.cpp.");
+            sb.AppendLine($"// 3. Add `case Lang::{baseCamel}: return {tableName};`");
+            sb.AppendLine($"//    in combat_strings.cpp::Get().");
+            sb.AppendLine($"// 4. Add `case Lang::{baseCamel}: return lang_{langCode}::Get(id);`");
+            sb.AppendLine($"//    in strings.cpp::Get().");
+        }
         return sb.ToString();
     }
 
