@@ -1437,6 +1437,9 @@ enum class Id : int {
     //      crafting::Tick when the bit flips, mirroring StoreModeBuy/Sell.
     WorkbenchModeCreate,       // create view active ("Modus Herstellen")
     WorkbenchModeBreakdown,    // breakdown view active ("Modus Zerlegen")
+    FmtWorkbenchUpgradeTitle,  // K2 upgrade slot screen fg-edge title —
+                               // one %s (the item being upgraded, from
+                               // the panel's LBL_TITLE): "Aufwerten: %s"
 
     // ---- Sound options panel (optionssound.gui) label fix-up.
     //      The stock German .gui labels the 4th slider (movie/video volume)

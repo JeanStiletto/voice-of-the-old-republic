@@ -448,6 +448,7 @@ const char* Get(Id id) {
         case Id::WorkbenchPickerInstalled:   return "zamontowane";
         case Id::WorkbenchModeCreate:        return "Tryb tworzenia";
         case Id::WorkbenchModeBreakdown:     return "Tryb rozk\xB3" "adania";
+        case Id::FmtWorkbenchUpgradeTitle:   return "Ulepszanie: %s";
 
         case Id::SoundOptionsMovieVolume:    return "G\xB3o\x9Cno\x9C\xE6 film\xF3w";
 

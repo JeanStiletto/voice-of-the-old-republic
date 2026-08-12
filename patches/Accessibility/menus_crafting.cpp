@@ -4,6 +4,8 @@
 #include <windows.h>
 #include <cstdint>
 #include <cstddef>
+#include <cstdio>
+#include <cstring>
 
 #include "menus_crafting.h"
 
@@ -31,11 +33,19 @@ namespace {
 // the two crafting screens agree on every id we use).
 constexpr int kSelUpgradeListId    = 9;   // upgradesel_p LB_UPGRADELIST
 constexpr int kSelUpgradeItemsBtn  = 5;   // upgradesel_p BTN_UPGRADEITEMS
+constexpr int kSelTitleId          = 4;   // upgradesel_p LBL_TITLE
+constexpr int kItemsTitleId        = 3;   // upgradeitems_p LBL_TITLE
+constexpr int kUpgradeTitleId      = 12;  // upgrade_p LBL_TITLE (item name)
 constexpr int kCraftShopListId     = 4;   // LB_SHOPITEMS (craftable list)
 constexpr int kCraftInvListId      = 5;   // LB_INVITEMS (breakdown list)
 constexpr int kCraftAcceptBtnId    = 12;  // BTN_Accept ("Objekt erstellen")
 constexpr int kCreateItemTitleId   = 19;  // component_p LBL_TITLE
 constexpr int kCreateMedTitleId    = 15;  // chemical_p LBL_TITLE
+
+// upgrade_p.gui bakes this literal (not a strref) into LBL_TITLE; the
+// engine overwrites it with the item's name when it primes the panel.
+// Locale-independent, so equality is a safe "not primed yet" test.
+constexpr const char* kUpgradeTitlePlaceholder = "Item Name";
 
 constexpr int kVtableHandleInputEvent = 15;
 typedef void (__thiscall* PFN_ControlHandleInputEvent)(void* this_, int code,
@@ -44,6 +54,71 @@ typedef void (__thiscall* PFN_ControlHandleInputEvent)(void* this_, int code,
 bool IsCraftingKind(PanelKind k) {
     return k == PanelKind::WorkbenchCreateItem ||
            k == PanelKind::WorkbenchCreateMedical;
+}
+
+// The K2 workbench family whose titles Tick's foreground-edge announcer
+// owns (see OwnsPanelTitle in the header). Returns the .gui id of the
+// panel's title label, or -1 for non-family kinds.
+int TitleLabelIdFor(PanelKind k) {
+    switch (k) {
+        case PanelKind::WorkbenchSelect:        return kSelTitleId;
+        case PanelKind::WorkbenchItems:         return kItemsTitleId;
+        case PanelKind::WorkbenchUpgrade:       return kUpgradeTitleId;
+        case PanelKind::WorkbenchCreateItem:    return kCreateItemTitleId;
+        case PanelKind::WorkbenchCreateMedical: return kCreateMedTitleId;
+        default:                                return -1;
+    }
+}
+
+// Speak the family panel's title when it ARRIVES in the foreground.
+// Replaces pointer-keyed first-sight for these panels on K2: the stacked
+// push spoke four construction-time titles in a row, and the pre-built
+// panels are reused so re-entries stayed silent. The upgrade screen
+// formats its title as "Aufwerten: <item name>" and retries while the
+// engine hasn't yet replaced the .gui placeholder.
+void AnnounceFamilyTitleOnFgEdge(void* fg, PanelKind pk) {
+    static void* s_lastFg = nullptr;
+    static bool  s_retryTitle = false;
+
+    bool edge = fg != s_lastFg;
+    s_lastFg = fg;
+
+    int labelId = TitleLabelIdFor(pk);
+    if (labelId < 0 || !fg) {
+        s_retryTitle = false;
+        return;
+    }
+    if (!edge && !s_retryTitle) return;
+
+    void* label = FindControlById(fg, labelId);
+    char text[256];
+    if (!label ||
+        !acc::menus::extract::FromControl(label, text, sizeof(text), fg) ||
+        text[0] == '\0') {
+        // Label empty or unreadable — try again next tick (same shape as
+        // the placeholder retry; gives the engine a frame to populate).
+        s_retryTitle = true;
+        return;
+    }
+
+    if (pk == PanelKind::WorkbenchUpgrade) {
+        if (strcmp(text, kUpgradeTitlePlaceholder) == 0) {
+            s_retryTitle = true;
+            return;
+        }
+        char msg[320];
+        snprintf(msg, sizeof(msg),
+                 acc::strings::Get(acc::strings::Id::FmtWorkbenchUpgradeTitle),
+                 text);
+        prism::Speak(msg, /*interrupt=*/false);
+        acclog::Write("Crafting", "fg-edge title panel=%p kind=%d -> \"%s\"",
+                      fg, (int)pk, msg);
+    } else {
+        prism::Speak(text, /*interrupt=*/false);
+        acclog::Write("Crafting", "fg-edge title panel=%p kind=%d -> \"%s\"",
+                      fg, (int)pk, text);
+    }
+    s_retryTitle = false;
 }
 
 // CSWGuiControl.bit_flags read, SEH-guarded. 0 on fault — callers treat
@@ -195,25 +270,9 @@ bool IsHiddenCraftingListBox(void* panel, void* listBox) {
     return !IsListBoxVisible(listBox);
 }
 
-const char* GetTitleOverride(void* panel) {
-    PanelKind pk = IdentifyPanel(panel);
-    int titleId;
-    if (pk == PanelKind::WorkbenchCreateItem) {
-        titleId = kCreateItemTitleId;
-    } else if (pk == PanelKind::WorkbenchCreateMedical) {
-        titleId = kCreateMedTitleId;
-    } else {
-        return nullptr;
-    }
-    void* label = FindControlById(panel, titleId);
-    if (!label) return nullptr;
-    static char s_title[256];
-    if (!acc::menus::extract::FromControl(label, s_title, sizeof(s_title),
-                                          panel) ||
-        s_title[0] == '\0') {
-        return nullptr;
-    }
-    return s_title;
+bool OwnsPanelTitle(void* panel) {
+    if (!acc::game::IsKotor2()) return false;
+    return TitleLabelIdFor(IdentifyPanel(panel)) >= 0;
 }
 
 void Tick() {
@@ -226,6 +285,10 @@ void Tick() {
     void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
     void* fg = mgr ? acc::engine::GetForegroundPanel(mgr) : nullptr;
     PanelKind pk = fg ? IdentifyPanel(fg) : PanelKind::Unknown;
+
+    if (acc::game::IsKotor2()) {
+        AnnounceFamilyTitleOnFgEdge(fg, pk);
+    }
 
     bool isCraft = IsCraftingKind(pk);
     bool isSel = pk == PanelKind::WorkbenchSelect && acc::game::IsKotor2();

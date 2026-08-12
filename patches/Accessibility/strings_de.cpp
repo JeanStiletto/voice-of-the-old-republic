@@ -457,6 +457,7 @@ const char* Get(Id id) {
         case Id::WorkbenchPickerInstalled:   return "eingesetzt";
         case Id::WorkbenchModeCreate:        return "Modus Herstellen";
         case Id::WorkbenchModeBreakdown:     return "Modus Zerlegen";
+        case Id::FmtWorkbenchUpgradeTitle:   return "Aufwerten: %s";
 
         case Id::SoundOptionsMovieVolume:    return "Video-Lautst\xE4rke";  // Lautst?rke
 

@@ -76,6 +76,20 @@ static void AnnouncePanelTitle(void* panel) {
     // before the picker spec gets extended.
     acc::diag::chargen_feats::DumpStructureIfNeeded(panel);
 
+    // K2 workbench family: the workbench dialog reply pushes Select +
+    // Items + Upgrade STACKED in one tick (construction-time first-sight
+    // spoke four titles in a row — live log 2026-08-12 13:13:19), and the
+    // pre-built panels are reused so a pointer-keyed first-sight never
+    // fires again on re-entry. menus_crafting::Tick announces these
+    // titles on the foreground edge instead; stay silent here. KOTOR 1
+    // returns false and keeps the normal paths below.
+    if (acc::menus::crafting::OwnsPanelTitle(panel)) {
+        acclog::Write("Menus.PanelWalk",
+                      "title parent=%p suppressed (crafting fg-edge owns it)",
+                      panel);
+        return;
+    }
+
     // Listbox-spec title override: any spec in menus_listbox.cpp can
     // declare its own title speech (used when the panel's .gui-baked
     // title is wrong — e.g. SkillInfoBox carries a BioWare placeholder
@@ -110,18 +124,6 @@ static void AnnouncePanelTitle(void* panel) {
             acc::menus::powers_levelup::GetTitleOverride(panel)) {
         acclog::Write("Menus.PanelWalk",
                       "title parent=%p (powers_levelup override) text=\"%s\"",
-                      panel, override);
-        prism::Speak(override, /*interrupt=*/false);
-        return;
-    }
-
-    // K2 crafting screens: the generic walk would land on
-    // LBL_CREDITS_VALUE (the bare component/chemical count renders before
-    // any title label in .gui order). Read the panel's own LBL_TITLE.
-    if (const char* override =
-            acc::menus::crafting::GetTitleOverride(panel)) {
-        acclog::Write("Menus.PanelWalk",
-                      "title parent=%p (crafting override) text=\"%s\"",
                       panel, override);
         prism::Speak(override, /*interrupt=*/false);
         return;

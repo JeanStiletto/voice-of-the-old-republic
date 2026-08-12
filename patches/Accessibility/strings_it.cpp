@@ -445,6 +445,7 @@ const char* Get(Id id) {
         case Id::WorkbenchPickerInstalled:   return "installato";
         case Id::WorkbenchModeCreate:        return "Modalit\xE0 creazione";
         case Id::WorkbenchModeBreakdown:     return "Modalit\xE0 smontaggio";
+        case Id::FmtWorkbenchUpgradeTitle:   return "Miglioramento: %s";
 
         case Id::SoundOptionsMovieVolume:    return "Volume video";
 

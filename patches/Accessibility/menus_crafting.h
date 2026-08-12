@@ -62,19 +62,29 @@ void DispatchRowCommit(void* panel, void* listBox, void* row, int buttonId);
 // store::IsHiddenStoreListBox.
 bool IsHiddenCraftingListBox(void* panel, void* listBox);
 
-// First-sight title for the crafting screens. The generic label-walk
-// would land on LBL_CREDITS_VALUE (a bare number — the component /
-// chemical count renders before any title label in .gui order), so we
-// read the panel's own LBL_TITLE ("Neue Gegenstände erzeugen" strref
-// 111574 — engine-rendered, localized for free). Returns nullptr on
-// non-crafting panels so the generic walk runs.
-const char* GetTitleOverride(void* panel);
+// True iff this module owns the panel's title speech: K2 only, for the
+// whole workbench family (Select / Items / Upgrade / CreateItem /
+// CreateMedical). AnnouncePanelTitle early-outs on these so the
+// construction-time first-sight stays silent — the K2 workbench dialog
+// reply pushes Select+Items+Upgrade STACKED in one tick (live log
+// 2026-08-12 13:13:19: four titles + a slot-state line spoke in a row),
+// and the panels are pre-built and REUSED across re-entries, so
+// pointer-keyed first-sight also never fires again on re-entry. Tick's
+// foreground-edge announcer replaces both paths on K2; KOTOR 1 keeps
+// the normal first-sight titles (returns false there).
+bool OwnsPanelTitle(void* panel);
 
 // Per-tick watcher over the foreground K2 workbench screens:
+//   * announces the screen's title when a workbench-family panel ARRIVES
+//     in the foreground (replaces first-sight for these panels on K2 —
+//     see OwnsPanelTitle). The upgrade slot screen speaks
+//     "Aufwerten: <item name>" from its LBL_TITLE, retrying while the
+//     label still holds the .gui placeholder "Item Name" (the engine
+//     writes the real name a moment after the stacked push);
 //   * crafting screens: announces create/breakdown view flips
 //     (BTN_Examine or the engine's own toggle) and rebinds the chain;
-//   * all three: rebinds the chain when the active list's row count
-//     changes (category filter switch, item created / broken down).
+//   * rebinds the chain when the active list's row count changes
+//     (category filter switch, item created / broken down).
 // Runs from TickMonitors; cheap no-op when the foreground is unrelated.
 void Tick();
 
