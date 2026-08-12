@@ -816,6 +816,81 @@ MsgStrings BuildRuK2() {
     return m;
 }
 
+// FR/IT/ES K2 deltas, extracted 2026-08-13 from the VANILLA localized TLKs
+// (DepotDownloader, depots 208583/208585/208586 — the runtime TLKs for these
+// locales, since their TSLRCM Workshop items ship no TLK; see MANIFEST.txt).
+// All three fill the 42133/42134 tags with untranslated English "Hit"/"Miss",
+// so phrase_mit is single-spaced throughout. UNTESTED against live K2
+// captures; mismatches fall through to raw speech.
+
+// French: the 2004 K2 localization kept nearly all of K1's combat phrasing —
+// only four anchors drift.
+MsgStrings BuildFrK2() {
+    MsgStrings m = kFr;
+    m.phrase_mit    = " : ";
+    m.feat_marker   = " utilise.";
+    m.phrase_fuer   = ", pour un total de";
+    m.damage_marker = " inflige ";
+    return m;
+}
+
+// Italian: re-translated breakdown vocabulary ("Analisi di ..." replaces
+// K1's "Divisione ..."), new hit/miss verbs, new auto-tags.
+MsgStrings BuildItK2() {
+    MsgStrings m = kIt;
+    m.phrase_hit         = " ha completato un attacco su ";
+    m.phrase_miss        = " ha fallito un attacco su ";
+    m.phrase_mit         = " con ";
+    m.word_schaden_colon = "di ";
+    m.feat_marker        = " utilizzato.";
+    m.prefix_angriff     = "Analisi di attacco: ";
+    m.prefix_abwehr      = "Analisi di difesa: ";
+    m.prefix_schaden     = "Analisi danni: ";
+    m.prefix_bedrohung   = "Analisi di minaccia:";
+    m.tag_krit_summary   = "Colpo critico!";
+    m.tag_auto_hit       = "Colpo a segno automatico!";
+    m.tag_auto_fail      = "Colpo mancato automatico!";
+    m.token_gesch_mod    = "modificatore DES ";
+    m.token_entfernung   = "bonus di distanza ravvicinata ";
+    m.token_effekt       = "bonus di effetto ";
+    m.krit_x_prefix      = "Critico x";
+    m.phrase_fuer        = " per";
+    m.hand_main          = "Mano principale";
+    m.prefix_auswirkung  = "Analisi di applicazione dell'effetto:";
+    m.damage_marker      = " colpisce ";
+    m.kill_marker        = "ha ucciso";
+    return m;
+}
+
+// Spanish: re-translated breakdown vocabulary ("Desglose de ..." replaces
+// K1's "Colapso ..."), new hit/miss phrasing; the save line moved its
+// inverted exclamation mark into the type/result separator.
+MsgStrings BuildEsK2() {
+    MsgStrings m = kEs;
+    m.phrase_hit         = " tiene \xE9xito con ataque sobre ";
+    m.phrase_miss        = " falla con ataque sobre ";
+    m.phrase_mit         = " con ";
+    m.word_schaden_colon = "de ";
+    m.feat_marker        = " usado.";
+    m.prefix_angriff     = "Desglose de ataque: ";
+    m.prefix_abwehr      = "Desglose de Defensa: ";
+    m.prefix_schaden     = "Desglose de da\xF1o: ";
+    m.prefix_bedrohung   = "Desglose de amenaza:";
+    m.tag_krit_summary   = "\xA1""Acierto cr\xEDtico!";
+    m.token_gesch_mod    = "modificador de Des ";
+    m.token_entfernung   = "bonificaci\xF3n a distancia de proximidad ";
+    m.token_effekt       = "bonificaci\xF3n de efecto ";
+    m.krit_x_prefix      = "Cr\xEDtico x";
+    m.phrase_fuer        = " por ";
+    m.token_bonusschaden = "bonificaci\xF3n de da\xF1o";
+    m.prefix_auswirkung  = "Desglose de aplicaci\xF3n de efecto:";
+    m.ability_use_marker = " usa ";
+    m.save_marker        = ". \xA1";
+    m.damage_marker      = " da\xF1\xF3 a ";
+    m.kill_marker        = "muerto";
+    return m;
+}
+
 }  // namespace
 
 const MsgStrings& Get() {
@@ -825,12 +900,26 @@ const MsgStrings& Get() {
                 static const MsgStrings kDeK2 = BuildDeK2();
                 return kDeK2;
             }
+            case acc::strings::Lang::Fr: {
+                static const MsgStrings kFrK2 = BuildFrK2();
+                return kFrK2;
+            }
+            case acc::strings::Lang::It: {
+                static const MsgStrings kItK2 = BuildItK2();
+                return kItK2;
+            }
+            case acc::strings::Lang::Es: {
+                static const MsgStrings kEsK2 = BuildEsK2();
+                return kEsK2;
+            }
             case acc::strings::Lang::Ru: {
                 static const MsgStrings kRuK2 = BuildRuK2();
                 return kRuK2;
             }
             default:
-                break;  // fr/it/es pending vanilla-TLK capture; pl has no K2 source
+                break;  // en: K2 combat block is byte-identical to K1's (verified
+                        // against the vanilla en_k2 TLK 2026-08-13) — kEn as-is.
+                        // pl: no K2 source, K1 anchors + raw-speech fallback.
         }
     }
     switch (acc::strings::GetLanguage()) {

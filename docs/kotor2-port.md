@@ -767,8 +767,14 @@ equip-panel id family found on the way. The ledger:
   on mismatch). The same tag-aware pass found and fixed a latent K1 bug:
   the RU and PL TLKs FILL the 42133/42134 hit/miss tags, so their shipped
   double-space phrase_mit could never match — both dropped to the
-  single-space form. Remaining: fr/it/es via one vanilla-TLK language-swap
-  session. The extractor is now
+  single-space form. **fr/it/es/en DONE 2026-08-13**: vanilla TLKs fetched
+  via DepotDownloader (no language swap, no Steam UI — recipe in
+  data/dialog-tlk/MANIFEST.txt). BuildFrK2 (4 anchors), BuildItK2/BuildEsK2
+  (~20 each — both locales re-translated the breakdown vocabulary), en
+  byte-identical → kEn as-is. All K2 locales UNTESTED in live combat;
+  every mismatch degrades to raw speech, never crashes. COMBAT LOC IS NOW
+  COMPLETE for every locale with a K2 source; pl has none and stays on K1
+  anchors. The extractor is now
   42133/42134 tag-aware (`--lang de_k2` reproduces BuildDeK2 exactly,
   phrase_mit's single space included — the delta the plain TLK diff missed);
   `--lang <code>_k2` emits a snippet to diff against the K1 snippet into a

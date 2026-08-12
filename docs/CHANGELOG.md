@@ -45,10 +45,14 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h3>KOTOR 2:</h3>
 
-- Russian: shortened combat messages now match the Russian TSLRCM text
-  (Workshop translation), which re-translated nearly every combat template
-  compared to the KOTOR 1 community translation. Untested in game yet; any
-  anchor that doesn't match falls back to speaking the raw combat text.
+- Shortened combat messages now work in all supported languages, not just
+  German. French, Italian and Spanish anchors come from the game's own
+  localized text (their TSLRCM translations live inside the dialog files, so
+  the base game supplies the combat strings); Russian comes from the Russian
+  TSLRCM Workshop translation, which re-translated nearly every combat
+  template. English needed no changes — its KOTOR 2 combat text is identical
+  to KOTOR 1's. Untested in game yet; any anchor that doesn't match falls
+  back to speaking the raw combat text.
 
 <h2>v0.7.1</h2>
 
