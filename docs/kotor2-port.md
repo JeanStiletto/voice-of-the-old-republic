@@ -14,6 +14,45 @@ plan.
 
 ## WHERE TO RESUME (read this first)
 
+**Workbench round 4 — two polish fixes (IMPLEMENTED 2026-08-12 after the
+round-3 confirm; patch-20260812-161807.log; offline, built green, applied,
+NOT retested).** Install now works; two follow-ups the user flagged:
+
+- **False "Aufwertung eingesetzt" on an incompatible slot.** Picking a mod
+  for a disabled slot (e.g. a scope slot on a weapon that can't take one)
+  spoke "installed" even though the engine refused (field35 stayed 0->0).
+  The K2 install drain now reads the open slot's field35 BEFORE and AFTER
+  OnUpgradeSelected — active slot button at panel+0x3dbc, its custom_value
+  indexes field35 (panel+0x3d54), exactly as FUN_008cdb00 does — and
+  announces the real outcome: WorkbenchSlotInstalled (changed to non-null),
+  WorkbenchSlotRemoved (went null), or the new WorkbenchUpgradeFailed
+  ("Aufwertung nicht möglich") when a real-mod pick changed nothing. The
+  none row on an already-empty slot stays silent (nothing to remove). The
+  immediate speak in WorkbenchUpgradeOnEnter was removed — the drain owns
+  the announce now (one tick later, ~16 ms). New offsets
+  kUpgradePanelActiveSlotPtrOff / kUpgradePickerRowKeyOff (both Kotor2Only).
+- **Two "Kein Gegenstand" in one picker.** The round-2 dash-guard mapped
+  ANY unreadable row to WorkbenchPickerNone, so a real-but-unreadable mod
+  row was masked as the none entry (the disabled scope slot showed two).
+  WorkbenchUpgradeAnnounce now identifies the TRUE none row by the engine's
+  key (entry+0x1e0 == -1, IsK2UpgradeNoneRow) rather than by text: the
+  remove entry reads "Kein Gegenstand", any other unreadable row reads the
+  new generic WorkbenchPickerUnnamed ("Aufwertung"). K1 keeps dash→none.
+- **STILL OPEN (unchanged from round 2/3):** picker position count on K2
+  ("2 von 2" for the first row, "1 von 2" for the second — inverted;
+  GetWorkbenchPickerInfo minSel/installedRow assume K1's row-0 remove entry,
+  but K2 puts the "-" none row LAST). Low priority; the names + outcomes are
+  right, only the "N von M" ordinal is off. Also unconfirmed: whether some
+  mod rows are genuinely unreadable (the entry name lives in a CExoString
+  member set via SetContents 0x008d0470; FromControl reads most but not all)
+  vs. those rows being real placeholders on a disabled slot.
+- **Test items (round 4):** pick a mod for an INCOMPATIBLE slot → "Aufwertung
+  nicht möglich" (not "eingesetzt"); a compatible mod → "Aufwertung
+  eingesetzt" and the slot reads filled on re-entry; a picker with one real
+  mod + the remove entry → exactly one "Kein Gegenstand", the mod reads its
+  name or "Aufwertung". K1 regression: one install pass (K1 announce path
+  untouched, but WorkbenchUpgradeAnnounce/OnEnter were restructured).
+
 **Workbench round 3 — K2 upgrade INSTALL mechanic differs from K1
 (IMPLEMENTED 2026-08-12, after the second live round patch-20260812-155039.log;
 one kotor2 decompile round on the row-activate + assemble + entry SetContents;

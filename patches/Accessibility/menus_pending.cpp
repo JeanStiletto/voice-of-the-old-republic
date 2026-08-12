@@ -117,6 +117,42 @@ void Reset() {
     g_op = PendingOp{};
 }
 
+// Sentinel returned by ReadUpgradeSlotInstalled when the field can't be read
+// (bad slot pointer / SEH fault) — distinct from nullptr (slot empty).
+void* const kUpgradeSlotUnknown = reinterpret_cast<void*>(~uintptr_t(0));
+
+// K2: the installed-mod pointer (field35) of the currently-open upgrade slot.
+// The panel holds the active slot button at +0x3dbc; its custom_value indexes
+// field35. SEH-guarded, in its own function so the SEH-using Drain stays free
+// of unwinding objects (MSVC C2712). Returns kUpgradeSlotUnknown on any fault.
+void* ReadUpgradeSlotInstalled(void* panel) {
+    if (!panel) return kUpgradeSlotUnknown;
+    __try {
+        auto* base = reinterpret_cast<unsigned char*>(panel);
+        void* slotBtn = *reinterpret_cast<void**>(
+            base + kUpgradePanelActiveSlotPtrOff);
+        if (!slotBtn) return kUpgradeSlotUnknown;
+        int cv = *reinterpret_cast<int*>(
+            reinterpret_cast<unsigned char*>(slotBtn) + kUpgradeSlotCustomValueOff);
+        if (cv < 0 || cv > 5) return kUpgradeSlotUnknown;
+        return *reinterpret_cast<void**>(
+            base + kUpgradeSlotInstalledItemsOff + cv * 4);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return kUpgradeSlotUnknown;
+    }
+}
+
+// K2: true iff `row` is the engine's "-" none/remove picker entry (key -1).
+bool IsUpgradePickerNoneRow(void* row) {
+    if (!row) return false;
+    __try {
+        return *reinterpret_cast<int32_t*>(
+            reinterpret_cast<unsigned char*>(row) + kUpgradePickerRowKeyOff) == -1;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 }  // namespace
 
 bool QueueMoveCursor(int x, int y, void* target) {
@@ -852,16 +888,42 @@ void Drain(void* gm) {
         void* panel = op.a;
         void* row   = op.b;
         if (panel && row) {
+            // Read the currently-open slot's installed-mod pointer (field35)
+            // before and after the engine call, so we announce what actually
+            // happened rather than assuming success — an incompatible slot/mod
+            // leaves field35 unchanged and must not say "installed".
+            bool isNoneRow = IsUpgradePickerNoneRow(row);
+            void* before = ReadUpgradeSlotInstalled(panel);
+
             uint32_t prevRowActive = RaiseIsActiveIfZero(row);
             auto onRow = reinterpret_cast<PFN_CSWGuiUpgradeOnUpgradeSelected>(
                 kAddrCSWGuiUpgradeOnUpgradeSelected);
-            acclog::Write("Update", "WorkbenchUpgradeInstallK2 panel=%p row=%p "
-                          "row.is_active=%u%s",
-                          panel, row, prevRowActive,
-                          prevRowActive == 0 ? "->1" : " (preserved)");
             onRow(panel, row);
-            acclog::Write("Update", "WorkbenchUpgradeInstallK2 done panel=%p row=%p",
-                          panel, row);
+
+            void* after = ReadUpgradeSlotInstalled(panel);
+
+            acc::strings::Id say = acc::strings::Id::Count_;
+            if (before != kUpgradeSlotUnknown && after != kUpgradeSlotUnknown) {
+                if (after != nullptr && after != before) {
+                    say = acc::strings::Id::WorkbenchSlotInstalled;
+                } else if (after == nullptr && before != nullptr) {
+                    say = acc::strings::Id::WorkbenchSlotRemoved;
+                } else if (!isNoneRow) {
+                    // Real mod, nothing changed → engine refused (slot/mod
+                    // incompatible, requirements unmet). The none row on an
+                    // already-empty slot legitimately changes nothing — stay
+                    // silent there and let the slot re-announce.
+                    say = acc::strings::Id::WorkbenchUpgradeFailed;
+                }
+            }
+            if (say != acc::strings::Id::Count_) {
+                prism::Speak(acc::strings::Get(say), /*interrupt=*/false);
+            }
+            acclog::Write("Update", "WorkbenchUpgradeInstallK2 done panel=%p row=%p "
+                          "none=%d before=%p after=%p row.is_active=%u%s -> say=%d",
+                          panel, row, isNoneRow ? 1 : 0, before, after,
+                          prevRowActive, prevRowActive == 0 ? "->1" : " (preserved)",
+                          (int)say);
         } else {
             acclog::Write("Update", "WorkbenchUpgradeInstallK2 panel=%p row=%p (skipped)",
                           panel, row);

@@ -456,6 +456,8 @@ const char* Get(Id id) {
         case Id::WorkbenchFmtSlotItem:       return "%s, belegt mit %s";
         case Id::WorkbenchPickerInstalled:   return "eingesetzt";
         case Id::WorkbenchPickerNone:        return "Kein Gegenstand";
+        case Id::WorkbenchPickerUnnamed:     return "Aufwertung";
+        case Id::WorkbenchUpgradeFailed:     return "Aufwertung nicht m\xF6glich";
         case Id::WorkbenchModeCreate:        return "Modus Herstellen";
         case Id::WorkbenchModeBreakdown:     return "Modus Zerlegen";
         case Id::FmtWorkbenchUpgradeTitle:   return "Aufwerten: %s";

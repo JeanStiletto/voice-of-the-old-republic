@@ -437,6 +437,8 @@ const char* Get(Id id) {
         case Id::WorkbenchFmtSlotItem:       return "%s, holds %s";
         case Id::WorkbenchPickerInstalled:   return "installed";
         case Id::WorkbenchPickerNone:        return "No item";
+        case Id::WorkbenchPickerUnnamed:     return "Upgrade";
+        case Id::WorkbenchUpgradeFailed:     return "Upgrade not possible";
         case Id::WorkbenchModeCreate:        return "Create mode";
         case Id::WorkbenchModeBreakdown:     return "Breakdown mode";
         case Id::FmtWorkbenchUpgradeTitle:   return "Upgrade: %s";

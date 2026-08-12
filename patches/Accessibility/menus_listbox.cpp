@@ -1020,16 +1020,39 @@ bool IsDashOrBlankRowText(const char* s) {
     return false;
 }
 
+// K2 only: is this picker row the engine's "-" none/remove entry? Its
+// upgrades key at entry+0x1e0 is -1 (the ctor's seed; a real mod row carries
+// the actual key). Reading the key, not the text, keeps a real-but-unreadable
+// mod row from being mislabelled as the none entry — the "two Kein Gegenstand"
+// the disabled-slot picker showed. SEH-guarded; false on fault.
+bool IsK2UpgradeNoneRow(void* row) {
+    if (!row || !acc::game::IsKotor2()) return false;
+    __try {
+        return *reinterpret_cast<int32_t*>(
+            reinterpret_cast<unsigned char*>(row) + kUpgradePickerRowKeyOff) == -1;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 void WorkbenchUpgradeAnnounce(void* /*lb*/, const ListBoxNavResult& r) {
     if (!r.row || r.rowCount <= 0) return;
     char rowText[256];
-    if (!acc::menus::extract::FromControl(r.row, rowText, sizeof(rowText)) ||
-        IsDashOrBlankRowText(rowText)) {
-        // None/remove placeholder (or an unreadable row): substitute a
-        // spoken word so the step is never a bare number or silence.
-        const char* none = acc::strings::Get(acc::strings::Id::WorkbenchPickerNone);
-        size_t n = strnlen(none, sizeof(rowText) - 1);
-        memcpy(rowText, none, n);
+    bool readable = acc::menus::extract::FromControl(r.row, rowText,
+                                                     sizeof(rowText)) &&
+                    !IsDashOrBlankRowText(rowText);
+    if (!readable) {
+        // Unreadable row: the engine's remove entry says "Kein Gegenstand";
+        // a real mod row we simply can't name gets a generic "Aufwertung"
+        // (never masked as the none entry). On K1 (no key field) a dash row
+        // is the remove entry, so it maps to none there.
+        acc::strings::Id sid =
+            (IsK2UpgradeNoneRow(r.row) || !acc::game::IsKotor2())
+                ? acc::strings::Id::WorkbenchPickerNone
+                : acc::strings::Id::WorkbenchPickerUnnamed;
+        const char* sub = acc::strings::Get(sid);
+        size_t n = strnlen(sub, sizeof(rowText) - 1);
+        memcpy(rowText, sub, n);
         rowText[n] = '\0';
     }
     // The picker layout (hidden remove entry vs. all-rows-real) decides the
@@ -1103,20 +1126,14 @@ bool WorkbenchUpgradeOnEnter(void* panel) {
     // the two-step commit below.
     if (acc::game::IsKotor2()) {
         if (row) {
+            // The outcome (installed / removed / refused for an incompatible
+            // slot) is announced from the drain, which compares the slot's
+            // field35 before vs. after the engine call — an immediate "eingesetzt"
+            // here would lie when the engine refuses an incompatible mod.
             acc::menus::pending::QueueWorkbenchUpgradeInstallK2(panel, row);
-            // Feedback: the "-" none row removes; anything else installs. The
-            // slot re-announces its new state when the engine refocuses it
-            // after CloseItems, so keep this short and outcome-neutral.
-            char rowText[256];
-            bool none = !acc::menus::extract::FromControl(row, rowText,
-                                                          sizeof(rowText)) ||
-                        IsDashOrBlankRowText(rowText);
-            prism::Speak(acc::strings::Get(
-                             none ? acc::strings::Id::WorkbenchSlotRemoved
-                                  : acc::strings::Id::WorkbenchSlotInstalled),
-                         /*interrupt=*/false);
-            acclog::Write("WorkbenchUpgrade", "K2 install/remove (row sel=%d %p "
-                          "none=%d panel=%p)", selIdx, row, none ? 1 : 0, panel);
+            acclog::Write("WorkbenchUpgrade", "K2 install/remove queued (row sel=%d "
+                          "%p none=%d panel=%p)", selIdx, row,
+                          IsK2UpgradeNoneRow(row) ? 1 : 0, panel);
         } else {
             acclog::Write("WorkbenchUpgrade", "K2 Enter -- no row (lb=%p sel=%d "
                           "rows=%d) panel=%p", lb, selIdx, rowCount, panel);

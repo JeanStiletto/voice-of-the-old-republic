@@ -846,6 +846,20 @@ const size_t    kUpgradeSlotCustomValueOff = acc::off::Pick(0x58, 0x5c);   // sl
 // byte (below) shifts by exactly the same 0xDE0, which is the cross-check.
 const size_t    kUpgradeSlotInstalledItemsOff = acc::off::Pick(0x2f74, 0x3d54);  // panel.field35
 
+// KOTOR 2 only. CSWGuiUpgrade holds a pointer to the currently-open slot button
+// at +0x3dbc; its OnUpgradeSelected @0x008cdb00 reads the slot index from
+// (*(panel+0x3dbc))+0x5c (custom_value) and indexes field35 by it. We read it in
+// the K2 install drain to compare field35 before/after the install and announce
+// the real outcome (installed / removed / refused) rather than assuming success.
+const size_t    kUpgradePanelActiveSlotPtrOff = acc::off::Kotor2Only(0x3dbc);
+// KOTOR 2 only. CSWUpgradeItemEntry.key at entry+0x1e0 (entry[0x78]) — the
+// upgrades_2da/upcrystals key the row installs; the entry ctor 0x008cff80 seeds
+// it 0xffffffff and OnUpgradeSelected treats -1 as the "-" none/remove row
+// (obj id 0x7f000000). Distinguishes the true remove entry from a real (but
+// possibly unreadable) mod row, so only the real remove entry is announced as
+// "Kein Gegenstand".
+const size_t    kUpgradePickerRowKeyOff = acc::off::Kotor2Only(0x1e0);
+
 // CSWGuiUpgrade.field27_0x2f54 — the CSWSItem* currently being upgraded (the
 // weapon/armor/saber). OnEnterSlot / OnControlEntered pass it to
 // GetKeyedPropertyString to render a slot's keyed bonus line.

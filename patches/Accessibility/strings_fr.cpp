@@ -445,6 +445,8 @@ const char* Get(Id id) {
         case Id::WorkbenchFmtSlotItem:       return "%s, occup\xE9 par %s";
         case Id::WorkbenchPickerInstalled:   return "install\xE9";
         case Id::WorkbenchPickerNone:        return "Aucun objet";
+        case Id::WorkbenchPickerUnnamed:     return "Am\xE9lioration";
+        case Id::WorkbenchUpgradeFailed:     return "Am\xE9lioration impossible";
         case Id::WorkbenchModeCreate:        return "Mode fabrication";
         case Id::WorkbenchModeBreakdown:     return "Mode d\xE9montage";
         case Id::FmtWorkbenchUpgradeTitle:   return "Am\xE9lioration : %s";

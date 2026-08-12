@@ -1432,6 +1432,11 @@ enum class Id : int {
     WorkbenchPickerNone,       // the engine's "-" none/remove row in the mod
                                // picker (blank/dash text → spoken word so it
                                // isn't heard as "1" or as silence)
+    WorkbenchPickerUnnamed,    // a real mod row whose name can't be read (K2)
+                               // — generic "Upgrade" so it isn't masked as the
+                               // none entry ("Kein Gegenstand")
+    WorkbenchUpgradeFailed,    // commit refused (slot/mod incompatible) — the
+                               // slot's field35 didn't change after the install
 
     // ---- K2 crafting screens (component_p.gui / chemical_p.gui) view
     //      flip. BTN_Examine toggles between the craftable-item list
