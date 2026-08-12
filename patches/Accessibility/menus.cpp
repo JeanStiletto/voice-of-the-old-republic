@@ -38,6 +38,7 @@
 #include "menus_monitors.h"  // Post-Step-5 — general per-tick monitors
 #include "tutorial_hints.h"  // mapped tutorial-popup gate (mouse-announce suppression)
 #include "tutorial_popup.h"  // synthetic Trask-line popup (suppress its listbox row)
+#include "menus_crafting.h"  // K2 workbench/crafting watcher — view flips + rebinds
 #include "menus_store.h"     // Store / trading panel — price+stock suffix + mode announce
 #include "menus_galaxymap.h"  // Galaxy / star-map travel screen — planet cycle
 #include "menus_keymap.h"     // dedicated Tastaturbelegung two-level handler
@@ -788,6 +789,10 @@ void TickMonitors() {
     // repopulated) BEFORE the outcome — sounds like the announce is
     // about a different item than the user just sold.
     acc::menus::store::TickMonitorMode();
+    // K2 workbench/crafting watcher — same ordering rationale as Store:
+    // its view-flip speech + chain rebind land before the focus monitor's
+    // per-tick re-extract of the focused chain row.
+    acc::menus::crafting::Tick();
     acc::menus::monitors::TickGeneralMonitors();
     acc::menus::listbox::TickListboxMonitors();
     acc::menus::editbox::TickEditboxMonitors();

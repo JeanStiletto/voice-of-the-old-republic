@@ -105,6 +105,17 @@ bool QueueSliderInput(void* target, int code);
 // and the next tick.
 bool QueueStoreItemActivate(void* panel, void* row);
 
+// Queue a K2 workbench / crafting list-row commit. On drain calls
+// acc::menus::crafting::DispatchRowCommit(panel, listBox, row, buttonId):
+// re-verifies the row is still in the listbox, writes the listbox
+// selection to its index, then FireActivates the panel's commit button
+// (BTN_UPGRADEITEMS on the workbench top screen, BTN_Accept on the
+// create/breakdown screens). The engine's own button handler then acts on
+// the selected row — same select-then-confirm shape the K1 WorkbenchItems
+// spec proved in game, done atomically inside one drain so the per-frame
+// hover-select can't retarget the selection in between.
+bool QueueCraftRowCommit(void* panel, void* listBox, void* row, int buttonId);
+
 // Queue a galaxy-map (CSWGuiInGameGalaxyMap) input dispatch. On drain calls
 // the panel's HandleInputEvent(engineCode, 1) — the engine's own planet
 // cycle / accept / cancel path (engineCode 0x2f prev, 0x30 next, 0x27 accept,

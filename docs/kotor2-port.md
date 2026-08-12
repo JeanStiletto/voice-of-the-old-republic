@@ -14,6 +14,94 @@ plan.
 
 ## WHERE TO RESUME (read this first)
 
+**Workbench recheck + crafting screens — IMPLEMENTED 2026-08-12, offline
+(two kotor2 Ghidra rounds: five ctors + eleven handlers; gui.bif mine of
+upgradesel_p/component_p/chemical_p; zero test rounds). Built NOT YET
+CONFIRMED — see build log. What the recheck found and what landed:**
+
+- **K2 RESTRUCTURES the workbench top screen.** CSWGuiUpgradeSelection
+  (upgradesel_p) now carries the upgradeable-item list INLINE
+  (LB_UPGRADELIST id 9, LB_DESCRIPTION id 8) plus FIVE category buttons
+  as an embedded array (custom_value 0..4 = All/Lightsaber/Ranged/Melee/
+  Armor — BTN_ALL id 10 is part of the bank), BTN_UPGRADEITEMS id 5,
+  BTN_BACK id 6, and an UNLABELED BTN_CREATEITEMS id 7 (no strref, no
+  runtime SetText — icon-only). Its ctor 0x008C6650 pre-builds TWO child
+  panels: CSWGuiUpgradeItemSelect at [panel+0x18c0] and CSWGuiCreateItem
+  at [panel+0x868]. BTN_UPGRADEITEMS handler 0x008C7F60 acts on the
+  list's SELECTED row (row obj id at +0x1d0, GetItemByGameObjectID twin,
+  category via 0x006076D0 against upgrade.2da) and pushes the item-select
+  child; BTN_CREATEITEMS handler 0x008C73F0 pushes the CreateItem child;
+  category handler 0x008C7440 stores cv at +0x18bc and repopulates via
+  0x008C7510. Esc is ENGINE-NATIVE (ctor binds BTN_BACK to input code
+  0x62; BTN_UPGRADEITEMS to 0x61).
+- **Two new K2-only crafting panels, fully mapped from their ctors.**
+  CSWGuiCreateItem 0x008D1020 (component_p, alloc 0x3ef8 — witnessed in
+  the UpgradeSelection ctor, which also allocs the item-select child at
+  0xc9c) and CSWGuiCreateMedicalItem 0x008D6B90 (chemical_p; ctor stores
+  Treat-Injury skill/20 at [+0xcfd*4], component uses Repair at
+  [+0xfb5*4]). Store-shaped:
+  LB_SHOPITEMS id 4 (craft list) vs LB_INVITEMS id 5 (breakdown list)
+  share the screen with the store's visibility-bit flip (bit_flags &
+  0x2); BTN_Examine toggles views (component 0x008D4F60); BTN_Accept
+  id 12 commits the SELECTED row — component dispatcher 0x008D2150
+  branches on the create-vs-breakdown flag [+0x3ee4] into create
+  0x008D4AC0 / breakdown 0x008D4680. Create-category bank of 5
+  (Armor/Ranged/Melee/Lightsaber/Misc, cv 0..4, handler 0x008D44C0),
+  breakdown bank of 5 (All/Weapons/Armor/Useable/Misc, handler
+  0x008D4510); medical has 4 create categories (Health/Stims/Mines/
+  Grenades in ARRAY order — cv 2 is MINES, 3 GRENADES; bind order in
+  the .gui differs). BTN_Cancel: component id 27, chemical id 13 —
+  engine-native Esc (0x62). LBL_CREDITS_VALUE renders the component/
+  chemical count and precedes every title label in .gui order.
+- **CSWGuiCreateItemMenu / CSWGuiCreateItemSubMenu are NOT workbench
+  surfaces** — both ctors (0x008C19F0 / 0x008BEE10) load debug_p.gui and
+  walk BASEITEMS ("Build: ", "No StrRef: %s") — they are the dev
+  item-spawn console. Struck from the port surface.
+- **What landed (all self-gated, K1-inert):** PanelKinds
+  WorkbenchCreateItem/WorkbenchCreateMedical (vtable Kotor2Only
+  0x009A8B4C / 0x009A8CBC, detectors probe right after GamepadQuickMenu);
+  new TU menus_crafting.{h,cpp} (row-commit resolve/dispatch, hidden-list
+  chain filter mirroring the store's, LBL_TITLE title override — the
+  generic walk would speak the bare count — and a Tick watcher that
+  announces create/breakdown view flips (WorkbenchModeCreate/Breakdown ×7
+  locales) and RebindChainPreserveIndex on active-list count changes);
+  pending op Kind::CraftRowCommit ("write listbox selection to the chain
+  row, FireActivate the commit button by id" — atomic within one drain,
+  no new engine addresses, the select-then-confirm shape the K1
+  WorkbenchItems spec proved in game); chain Enter routes rows of
+  LB_UPGRADELIST → BTN_UPGRADEITEMS and of the visible craft list →
+  BTN_Accept; peek gains a membership-gated row branch (block nav on
+  breakdown/upgrade rows; create-list template rows may not resolve —
+  falls through silently); BTN_CREATEITEMS speaks TLK 111574 ("Neue
+  Gegenst\xE4nde erzeugen") via a per-kind extract fallback.
+- **Two K1-numbering bugs fixed on the ported upgrade panel:**
+  menus_extract 9b3 still range-tested cid 12..18 (on K2 that catches
+  BTN_BACK id 13 and misses six of nine slot buttons) — now routed
+  through IsWorkbenchUpgradeSlotButtonId with a per-game position
+  fallback incl. NEW crystal-slot-5/6 strings (K2 sabers have six
+  slots); menus_chain_input's Esc still targeted BTN_BACK id 28 (a K2
+  label) — now 13 on K2. The peek batch's "replaced at all three sites"
+  claim had missed the extract site; same lesson as the slot-table
+  index — grep the raw ids, not just the constants.
+- **Test items for the next K2 round (workbench):** (1) workbench opens →
+  "Upgrade-Werkbank" title, chain walks category buttons + item list +
+  buttons, BTN_CREATEITEMS speaks "Neue Gegenstände erzeugen"; (2)
+  category button Enter → list repopulates, chain follows (no stale
+  rows), count change logged "Crafting: list count"; (3) Enter on a
+  listed item → upgrade flow opens for THAT item (log "craft-row-commit
+  … btnId=5"); (4) upgrade screen: all slot buttons speak slot type +
+  occupancy (six on a saber), Esc backs out (BTN_BACK id 13), slot
+  Enter → picker populates, mod install/remove announces; (5) Create
+  Items: title speaks, category buttons filter, Enter on a craftable row
+  crafts it (component count changes; confirm whether the engine pops a
+  confirm box), "Inventar betrachten" flips to breakdown view →
+  "Modus Zerlegen", hidden list's rows absent from the chain, Enter on
+  an inventory row breaks it down, Shift+Up/Down reads its blocks; (6)
+  lab station: same round on chemical_p; (7) K1 regression: one full
+  workbench pass (category → item → slots → picker → assemble; Esc at
+  each level) — shared sites touched: extract 9b3, chain-input Esc id,
+  chain listbox filter, Enter ladder, peek ladder.**
+
 **Weapon-set swap batch (SwitchWeaps rebind + announcement) — IMPLEMENTED
 2026-08-11, offline (four kotor2 Ghidra decompiles + one kotor1, one
 capstone immediate-pair scan; zero test rounds). Built green, NOT tested.**

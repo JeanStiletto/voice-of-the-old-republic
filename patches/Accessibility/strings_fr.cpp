@@ -86,7 +86,7 @@ const char* Get(Id id) {
         case Id::FmtInteractFailed:    return "Interaction avec %s \xE9""chou\xE9""e";
         case Id::FmtInteractEngine:    return "%s %s";
         case Id::FmtInteractRadial:    return "Menu d'action, %s";
-        case Id::FmtMedPickerApplyTo:  return "Appliquer à : %s";
+        case Id::FmtMedPickerApplyTo:  return "Appliquer ï¿½ : %s";
         case Id::FmtInteractNoActionsRedirect: return "Aucune action disponible pour %s. Appuyez sur Entr\xE9""e pour activer.";
         case Id::FmtInteractNoActions: return "Aucune action disponible pour %s.";
         case Id::DoorSealedNoOpen: return "Scell\xE9""e. Elle ne s'ouvre pas.";
@@ -433,6 +433,8 @@ const char* Get(Id id) {
         case Id::WorkbenchSlotSaberCrystal2: return "Emplacement de cristal 2";
         case Id::WorkbenchSlotSaberCrystal3: return "Emplacement de cristal 3";
         case Id::WorkbenchSlotSaberCrystal4: return "Emplacement de cristal 4";
+        case Id::WorkbenchSlotSaberCrystal5: return "Emplacement de cristal 5";
+        case Id::WorkbenchSlotSaberCrystal6: return "Emplacement de cristal 6";
         case Id::WorkbenchItemsEmpty:        return "Aucun objet am\xE9liorable dans cette cat\xE9gorie";
         case Id::WorkbenchUpgradesEmpty:     return "Aucune am\xE9lioration compatible dans l'inventaire";
         case Id::WorkbenchSlotInstalled:     return "Am\xE9lioration install\xE9""e";
@@ -442,6 +444,8 @@ const char* Get(Id id) {
         case Id::WorkbenchSlotPeekEmpty:     return "Emplacement vide, aucune am\xE9lioration install\xE9""e";
         case Id::WorkbenchFmtSlotItem:       return "%s, occup\xE9 par %s";
         case Id::WorkbenchPickerInstalled:   return "install\xE9";
+        case Id::WorkbenchModeCreate:        return "Mode fabrication";
+        case Id::WorkbenchModeBreakdown:     return "Mode d\xE9montage";
 
         case Id::SoundOptionsMovieVolume:    return "Volume des vid\xE9os";
 

@@ -1399,6 +1399,8 @@ enum class Id : int {
     WorkbenchSlotSaberCrystal2,
     WorkbenchSlotSaberCrystal3,
     WorkbenchSlotSaberCrystal4,
+    WorkbenchSlotSaberCrystal5,  // K2 only — sabers carry 6 slots there
+    WorkbenchSlotSaberCrystal6,  // K2 only
     WorkbenchItemsEmpty,
     WorkbenchUpgradesEmpty,
 
@@ -1427,6 +1429,14 @@ enum class Id : int {
     WorkbenchPickerInstalled,  // suffix/marker for the picker row that is the
                                // crystal currently installed in (or colour set
                                // on) the open slot ("…, eingesetzt")
+
+    // ---- K2 crafting screens (component_p.gui / chemical_p.gui) view
+    //      flip. BTN_Examine toggles between the craftable-item list
+    //      (LB_SHOPITEMS) and the breakdown inventory list (LB_INVITEMS)
+    //      — same visibility-bit model as the store's Buy/Sell. Spoken by
+    //      crafting::Tick when the bit flips, mirroring StoreModeBuy/Sell.
+    WorkbenchModeCreate,       // create view active ("Modus Herstellen")
+    WorkbenchModeBreakdown,    // breakdown view active ("Modus Zerlegen")
 
     // ---- Sound options panel (optionssound.gui) label fix-up.
     //      The stock German .gui labels the 4th slider (movie/video volume)

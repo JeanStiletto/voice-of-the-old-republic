@@ -28,6 +28,7 @@
 #include "menus_powers_levelup.h"
 #include "menus_editbox.h"
 #include "menus_listbox.h"
+#include "menus_crafting.h"  // GetTitleOverride — K2 crafting screens
 #include "menus_store.h"
 #include "engine_input.h"
 #include "engine_manager.h"
@@ -109,6 +110,18 @@ static void AnnouncePanelTitle(void* panel) {
             acc::menus::powers_levelup::GetTitleOverride(panel)) {
         acclog::Write("Menus.PanelWalk",
                       "title parent=%p (powers_levelup override) text=\"%s\"",
+                      panel, override);
+        prism::Speak(override, /*interrupt=*/false);
+        return;
+    }
+
+    // K2 crafting screens: the generic walk would land on
+    // LBL_CREDITS_VALUE (the bare component/chemical count renders before
+    // any title label in .gui order). Read the panel's own LBL_TITLE.
+    if (const char* override =
+            acc::menus::crafting::GetTitleOverride(panel)) {
+        acclog::Write("Menus.PanelWalk",
+                      "title parent=%p (crafting override) text=\"%s\"",
                       panel, override);
         prism::Speak(override, /*interrupt=*/false);
         return;

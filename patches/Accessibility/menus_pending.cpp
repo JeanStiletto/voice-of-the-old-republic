@@ -27,6 +27,7 @@
 #include "menus_chargen_attr.h"     // IsChargenAttributesPanel — chargen sub-screen close
 #include "menus_chargen_feats.h"    // IsChargenFeatsPanel — chargen sub-screen close
 #include "menus_chargen_skills.h"   // IsChargenSkillsPanel — chargen sub-screen close
+#include "menus_crafting.h"  // DispatchRowCommit for CraftRowCommit
 #include "menus_galaxymap.h"        // DispatchInput for GalaxyInput
 #include "minigame_pazaak.h"                 // DispatchWagerInput for WagerInput
 #include "menus_inventory.h"  // filter list-rebuild repair + item-row selection sync
@@ -85,6 +86,8 @@ enum class Kind {
     WorkbenchPickerCancel,  // a = panel — close the mod-picker zone (re-enable slots)
     SliderInput,       // a = target, code = direction (500 inc / 501 dec)
     StoreItemActivate, // a = panel (CSWGuiStore), b = row (StoreItemEntry)
+    CraftRowCommit,    // a = panel (K2 workbench screen), b = listbox,
+                       // c = row, code = commit-button .gui id
     GalaxyInput,       // a = panel (galaxy map), code = engine event,
                        // x = announce-planet flag (0/1)
     WagerInput,        // a = panel (pazaak wager popup), code = engine event
@@ -194,6 +197,16 @@ bool QueueStoreItemActivate(void* panel, void* row) {
     g_op.kind = Kind::StoreItemActivate;
     g_op.a = panel;
     g_op.b = row;
+    return true;
+}
+
+bool QueueCraftRowCommit(void* panel, void* listBox, void* row, int buttonId) {
+    if (g_op.kind != Kind::None) return false;
+    g_op.kind = Kind::CraftRowCommit;
+    g_op.a = panel;
+    g_op.b = listBox;
+    g_op.c = row;
+    g_op.code = buttonId;
     return true;
 }
 
@@ -865,6 +878,14 @@ void Drain(void* gm) {
     // monitor detects the listbox size change and rebinds the chain.
     case Kind::StoreItemActivate: {
         acc::menus::store::DispatchTradeAction(op.a, op.b);
+        break;
+    }
+
+    // K2 workbench / crafting list-row commit — select the row, then fire
+    // the panel's own commit button. No direct engine addresses involved
+    // (button dispatch goes through vtable[15]), so no EngineOpsReady gate.
+    case Kind::CraftRowCommit: {
+        acc::menus::crafting::DispatchRowCommit(op.a, op.b, op.c, op.code);
         break;
     }
 

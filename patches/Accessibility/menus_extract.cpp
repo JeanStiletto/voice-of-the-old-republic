@@ -1679,7 +1679,7 @@ const char* TryWorkbenchSlot(void* control, void* owner,
         } __except (EXCEPTION_EXECUTE_HANDLER) {
             cid = -1;
         }
-        if (cid >= 12 && cid <= 18) {
+        if (acc::engine::IsWorkbenchUpgradeSlotButtonId(cid)) {
             // The two diagnostic lines below (slot-type classification +
             // occupancy state) are re-emitted every frame by the focused-
             // control monitor while the user dwells on a slot. They share the
@@ -1729,15 +1729,33 @@ const char* TryWorkbenchSlot(void* control, void* owner,
                 // category) or strref lookup fails.
                 acc::strings::Id sid = acc::strings::Id::Count_;
                 const char* tag = nullptr;
-                switch (cid) {
-                    case 12: sid = acc::strings::Id::WorkbenchSlotWeapon1;       tag = "BTN_UPGRADE31"; break;
-                    case 13: sid = acc::strings::Id::WorkbenchSlotWeapon2;       tag = "BTN_UPGRADE32"; break;
-                    case 14: sid = acc::strings::Id::WorkbenchSlotWeapon3;       tag = "BTN_UPGRADE33"; break;
-                    case 15: sid = acc::strings::Id::WorkbenchSlotSaberCrystal1; tag = "BTN_UPGRADE41"; break;
-                    case 16: sid = acc::strings::Id::WorkbenchSlotSaberCrystal2; tag = "BTN_UPGRADE42"; break;
-                    case 17: sid = acc::strings::Id::WorkbenchSlotSaberCrystal3; tag = "BTN_UPGRADE43"; break;
-                    case 18: sid = acc::strings::Id::WorkbenchSlotSaberCrystal4; tag = "BTN_UPGRADE44"; break;
-                    default: break;
+                if (!acc::game::IsKotor2()) {
+                    switch (cid) {
+                        case 12: sid = acc::strings::Id::WorkbenchSlotWeapon1;       tag = "BTN_UPGRADE31"; break;
+                        case 13: sid = acc::strings::Id::WorkbenchSlotWeapon2;       tag = "BTN_UPGRADE32"; break;
+                        case 14: sid = acc::strings::Id::WorkbenchSlotWeapon3;       tag = "BTN_UPGRADE33"; break;
+                        case 15: sid = acc::strings::Id::WorkbenchSlotSaberCrystal1; tag = "BTN_UPGRADE41"; break;
+                        case 16: sid = acc::strings::Id::WorkbenchSlotSaberCrystal2; tag = "BTN_UPGRADE42"; break;
+                        case 17: sid = acc::strings::Id::WorkbenchSlotSaberCrystal3; tag = "BTN_UPGRADE43"; break;
+                        case 18: sid = acc::strings::Id::WorkbenchSlotSaberCrystal4; tag = "BTN_UPGRADE44"; break;
+                        default: break;
+                    }
+                } else {
+                    // K2 upgrade_p renumbers the slot buttons: 7/8/6 are the
+                    // three normal weapon slots, 17/18/19/23/24/25 the six-slot
+                    // lightsaber bank (K2 sabers carry six upgrade slots).
+                    switch (cid) {
+                        case 7:  sid = acc::strings::Id::WorkbenchSlotWeapon1;       tag = "BTN_UPGRADE31"; break;
+                        case 8:  sid = acc::strings::Id::WorkbenchSlotWeapon2;       tag = "BTN_UPGRADE32"; break;
+                        case 6:  sid = acc::strings::Id::WorkbenchSlotWeapon3;       tag = "BTN_UPGRADE33"; break;
+                        case 17: sid = acc::strings::Id::WorkbenchSlotSaberCrystal1; tag = "BTN_UPGRADE31_LS"; break;
+                        case 18: sid = acc::strings::Id::WorkbenchSlotSaberCrystal2; tag = "BTN_UPGRADE32_LS"; break;
+                        case 19: sid = acc::strings::Id::WorkbenchSlotSaberCrystal3; tag = "BTN_UPGRADE33_LS"; break;
+                        case 23: sid = acc::strings::Id::WorkbenchSlotSaberCrystal4; tag = "BTN_UPGRADE34_LS"; break;
+                        case 24: sid = acc::strings::Id::WorkbenchSlotSaberCrystal5; tag = "BTN_UPGRADE35_LS"; break;
+                        case 25: sid = acc::strings::Id::WorkbenchSlotSaberCrystal6; tag = "BTN_UPGRADE36_LS"; break;
+                        default: break;
+                    }
                 }
                 if (sid != acc::strings::Id::Count_) {
                     const char* lit = acc::strings::Get(sid);
@@ -1795,6 +1813,43 @@ const char* TryWorkbenchSlot(void* control, void* owner,
                                   "installed=%p -> \"%s\"",
                                   control, installed, outBuf);
                 }
+            }
+        }
+    }
+    return source;
+}
+
+// 9b4. Per-kind label for the K2 workbench top screen's BTN_CREATEITEMS
+//      (upgradesel_p.gui id 7). The .gui bakes no strref and no text and
+//      the ctor never SetTexts it (icon-only for sighted users), so the
+//      generic ladder falls through to the "control 7" placeholder. Speak
+//      the game's own TLK line 111574 ("Neue Gegenstände erzeugen" — the
+//      title of the screen the button opens), which localizes for free.
+//      K1's upgradesel has no id-7 button-with-empty-text (id 7 is a
+//      ProtoItem icon there and never chain-navigable), but the check is
+//      gated per game anyway.
+const char* TryWorkbenchCreateItemsButton(void* control, void* owner,
+                                          char* outBuf, size_t bufSize) {
+    const char* source = nullptr;
+    if (owner && acc::game::IsKotor2() &&
+        IdentifyPanel(owner) == PanelKind::WorkbenchSelect) {
+        int cid = -1;
+        __try {
+            cid = *reinterpret_cast<int*>(
+                reinterpret_cast<unsigned char*>(control) + kControlIdOffset);
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            cid = -1;
+        }
+        if (cid == 7) {
+            constexpr uint32_t kCreateItemsTitleStrRef = 111574;
+            if (acc::engine::LookupTlk(kCreateItemsTitleStrRef, outBuf,
+                                       bufSize) &&
+                outBuf[0] != '\0') {
+                source = "perkind-workbench-createitems";
+                acclog::Trace("Menus.PerKind",
+                              "WorkbenchSelect BTN_CREATEITEMS control=%p "
+                              "strref=%u -> \"%s\"",
+                              control, kCreateItemsTitleStrRef, outBuf);
             }
         }
     }
@@ -2341,6 +2396,7 @@ const char* FromControl(void* control,
     if (!source) source = TryEquipSlot(control, owner, outBuf, bufSize);
     if (!source) source = TryInGameMapArrow(control, owner, outBuf, bufSize);
     if (!source) source = TryWorkbenchSlot(control, owner, outBuf, bufSize);
+    if (!source) source = TryWorkbenchCreateItemsButton(control, owner, outBuf, bufSize);
     if (!source) source = TryClassSelectionIcon(control, owner, outBuf, bufSize);
     if (!source) source = TryPortraitCharGenArrow(control, owner, outBuf, bufSize);
     if (!source) source = TrySiblingLabel(control, owner, outBuf, bufSize);

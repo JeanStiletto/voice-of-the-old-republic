@@ -23,6 +23,7 @@
 #include "menus_chain.h"
 #include "engine_rebase.h"
 
+#include "engine_game.h"     // IsKotor2 — per-game workbench BTN_BACK id
 #include "engine_input.h"
 #include "engine_offsets.h"
 #include "engine_panels.h"
@@ -30,6 +31,7 @@
 #include "log.h"
 #include "menus_chargen_attr.h"
 #include "menus_chargen_skills.h"
+#include "menus_crafting.h"
 #include "menus_extract.h"
 #include "menus_internal.h"
 #include "menus_journal.h"
@@ -141,6 +143,22 @@ void HandleEnterActivation(void* activePanel, int code, int val, bool& consumed)
     bool isStoreItemRow =
         acc::menus::store::IsStorePanel(g_chainPanel) &&
         acc::menus::store::IsStoreItemRow(e.control);
+
+    // K2 workbench / crafting list-row Enter — "select this row, then fire
+    // the panel's commit button" as one deferred op. Covers the K2
+    // workbench top screen's LB_UPGRADELIST (commit = BTN_UPGRADEITEMS,
+    // opens the upgrade flow for the row's item) and the create/breakdown
+    // screens' visible item list (commit = BTN_Accept). The generic
+    // vtable[15] activate on these rows only refreshes the description —
+    // same shape as store rows. No-op resolve on K1 and on every other
+    // panel kind.
+    bool  isCraftRow = false;
+    void* craftRowListBox = nullptr;
+    int   craftCommitBtnId = -1;
+    if (!isStoreItemRow) {
+        isCraftRow = acc::menus::crafting::ResolveRowCommit(
+            g_chainPanel, e.control, &craftRowListBox, &craftCommitBtnId);
+    }
 
     // Journal quest-row Enter — read the description text. The row's own
     // activate handler is a no-op in the engine; the description text the
@@ -255,6 +273,14 @@ void HandleEnterActivation(void* activePanel, int code, int val, bool& consumed)
         acclog::Write("Menus.Enter",
                       "store-item-activate panel=%p index=%d target=%p",
                       g_chainPanel, g_chainIndex, e.control);
+        consumed = true;
+    } else if (isCraftRow) {
+        acc::menus::pending::QueueCraftRowCommit(
+            g_chainPanel, craftRowListBox, e.control, craftCommitBtnId);
+        acclog::Write("Menus.Enter",
+                      "craft-row-commit panel=%p index=%d target=%p lb=%p btnId=%d",
+                      g_chainPanel, g_chainIndex, e.control,
+                      craftRowListBox, craftCommitBtnId);
         consumed = true;
     } else if (isJournalRow) {
         acc::menus::journal::SpeakDescription(g_chainPanel, e.control);
@@ -650,12 +676,13 @@ void HandleEsc(void* activePanel, int code, int val, bool& consumed) {
         if (acc::menus::store::CloseFromEsc()) consumed = true;
     }
 
-    // Workbench upgrade panel Esc: route to BTN_BACK (id 28, "Abbrechen")
-    // directly. Same shape as the store branch above — the upgrade.gui
-    // panel is the foreground modal (not a popup on top), so the generic
-    // Esc gate below (IsModalPopupPanel / g_tabbedPanel / escIsOptionsSub)
-    // doesn't fire. We also can't rely on FindCancelButton landing on
-    // BTN_BACK reliably here (see kWorkbenchUpgradeSpec comments).
+    // Workbench upgrade panel Esc: route to BTN_BACK ("Abbrechen") directly
+    // (K1 upgrade.gui id 28; K2 upgrade_p.gui renumbers it to 13). Same
+    // shape as the store branch above — the upgrade.gui panel is the
+    // foreground modal (not a popup on top), so the generic Esc gate below
+    // (IsModalPopupPanel / g_tabbedPanel / escIsOptionsSub) doesn't fire.
+    // We also can't rely on FindCancelButton landing on BTN_BACK reliably
+    // here (see kWorkbenchUpgradeSpec comments).
     // While the picker is armed the spec's onEsc disarms; this branch
     // only catches Esc when the picker is NOT armed (user on a slot
     // button, BTN_ASSEMBLE, or BTN_BACK).
@@ -668,7 +695,7 @@ void HandleEsc(void* activePanel, int code, int val, bool& consumed) {
             acclog::Write("Esc", "WorkbenchUpgrade — op already pending; ignoring");
             consumed = true;
         } else {
-            constexpr int kWorkbenchUpgradeBtnBack = 28;
+            const int kWorkbenchUpgradeBtnBack = acc::game::IsKotor2() ? 13 : 28;
             void* back = acc::menus::detail::FindControlById(
                 activePanel, kWorkbenchUpgradeBtnBack);
             if (back) {

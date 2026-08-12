@@ -434,6 +434,8 @@ const char* Get(Id id) {
         case Id::WorkbenchSlotSaberCrystal2: return "Ranura de cristal 2";
         case Id::WorkbenchSlotSaberCrystal3: return "Ranura de cristal 3";
         case Id::WorkbenchSlotSaberCrystal4: return "Ranura de cristal 4";
+        case Id::WorkbenchSlotSaberCrystal5: return "Ranura de cristal 5";
+        case Id::WorkbenchSlotSaberCrystal6: return "Ranura de cristal 6";
         case Id::WorkbenchItemsEmpty:        return "No hay objetos mejorables en esta categor\xED""a";
         case Id::WorkbenchUpgradesEmpty:     return "No hay mejoras compatibles en el inventario";
         case Id::WorkbenchSlotInstalled:     return "Mejora instalada";
@@ -443,6 +445,8 @@ const char* Get(Id id) {
         case Id::WorkbenchSlotPeekEmpty:     return "Ranura vac\xED""a, sin mejora instalada";
         case Id::WorkbenchFmtSlotItem:       return "%s, con %s";
         case Id::WorkbenchPickerInstalled:   return "instalado";
+        case Id::WorkbenchModeCreate:        return "Modo creaci\xF3n";
+        case Id::WorkbenchModeBreakdown:     return "Modo desmontaje";
 
         case Id::SoundOptionsMovieVolume:    return "Volumen de v\xED""deo";
 

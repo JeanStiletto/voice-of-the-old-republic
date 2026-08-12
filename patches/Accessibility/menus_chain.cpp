@@ -32,6 +32,7 @@
 #include "menus_inventory.h"
 #include "menus_modsettings.h"
 #include "menus_pazaakdeck.h"
+#include "menus_crafting.h"  // IsHiddenCraftingListBox — K2 crafting view filter
 #include "menus_store.h"
 #include "prism.h"
 #include "strings.h"
@@ -777,6 +778,12 @@ void AppendListBoxChildren(void* panel, void* c, void* equipPickerLb,
         // three action buttons live in panel.controls (not in a
         // listbox) so they stay in the chain.
         if (acc::menus::store::IsHiddenStoreListBox(panel, c)) {
+            return;
+        }
+        // Same visibility model on the K2 crafting screens: LB_SHOPITEMS
+        // and LB_INVITEMS share one screen slot and the engine flips the
+        // visibility bit on whichever view is active. Skip the hidden one.
+        if (acc::menus::crafting::IsHiddenCraftingListBox(panel, c)) {
             return;
         }
         if (c == equipPickerLb) {

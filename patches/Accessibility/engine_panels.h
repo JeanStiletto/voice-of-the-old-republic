@@ -90,6 +90,19 @@ enum class PanelKind {
     WorkbenchItems,
     WorkbenchUpgrade,
 
+    // KOTOR 2 crafting screens (K2-only classes, identified by vtable).
+    //   CreateItem    — CSWGuiCreateItem (component_p.gui), the workbench
+    //                   "Neue Gegenstände erzeugen" screen: LB_SHOPITEMS
+    //                   (craftable list) vs LB_INVITEMS (breakdown list)
+    //                   with the store-style visibility flip, five
+    //                   create-category + five breakdown-category buttons,
+    //                   component cost/stock labels.
+    //   CreateMedical — CSWGuiCreateMedicalItem (chemical_p.gui), the lab
+    //                   station twin: four create categories, chemicals
+    //                   instead of components, Treat-Injury skill gate.
+    WorkbenchCreateItem,
+    WorkbenchCreateMedical,
+
     // Force-power picker (pwrlvlup.gui). Same class hosts level-up and
     // chargen flows. Controls: labels 0/1/3/4/5, powers_listbox 6,
     // description_listbox 7, power_label 8, RECOMMENDED/SELECT/ACCEPT/

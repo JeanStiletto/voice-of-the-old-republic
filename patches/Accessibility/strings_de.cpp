@@ -444,6 +444,8 @@ const char* Get(Id id) {
         case Id::WorkbenchSlotSaberCrystal2: return "Kristall-Steckplatz 2";
         case Id::WorkbenchSlotSaberCrystal3: return "Kristall-Steckplatz 3";
         case Id::WorkbenchSlotSaberCrystal4: return "Kristall-Steckplatz 4";
+        case Id::WorkbenchSlotSaberCrystal5: return "Kristall-Steckplatz 5";
+        case Id::WorkbenchSlotSaberCrystal6: return "Kristall-Steckplatz 6";
         case Id::WorkbenchItemsEmpty:        return "Keine aufwertbaren Gegenst\xE4nde in dieser Kategorie";  // Gegenst?nde
         case Id::WorkbenchUpgradesEmpty:     return "Keine kompatiblen Aufwertungen im Inventar";
         case Id::WorkbenchSlotInstalled:     return "Aufwertung eingesetzt";
@@ -453,6 +455,8 @@ const char* Get(Id id) {
         case Id::WorkbenchSlotPeekEmpty:     return "Leerer Steckplatz, keine Aufwertung eingesetzt";
         case Id::WorkbenchFmtSlotItem:       return "%s, belegt mit %s";
         case Id::WorkbenchPickerInstalled:   return "eingesetzt";
+        case Id::WorkbenchModeCreate:        return "Modus Herstellen";
+        case Id::WorkbenchModeBreakdown:     return "Modus Zerlegen";
 
         case Id::SoundOptionsMovieVolume:    return "Video-Lautst\xE4rke";  // Lautst?rke
 

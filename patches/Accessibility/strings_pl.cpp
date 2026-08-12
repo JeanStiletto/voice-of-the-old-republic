@@ -435,6 +435,8 @@ const char* Get(Id id) {
         case Id::WorkbenchSlotSaberCrystal2: return "Gniazdo kryszta\xB3u 2";
         case Id::WorkbenchSlotSaberCrystal3: return "Gniazdo kryszta\xB3u 3";
         case Id::WorkbenchSlotSaberCrystal4: return "Gniazdo kryszta\xB3u 4";
+        case Id::WorkbenchSlotSaberCrystal5: return "Gniazdo kryszta\xB3u 5";
+        case Id::WorkbenchSlotSaberCrystal6: return "Gniazdo kryszta\xB3u 6";
         case Id::WorkbenchItemsEmpty:        return "Brak przedmiot\xF3w do ulepszenia w tej kategorii";
         case Id::WorkbenchUpgradesEmpty:     return "Brak pasuj\xB9""cych ulepsze\xF1 w ekwipunku";
         case Id::WorkbenchSlotInstalled:     return "Zamontowano ulepszenie";
@@ -444,6 +446,8 @@ const char* Get(Id id) {
         case Id::WorkbenchSlotPeekEmpty:     return "Puste gniazdo, brak ulepszenia";
         case Id::WorkbenchFmtSlotItem:       return "%s, zawiera %s";
         case Id::WorkbenchPickerInstalled:   return "zamontowane";
+        case Id::WorkbenchModeCreate:        return "Tryb tworzenia";
+        case Id::WorkbenchModeBreakdown:     return "Tryb rozk\xB3" "adania";
 
         case Id::SoundOptionsMovieVolume:    return "G\xB3o\x9Cno\x9C\xE6 film\xF3w";
 

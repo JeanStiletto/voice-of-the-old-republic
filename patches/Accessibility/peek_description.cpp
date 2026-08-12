@@ -10,6 +10,7 @@
 #include "hotkeys.h"
 #include "log.h"
 #include "menus_abilities.h"  // RefreshDetail (abilities description repaint)
+#include "menus_crafting.h"   // ResolveRowCommit — K2 crafting row peek gate
 #include "menus_galaxymap.h"  // SpeakDescription — galaxy-map LBL_DESC peek
 #include "menus_internal.h"   // kEquipBtn* slot ids, FindControlById
 #include "menus_listbox.h"    // IsEquipPickerArmed
@@ -774,6 +775,27 @@ bool HandleShiftArrow(int param_1, int param_2, void* activePanel,
                           "panel=%s focused row item=%p -> block nav",
                           acc::engine::PanelKindName(kind), item);
             if (SpeakItemBlocks(item, down)) return true;
+        }
+    }
+
+    // K2 workbench screens (upgradesel item list, create/breakdown lists):
+    // same chain-focused row model as the trio above, but gated on actual
+    // row membership first — the panels' category/action BUTTONS are only
+    // 0x1d0 bytes, so ResolveRowItem's id read on one would pull garbage
+    // from past the control. ResolveRowCommit does the membership scan.
+    // Create-list rows are panel-local template items whose handle may not
+    // resolve; those fall through silently to the generic tooltip path.
+    {
+        void* peekLb = nullptr;
+        int   peekBtn = -1;
+        if (acc::menus::crafting::ResolveRowCommit(activePanel, focusedControl,
+                                                   &peekLb, &peekBtn)) {
+            if (void* item = ResolveRowItem(focusedControl)) {
+                acclog::Write("Peek.Blocks",
+                              "panel=%s crafting row item=%p -> block nav",
+                              acc::engine::PanelKindName(kind), item);
+                if (SpeakItemBlocks(item, down)) return true;
+            }
         }
     }
 

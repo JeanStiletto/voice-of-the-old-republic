@@ -192,6 +192,38 @@ bool IsWorkbenchSelectStructural(void* panel) {
     }
 }
 
+// KOTOR 2 crafting screens: CSWGuiCreateItem (component_p.gui — the
+// workbench "Neue Gegenstände erzeugen" / breakdown screen, pushed by the
+// upgradesel BTN_CREATEITEMS handler) and CSWGuiCreateMedicalItem
+// (chemical_p.gui — the lab-station twin). Both heap-allocated modals with
+// no CGuiInGame slot; single K2-only class each, so vtable equality is the
+// identifier (RTTI census 2026-07-31, k2-vtables.csv). Poisons to the
+// unported sentinel on KOTOR 1; the Ok() guard declines without a read.
+const uintptr_t kVtableCSWGuiCreateItem        = acc::addr::Kotor2Only(0x009A8B4C);
+const uintptr_t kVtableCSWGuiCreateMedicalItem = acc::addr::Kotor2Only(0x009A8CBC);
+
+bool IsWorkbenchCreateItemStructural(void* panel) {
+    if (!panel) return false;
+    if (!acc::addr::Ok(kVtableCSWGuiCreateItem)) return false;
+    __try {
+        void** vt = *reinterpret_cast<void***>(panel);
+        return reinterpret_cast<uintptr_t>(vt) == kVtableCSWGuiCreateItem;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+bool IsWorkbenchCreateMedicalStructural(void* panel) {
+    if (!panel) return false;
+    if (!acc::addr::Ok(kVtableCSWGuiCreateMedicalItem)) return false;
+    __try {
+        void** vt = *reinterpret_cast<void***>(panel);
+        return reinterpret_cast<uintptr_t>(vt) == kVtableCSWGuiCreateMedicalItem;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 // CSWGuiLevelUpPanel identity by vtable. The panel is heap-allocated by
 // CSWGuiInGameCharacter::ShowLevelUpGUI when the user clicks Levelaufst.,
 // so it has no CGuiInGame slot. Lane's SARIF labels the vtable at
@@ -595,6 +627,8 @@ static const PanelKindOffset kPanelKindOffsets[] = {
     { kNoSlotOffset, PanelKind::WorkbenchSelect,   "WorkbenchSelect" },
     { kNoSlotOffset, PanelKind::WorkbenchItems,    "WorkbenchItems" },
     { kNoSlotOffset, PanelKind::WorkbenchUpgrade,  "WorkbenchUpgrade" },
+    { kNoSlotOffset, PanelKind::WorkbenchCreateItem,    "WorkbenchCreateItem" },
+    { kNoSlotOffset, PanelKind::WorkbenchCreateMedical, "WorkbenchCreateMedical" },
     { kNoSlotOffset, PanelKind::PowersLevelUp,     "PowersLevelUp" },
     { kNoSlotOffset, PanelKind::MainMenuOptions,   "MainMenuOptions" },
     { kNoSlotOffset, PanelKind::MainMenu,          "MainMenu" },
@@ -869,6 +903,13 @@ PanelKind IdentifyPanel(void* panel) {
     // Vtable equality, so it is collision-proof and cheap — probe it first.
     if (IsGamepadQuickMenuStructural(panel)) {
         return recordAndReturn(PanelKind::GamepadQuickMenu, "GamepadQuickMenu");
+    }
+    // K2 crafting screens — vtable equality, collision-proof, probe early.
+    if (IsWorkbenchCreateItemStructural(panel)) {
+        return recordAndReturn(PanelKind::WorkbenchCreateItem, "WorkbenchCreateItem");
+    }
+    if (IsWorkbenchCreateMedicalStructural(panel)) {
+        return recordAndReturn(PanelKind::WorkbenchCreateMedical, "WorkbenchCreateMedical");
     }
     if (IsWorkbenchUpgradeStructural(panel)) {
         return recordAndReturn(PanelKind::WorkbenchUpgrade, "WorkbenchUpgrade");

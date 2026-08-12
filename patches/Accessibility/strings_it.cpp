@@ -432,6 +432,8 @@ const char* Get(Id id) {
         case Id::WorkbenchSlotSaberCrystal2: return "Slot cristallo 2";
         case Id::WorkbenchSlotSaberCrystal3: return "Slot cristallo 3";
         case Id::WorkbenchSlotSaberCrystal4: return "Slot cristallo 4";
+        case Id::WorkbenchSlotSaberCrystal5: return "Slot cristallo 5";
+        case Id::WorkbenchSlotSaberCrystal6: return "Slot cristallo 6";
         case Id::WorkbenchItemsEmpty:        return "Nessun oggetto migliorabile in questa categoria";
         case Id::WorkbenchUpgradesEmpty:     return "Nessun miglioramento compatibile nell'inventario";
         case Id::WorkbenchSlotInstalled:     return "Miglioramento installato";
@@ -441,6 +443,8 @@ const char* Get(Id id) {
         case Id::WorkbenchSlotPeekEmpty:     return "Alloggiamento vuoto, nessun miglioramento installato";
         case Id::WorkbenchFmtSlotItem:       return "%s, con %s";
         case Id::WorkbenchPickerInstalled:   return "installato";
+        case Id::WorkbenchModeCreate:        return "Modalit\xE0 creazione";
+        case Id::WorkbenchModeBreakdown:     return "Modalit\xE0 smontaggio";
 
         case Id::SoundOptionsMovieVolume:    return "Volume video";
 

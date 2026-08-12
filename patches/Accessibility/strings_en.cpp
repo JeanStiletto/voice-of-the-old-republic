@@ -425,6 +425,8 @@ const char* Get(Id id) {
         case Id::WorkbenchSlotSaberCrystal2: return "Crystal slot 2";
         case Id::WorkbenchSlotSaberCrystal3: return "Crystal slot 3";
         case Id::WorkbenchSlotSaberCrystal4: return "Crystal slot 4";
+        case Id::WorkbenchSlotSaberCrystal5: return "Crystal slot 5";
+        case Id::WorkbenchSlotSaberCrystal6: return "Crystal slot 6";
         case Id::WorkbenchItemsEmpty:        return "No upgradable items in this category";
         case Id::WorkbenchUpgradesEmpty:     return "No compatible upgrades in inventory";
         case Id::WorkbenchSlotInstalled:     return "Upgrade installed";
@@ -434,6 +436,8 @@ const char* Get(Id id) {
         case Id::WorkbenchSlotPeekEmpty:     return "Empty slot, no upgrade installed";
         case Id::WorkbenchFmtSlotItem:       return "%s, holds %s";
         case Id::WorkbenchPickerInstalled:   return "installed";
+        case Id::WorkbenchModeCreate:        return "Create mode";
+        case Id::WorkbenchModeBreakdown:     return "Breakdown mode";
 
         case Id::SoundOptionsMovieVolume:    return "Movie volume";
 

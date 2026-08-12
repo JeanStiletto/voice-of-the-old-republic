@@ -77,6 +77,33 @@ The installed-mod CSWSItem* is a real (engine-constructed, id=0x7f000000, not re
 
 ---
 
+## k2_workbench_and_crafting
+_KOTOR 2 restructures the workbench top screen (inline item list + category bank + child panels) and adds two crafting screens; control-id maps, ctor/handler addresses, and which K1 assumptions break._
+
+All addresses are the **kotor2 Ghidra program** (Steam/Aspyr swkotor2.exe); mined 2026-08-12 from the ctors + handler decompiles and the game's own gui.bif (upgradesel_p / component_p / chemical_p — full id maps in `build/k2-gui-extracted/*.xml`).
+
+**Top screen — CSWGuiUpgradeSelection, ctor @0x008C6650 (upgradesel_p.gui).** K1's pure category chooser became the whole item-pick surface:
+- Controls: category-button ARRAY of five 0x1d0-sized embedded buttons at panel+0x86c (bind order BTN_ALL id 10 / BTN_LIGHTSABER 1 / BTN_RANGED 0 / BTN_MELEE 2 / BTN_ARMOR 3; ctor assigns custom_value 0..4 in array order; shared handler 0x008C7440 stores cv at panel+0x18bc, restyles via 0x008C7490, repopulates via 0x008C7510). LB_UPGRADELIST id 9 (embedded at +0x117c), LB_DESCRIPTION id 8, LBL_TITLE id 4 (strref 117941 "Upgrade-Werkbank"), LBL_TITLE2 id 11 (117944), BTN_UPGRADEITEMS id 5 (+0x2f8, strref 42294), BTN_BACK id 6 (+0x4c8), **BTN_CREATEITEMS id 7 (+0x698, NO strref, NO runtime SetText — icon-only for sighted users)**.
+- The ctor pre-builds two children: CSWGuiUpgradeItemSelect (alloc 0xc9c, ctor 0x008C80F0) at [panel+0x18c0] with backpointer child+0xc98, and CSWGuiCreateItem (alloc 0x3ef8) at [panel+0x868] with backpointer child+0x3eec.
+- **BTN_UPGRADEITEMS handler @0x008C7F60** — dual entry: param == the button (hotkey path; fetches the list's selected row via 0x0041FFB0) or param == a ROW (double-click). Reads row obj id at +0x1d0, resolves via GetItemByGameObjectID 0x0051C0E0, computes category from upgrade.2da via 0x006076D0, primes the item-select child (+0xc78 category, +0xc8c item) and pushes it (0x00410530(child, 3, 1)).
+- **BTN_CREATEITEMS handler @0x008C73F0** — plays gui sound, pushes the CreateItem child.
+- **Esc is engine-native**: the ctor binds BTN_BACK to input code 0x62 and BTN_UPGRADEITEMS to 0x61 via 0x00760EA0.
+
+**Crafting screens — CSWGuiCreateItem ctor @0x008D1020 (component_p.gui, workbench "create/breakdown") and CSWGuiCreateMedicalItem ctor @0x008D6B90 (chemical_p.gui, lab station).** Store-shaped, same model on both:
+- LB_SHOPITEMS id 4 (craftable templates) and LB_INVITEMS id 5 (inventory for breakdown) share the screen slot; the engine flips CSWGuiControl.bit_flags bit 0x2 (visibility) on whichever view is active — identical to CSWGuiStore's buy/sell. LB_INVITEMS starts hidden (ctor clears its bit).
+- BTN_Accept id 12 (strref 48379 "Objekt erstellen") commits the SELECTED row: component dispatcher @0x008D2150 branches on the create-vs-breakdown flag [panel+0x3ee4] into create @0x008D4AC0 / breakdown @0x008D4680 (row passed as param). BTN_Examine (component id 13 / chemical id 14, strref 48373 "Inventar betrachten") toggles the views @0x008D4F60. BTN_Cancel (component id 27 "Zurück" / chemical id 13 "Schließen") is engine-native Esc (0x62). Medical twins registered at the same ctor positions: 0x008D94D0/0x008D9D60 (accept/examine bank) and 0x008D7A80.
+- Category banks of 0x1d0-sized embedded buttons, cv assigned in ARRAY order: component CREATE bank at +0x1554 (Armor/Ranged/Melee/Lightsaber/Misc cv 0..4, handler 0x008D44C0 → cv at +0x3ee0, populate 0x008D26B0) and BREAK bank at +0x1e64 (All/Weapons/Armor/Useable/Misc, handler 0x008D4510 → cv at +0x3ee8, populate 0x008D2FF0). Chemical CREATE bank at +0x1ad4 — **array order is HEALTH/STIMS/MINES/GRENADES (cv 2 = mines, 3 = grenades); the .gui bind order differs**, handler 0x008D9500.
+- Skill gate: ctor caches GetSkillRank(5=Repair)/20 clamped to 1.0 (component +0x3ed4) / GetSkillRank(7=Treat Injury)/20 (chemical). LBL_CREDITS shows the component/chemical pool ("Alle Komponenten" 115424 / "Alle Chemikalien" 111302); **LBL_CREDITS_VALUE (a bare number) precedes every title label in .gui order** — the generic title walk must not run on these panels (menus_crafting::GetTitleOverride reads LBL_TITLE id 19 / id 15 instead, strref 111574).
+- Rows carry the K2 item-entry obj id at +0x1d0 (kItemEntryGameObjectIdOffset); breakdown/upgrade-list rows resolve to real party items, create-list rows are panel-local templates that may not resolve through the client handle path.
+
+**CSWGuiCreateItemMenu (ctor 0x008C19F0) / CSWGuiCreateItemSubMenu (0x008BEE10) are NOT workbench surfaces** — both load debug_p.gui and enumerate BASEITEMS ("Build: ", "No StrRef: %s"): the developer item-spawn console. Do not spend port effort on them.
+
+**K1 assumptions that break here (fixed 2026-08-12):** the extract-side slot-label range test `cid 12..18` (K2 slot buttons are 7/8/6 + 17/18/19/23/24/25 and 13 is BTN_BACK; use `IsWorkbenchUpgradeSlotButtonId`), the Esc route to BTN_BACK id 28 (K2: 13), and the four-crystal assumption (K2 sabers carry SIX slots — strings WorkbenchSlotSaberCrystal5/6).
+
+**How to apply:** panel detection is vtable-only (`Kotor2Only(0x009A8B4C)` CreateItem / `(0x009A8CBC)` CreateMedicalItem → PanelKind::WorkbenchCreateItem/WorkbenchCreateMedical). Keyboard commit uses no engine addresses: `menus_crafting::DispatchRowCommit` writes the listbox selection_index to the chain row and FireActivates the commit button by .gui id inside one drain tick (Kind::CraftRowCommit) — the engine button handler then acts on the selection, the same select-then-confirm shape the K1 WorkbenchItems spec verified in game. Chain filtering, view-flip announce and rebind live in menus_crafting.cpp.
+
+---
+
 ## map_cycle_architecture
 _Map cycle exposes a single Landmark/Map-hint category. CycleContext World/Map routing via HasActiveMapPanel. Map listing merges waypoints + user-placed pins; engine quest pins filtered out._
 
