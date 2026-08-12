@@ -11,7 +11,7 @@ permalink: /docs/README.es.html
 
 **Voice of the Old Republic** es un proyecto para hacer accesibles los juegos Star Wars: Knights of the Old Republic a jugadores totalmente ciegos. Usa el puente de voz Prism para admitir cualquier lector de pantalla y añade ayudas de navegación, accesibilidad de los menús y señales sonoras específicas que hacen accesibles los minijuegos.
 
-En el estado actual, Knights of the Old Republic I es totalmente jugable y completable, con todos los minijuegos, misiones y estilos de juego. Por ahora solo hay compatibilidad con teclado, porque se está trabajando en un mod de la comunidad para el soporte de mandos que se integrará cuando esté terminado.
+En el estado actual, Knights of the Old Republic I es totalmente jugable y completable, con todos los minijuegos, misiones y estilos de juego. Se puede jugar con el teclado o con un mando de estilo Xbox — el mod incluye su propio soporte de mandos (ver la sección del mando más abajo); solo los minijuegos siguen requiriendo el teclado.
 
 El port de la parte II está en desarrollo.
 
@@ -174,6 +174,51 @@ Con el tablero de Pazaak abierto:
 - Carta más/menos — Intro abre un selector de signo; Izquierda / Derecha eligen más o menos, Intro juega con ese signo, Esc cancela
 
 En la pantalla de apuesta previa a la partida, la primera entrada lee tu apuesta actual, el máximo de la mesa y tus créditos; ve a "Reducir apuesta" / "Aumentar apuesta" y pulsa Intro para cambiarla, y luego al botón de apuesta del juego para colocarla. El editor del mazo lateral lee cada carta y cada ranura del mazo.
+
+<h2>Mando</h2>
+
+El mod incluye su propio soporte de mandos — KOTOR 1 no tiene ningún código de gamepad propio, así que es el mod el que controla el mando directamente. Funciona cualquier mando XInput con la disposición de botones de Xbox; conéctalo antes de iniciar el juego. El teclado y el mando permanecen activos a la vez, y cada acción del juego que dispara el mando pasa por tus propias asignaciones de teclas, así que las reasignaciones se respetan. Con un mando conectado, la lista de teclas (F1) gana una sección Mando; sin mando, esa sección desaparece. Los minijuegos (Pazaak, carreras de motos deslizadoras, la torreta) aún no tienen asignaciones de mando y conservan sus teclas de teclado.
+
+Los nombres de botones de abajo siguen la disposición de Xbox: A, B, X, Y, los botones superiores izquierdo y derecho (LB / RB), los gatillos izquierdo y derecho (LT / RT), y la pulsación de una palanca (L3 / R3).
+
+<h3>Movimiento y orientación</h3>
+
+- Palanca izquierda — Moverse (las ocho direcciones: adelante, atrás y desplazamiento lateral)
+- Palanca derecha — Girar la cámara
+- R3 (pulsar la palanca derecha) — Girar la cámara hacia el siguiente punto de ruta de la baliza, o si no hacia el siguiente punto cardinal (la N del teclado)
+- Gatillo derecho solo — Anunciar la orientación en grados
+
+<h3>Objetos y acciones</h3>
+
+- Cruceta izquierda / derecha — Objeto descubierto anterior / siguiente (el ciclo `,` / `.` del teclado)
+- Cruceta arriba / abajo — Categoría de objetos anterior / siguiente
+- A — Acción predeterminada sobre el objetivo enfocado (atacar, abrir, hablar, recoger)
+- B — Cerrar el menú de acciones si está abierto; si no, la cancelación normal del motor
+- Botón superior izquierdo / derecho — Cambiar de objetivo hacia la izquierda / derecha (la Q / E del teclado)
+- Gatillo izquierdo solo — Abrir el menú de acciones unificado; al pulsarlo de nuevo se cierra. Mientras está abierto: cruceta izquierda / derecha cambian de categoría, arriba / abajo de entrada, A ejecuta la acción elegida
+- Gatillo izquierdo + botón superior izquierdo — Baliza sonora hacia el objeto enfocado
+- Gatillo derecho + botón superior derecho — Caminar automáticamente hasta el objeto enfocado
+
+<h3>Grupo, estado y juego</h3>
+
+- X — Cambiar de líder del grupo
+- Gatillo izquierdo + X — Tu propio estado (la H del teclado)
+- Gatillo derecho + X — La cola de acciones (el Mayús+H del teclado). Dentro de ella: cruceta arriba / abajo recorren las entradas, A quita la última acción en cola, gatillo izquierdo + A vacía toda la cola, B cierra
+- Y — Menú rápido, con las entradas: las pantallas de menú, líder del grupo, modo en solitario, sigilo, guardado rápido y Ayuda, que abre la lista de teclas del mod. El personaje se detiene mientras está abierto
+- L3 (pulsar la palanca izquierda) — Florear el arma
+- Start — Pausa
+- Botón Atrás (Back) — Opciones
+- Ambos gatillos (LT + RT) — Leer las teclas de la pantalla actual (el Ctrl+F1 del teclado)
+
+<h3>En los menús</h3>
+
+En los menús del juego, el mando se comporta sencillamente como el teclado:
+
+- Cruceta o palanca izquierda — Mover el foco
+- A — Confirmar, B — Atrás
+- Botón superior izquierdo / derecho — Recorrer las subpantallas del menú del juego (equipo, mapa, misiones, …) — así es como el mando llega al mapa; en un contenedor o una tienda cambian en su lugar el modo (coger / dar, comprar / vender)
+- Mantener Y y pulsar la cruceta arriba o abajo — Leer la descripción completa de la entrada enfocada, bloque a bloque, sin moverse
+- En la pantalla del mapa, la palanca izquierda desplaza el cursor del mapa y la cruceta recorre las marcas del mapa
 
 <h2>Los sistemas de navegación de un vistazo</h2>
 

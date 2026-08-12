@@ -11,7 +11,7 @@ permalink: /docs/README.fr.html
 
 **Voice of the Old Republic** est un projet visant à rendre les jeux Star Wars: Knights of the Old Republic accessibles aux joueurs totalement aveugles. Il utilise le pont vocal Prism pour prendre en charge tous les lecteurs d'écran, et ajoute des aides à la navigation, l'accessibilité des menus et des repères sonores spécifiques qui rendent les mini-jeux accessibles.
 
-En l'état actuel, Knights of the Old Republic I est entièrement jouable et terminable, avec tous les mini-jeux, toutes les quêtes et tous les styles de jeu. Seul le clavier est pris en charge pour l'instant, car un mod communautaire de prise en charge des manettes est en cours de développement et sera intégré une fois terminé.
+En l'état actuel, Knights of the Old Republic I est entièrement jouable et terminable, avec tous les mini-jeux, toutes les quêtes et tous les styles de jeu. Il se joue au clavier ou avec une manette de type Xbox — le mod embarque sa propre prise en charge des manettes (voir la section manette plus bas) ; seuls les mini-jeux demandent encore le clavier.
 
 Le portage de la partie II est en cours.
 
@@ -174,6 +174,51 @@ Quand le plateau de Pazaak est ouvert :
 - Carte plus/moins — Entrée ouvre un choix de signe ; Gauche / Droite choisissent plus ou moins, Entrée joue avec ce signe, Échap annule
 
 Sur l'écran de mise avant la partie, la première entrée lit votre mise actuelle, le maximum de la table et vos crédits ; allez sur « Diminuer la mise » / « Augmenter la mise » et appuyez sur Entrée pour changer la mise, puis sur le bouton de mise du jeu pour la placer. L'éditeur de deck annexe lit chaque carte et chaque emplacement de deck.
+
+<h2>Manette</h2>
+
+Le mod embarque sa propre prise en charge des manettes — KOTOR 1 n'a aucun code manette à lui, c'est donc le mod qui pilote directement la manette. Toute manette XInput à disposition Xbox fonctionne ; branchez-la avant de lancer le jeu. Le clavier et la manette restent actifs côte à côte, et chaque action de jeu déclenchée par la manette passe par vos propres associations de touches — vos réassignations sont donc respectées. Avec une manette branchée, la liste des touches (F1) gagne une section Manette ; sans manette, cette section disparaît. Les mini-jeux (Pazaak, courses de swoop, la tourelle) n'ont pas encore d'assignations manette et gardent leurs touches clavier.
+
+Les noms de boutons ci-dessous suivent la disposition Xbox : A, B, X, Y, les boutons de tranche gauche et droit (LB / RB), les gâchettes gauche et droite (LT / RT), et l'appui sur un stick (L3 / R3).
+
+<h3>Déplacement et orientation</h3>
+
+- Stick gauche — Se déplacer (les huit directions : avant, arrière et pas chassé)
+- Stick droit — Tourner la caméra
+- R3 (appuyer sur le stick droit) — Tourner la caméra vers le prochain point de passage de la balise, sinon vers le point cardinal suivant (le N du clavier)
+- Gâchette droite seule — Annoncer l'orientation en degrés
+
+<h3>Objets et actions</h3>
+
+- Croix directionnelle gauche / droite — Objet découvert précédent / suivant (le cycle `,` / `.` du clavier)
+- Croix haut / bas — Catégorie d'objets précédente / suivante
+- A — Action par défaut sur la cible ciblée (attaquer, ouvrir, parler, ramasser)
+- B — Fermer le menu d'actions s'il est ouvert ; sinon l'annulation normale du moteur
+- Boutons de tranche gauche / droit — Changer de cible vers la gauche / la droite (le Q / E du clavier)
+- Gâchette gauche seule — Ouvrir le menu d'actions unifié ; un nouvel appui le ferme. Tant qu'il est ouvert : croix gauche / droite changent de catégorie, haut / bas d'entrée, A déclenche l'action choisie
+- Gâchette gauche + bouton de tranche gauche — Balise audio vers l'objet ciblé
+- Gâchette droite + bouton de tranche droit — Marcher automatiquement jusqu'à l'objet ciblé
+
+<h3>Groupe, état et jeu</h3>
+
+- X — Changer de chef de groupe
+- Gâchette gauche + X — Votre propre état (le H du clavier)
+- Gâchette droite + X — La file d'actions (le Maj+H du clavier). À l'intérieur : croix haut / bas parcourent les entrées, A retire la dernière action mise en file, gâchette gauche + A vide toute la file, B ferme
+- Y — Menu rapide, avec les entrées : les écrans de menu, chef de groupe, mode solo, discrétion, sauvegarde rapide et Aide, qui ouvre la liste des touches du mod. Le personnage s'arrête tant qu'il est ouvert
+- L3 (appuyer sur le stick gauche) — Faire tournoyer l'arme
+- Start — Pause
+- Bouton Retour (Back) — Options
+- Les deux gâchettes (LT + RT) — Lire les touches de l'écran actuel (le Ctrl+F1 du clavier)
+
+<h3>Dans les menus</h3>
+
+Dans les menus du jeu, la manette se comporte simplement comme le clavier :
+
+- Croix directionnelle ou stick gauche — Déplacer le focus
+- A — Valider, B — Retour
+- Boutons de tranche gauche / droit — Parcourir les sous-écrans du menu du jeu (équipement, carte, quêtes, …) — c'est ainsi que la manette atteint la carte ; dans un conteneur ou une boutique, ils changent plutôt le mode (prendre / donner, acheter / vendre)
+- Maintenir Y et appuyer sur la croix haut ou bas — Lire la description complète de l'entrée ciblée, bloc par bloc, sans se déplacer
+- Sur l'écran de la carte, le stick gauche déplace le curseur de la carte et la croix parcourt les marqueurs de carte
 
 <h2>Les systèmes de navigation en un coup d'œil</h2>
 

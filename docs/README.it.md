@@ -11,7 +11,7 @@ permalink: /docs/README.it.html
 
 **Voice of the Old Republic** è un progetto per rendere i giochi Star Wars: Knights of the Old Republic accessibili ai giocatori completamente ciechi. Usa il ponte vocale Prism per supportare ogni screen reader e aggiunge aiuti alla navigazione, accessibilità dei menu e segnali sonori dedicati che rendono accessibili i minigiochi.
 
-Allo stato attuale Knights of the Old Republic I è completamente giocabile e completabile, con tutti i minigiochi, le missioni e gli stili di gioco. Per ora c'è solo il supporto da tastiera, perché è in lavorazione una mod della comunità per il supporto ai controller, che verrà integrata una volta terminata.
+Allo stato attuale Knights of the Old Republic I è completamente giocabile e completabile, con tutti i minigiochi, le missioni e gli stili di gioco. Si può giocare con la tastiera o con un controller in stile Xbox — la mod include il proprio supporto ai controller (vedi la sezione controller più sotto); solo i minigiochi richiedono ancora la tastiera.
 
 Il port della parte II è in lavorazione.
 
@@ -174,6 +174,51 @@ Mentre il tavolo del Pazaak è aperto:
 - Carta più/meno — Invio apre la scelta del segno; Sinistra / Destra scelgono più o meno, Invio gioca con quel segno, Esc annulla
 
 Nella schermata della puntata prima della partita, la prima voce legge la puntata attuale, il massimo del tavolo e i tuoi crediti; spostati su "Riduci puntata" / "Aumenta puntata" e premi Invio per cambiare la puntata, poi sul pulsante di puntata del gioco per piazzarla. L'editor del mazzo laterale legge ogni carta e ogni slot del mazzo.
+
+<h2>Controller</h2>
+
+La mod include il proprio supporto ai controller — KOTOR 1 non ha alcun codice per il gamepad, quindi è la mod a pilotare direttamente il pad. Funziona qualsiasi controller XInput con la disposizione dei tasti Xbox; collegalo prima di avviare il gioco. Tastiera e controller restano attivi fianco a fianco, e ogni azione di gioco lanciata dal pad passa per le tue assegnazioni dei tasti — le riassegnazioni vengono quindi rispettate. Con un pad collegato, l'elenco dei tasti (F1) guadagna una sezione Controller; senza pad, quella sezione scompare. I minigiochi (Pazaak, corse di swoop, la torretta) non hanno ancora assegnazioni per il pad e mantengono i loro tasti da tastiera.
+
+I nomi dei tasti qui sotto seguono la disposizione Xbox: A, B, X, Y, i dorsali sinistro e destro (LB / RB), i grilletti sinistro e destro (LT / RT), e la pressione di una levetta (L3 / R3).
+
+<h3>Movimento e orientamento</h3>
+
+- Levetta sinistra — Muoversi (tutte le otto direzioni: avanti, indietro e passo laterale)
+- Levetta destra — Ruotare la telecamera
+- R3 (premere la levetta destra) — Ruotare la telecamera verso il prossimo waypoint del radiofaro, altrimenti verso il punto cardinale successivo (l'N della tastiera)
+- Grilletto destro da solo — Annunciare l'orientamento in gradi
+
+<h3>Oggetti e azioni</h3>
+
+- Croce direzionale sinistra / destra — Oggetto scoperto precedente / successivo (il ciclo `,` / `.` della tastiera)
+- Croce su / giù — Categoria di oggetti precedente / successiva
+- A — Azione predefinita sul bersaglio a fuoco (attaccare, aprire, parlare, raccogliere)
+- B — Chiudere il menu azioni se è aperto; altrimenti l'annullamento normale del motore
+- Dorsale sinistro / destro — Cambiare bersaglio a sinistra / destra (il Q / E della tastiera)
+- Grilletto sinistro da solo — Aprire il menu azioni unificato; premendolo di nuovo si chiude. Mentre è aperto: croce sinistra / destra cambiano categoria, su / giù la voce, A esegue l'azione scelta
+- Grilletto sinistro + dorsale sinistro — Radiofaro sonoro verso l'oggetto a fuoco
+- Grilletto destro + dorsale destro — Camminare automaticamente verso l'oggetto a fuoco
+
+<h3>Gruppo, stato e gioco</h3>
+
+- X — Cambiare capogruppo
+- Grilletto sinistro + X — Il tuo stato (l'H della tastiera)
+- Grilletto destro + X — La coda delle azioni (il Maiusc+H della tastiera). Al suo interno: croce su / giù scorrono le voci, A rimuove l'ultima azione in coda, grilletto sinistro + A svuota tutta la coda, B chiude
+- Y — Menu rapido, con le voci: le schermate dei menu, capogruppo, modalità solitaria, furtività, salvataggio rapido e Aiuto, che apre l'elenco dei tasti della mod. Il personaggio si ferma finché è aperto
+- L3 (premere la levetta sinistra) — Roteare l'arma
+- Start — Pausa
+- Pulsante Indietro (Back) — Opzioni
+- Entrambi i grilletti (LT + RT) — Leggere i tasti della schermata corrente (il Ctrl+F1 della tastiera)
+
+<h3>Nei menu</h3>
+
+Nei menu del gioco il pad si comporta semplicemente come la tastiera:
+
+- Croce direzionale o levetta sinistra — Spostare il fuoco
+- A — Confermare, B — Indietro
+- Dorsale sinistro / destro — Scorrere le sotto-schermate del menu di gioco (equipaggiamento, mappa, missioni, …) — è così che il pad raggiunge la mappa; in un contenitore o in un negozio cambiano invece la modalità (prendere / dare, comprare / vendere)
+- Tenere premuto Y e premere la croce su o giù — Leggere la descrizione completa della voce a fuoco, blocco per blocco, senza spostarsi
+- Nella schermata della mappa la levetta sinistra sposta il cursore della mappa e la croce scorre i segnaposto
 
 <h2>I sistemi di navigazione in breve</h2>
 

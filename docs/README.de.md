@@ -11,7 +11,7 @@ permalink: /docs/README.de.html
 
 **Voice of the Old Republic** ist ein Projekt, das die Star Wars: Knights of the Old Republic-Spiele für vollständig blinde Spieler zugänglich macht. Es nutzt die Prism-Sprachbrücke, um jeden Screenreader zu unterstützen, und ergänzt Navigationshilfen, Menü-Barrierefreiheit und besondere Klangsignale, die die Minispiele zugänglich machen.
 
-Im aktuellen Stand ist Knights of the Old Republic I vollständig spielbar und durchspielbar, mit allen Minispielen, Quests und Spielweisen. Es gibt bisher nur Tastaturunterstützung, weil an einer Community-Mod für Controller-Unterstützung gearbeitet wird, die eingebunden wird, sobald sie fertig ist.
+Im aktuellen Stand ist Knights of the Old Republic I vollständig spielbar und durchspielbar, mit allen Minispielen, Quests und Spielweisen. Es lässt sich mit der Tastatur oder mit einem Xbox-artigen Controller spielen — die Mod bringt ihre eigene Controller-Unterstützung mit (siehe den Controller-Abschnitt unten); nur die Minispiele erwarten vorerst noch die Tastatur.
 
 Am Port für Teil II wird gearbeitet.
 
@@ -174,6 +174,51 @@ Bei geöffnetem Pazaak-Brett:
 - Plus/Minus-Wendekarte — Enter öffnet eine Vorzeichenauswahl; Links / Rechts wählen Plus oder Minus, Enter spielt mit diesem Vorzeichen, Esc bricht ab
 
 Auf dem Einsatzbildschirm vor der Partie liest der oberste Eintrag deinen aktuellen Einsatz, das Tischmaximum und deine Credits vor; gehe auf „Einsatz verringern" / „Einsatz erhöhen" und drücke Enter, um den Einsatz zu ändern, dann auf die Einsatz-Schaltfläche des Spiels, um ihn zu setzen. Der Zusatzdeck-Editor liest jede Karte und jeden Deckplatz vor.
+
+<h2>Controller</h2>
+
+Die Mod bringt ihre eigene Controller-Unterstützung mit — KOTOR 1 hat keinen eigenen Gamepad-Code, also steuert die Mod das Pad direkt an. Jeder XInput-Controller mit Xbox-Tastenlayout funktioniert; stecke ihn vor dem Spielstart ein. Tastatur und Controller bleiben nebeneinander aktiv, und jede Spielaktion, die das Pad auslöst, läuft über deine eigene Tastenbelegung — Umbelegungen werden also übernommen. Mit verbundenem Pad erhält die Tastenliste (F1) einen Controller-Abschnitt; ohne Pad verschwindet dieser Abschnitt. Die Minispiele (Pazaak, Swoop-Rennen, das Geschütz) haben noch keine Pad-Belegung und behalten ihre Tastaturtasten.
+
+Die Tastennamen unten folgen dem Xbox-Layout: A, B, X, Y, die linke und rechte Schultertaste (LB / RB), der linke und rechte Trigger (LT / RT) und das Drücken eines Sticks (L3 / R3).
+
+<h3>Bewegung und Orientierung</h3>
+
+- Linker Stick — Bewegen (alle acht Richtungen: vorwärts, rückwärts und seitwärts)
+- Rechter Stick — Kamera drehen
+- R3 (rechten Stick drücken) — Kamera zum nächsten Wegpunkt der Bake drehen, sonst zur nächsten Himmelsrichtung (das N der Tastatur)
+- Rechter Trigger allein — Blickrichtung in Grad ansagen
+
+<h3>Objekte und Aktionen</h3>
+
+- Steuerkreuz links / rechts — Vorheriges / nächstes entdecktes Objekt (der `,` / `.`-Zyklus der Tastatur)
+- Steuerkreuz hoch / runter — Vorherige / nächste Objektkategorie
+- A — Standardaktion auf dem fokussierten Ziel (angreifen, öffnen, sprechen, aufheben)
+- B — Das Aktionsmenü schließen, wenn es offen ist; sonst das normale Abbrechen der Engine
+- Linke / rechte Schultertaste — Ziele links / rechts durchwechseln (das Q / E der Tastatur)
+- Linker Trigger allein — Das vereinheitlichte Aktionsmenü öffnen; erneutes Drücken schließt es. Solange es offen ist: Steuerkreuz links / rechts wechseln die Kategorie, hoch / runter den Eintrag, A löst die gewählte Aktion aus
+- Linker Trigger + linke Schultertaste — Audio-Bake zum fokussierten Objekt
+- Rechter Trigger + rechte Schultertaste — Automatisch zum fokussierten Objekt laufen
+
+<h3>Gruppe, Status und Spiel</h3>
+
+- X — Gruppenanführer wechseln
+- Linker Trigger + X — Eigener Zustand (das H der Tastatur)
+- Rechter Trigger + X — Die Aktionswarteschlange (das Shift+H der Tastatur). Darin: Steuerkreuz hoch / runter gehen die Einträge durch, A entfernt die zuletzt eingereihte Aktion, linker Trigger + A leert die ganze Warteschlange, B schließt
+- Y — Schnellmenü mit den Einträgen: Menübildschirme, Gruppenanführer, Solo-Modus, Tarnung, Schnellspeichern und Hilfe, die die Tastenliste der Mod öffnet. Solange es offen ist, bleibt die Spielfigur stehen
+- L3 (linken Stick drücken) — Waffe schwingen
+- Start — Pause
+- Zurück-Taste (Back) — Optionen
+- Beide Trigger (LT + RT) — Die Tasten für den aktuellen Bildschirm vorlesen (das Ctrl+F1 der Tastatur)
+
+<h3>In Menüs</h3>
+
+In den Menüs des Spiels verhält sich das Pad einfach wie die Tastatur:
+
+- Steuerkreuz oder linker Stick — Fokus bewegen
+- A — Bestätigen, B — Zurück
+- Linke / rechte Schultertaste — Durch die Unterbildschirme des Spielmenüs blättern (Ausrüstung, Karte, Aufgaben, …) — so erreicht das Pad die Karte; im Behälter und im Laden wechseln sie stattdessen den Modus (nehmen / geben, kaufen / verkaufen)
+- Y halten und Steuerkreuz hoch oder runter drücken — Die vollständige Beschreibung des fokussierten Eintrags blockweise vorlesen, ohne den Fokus zu bewegen
+- Auf dem Kartenbildschirm schwenkt der linke Stick den Kartencursor, und das Steuerkreuz durchläuft die Kartenmarker
 
 <h2>Navigationssysteme im Überblick</h2>
 

@@ -11,7 +11,7 @@ permalink: /
 
 **Voice of the Old Republic** is a project to make the Star Wars: Knights of the Old Republic games accessible for fully blind players. It uses the Prism speech bridge to support every screen reader, adds navigational helpers, menu accessibility and special sound cues to make minigames accessible.
 
-At the current state Knights of the Old Republic I is fully playable and completable, with all minigames, quests and playstyles. It only has keyboard support yet, because a community mod for controller support is being worked on and will be integrated once it is finished.
+At the current state Knights of the Old Republic I is fully playable and completable, with all minigames, quests and playstyles. It can be played with the keyboard or with an Xbox-style controller — the mod ships its own controller support (see the controller section below); only the minigames still expect the keyboard.
 
 The port for part II is being worked on.
 
@@ -174,6 +174,51 @@ While the Pazaak board is open:
 - Plus/minus flip card — Enter opens a sign chooser; Left / Right pick plus or minus, Enter plays with that sign, Esc cancels
 
 On the pre-game wager screen, the top entry reads your current bet, the table maximum, and your credits; move to "Decrease wager" / "Increase wager" and press Enter to change the bet, then the game's wager button to place it. The side-deck builder reads every card and deck slot.
+
+<h2>Controller</h2>
+
+The mod ships its own controller support — KOTOR 1 has no gamepad code of its own, so the mod drives the pad directly. Any XInput controller with the Xbox button layout works; plug it in before launching the game. Keyboard and controller stay active side by side, and every game action the pad fires goes through your own key bindings, so rebinds are honoured. With a pad connected, the key list (F1) gains a Controller section; without one, that section disappears. The minigames (Pazaak, swoop racing, the turret) have no pad bindings yet and keep their keyboard keys.
+
+The button names below follow the Xbox layout: A, B, X, Y, the left and right shoulder buttons (LB / RB), the left and right triggers (LT / RT), and pressing a stick (L3 / R3).
+
+<h3>Movement and orientation</h3>
+
+- Left stick — Move (all eight directions: forward, backward, and strafing)
+- Right stick — Rotate the camera
+- R3 (press the right stick) — Turn the camera to the beacon's next waypoint, otherwise to the next compass direction (the keyboard's N)
+- Right trigger alone — Announce your facing in degrees
+
+<h3>Objects and actions</h3>
+
+- D-pad left / right — Previous / next discovered object (the keyboard's `,` / `.` cycle)
+- D-pad up / down — Previous / next object category
+- A — Default action on the focused target (attack, open, talk, pick up)
+- B — Close the action menu if it is open; otherwise the engine's own cancel
+- Left / right shoulder button — Cycle targets left / right (the keyboard's Q / E)
+- Left trigger alone — Open the unified action menu; press it again to close. While it is open: D-pad left / right change the action category, up / down the entry, A fires the selected action
+- Left trigger + left shoulder button — Audio beacon to the focused object
+- Right trigger + right shoulder button — Autowalk to the focused object
+
+<h3>Party, status, and game</h3>
+
+- X — Switch party leader
+- Left trigger + X — Your own status (the keyboard's H)
+- Right trigger + X — The action queue (the keyboard's Shift+H). Inside it: D-pad up / down step through the entries, A removes the last queued action, left trigger + A clears the whole queue, B closes
+- Y — Quick menu, with the entries: the menu screens, party leader, solo mode, stealth, quick save, and Help, which opens the mod's key list. Walking stops while it is open
+- L3 (press the left stick) — Flourish weapon
+- Start — Pause
+- Back button — Options
+- Both triggers (LT + RT) — Read the keys for the current screen (the keyboard's Ctrl+F1)
+
+<h3>In menus</h3>
+
+In the game's menus the pad simply is the keyboard:
+
+- D-pad or left stick — Move focus
+- A — Confirm, B — Back
+- Left / right shoulder button — Step through the in-game menu's sub-screens (equipment, map, quests, …) — this is how the pad reaches the map; in a container or store they switch the mode instead (take / give, buy / sell)
+- Hold Y and press D-pad up or down — Read the focused item's full description, block by block, without moving
+- On the map screen the left stick pans the map cursor and the D-pad cycles the map pins
 
 <h2>Navigation systems at a glance</h2>
 

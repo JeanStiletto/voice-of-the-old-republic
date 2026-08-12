@@ -11,7 +11,7 @@ permalink: /docs/README.pl.html
 
 **Voice of the Old Republic** to projekt, który udostępnia gry Star Wars: Knights of the Old Republic osobom całkowicie niewidomym. Korzysta z mostka mowy Prism, żeby obsłużyć każdy czytnik ekranu, i dodaje pomoce nawigacyjne, dostępność menu oraz specjalne sygnały dźwiękowe, które udostępniają minigry.
 
-W obecnym stanie Knights of the Old Republic I jest w pełni grywalny i możliwy do ukończenia, ze wszystkimi minigrami, zadaniami i stylami gry. Na razie obsługiwana jest tylko klawiatura, ponieważ trwają prace nad społecznościowym modem obsługi kontrolerów, który zostanie zintegrowany po ukończeniu.
+W obecnym stanie Knights of the Old Republic I jest w pełni grywalny i możliwy do ukończenia, ze wszystkimi minigrami, zadaniami i stylami gry. Można grać na klawiaturze albo na kontrolerze w stylu Xbox — mod ma własną obsługę kontrolerów (patrz sekcja o kontrolerze poniżej); tylko minigry na razie wymagają jeszcze klawiatury.
 
 Trwają prace nad portem części II.
 
@@ -174,6 +174,51 @@ Gdy otwarta jest plansza Pazaaka:
 - Karta plus/minus — Enter otwiera wybór znaku; Lewo / Prawo wybierają plus lub minus, Enter zagrywa z tym znakiem, Esc anuluje
 
 Na ekranie stawki przed partią pierwsza pozycja odczytuje twoją bieżącą stawkę, maksimum stołu i twoje kredyty; przejdź do „Zmniejsz stawkę" / „Zwiększ stawkę" i naciśnij Enter, żeby zmienić stawkę, a potem do przycisku stawki w grze, żeby ją postawić. Edytor talii bocznej odczytuje każdą kartę i każde miejsce w talii.
+
+<h2>Kontroler</h2>
+
+Mod ma własną obsługę kontrolerów — KOTOR 1 nie zawiera żadnego kodu obsługi gamepada, więc to mod steruje padem bezpośrednio. Działa każdy kontroler XInput z układem przycisków Xbox; podłącz go przed uruchomieniem gry. Klawiatura i kontroler pozostają aktywne równolegle, a każda akcja gry wywołana z pada przechodzi przez twoje własne przypisania klawiszy — zmienione przypisania są więc respektowane. Z podłączonym padem lista klawiszy (F1) zyskuje sekcję Kontroler; bez pada ta sekcja znika. Minigry (Pazaak, wyścigi ścigaczy, działko) nie mają jeszcze przypisań na padzie i zachowują swoje klawisze.
+
+Nazwy przycisków poniżej odpowiadają układowi Xbox: A, B, X, Y, lewy i prawy bumper (LB / RB), lewy i prawy spust (LT / RT) oraz wciśnięcie gałki (L3 / R3).
+
+<h3>Ruch i orientacja</h3>
+
+- Lewa gałka — Ruch (wszystkie osiem kierunków: do przodu, do tyłu i krok w bok)
+- Prawa gałka — Obrót kamery
+- R3 (wciśnięcie prawej gałki) — Obrót kamery do następnego punktu trasy radiolatarni, a bez niej do następnej strony świata (klawiaturowe N)
+- Sam prawy spust — Zapowiedź kierunku patrzenia w stopniach
+
+<h3>Obiekty i akcje</h3>
+
+- Krzyżak w lewo / w prawo — Poprzedni / następny odkryty obiekt (klawiaturowy cykl `,` / `.`)
+- Krzyżak w górę / w dół — Poprzednia / następna kategoria obiektów
+- A — Domyślna akcja na wskazanym celu (atak, otwarcie, rozmowa, podniesienie)
+- B — Zamknięcie menu akcji, jeśli jest otwarte; w przeciwnym razie zwykłe anulowanie silnika gry
+- Lewy / prawy bumper — Przełączanie celu w lewo / w prawo (klawiaturowe Q / E)
+- Sam lewy spust — Otwarcie ujednoliconego menu akcji; ponowne naciśnięcie je zamyka. Gdy jest otwarte: krzyżak w lewo / w prawo zmienia kategorię, w górę / w dół pozycję, A wykonuje wybraną akcję
+- Lewy spust + lewy bumper — Radiolatarnia dźwiękowa do wskazanego obiektu
+- Prawy spust + prawy bumper — Automatyczne dojście do wskazanego obiektu
+
+<h3>Drużyna, stan i gra</h3>
+
+- X — Zmiana przywódcy drużyny
+- Lewy spust + X — Twój stan (klawiaturowe H)
+- Prawy spust + X — Kolejka akcji (klawiaturowe Shift+H). W środku: krzyżak w górę / w dół przechodzi po pozycjach, A usuwa ostatnią zakolejkowaną akcję, lewy spust + A czyści całą kolejkę, B zamyka
+- Y — Szybkie menu z pozycjami: ekrany menu, przywódca drużyny, tryb samotny, skradanie, szybki zapis i Pomoc, która otwiera listę klawiszy moda. Postać stoi, dopóki menu jest otwarte
+- L3 (wciśnięcie lewej gałki) — Popis bronią
+- Start — Pauza
+- Przycisk Back — Opcje
+- Oba spusty (LT + RT) — Odczytanie klawiszy bieżącego ekranu (klawiaturowe Ctrl+F1)
+
+<h3>W menu</h3>
+
+W menu gry pad zachowuje się po prostu jak klawiatura:
+
+- Krzyżak lub lewa gałka — Przesuwanie fokusu
+- A — Zatwierdzenie, B — Powrót
+- Lewy / prawy bumper — Przechodzenie po podekranach menu gry (wyposażenie, mapa, zadania, …) — tak pad dociera do mapy; w pojemniku i sklepie przełączają natomiast tryb (weź / oddaj, kupno / sprzedaż)
+- Przytrzymaj Y i naciśnij krzyżak w górę lub w dół — Odczytanie pełnego opisu wskazanej pozycji, blok po bloku, bez zmiany fokusu
+- Na ekranie mapy lewa gałka przesuwa kursor mapy, a krzyżak przechodzi po znacznikach mapy
 
 <h2>Systemy nawigacji w skrócie</h2>
 
