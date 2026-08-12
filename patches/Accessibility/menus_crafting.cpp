@@ -15,6 +15,7 @@
 #include "engine_panels.h"    // IdentifyPanel, PanelKind
 #include "log.h"
 #include "menus_chain.h"      // RebindChainPreserveIndex on list changes
+#include "menus_pending.h"    // QueueActivate — auto-open redirect (BTN_BACK)
 #include "menus_extract.h"    // FromControl — title label read
 #include "menus_internal.h"   // detail::FindControlById
 #include "strings.h"
@@ -36,6 +37,7 @@ constexpr int kSelUpgradeItemsBtn  = 5;   // upgradesel_p BTN_UPGRADEITEMS
 constexpr int kSelTitleId          = 4;   // upgradesel_p LBL_TITLE
 constexpr int kItemsTitleId        = 3;   // upgradeitems_p LBL_TITLE
 constexpr int kUpgradeTitleId      = 12;  // upgrade_p LBL_TITLE (item name)
+constexpr int kUpgradeBackBtnId    = 13;  // upgrade_p BTN_BACK ("Abbrechen")
 constexpr int kCraftShopListId     = 4;   // LB_SHOPITEMS (craftable list)
 constexpr int kCraftInvListId      = 5;   // LB_INVITEMS (breakdown list)
 constexpr int kCraftAcceptBtnId    = 12;  // BTN_Accept ("Objekt erstellen")
@@ -55,6 +57,30 @@ bool IsCraftingKind(PanelKind k) {
     return k == PanelKind::WorkbenchCreateItem ||
            k == PanelKind::WorkbenchCreateMedical;
 }
+
+bool IsWorkbenchFamilyKind(PanelKind k) {
+    return k == PanelKind::WorkbenchSelect || k == PanelKind::WorkbenchItems ||
+           k == PanelKind::WorkbenchUpgrade || IsCraftingKind(k);
+}
+
+// The K2 workbench dialog reply pushes CSWGuiUpgrade (the slot detail for
+// the FIRST upgradeable item) on TOP of the item list, so the user lands
+// inside "Aufwerten: <first item>" and has to Escape to reach the list —
+// the engine's own flow, but the wrong entry point for keyboard users, who
+// want the list first (reported 2026-08-12; verified engine-driven, no mod
+// action precedes the push in patch-20260812-144927.log).
+//
+// We can't stop the push, so we bounce it: when CSWGuiUpgrade arrives in the
+// foreground and the user did NOT open it themselves (no craft-row-commit
+// from the list just fired), fire its BTN_BACK to drop to the list. This
+// counter is set when the chain routes Enter on a list row to the upgrade
+// flow; it survives a few ticks (the push lands a frame or two later) and is
+// consumed by the arriving upgrade edge.
+int  g_userOpenedUpgradeTtl = 0;
+// One redirect per workbench-open. Reset when the whole family leaves the
+// foreground, so the next visit redirects again but a within-visit reopen
+// (user Enters another item) never does.
+bool g_redirectedThisOpen = false;
 
 // The K2 workbench family whose titles Tick's foreground-edge announcer
 // owns (see OwnsPanelTitle in the header). Returns the .gui id of the
@@ -76,15 +102,19 @@ int TitleLabelIdFor(PanelKind k) {
 // panels are reused so re-entries stayed silent. The upgrade screen
 // formats its title as "Aufwerten: <item name>" and retries while the
 // engine hasn't yet replaced the .gui placeholder.
-void AnnounceFamilyTitleOnFgEdge(void* fg, PanelKind pk) {
-    static void* s_lastFg = nullptr;
-    static bool  s_retryTitle = false;
-
-    bool edge = fg != s_lastFg;
-    s_lastFg = fg;
+void AnnounceFamilyTitleOnFgEdge(void* fg, PanelKind pk, bool edge,
+                                 bool suppress) {
+    static bool s_retryTitle = false;
 
     int labelId = TitleLabelIdFor(pk);
     if (labelId < 0 || !fg) {
+        s_retryTitle = false;
+        return;
+    }
+    if (suppress) {
+        // We're bouncing this panel back to the list; don't announce its
+        // title, but clear any pending retry so the list's title speaks
+        // cleanly on the next edge.
         s_retryTitle = false;
         return;
     }
@@ -257,6 +287,13 @@ void DispatchRowCommit(void* panel, void* listBox, void* row, int buttonId) {
     acclog::Write("Crafting",
                   "row-commit panel=%p lb=%p row=%p idx=%d btn(id=%d)=%p fired=%d",
                   panel, listBox, row, idx, buttonId, btn, ok ? 1 : 0);
+    // Opening the upgrade flow from the list is user-initiated — mark it so
+    // the arriving CSWGuiUpgrade edge is NOT bounced back to the list (see
+    // the auto-open redirect in Tick). ~20 ticks covers the engine's
+    // one-to-two-frame delay before the panel actually fronts.
+    if (ok && buttonId == kSelUpgradeItemsBtn) {
+        g_userOpenedUpgradeTtl = 20;
+    }
 }
 
 bool IsHiddenCraftingListBox(void* panel, void* listBox) {
@@ -282,12 +319,46 @@ void Tick() {
     static int   s_lastShopVis = -1;   // 1 = create view, 0 = breakdown view
     static int   s_lastCount   = -1;   // active-list row count
 
+    // Foreground-edge tracker shared by the title announcer and the
+    // auto-open redirect (single s_lastFg so both see the same edge).
+    static void* s_lastFg = nullptr;
+
     void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
     void* fg = mgr ? acc::engine::GetForegroundPanel(mgr) : nullptr;
     PanelKind pk = fg ? IdentifyPanel(fg) : PanelKind::Unknown;
 
+    bool edge = fg != s_lastFg;
+    s_lastFg = fg;
+
     if (acc::game::IsKotor2()) {
-        AnnounceFamilyTitleOnFgEdge(fg, pk);
+        if (g_userOpenedUpgradeTtl > 0) --g_userOpenedUpgradeTtl;
+        // Reset the once-per-open redirect latch when the whole workbench
+        // family has left the foreground.
+        if (!IsWorkbenchFamilyKind(pk)) g_redirectedThisOpen = false;
+
+        // Redirect the engine's auto-open of the first item's upgrade screen
+        // back to the item list, unless the user opened it themselves.
+        bool suppressTitle = false;
+        if (edge && pk == PanelKind::WorkbenchUpgrade &&
+            !g_redirectedThisOpen && g_userOpenedUpgradeTtl == 0) {
+            void* back = FindControlById(fg, kUpgradeBackBtnId);
+            if (back && !acc::menus::pending::IsPending()) {
+                acc::menus::pending::QueueActivate(back);
+                g_redirectedThisOpen = true;
+                suppressTitle = true;
+                acclog::Write("Crafting",
+                              "engine auto-opened Upgrade for first item; "
+                              "redirecting to item list (BTN_BACK id=%d panel=%p)",
+                              kUpgradeBackBtnId, fg);
+            }
+        }
+        if (edge && pk == PanelKind::WorkbenchUpgrade && g_userOpenedUpgradeTtl > 0) {
+            // User drove this open from the list — consume the marker and
+            // latch so nothing bounces it.
+            g_userOpenedUpgradeTtl = 0;
+            g_redirectedThisOpen = true;
+        }
+        AnnounceFamilyTitleOnFgEdge(fg, pk, edge, suppressTitle);
     }
 
     bool isCraft = IsCraftingKind(pk);

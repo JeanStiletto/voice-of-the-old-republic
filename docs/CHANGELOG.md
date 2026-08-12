@@ -54,6 +54,8 @@ and add the German in parentheses if it genuinely aids clarity.
 - The workbench's unlabeled "Create Items" button (the game draws it icon-only) now speaks as the game's own "Create New Items" line in your installed language.
 - Entering a workbench no longer speaks four screen titles in a row. Choosing the upgrade option in the workbench conversation makes the game open its whole screen stack at once — item list, item picker and the slot screen for a preselected item, with the slot screen in front — and every screen announced itself. Now only the screen actually in front speaks, and because the game reuses these screens, returning to one announces it again instead of staying silent.
 - The upgrade slot screen tells you which item you are upgrading: it opens with "Upgrade: <item name>" instead of the meaningless placeholder "Item Name" it previously caught before the game had filled the title in. Escape from there lands on the item list ("Upgrade Workbench"), which re-announces itself.
+- Opening the upgrade option at a workbench now puts you on your item list, not inside the first item. The game auto-opens the first upgradeable item's slot screen on top of the list; keyboard users landed there and had to press Escape to reach the list. The mod now sends you straight to the list, where you pick the item you actually want. Choosing an item still opens its slots as before.
+- The upgrade slot's "no upgrade / remove" choice speaks a word instead of a bare number. When a mod slot's list of options held only the game's empty "-" entry, it was announced as "1" (or as silence on some screen readers); it now reads "No item" ("Kein Gegenstand"), and any option whose name can't be read falls back to the same word rather than a silent step.
 
 <h3>Speech:</h3>
 

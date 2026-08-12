@@ -14,6 +14,43 @@ plan.
 
 ## WHERE TO RESUME (read this first)
 
+**Workbench round 2 fixes — IMPLEMENTED 2026-08-12 (after the first live K2
+test round; patch-20260812-144927.log). Built green, applied, NOT retested.**
+Three defects the live round exposed:
+
+- **Titles now announce on the foreground EDGE, not construction.** The K2
+  workbench dialog reply pushes Select+Items+Upgrade STACKED in one tick
+  with CSWGuiUpgrade in front; construction-time first-sight spoke four
+  titles + a slot-state line. menus_crafting::Tick now owns the family's
+  titles (OwnsPanelTitle suppresses first-sight on K2); the upgrade screen
+  speaks "Aufwerten: <item>" and waits out the .gui placeholder "Item Name".
+  CONFIRMED working in the log ("fg-edge title … Aufwerten: Minenarbeiter-
+  Uniform").
+- **Engine auto-opens the first item's upgrade screen; we now bounce it.**
+  VERIFIED engine-driven — no mod action precedes the CSWGuiUpgrade push in
+  the log (first craft-row-commit is 16 s later). On the CSWGuiUpgrade
+  foreground edge, if the user did NOT open it from the list
+  (g_userOpenedUpgradeTtl, set by DispatchRowCommit when btnId==5), Tick
+  fires BTN_BACK (id 13) via QueueActivate to drop to the list. One redirect
+  per open (g_redirectedThisOpen, reset when the family leaves foreground);
+  the user-driven open consumes the marker so it is never bounced.
+- **Picker "-" none/remove row spoke as "1" or silence.** The engine's
+  compatible-mods list carries a bare-"-" none entry; "%s, %d von %d" made
+  it ", 1 von 1" (heard as "1") or, on readers that drop a lone dash,
+  silence. WorkbenchUpgradeAnnounce now maps a dash/blank/unreadable row to
+  Id::WorkbenchPickerNone ("Kein Gegenstand", 7 locales). Real mod names
+  were already fine ("Verbesserte Energiezelle, 3 von 3" in the log).
+- **Still open for the next round (NOT fixed):** the picker position count
+  looked off ("3 von 3" for the 2nd of 3 rows — GetWorkbenchPickerInfo's
+  minSel on K2 wants checking), and two adjacent identically-named mods read
+  as one (position is the only differentiator and it may be miscomputed).
+  Low priority vs. the three above; note in the next test pass.
+- **Test items:** open workbench upgrade → land on the LIST ("Upgrade-
+  Werkbank"), not inside an item; Enter an item → "Aufwerten: <that item>"
+  (no bounce); enter an empty slot's picker → the none row says "Kein
+  Gegenstand", real mods say their name; K1 regression: one workbench pass
+  (shared: WorkbenchUpgradeAnnounce dash-guard, new WorkbenchPickerNone).
+
 **Workbench recheck + crafting screens — IMPLEMENTED 2026-08-12, offline
 (two kotor2 Ghidra rounds: five ctors + eleven handlers; gui.bif mine of
 upgradesel_p/component_p/chemical_p; zero test rounds). Built NOT YET

@@ -1429,6 +1429,9 @@ enum class Id : int {
     WorkbenchPickerInstalled,  // suffix/marker for the picker row that is the
                                // crystal currently installed in (or colour set
                                // on) the open slot ("…, eingesetzt")
+    WorkbenchPickerNone,       // the engine's "-" none/remove row in the mod
+                               // picker (blank/dash text → spoken word so it
+                               // isn't heard as "1" or as silence)
 
     // ---- K2 crafting screens (component_p.gui / chemical_p.gui) view
     //      flip. BTN_Examine toggles between the craftable-item list

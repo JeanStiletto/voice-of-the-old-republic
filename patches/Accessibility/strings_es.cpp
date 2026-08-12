@@ -445,6 +445,7 @@ const char* Get(Id id) {
         case Id::WorkbenchSlotPeekEmpty:     return "Ranura vac\xED""a, sin mejora instalada";
         case Id::WorkbenchFmtSlotItem:       return "%s, con %s";
         case Id::WorkbenchPickerInstalled:   return "instalado";
+        case Id::WorkbenchPickerNone:        return "Ning\xFAn objeto";
         case Id::WorkbenchModeCreate:        return "Modo creaci\xF3n";
         case Id::WorkbenchModeBreakdown:     return "Modo desmontaje";
         case Id::FmtWorkbenchUpgradeTitle:   return "Mejorar: %s";

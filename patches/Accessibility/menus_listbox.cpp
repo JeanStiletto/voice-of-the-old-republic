@@ -1000,11 +1000,36 @@ void* WorkbenchUpgradeFindLb(void* p) {
 // LB_ITEMS rows are CSWGuiInventoryItemEntry-style — their text comes
 // from the item resref's localised name. Same announce shape as the
 // items picker.
+// The engine's compatible-mods list carries a "none / remove" entry whose
+// display text is a bare "-" (dash). Spoken with the position suffix it
+// reads as ", 1 von 1" — heard as "1" — or, on readers that swallow a lone
+// dash, as silence. Both were reported from the K2 workbench. Treat a blank
+// or dash-only row name as the none entry and speak a real word instead.
+// Also covers the rare row whose text doesn't extract at all (would have
+// been a silent step otherwise).
+bool IsDashOrBlankRowText(const char* s) {
+    if (!s) return true;
+    while (*s == ' ' || *s == '\t') ++s;
+    if (*s == '\0') return true;
+    if (*s == '-') {
+        ++s;
+        while (*s == ' ' || *s == '\t') ++s;
+        return *s == '\0';
+    }
+    return false;
+}
+
 void WorkbenchUpgradeAnnounce(void* /*lb*/, const ListBoxNavResult& r) {
     if (!r.row || r.rowCount <= 0) return;
     char rowText[256];
-    if (!acc::menus::extract::FromControl(r.row, rowText, sizeof(rowText))) {
-        return;
+    if (!acc::menus::extract::FromControl(r.row, rowText, sizeof(rowText)) ||
+        IsDashOrBlankRowText(rowText)) {
+        // None/remove placeholder (or an unreadable row): substitute a
+        // spoken word so the step is never a bare number or silence.
+        const char* none = acc::strings::Get(acc::strings::Id::WorkbenchPickerNone);
+        size_t n = strnlen(none, sizeof(rowText) - 1);
+        memcpy(rowText, none, n);
+        rowText[n] = '\0';
     }
     // The picker layout (hidden remove entry vs. all-rows-real) decides the
     // first navigable row, so the spoken position is 1-based over the visible

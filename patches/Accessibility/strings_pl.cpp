@@ -446,6 +446,7 @@ const char* Get(Id id) {
         case Id::WorkbenchSlotPeekEmpty:     return "Puste gniazdo, brak ulepszenia";
         case Id::WorkbenchFmtSlotItem:       return "%s, zawiera %s";
         case Id::WorkbenchPickerInstalled:   return "zamontowane";
+        case Id::WorkbenchPickerNone:        return "Brak przedmiotu";
         case Id::WorkbenchModeCreate:        return "Tryb tworzenia";
         case Id::WorkbenchModeBreakdown:     return "Tryb rozk\xB3" "adania";
         case Id::FmtWorkbenchUpgradeTitle:   return "Ulepszanie: %s";
