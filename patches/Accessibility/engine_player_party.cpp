@@ -21,6 +21,7 @@
 
 #include "engine_app.h"     // GetServerAppInternal
 #include "engine_area.h"
+#include "engine_game.h"    // IsKotor2 — GetPartyCreatureBySlotK2 gate
 #include "engine_reads.h"
 #include "log.h"
 #include "engine_rebase.h"
@@ -39,6 +40,28 @@ void* GetClientLeader() {
         auto fn = reinterpret_cast<PFN_GetPlayerCreature>(
             kAddrGetPlayerCreature);
         return fn(exoApp);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
+void* GetPartyCreatureBySlotK2(int slot) {
+    if (!acc::game::IsKotor2()) return nullptr;
+    if (slot < 0 || slot > 2) return nullptr;
+    // GetPartyCreature @ K2 0x007E5DA0 — the resolver the K2 medical-use
+    // handler feeds its picked party slot into (and whose slot-0 wrapper
+    // PopulateMenus/DoPersonalAction use as "the player"). Its `this` is the
+    // PARTY object at CClientExoAppInternal+0x270 — witnessed in the getter
+    // 0x0073FB90 ([app+4]+0x270) that every engine caller runs first.
+    typedef void* (__thiscall* PFN_K2GetPartyCreature)(void* this_, int slot);
+    void* internal = GetClientAppInternal();
+    if (!internal) return nullptr;
+    __try {
+        void* party = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(internal) + 0x270);
+        if (!party) return nullptr;
+        auto fn = reinterpret_cast<PFN_K2GetPartyCreature>(0x007E5DA0);
+        return fn(party, slot);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return nullptr;
     }

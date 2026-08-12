@@ -81,6 +81,13 @@ bool GetPlayerCharacterName(char* outBuf, size_t bufSize);
 // GetPlayerServerObject chain but stops at the client pointer.
 void* GetClientLeader();
 
+// KOTOR 2 only: the client creature in party slot `slot` (0..2) — the slot
+// space the engine's medical-item target-pick consumes (its handler resolves
+// the picked slot through this same accessor; slot 0 = the controlled
+// leader, witnessed via PopulateMenus building the action columns from
+// slot 0). nullptr on KOTOR 1, empty slot, or fault.
+void* GetPartyCreatureBySlotK2(int slot);
+
 // Active leader's action-queue "append" knob — CSWCCreature.field200_0x440
 // bit 0 (the combat-mode bit combat_diag reads as `cm`).
 // CSWGuiMainInterface::DoPersonalAction and CSWGuiTargetActionMenu::

@@ -19,6 +19,7 @@
                                // SelectVariant — stamp the engine's
                                // selected_action_id so DoPersonalAction
                                // fires the user's choice, not variant 0
+#include "engine_player.h"     // GetClientLeader — bare medical direct send
 #include "engine_area.h"       // ResolveServerObjectHandle (sanity-check the
                                // narrated handle still resolves to a live
                                // game object before stamping it)
@@ -524,6 +525,28 @@ extern "C" int __cdecl OnClientHandleInputEvent(void* this_ptr,
             if (mi) {
                 int idx = acc::unified_menu::PersonalSelection(barSlot);
                 (void)acc::engine_actionbar::SelectVariant(mi, barSlot, idx);
+                acc::engine_actionbar::LogDispatchDiag(mi, barSlot, idx);
+                // K2 medical entries cannot fire through the engine's own
+                // dispatch (its preamble wipes the two-step pick state — see
+                // SendUseItemRequestK2), so bare 4..7 on a medical entry
+                // sends the use-item request directly at the controlled
+                // leader: instant self-use, the one-press combat reflex.
+                // The engine's dispatch still runs after our handler and
+                // harmlessly re-arms its pick; the queue-add attribution and
+                // no-op watch armed above cover this send too.
+                if (acc::engine_actionbar::EntryIsMedicalK2(mi, barSlot,
+                                                            idx)) {
+                    uint32_t aid = acc::engine_actionbar::ReadVariantActionId(
+                        mi, barSlot, idx);
+                    void* leader = acc::engine::GetClientLeader();
+                    if (aid != 0 && leader) {
+                        bool sent = acc::engine_actionbar::
+                            SendUseItemRequestK2(aid, leader);
+                        acclog::Write("ActionBar",
+                                      "bare medical direct send id=0x%08x "
+                                      "sent=%d", aid, sent ? 1 : 0);
+                    }
+                }
             }
         }
 

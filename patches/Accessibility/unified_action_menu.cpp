@@ -48,6 +48,21 @@ struct Cat {
 int g_targetSel[kRowCount]      = {0, 0, 0};
 int g_personalSel[kColumnCount] = {0, 0, 0, 0, 0, 0};
 
+// KOTOR 2 medical-item party picker — the keyboard's version of the
+// portrait click that completes K2's two-step medical use (see
+// PrimeMedicalPickK2). Modal over the menu while active.
+struct MedPicker {
+    bool active = false;
+    int  count  = 0;              // populated rows (party members present)
+    int  sel    = 0;              // focused row
+    uint32_t handles[3] = {0, 0, 0};  // client handle per row (re-resolved
+                                      // at Enter — creatures can despawn)
+    char names[3][64]  = {"", "", ""};
+    Cat  itemCat{};               // the Medicine-row entry to fire
+    int  itemSel = 0;
+    char itemLabel[128] = "";     // re-spoken when Esc backs out
+};
+
 struct State {
     bool     active         = false;
     bool     suspended      = false;// a blocking engine panel (MessageBox,
@@ -89,6 +104,7 @@ struct State {
                                     // vanilla behaviour when that option is
                                     // unset (decompile-confirmed; see the
                                     // auto-pause note in action-menu-and-combat).
+    MedPicker med;                  // K2 medical party picker sub-state
 };
 State g;
 
@@ -507,6 +523,7 @@ void ForceDisarm(const char* reason) {
     acclog::Write("UnifiedMenu", "disarm — reason=%s", reason ? reason : "?");
     g.active = false;
     g.suspended = false;
+    g.med.active = false;
     if (g.pausedOnOpen)
         acc::engine::EndOverlayPause(
             acc::engine::OverlayPauseOwner::UnifiedMenu);
@@ -1075,6 +1092,150 @@ void ApplyPostFireClosePolicy() {
     // the same slot.
 }
 
+// ---- KOTOR 2 medical-item party picker -----------------------------------
+//
+// Vanilla K2 medical items are two-step: the press arms a "who gets it"
+// pick that only a mouse click on a party portrait completes — the wedge
+// that killed the whole Medicine row for keyboard play (2026-08-11 flip).
+// This submenu IS that second step: Enter on a Medicine-row entry opens
+// it, Up/Down clamp through the party members (narrated member
+// preselected, else the controlled leader), Enter applies the item,
+// Shift+Enter (on the entry or in here) short-circuits to instant
+// self-use, Esc backs out to the entry. Bare key 5 never opens it —
+// instant self-use stays the one-press combat reflex.
+
+void SpeakMedPickerRow(bool withTitle) {
+    if (withTitle) {
+        char msg[160];
+        std::snprintf(msg, sizeof(msg),
+                      acc::strings::Get(acc::strings::Id::FmtMedPickerApplyTo),
+                      g.med.names[g.med.sel]);
+        prism::Speak(msg, /*interrupt=*/true);
+    } else {
+        prism::Speak(g.med.names[g.med.sel], /*interrupt=*/true);
+    }
+}
+
+// Fire a Medicine-row entry at a specific CLIENT creature via the direct
+// use-item request (DoPersonalAction is a dead end for K2 medical items —
+// see SendUseItemRequestK2). Arms the same attribution + no-op watch the
+// normal dispatch path arms, so the AddAction hook speaks "X, Platz N" on
+// success and the generic line speaks if the server drops the request.
+bool FireMedicalDirect(void* mi, const Cat& c, int sel, void* targetCre,
+                       const char* how) {
+    acc::engine_actionbar::LogDispatchDiag(mi, c.slot, sel);
+    uint32_t aid = acc::engine_actionbar::ReadVariantActionId(mi, c.slot, sel);
+    if (aid == 0 || !targetCre) {
+        acclog::Write("UnifiedMenu",
+                      "medical %s fire aborted (aid=0x%08x cre=%p)",
+                      how, aid, targetCre);
+        prism::Speak(acc::strings::Get(acc::strings::Id::ActionRefused),
+                     /*interrupt=*/false);
+        return false;
+    }
+    acc::combat_diag::LogPreFire("med-direct");
+    acc::combat::queue::ArmUserQueueAdd();
+    acc::combat::queue::ArmNoOpWatch();
+    bool ok = acc::engine_actionbar::SendUseItemRequestK2(aid, targetCre);
+    acclog::Write("UnifiedMenu", "medical %s fire id=0x%08x sent=%d",
+                  how, aid, ok ? 1 : 0);
+    ApplyPostFireClosePolicy();
+    return ok;
+}
+
+// Returns true when the picker opened (the press is consumed). False = no
+// party slot resolved; the caller falls through to the plain dispatch
+// (instant self-use), so Enter is never dead.
+bool OpenMedPicker(void* mi, const Cat& c, int sel, const char* itemLabel) {
+    g.med = MedPicker{};
+    uint32_t narrated = ResolveNarratedServerHandle();
+    uint32_t leaderId = acc::engine::GetObjectHandle(
+        acc::engine::GetClientLeader());
+    int narratedRow = -1;
+    int leaderRow   = -1;
+    for (int s = 0; s < 3; ++s) {
+        void* cre = acc::engine::GetPartyCreatureBySlotK2(s);
+        if (!cre) continue;
+        uint32_t id = acc::engine::GetObjectHandle(cre);
+        if (id == 0) continue;
+        int row = g.med.count;
+        g.med.handles[row] = id;
+        if (!acc::engine::GetObjectDisplayNameByHandle(
+                id, g.med.names[row], sizeof(g.med.names[row])) ||
+            !g.med.names[row][0]) {
+            // Nameless resolve — speak the slot number rather than nothing.
+            std::snprintf(g.med.names[row], sizeof(g.med.names[row]),
+                          "%d", s + 1);
+        }
+        if (narrated != 0 &&
+            ((narrated ^ id) & ~0x80000000u) == 0) narratedRow = row;
+        if (leaderId != 0 &&
+            ((leaderId ^ id) & ~0x80000000u) == 0) leaderRow = row;
+        g.med.count++;
+    }
+    if (g.med.count == 0) return false;
+    // Preselect: narrated party member beats the controlled leader beats
+    // row 0 — "two fast Enter presses" lands on whoever you meant.
+    g.med.sel = (narratedRow >= 0) ? narratedRow
+              : (leaderRow   >= 0) ? leaderRow : 0;
+    g.med.active  = true;
+    g.med.itemCat = c;
+    g.med.itemSel = sel;
+    std::snprintf(g.med.itemLabel, sizeof(g.med.itemLabel), "%s",
+                  itemLabel ? itemLabel : "");
+    acclog::Write("UnifiedMenu",
+                  "medpicker open item=[%s] rows=%d preselect=%d(%s)",
+                  g.med.itemLabel, g.med.count, g.med.sel,
+                  g.med.names[g.med.sel]);
+    SpeakMedPickerRow(/*withTitle=*/true);
+    return true;
+}
+
+bool HandleMedPickerInput(int code) {
+    if (code == kInputEsc1 || code == kInputEsc2) {
+        g.med.active = false;
+        acclog::Write("UnifiedMenu", "medpicker esc — back to entry");
+        if (g.med.itemLabel[0])
+            prism::Speak(g.med.itemLabel, /*interrupt=*/true);
+        return true;
+    }
+    switch (code) {
+        case kInputNavUp:
+        case kInputNavDown: {
+            // Clamp at both ends; the repeated name is the edge cue.
+            int dir = (code == kInputNavDown) ? +1 : -1;
+            g.med.sel = ClampInt(g.med.sel + dir, 0, g.med.count - 1);
+            SpeakMedPickerRow(/*withTitle=*/false);
+            return true;
+        }
+        case kInputHome:
+        case kInputEnd:
+            g.med.sel = (code == kInputHome) ? 0 : g.med.count - 1;
+            SpeakMedPickerRow(/*withTitle=*/false);
+            return true;
+        case kInputEnter1:
+        case kInputEnter2: {
+            g.med.active = false;
+            void* mi = acc::engine_actionbar::ResolveMainInterface();
+            if (!mi) return true;
+            // Shift+Enter = instant self (the controlled leader); plain
+            // Enter re-resolves the focused row's handle (creatures can
+            // despawn while the picker sits open).
+            void* cre = acc::hotkeys::ShiftHeld()
+                ? acc::engine::GetClientLeader()
+                : acc::engine::ResolveClientObject(
+                      g.med.handles[g.med.sel]);
+            (void)FireMedicalDirect(mi, g.med.itemCat, g.med.itemSel, cre,
+                                    "picker");
+            return true;
+        }
+        default:
+            // Modal: swallow everything else so the menu underneath can't
+            // shift categories while the picker is up.
+            return true;
+    }
+}
+
 // Follow-cycling contract: Enter right after cycling fires
 // immediately when the user's selected action exists on the new
 // target (selection carried by action_id above). When it does
@@ -1101,8 +1262,27 @@ bool HandleEnter(void* tam, void* mi, const Cat& cur, int sel,
     char label[128] = "";
     ReadLabel(tam, mi, cur, sel, label, sizeof(label));
 
+    // K2 medical entries never dispatch through DoPersonalAction (dead end
+    // — see SendUseItemRequestK2). Enter opens the party picker; Shift+
+    // Enter, or a picker that found no party rows, fires directly at the
+    // controlled leader so Enter never dies.
+    if (cur.kind == CatKind::Personal &&
+        acc::engine_actionbar::EntryIsMedicalK2(mi, cur.slot, sel)) {
+        if (!acc::hotkeys::ShiftHeld() &&
+            OpenMedPicker(mi, cur, sel, label)) {
+            return true;
+        }
+        (void)FireMedicalDirect(mi, cur, sel,
+                                acc::engine::GetClientLeader(), "self");
+        return true;
+    }
+
     bool refused = false;
     const uint32_t refusalStrRef = PendingRefusalStrRef(mi, cur, sel, &refused);
+
+    if (cur.kind == CatKind::Personal) {
+        acc::engine_actionbar::LogDispatchDiag(mi, cur.slot, sel);
+    }
 
     RestampTargetRowForDispatch(tam, cur);
     bool ok = DispatchWithQueueAppend(tam, mi, cur);
@@ -1198,6 +1378,10 @@ bool FirePersonal(int col) {
 bool HandleInputEvent(int code, int value) {
     if (!g.active) return false;
     if (value == 0) return false;
+
+    // The medical party picker is modal while up — it owns every key,
+    // including Esc (which backs out to the entry, not out of the menu).
+    if (g.med.active) return HandleMedPickerInput(code);
 
     if (code == kInputEsc1 || code == kInputEsc2) {
         CloseFromEsc();

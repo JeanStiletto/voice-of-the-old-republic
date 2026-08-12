@@ -35,6 +35,7 @@ EXPORTS
     OnCombatRoundSetCurrentActionK2
     OnCombatRoundRemoveLastAction
     OnCombatRoundRemoveLastActionK2
+    OnUseItemRequestK2
     OnSetPauseState
     OnSetPauseStateK2
     OnTurretBulletHit

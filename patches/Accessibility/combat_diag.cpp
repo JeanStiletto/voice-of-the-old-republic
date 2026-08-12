@@ -383,3 +383,50 @@ void __cdecl OnCombatRoundRemoveLastActionK2(void* thisRound) {
     if (!acc::game::IsKotor2()) return;
     OnCombatRoundRemoveLastAction(thisRound);
 }
+
+// KOTOR 2's client→server "use item" request writer @0x00879AF0 — the
+// message (type 0x15 on the (6,9) channel) every INVENTORY-item use from the
+// personal action bar serialises before the server builds the UseItem action.
+// Both personal-item handlers (equipped-slot and inventory) funnel through it.
+// Hooked at 0x00879AF9, after the prologue's `this` store, ECX still = this;
+// args at [EBP+8]=item id, +0xC/+0x10 mode bytes, +0x14=user id,
+// +0x18=target vector ptr.
+//
+// Log-only, for the dead-medical-column investigation (docs/known-issues.md):
+// a personal press that produces this line but no AddAction died SERVER-side
+// (the request was sent and dropped); a press with no line died CLIENT-side
+// in DoPersonalAction's silent gates. Pairs with ActionBar.Fire's entry dump
+// on the same press.
+extern "C" __declspec(dllexport)
+void __cdecl OnUseItemRequestK2(void* thisPtr, void* ebp) {
+    if (!acc::game::IsKotor2()) return;
+    if (!ebp) return;
+    uint32_t itemId = 0, mode = 0, sub = 0, userId = 0;
+    float x = 0.0f, y = 0.0f, z = 0.0f;
+    int haveTarget = 0;
+    __try {
+        unsigned char* f = static_cast<unsigned char*>(ebp);
+        itemId = *reinterpret_cast<uint32_t*>(f + 0x08);
+        mode   = *reinterpret_cast<uint32_t*>(f + 0x0c);
+        sub    = *reinterpret_cast<uint32_t*>(f + 0x10);
+        userId = *reinterpret_cast<uint32_t*>(f + 0x14);
+        float* tgt = *reinterpret_cast<float**>(f + 0x18);
+        if (tgt) {
+            x = tgt[0]; y = tgt[1]; z = tgt[2];
+            haveTarget = 1;
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("Diag.UseItemReq", "frame deref faulted (ebp=%p)", ebp);
+        return;
+    }
+    acclog::Write("Diag.UseItemReq",
+                  "SEND this=%p item=0x%08x mode=0x%x sub=0x%x user=0x%08x "
+                  "target=%d (%.2f,%.2f,%.2f)",
+                  thisPtr, itemId, mode, sub, userId, haveTarget, x, y, z);
+    // A sent request is proof the press dispatched — the engine acted even
+    // when the action never lands in the combat round (mines plant without
+    // an AddAction and were reading as "Nicht möglich" while visibly
+    // working, 2026-08-12 test round). A genuinely refused press never
+    // reaches this writer, so the no-op watch still speaks for those.
+    acc::combat::queue::CancelNoOpWatch();
+}

@@ -99,6 +99,7 @@ const char* Get(Id id) {
         case Id::FmtInteractFailed:    return "Interakcja z %s nie powiod\xB3""a si\xEA";
         case Id::FmtInteractEngine:    return "%s %s";
         case Id::FmtInteractRadial:    return "Menu akcji, %s";
+        case Id::FmtMedPickerApplyTo:  return "Zastosuj na: %s";
         case Id::FmtInteractNoActionsRedirect: return "Brak akcji dla %s. Naci\x9Cnij Enter, aby aktywowa\xE6.";
         case Id::FmtInteractNoActions: return "Brak akcji dla %s.";
         case Id::DoorSealedNoOpen: return "Zapiecz\xEAtowane. Nie otworz\xB9 si\xEA.";

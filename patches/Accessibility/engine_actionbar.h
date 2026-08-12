@@ -85,6 +85,38 @@ bool SelectVariant(void* mainInterface, int slot, int index);
 // Same entry as bare 4..7. SelectVariant first or it fires variant 0.
 bool FireSelectedVariant(void* mainInterface, int slot);
 
+// One log line dumping everything the engine's DoPersonalAction will gate
+// on for this entry — action_id, creature_id (+ whether the client object
+// array resolves it), handler dword, flag word. Diagnostic for the KOTOR 2
+// dead-medical-column investigation (docs/known-issues.md): K2's dispatch
+// bails in TOTAL silence when the entry's creature_id fails to resolve,
+// and its appender never initialises the flag word for inventory items,
+// so only a fire-time dump can say which gate an unexplained no-op died
+// at. Call right before dispatching a personal entry.
+void LogDispatchDiag(void* mainInterface, int slot, int index);
+
+// True iff this entry carries KOTOR 2's medical-use handler (the two-step
+// target-pick flow below). Always false on KOTOR 1.
+bool EntryIsMedicalK2(void* mainInterface, int slot, int index);
+
+// KOTOR 2 medical-item use, sent directly.
+//
+// K2 gives every medical-category item (medkits, stims, antidote and repair
+// kits) a TWO-STEP use handler: the press ARMS a target-pick and only a
+// mouse click on a party member portrait completes it. From the keyboard
+// that flow is unreachable — DoPersonalAction's preamble wipes the pick
+// state before the medical handler reads it, so a key press only ever
+// re-arms and returns silently (the dead Medicine row, 2026-08-11 flip).
+//
+// This sends the same client→server use-item request the portrait click's
+// consume path sends, aimed at targetClientCreature (a CLIENT creature —
+// GetClientLeader / GetPartyCreatureBySlotK2). actionId is the entry's raw
+// action id (ReadVariantActionId). The server does the rest: builds the
+// UseItem action on that member's round (our AddAction hook announces it)
+// and applies the item. True = request sent; the no-op watch still speaks
+// if the server drops it.
+bool SendUseItemRequestK2(uint32_t actionId, void* targetClientCreature);
+
 // Prep engine state so the engine's bare 1..3 / 4..7 dispatch fires
 // against targetClientHandle instead of whatever target was last
 // stamped.

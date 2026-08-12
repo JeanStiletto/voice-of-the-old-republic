@@ -854,3 +854,48 @@ consumed_exit_address = 0x0077fb73
 [[hooks.parameters]]
 source = "ecx"
 type = "pointer"
+
+# ============================================================================
+# Diagnostic — the client "use item" request writer (dead-medical-column
+# investigation, docs/known-issues.md).
+# ============================================================================
+# SendUseItemRequest @ 0x00879AF0 — serialises the type-0x15 "use item"
+# message on the (6,9) client→server channel. Every inventory-item use from
+# the personal action bar (and the equipped-slot handlers) funnels through
+# it; a personal press that reaches this hook but produces no AddAction was
+# dropped SERVER-side, a press that never reaches it died in
+# DoPersonalAction's silent client-side gates.
+#
+# Hooked at 0x00879AF9, after the prologue has stored `this` (ECX still
+# holds it — stored, not clobbered):
+#
+#   00879af0: 55                    PUSH EBP
+#   00879af1: 8b ec                 MOV EBP,ESP
+#   00879af3: 83 ec 18              SUB ESP,0x18
+#   00879af6: 89 4d e8              MOV [EBP-0x18],ECX    ← `this` stored
+#   00879af9: c7 45 f8 15 00 00 00  MOV dword [EBP-0x8],0x15  ← hook, 7 bytes
+#   00879b00: 6a 01                 PUSH 1
+#
+# The cut is a single frame-relative instruction with no absolute operand —
+# relocates safely, writes no register the wrapper depends on. Args at
+# [EBP+8]=item id, +0xC/+0x10 mode bytes, +0x14=user id, +0x18=target
+# vector ptr; the handler does its own frame arithmetic under SEH (esp+X
+# parameter sources emit LEA — project_kpatchmanager_lea_bug).
+[[hooks]]
+address = 0x00879af9
+type = "detour"
+function = "OnUseItemRequestK2"
+
+# c7 45 f8 15 00 00 00    MOV dword ptr [EBP-0x8], 0x15
+original_bytes = [0xc7, 0x45, 0xf8, 0x15, 0x00, 0x00, 0x00]
+
+skip_original_bytes = false
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "ebp"
+type = "pointer"

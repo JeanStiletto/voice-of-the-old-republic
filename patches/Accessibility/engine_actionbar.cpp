@@ -4,6 +4,8 @@
 
 #include "engine_offsets.h"
 #include "engine_app.h"      // GetClientApp, GetClientAppInternal
+#include "engine_area.h"     // ResolveClientObject — LogDispatchDiag's probe
+#include "engine_game.h"     // IsKotor2 — medpick probe is K2-only
 #include "engine_panels.h"   // ResolveGuiInGame, ResolveMainInterface
 #include "log.h"
 #include "engine_rebase.h"
@@ -51,6 +53,19 @@ const size_t kIfActionStride         = acc::off::Pick(0x38, 0x3c);
 //          enough — the engine's own null test reads exactly this dword).
 const size_t kIfActionFlagsOffset    = acc::off::Same(0x30);
 const size_t kIfActionHandlerOffset  = acc::off::Same(0x0c);
+
+// The entry's baked creature reference — what the dispatch resolves (and on
+// K2 bails on in total silence when the resolve fails). Same +0x1c in the K1
+// decompile of DoPersonalAction and the K2 twin (its appender writes the
+// owning creature's own id here for every personal item entry).
+const size_t kIfActionCreatureOffset = acc::off::Same(0x1c);
+
+// The two K2 item-entry handlers, byte-witnessed in the K2 appender
+// (0x0077BCF0): the medical two-step arm/consume flow, and the plain
+// one-step inventory use. KOTOR-2-only values; every consumer gates on
+// IsKotor2 before comparing.
+const int32_t kK2MedicalUseHandler   = 0x0077C780;
+const int32_t kK2InventoryUseHandler = 0x0077CC80;
 
 // The engine's own refusal strings, in reason-code order (code 1 → [0]).
 // Byte-identical ids in both binaries — it is what identified the K2 twin of
@@ -199,6 +214,22 @@ bool VariantRefusal(void* mi, int slot, int index, uint32_t* outStrRef) {
     if (!ReadInt32(desc, kIfActionFlagsOffset, &flags)) return false;
     if (!ReadInt32(desc, kIfActionHandlerOffset, &handler)) return false;
 
+    // KOTOR 2 item entries carry an UNINITIALISED flag word — the K2
+    // appender only writes it for the three equipped-slot items (decompiled
+    // 2026-08-12; the ASCII fragments in this log line were heap leftovers).
+    // A garbage bit 0 would fake a refusal with a random reason strref, so
+    // no refusal verdict for K2 item entries; the engine itself dispatches
+    // past the same garbage.
+    if (acc::game::IsKotor2() &&
+        (handler == kK2MedicalUseHandler ||
+         handler == kK2InventoryUseHandler)) {
+        acclog::Write("ActionBar",
+                      "variant flags slot=%d idx=%d flags=0x%08x (K2 item "
+                      "entry — uninitialised, no refusal verdict)",
+                      slot, index, static_cast<unsigned>(flags));
+        return false;
+    }
+
     // The engine's own predicate, mirrored: usable bit clear, or no handler.
     const bool refused = ((flags & 1) == 0) || (handler == 0);
     // The reason is optional even when the refusal is real — the engine only
@@ -230,6 +261,98 @@ uint32_t ReadVariantActionId(void* mi, int slot, int index) {
     int32_t v = 0;
     ReadInt32(desc, kIfActionIdOffset, &v);
     return static_cast<uint32_t>(v);
+}
+
+void LogDispatchDiag(void* mi, int slot, int index) {
+    void* desc = DescriptorAddr(mi, slot, index);
+    if (!desc) {
+        acclog::Write("ActionBar.Fire", "diag slot=%d idx=%d desc=NULL",
+                      slot, index);
+        return;
+    }
+    int32_t id = 0, creature = 0, handler = 0, flags = 0;
+    ReadInt32(desc, kIfActionIdOffset,       &id);
+    ReadInt32(desc, kIfActionCreatureOffset, &creature);
+    ReadInt32(desc, kIfActionHandlerOffset,  &handler);
+    ReadInt32(desc, kIfActionFlagsOffset,    &flags);
+    // Same resolver family the engine's dispatch gate uses
+    // (CClientExoApp::GetGameObject). NOT ResolveClientObjectHandle — its
+    // +0xf8 server chain is deliberately unresolved on KOTOR 2.
+    void* resolved =
+        acc::engine::ResolveClientObject(static_cast<uint32_t>(creature));
+    acclog::Write("ActionBar.Fire",
+                  "diag slot=%d idx=%d id=0x%08x creature=0x%08x "
+                  "clientResolve=%p handler=0x%08x flags=0x%08x",
+                  slot, index, static_cast<unsigned>(id),
+                  static_cast<unsigned>(creature), resolved,
+                  static_cast<unsigned>(handler),
+                  static_cast<unsigned>(flags));
+
+    // KOTOR 2 only: the medical handler's two-step target-pick state on the
+    // MainInterface — armed flag +0x15230, picked target +0x15234, pending
+    // item +0x15238 (witnessed in the K2 medical-use handler 0x0077C780).
+    // Armed=1 with target=-1 is the sticky silent state that kills the
+    // whole medical column: every further press early-returns on target -1.
+    if (acc::game::IsKotor2()) {
+        int32_t armed = 0, pickTarget = 0, pendItem = 0;
+        ReadInt32(mi, 0x15230, &armed);
+        ReadInt32(mi, 0x15234, &pickTarget);
+        ReadInt32(mi, 0x15238, &pendItem);
+        acclog::Write("ActionBar.Fire",
+                      "medpick armed=%d target=0x%08x item=0x%08x",
+                      armed, static_cast<unsigned>(pickTarget),
+                      static_cast<unsigned>(pendItem));
+    }
+}
+
+bool EntryIsMedicalK2(void* mi, int slot, int index) {
+    if (!acc::game::IsKotor2()) return false;
+    void* desc = DescriptorAddr(mi, slot, index);
+    if (!desc) return false;
+    int32_t handler = 0;
+    if (!ReadInt32(desc, kIfActionHandlerOffset, &handler)) return false;
+    return handler == kK2MedicalUseHandler;
+}
+
+bool SendUseItemRequestK2(uint32_t actionId, void* targetClientCreature) {
+    if (!acc::game::IsKotor2()) return false;
+    if (actionId == 0 || !targetClientCreature) return false;
+    // The client→server "use item" message writer @0x00879AF0 (the one our
+    // Diag.UseItemReq hook watches), called exactly the way the engine's
+    // medical pick-consume calls it: item id with the action-bar tag bit
+    // stripped, user = the TARGET creature (party inventory is shared — the
+    // engine models heal-other as "that member uses the item"), position =
+    // the target creature's own position field at +0x24. Its `this` is the
+    // messaging sink at CClientExoAppInternal+0x150 (getter 0x0073F810).
+    //
+    // Direct send exists because KOTOR 2's medical items CANNOT be fired
+    // through DoPersonalAction from the keyboard at all: the dispatch
+    // preamble wipes the two-step pick state before the medical handler
+    // reads it, so a key press only ever re-arms the pick and returns —
+    // the pick is completed exclusively by the mouse portrait-click path.
+    typedef int (__thiscall* PFN_K2SendUseItem)(void* this_, uint32_t itemId,
+                                                int p2, int p3,
+                                                uint32_t userId,
+                                                const float* pos);
+    void* internal = acc::engine::GetClientAppInternal();
+    if (!internal) return false;
+    __try {
+        void* sink = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(internal) + 0x150);
+        if (!sink) return false;
+        unsigned char* cre =
+            reinterpret_cast<unsigned char*>(targetClientCreature);
+        uint32_t targetId = *reinterpret_cast<uint32_t*>(cre + 4);
+        const float* pos  = reinterpret_cast<const float*>(cre + 0x24);
+        auto fn = reinterpret_cast<PFN_K2SendUseItem>(0x00879AF0);
+        (void)fn(sink, actionId & 0xbfffffffu, 0, 0, targetId, pos);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("ActionBar",
+                      "SendUseItemRequestK2 SEH-FAULT id=0x%08x",
+                      static_cast<unsigned>(actionId));
+        return false;
+    }
 }
 
 void* GetColumnActionButton(void* mi, int slot) {

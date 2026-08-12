@@ -244,6 +244,14 @@ enum class Id : int {
     //      (Security, Bash, Examine, …). One arg: `%s` target name.
     FmtInteractRadial,
 
+    // ---- KOTOR 2 medical-item party picker (unified action menu).
+    //      Spoken when Enter on a Medicine-row entry opens the
+    //      who-gets-it submenu; title + preselected member per the
+    //      first-sight rule. Up/Down clamp through the names, Enter
+    //      applies, Shift+Enter is the instant self-use shortcut.
+    //      One arg: `%s` preselected party member name.
+    FmtMedPickerApplyTo,
+
     // ---- Empty-radial announcements. Spoken when the radial opened
     //      but all three target_action rows came back empty
     //      (`ArmAfterPopulate` returned false). Two variants by the
