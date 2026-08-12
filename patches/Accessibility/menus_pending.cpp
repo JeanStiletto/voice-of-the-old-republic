@@ -83,6 +83,7 @@ enum class Kind {
     EquipCommit,       // a = panel, b = row, c = btn
     WorkbenchSlotSelect,    // a = panel, b = slot
     WorkbenchUpgradeCommit, // a = panel, b = row, c = btnAssemble
+    WorkbenchUpgradeInstallK2, // a = panel, b = row — K2 one-step install/remove
     WorkbenchPickerCancel,  // a = panel — close the mod-picker zone (re-enable slots)
     SliderInput,       // a = target, code = direction (500 inc / 501 dec)
     StoreItemActivate, // a = panel (CSWGuiStore), b = row (StoreItemEntry)
@@ -177,6 +178,14 @@ bool QueueWorkbenchUpgradeCommit(void* panel, void* row, void* btnAssemble) {
     return true;
 }
 
+bool QueueWorkbenchUpgradeInstallK2(void* panel, void* row) {
+    if (g_op.kind != Kind::None) return false;
+    g_op.kind = Kind::WorkbenchUpgradeInstallK2;
+    g_op.a = panel;
+    g_op.b = row;
+    return true;
+}
+
 bool QueueWorkbenchPickerCancel(void* panel) {
     if (g_op.kind != Kind::None) return false;
     g_op.kind = Kind::WorkbenchPickerCancel;
@@ -259,6 +268,8 @@ bool EngineOpsReady(Kind kind) {
         return Ok(kAddrCSWGuiUpgradeOnEnterSlot) && Ok(kAddrCSWGuiUpgradeOnSlotSelected);
     case Kind::WorkbenchUpgradeCommit:
         return Ok(kAddrCSWGuiUpgradeOnUpgradeSelected) && Ok(kAddrCSWGuiUpgradeOnAssemble);
+    case Kind::WorkbenchUpgradeInstallK2:
+        return Ok(kAddrCSWGuiUpgradeOnUpgradeSelected);
     case Kind::WorkbenchPickerCancel:
         return Ok(kAddrCSWGuiUpgradeShowItems);
     default:
@@ -821,6 +832,39 @@ void Drain(void* gm) {
         } else {
             acclog::Write("Update", "WorkbenchUpgradeCommit panel=%p row=%p btn=%p (skipped)",
                           panel, row, btn);
+        }
+        break;
+    }
+
+    // K2 upgrade install/remove — ONE step. On K2 the picker row's own
+    // activate handler (CSWGuiUpgrade::OnUpgradeSelected @0x008cdb00) does the
+    // whole job itself: it reads the row's obj id (+0x1d0), and if it resolves
+    // to an inventory mod it installs it into the slot (removing+returning any
+    // existing one first); if the row is the engine's "-" none entry
+    // (obj id 0x7f000000, key +0x1e0 == -1) it just removes the current mod.
+    // It self-guards greyed rows (routes them to the can't-select stub) and
+    // calls CloseItems at the end, closing the picker and refocusing the slot.
+    // So there is NO separate assemble step per pick — that is what OnAssemble
+    // (Zusammenbauen) does, and firing it here with K1's button id popped the
+    // whole panel back to the item list without installing (the round-1 K2
+    // bug). K1 keeps its two-step WorkbenchUpgradeCommit above.
+    case Kind::WorkbenchUpgradeInstallK2: {
+        void* panel = op.a;
+        void* row   = op.b;
+        if (panel && row) {
+            uint32_t prevRowActive = RaiseIsActiveIfZero(row);
+            auto onRow = reinterpret_cast<PFN_CSWGuiUpgradeOnUpgradeSelected>(
+                kAddrCSWGuiUpgradeOnUpgradeSelected);
+            acclog::Write("Update", "WorkbenchUpgradeInstallK2 panel=%p row=%p "
+                          "row.is_active=%u%s",
+                          panel, row, prevRowActive,
+                          prevRowActive == 0 ? "->1" : " (preserved)");
+            onRow(panel, row);
+            acclog::Write("Update", "WorkbenchUpgradeInstallK2 done panel=%p row=%p",
+                          panel, row);
+        } else {
+            acclog::Write("Update", "WorkbenchUpgradeInstallK2 panel=%p row=%p (skipped)",
+                          panel, row);
         }
         break;
     }

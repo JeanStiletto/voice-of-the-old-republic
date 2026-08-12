@@ -20,6 +20,7 @@
 
 #include "menus_listbox.h"
 
+#include "engine_game.h"     // IsKotor2 — K2 one-step upgrade install
 #include "engine_input.h"
 #include "engine_manager.h"
 #include "engine_offsets.h"
@@ -1093,6 +1094,35 @@ bool WorkbenchUpgradeOnEnter(void* panel) {
             if (selIdx >= 0 && selIdx < rowCount) row = lbList->data[selIdx];
             if (rowCount >= 1) removeRow = lbList->data[0];
         }
+    }
+
+    // KOTOR 2: the row's own activate handler installs or removes directly
+    // and closes the picker — one engine call, no stage+assemble. The engine
+    // decides install vs. remove from the row (the "-" none row removes; a
+    // real row installs). Fire OnUpgradeSelected(panel, row) only; K1 keeps
+    // the two-step commit below.
+    if (acc::game::IsKotor2()) {
+        if (row) {
+            acc::menus::pending::QueueWorkbenchUpgradeInstallK2(panel, row);
+            // Feedback: the "-" none row removes; anything else installs. The
+            // slot re-announces its new state when the engine refocuses it
+            // after CloseItems, so keep this short and outcome-neutral.
+            char rowText[256];
+            bool none = !acc::menus::extract::FromControl(row, rowText,
+                                                          sizeof(rowText)) ||
+                        IsDashOrBlankRowText(rowText);
+            prism::Speak(acc::strings::Get(
+                             none ? acc::strings::Id::WorkbenchSlotRemoved
+                                  : acc::strings::Id::WorkbenchSlotInstalled),
+                         /*interrupt=*/false);
+            acclog::Write("WorkbenchUpgrade", "K2 install/remove (row sel=%d %p "
+                          "none=%d panel=%p)", selIdx, row, none ? 1 : 0, panel);
+        } else {
+            acclog::Write("WorkbenchUpgrade", "K2 Enter -- no row (lb=%p sel=%d "
+                          "rows=%d) panel=%p", lb, selIdx, rowCount, panel);
+        }
+        DisarmWorkbenchUpgradePicker();
+        return true;
     }
 
     auto info = acc::engine::GetWorkbenchPickerInfo(panel);

@@ -76,6 +76,15 @@ bool QueueWorkbenchSlotSelect(void* panel, void* slot);
 // as the slot-button select issue above).
 bool QueueWorkbenchUpgradeCommit(void* panel, void* row, void* btnAssemble);
 
+// Queue a KOTOR 2 upgrade install/remove — a single engine call. On K2 the
+// picker row's own activate handler (CSWGuiUpgrade::OnUpgradeSelected) does
+// the whole install-or-remove and closes the picker itself; there is no
+// separate assemble step per pick (that is what Zusammenbauen/OnAssemble
+// does, and firing it after every pick popped the panel back to the item
+// list without installing). Fires OnUpgradeSelected(panel, row) only. K1
+// keeps the two-step QueueWorkbenchUpgradeCommit.
+bool QueueWorkbenchUpgradeInstallK2(void* panel, void* row);
+
 // Queue a cancel/back-out of the workbench mod-picker. Calls
 // CSWGuiUpgrade::ShowItems(panel, 0) to undo OnSlotSelected's ShowItems(1)
 // (which disabled the sibling slot buttons) and clears the panel's

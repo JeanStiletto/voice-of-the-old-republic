@@ -14,6 +14,56 @@ plan.
 
 ## WHERE TO RESUME (read this first)
 
+**Workbench round 3 — K2 upgrade INSTALL mechanic differs from K1
+(IMPLEMENTED 2026-08-12, after the second live round patch-20260812-155039.log;
+one kotor2 decompile round on the row-activate + assemble + entry SetContents;
+built green, applied, NOT retested).** The user reported picking a mod just
+bounced back to the item list without fitting it, and correctly guessed the
+"-" row is K1's unequip replaced by an in-place mechanic. The RE confirms it:
+
+- **K2 does the whole install/remove in the picker row's OWN activate
+  handler, CSWGuiUpgrade::OnUpgradeSelected @0x008cdb00** (registered on
+  event 0x27/0x2d by the entry builder 0x008ce930; greyed rows get the
+  can't-select stub 0x008ce300 instead, and 0x008cdb00 also self-guards the
+  greyed bit at row+0x1dc>>1). It reads the row's obj id at +0x1d0: resolves
+  to an inventory mod → removes any existing mod from the slot (field35 =
+  panel+0x3d54, per-category index local_1c = *(*(panel+0x3dbc)+0x5c)) and
+  installs the new one, applying it to the working item copy at panel+0x3d34
+  (FUN_00615d60); the "-" none row (obj id 0x7f000000, key +0x1e0 == -1)
+  falls through to the remove-only path. It ends by calling CloseItems
+  (0x008cb290), so the picker closes and the slot refocuses. **There is NO
+  per-pick assemble.**
+- **OnAssemble @0x008cfd10 is the separate finalize**: FinishUpgrading-class
+  0x008c9750 + SetSoundMode(0) + PopModalPanel (0x004109c0) — it pops the
+  whole panel back to the item list. On K2 this is what BTN_ASSEMBLE
+  ("Zusammenbauen", id 11) does; BTN_BACK id 13 is "Abbrechen" (cancel).
+- **The round-1 bug:** our WorkbenchUpgradeCommit fired OnUpgradeSelected
+  THEN OnAssemble with `kWorkbenchUpgradeBtnAssemble = 24` (K1's id — on K2
+  id 24 is a saber slot button, hence the `btn.is_active=2039814` garbage in
+  the log). The stray OnAssemble popped to the list every pick.
+- **Fix:** new pending op Kind::WorkbenchUpgradeInstallK2 (OnUpgradeSelected
+  only, no assemble); WorkbenchUpgradeOnEnter takes it on K2 (fires on the
+  selected row, engine decides install vs. remove), speaks
+  WorkbenchSlotInstalled / WorkbenchSlotRemoved (the "-" row → removed), and
+  relies on the slot re-announce after CloseItems for the true new state.
+  K1 keeps the two-step WorkbenchUpgradeCommit unchanged.
+- **Entry internals banked for later** (from the SetContents 0x008d0470 /
+  ctor 0x008cff80 round): the picker row is a CSWUpgradeItemEntry (alloc
+  0x3bc, vtable 0x009A899C), obj id at entry+0x1d0 (0x7f000000 = engine-built,
+  unresolvable via the client-handle path — so the row NAME can't come from
+  the item; it is set via the entry's vtable+0xa0 SetContents into embedded
+  members at entry+0x84 / +0xfc). Real mod names DO read via FromControl in
+  game ("Verbesserte Energiezelle" in the log), so no name-offset work is
+  needed right now.
+- **Test items (round 3):** open an item's upgrade, enter a slot, pick a real
+  mod → it fits (re-entering the slot shows it filled, not "leer"); pick "No
+  item" on a filled slot → it removes; picking on a greyed/unaffordable mod →
+  no fit (engine refuses, slot stays empty); "Zusammenbauen" in the slot
+  chain finalizes + returns to the list. STILL OPEN from round 2: the picker
+  position count ("3 von 3" for row 2/3) — GetWorkbenchPickerInfo minSel on
+  K2. K1 regression: one full K1 workbench install (two-step path untouched
+  but the OnEnter function was restructured).
+
 **Workbench round 2 fixes — IMPLEMENTED 2026-08-12 (after the first live K2
 test round; patch-20260812-144927.log). Built green, applied, NOT retested.**
 Three defects the live round exposed:
