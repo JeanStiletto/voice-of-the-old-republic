@@ -144,6 +144,18 @@ bool ReadEquippedItemName(void* serverCreature, size_t slotHandleOffset,
                       slotLabel ? slotLabel : "?", handle);
         return false;
     }
+    // NPC-only creature-prop weapons (K2: "{Prop QS 01}" quarterstaff,
+    // "{Prop BC 01}" blaster cannon, ...) carry a literal dev-placeholder
+    // name in the template — braces included. Sighted players never see
+    // enemy weapon names, so the data was never localized. Treat as an
+    // empty slot rather than speaking the placeholder.
+    if (outBuf[0] == '{') {
+        acclog::Write("Combat.Equip",
+                      "slot=%s handle=0x%08x placeholder name [%s] suppressed",
+                      slotLabel ? slotLabel : "?", handle, outBuf);
+        outBuf[0] = '\0';
+        return false;
+    }
     return true;
 }
 

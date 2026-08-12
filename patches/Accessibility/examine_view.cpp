@@ -241,8 +241,18 @@ bool ReadEquippedItemNameAtSlot(void* serverCreature, size_t slotOffset,
     }
     if (IsSentinel(handle)) return false;
 
-    return acc::engine::GetObjectDisplayNameByHandle(
-        handle, outBuf, outBufSize);
+    if (!acc::engine::GetObjectDisplayNameByHandle(
+            handle, outBuf, outBufSize)) {
+        return false;
+    }
+    // Brace-wrapped names are unlocalized dev placeholders on NPC-only
+    // creature-prop weapons (see combat_query::ReadEquippedItemName) —
+    // treat as an empty slot.
+    if (outBuf[0] == '{') {
+        outBuf[0] = '\0';
+        return false;
+    }
+    return true;
 }
 
 // Walk CSWSObject.effects (CExoArrayList<CGameEffect*> @+0x124) and emit
