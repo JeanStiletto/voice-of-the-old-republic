@@ -10,6 +10,7 @@
 #include "engine_reads.h"   // ExtractTextOrStrRef, ReadCExoString
 #include "log.h"            // seam-filter telemetry
 #include "strings.h"        // door state suffix lookup (DoorOpen/DoorLocked)
+#include "engine_game.h"    // IsKotor2 — K2 flags real locked doors Static
 #include "engine_rebase.h"
 #include "engine_offsets_select.h"
 
@@ -455,8 +456,12 @@ void BuildDoorSuffix(void* serverDoor, char* outBuf, size_t bufSize) {
     // flagged locked in the blueprint, but "verriegelt" misleads the player
     // into hunting for a key/slice that doesn't exist. Label them "kosmetisch"
     // instead and skip the rest of the suffix (state/transition/description are
-    // all meaningless on a door that can't be used).
-    if (IsDoorStatic(serverDoor)) {
+    // all meaningless on a door that can't be used). IsDoorCosmetic carries
+    // the KOTOR 2 exception: Obsidian flags real, lock-bearing doors Static
+    // too (Harbinger HammerHeadDoor2: Static=1 + Locked=1 + OpenLockDC in the
+    // template, and the engine still ran its lock — a mine opened it in the
+    // 2026-08-11 session), so lock evidence beats the Static flag there.
+    if (IsDoorCosmetic(serverDoor)) {
         AppendCommaSeparated(outBuf, bufSize,
             acc::strings::Get(acc::strings::Id::DoorCosmetic));
         return;
@@ -874,6 +879,19 @@ bool IsDoorStatic(void* serverDoor) {
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
     }
+}
+
+bool IsDoorCosmetic(void* serverDoor) {
+    if (!IsDoorStatic(serverDoor)) return false;
+    if (!acc::game::IsKotor2()) return true;
+    // KOTOR 2 flags real, lock-bearing doors Static (see BuildDoorSuffix).
+    // Any lock evidence — live lock, open state, or locked-at-load — means
+    // it's a real door, not set dressing.
+    uint32_t locked    = 0;
+    uint8_t  openState = 0;
+    ReadDoorFlags(serverDoor, locked, openState);
+    return locked == 0 && openState == 0 &&
+           !WasDoorLockedAtAreaLoad(serverDoor);
 }
 
 // Root-cause fix (2026-07-19, rev 2): the Endar Spire opening HOLDS the global

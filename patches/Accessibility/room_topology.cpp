@@ -650,14 +650,16 @@ void SnapshotDoors(void* area) {
         if (kind != static_cast<int>(acc::engine::GameObjectKind::Door)) {
             continue;
         }
-        // Cosmetic (static) doors are non-interactive set dressing — the
-        // engine offers no actions on them. In the room-shape system a
-        // cosmetic door at the end of a corridor otherwise reads as a "Tür"
-        // exit, sending the player hunting for a way through that doesn't
-        // exist. Skip them here so they never enter the door snapshot: the
-        // edge then classifies on walkmesh geometry alone (dead end / wall),
-        // which is the truth. Interactive doors are unaffected.
-        if (acc::engine::IsDoorStatic(obj)) continue;
+        // Cosmetic doors are non-interactive set dressing — the engine
+        // offers no actions on them. In the room-shape system a cosmetic
+        // door at the end of a corridor otherwise reads as a "Tür" exit,
+        // sending the player hunting for a way through that doesn't exist.
+        // Skip them here so they never enter the door snapshot: the edge
+        // then classifies on walkmesh geometry alone (dead end / wall),
+        // which is the truth. Real doors are unaffected — including the K2
+        // static-but-locked ones IsDoorCosmetic re-classifies as real; those
+        // ARE a way through (once unlocked) and must read as doors.
+        if (acc::engine::IsDoorCosmetic(obj)) continue;
         Vector pos;
         if (!acc::engine::GetObjectPosition(obj, pos)) continue;
 
@@ -2447,19 +2449,23 @@ void LogClusterMemberAdjacency(const acc::engine::navgraph::NavGraphSnapshot& g,
 // waypoints), the first-iterated one wins and the second logs a
 // conflict line. Tuning the rule beyond first-come needs evidence first.
 //
-// Threshold rationale: 3.0m. Empirical evidence from
-// patch-20260522-141304.log:
-//   "Zur Oberstadt" landmark @ (112.61, 83.34) ↔ door[4] @ (112.5, 81.8)
-//   → 1.5m — well inside the gate.
-// 3m gives 2x slack for authoring noise without admitting cross-cluster
-// matches (corridor doors usually sit ≥6m from the next nearest door).
+// Threshold rationale: 5.0m (raised from 3.0m, 2026-08-12). Full-module
+// extraction of both games' GITs: median map-note→nearest-door distance is
+// 5.2m in K1 and 9.1m in K2 — K2 authors place notes behind the doorway
+// (room side), not on it, so 3.0m attached only 14% of K2 notes (36% K1).
+// 5.0m lifts that to ~26% / ~49%. Wrong-door risk stays bounded: 90% of
+// doors have no neighbour door within ~5–6m (door nearest-neighbour p10),
+// so the nearest-door pick is still effectively unambiguous; the CONFLICT
+// and UNMATCHED log lines below remain the watchdog for the rest.
+// Original 3.0m anchor case still passes: "Zur Oberstadt" landmark
+// @ (112.61, 83.34) ↔ door[4] @ (112.5, 81.8) → 1.5m.
 //
 // Diagnostics: per-landmark match / unmatched line + summary line for
 // rate analysis. Unmatched lines include the nearest-door distance so
 // post-mortem can tell whether the threshold needs widening for a
 // particular area or whether the landmark genuinely isn't door-shaped.
 void AttachLandmarksToDoors(void* area) {
-    constexpr float kLandmarkDoorMatchMaxM = 3.0f;
+    constexpr float kLandmarkDoorMatchMaxM = 5.0f;
     constexpr float kMaxSq = kLandmarkDoorMatchMaxM * kLandmarkDoorMatchMaxM;
 
     if (g_graph.door_count <= 0) {

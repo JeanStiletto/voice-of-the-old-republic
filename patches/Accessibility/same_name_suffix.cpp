@@ -149,7 +149,9 @@ int NumberingClass(void* gameObject) {
     // "kosmetisch" instead of "verriegelt" for them. Honour that here too, or
     // two identical bits of set dressing side by side would land in different
     // numbering sequences purely on a flag the player is never told about.
-    if (acc::engine::IsDoorStatic(gameObject)) return 0;
+    // IsDoorCosmetic (not IsDoorStatic) so the K2 static-but-really-locked
+    // doors group with the other "verriegelt" doors they sound like.
+    if (acc::engine::IsDoorCosmetic(gameObject)) return 0;
     return acc::engine::WasDoorLockedAtAreaLoad(gameObject) ? 1 : 0;
 }
 

@@ -260,6 +260,14 @@ bool IsDoorOpen(void* serverDoor);
 // non-zero; false on null/fault.
 bool IsDoorStatic(void* serverDoor);
 
+// A door the player can NEVER use — Static, with (on KOTOR 2) no lock
+// evidence to the contrary. K2 flags real locked doors Static (Harbinger
+// HammerHeadDoor2), so there Static alone is not enough: a live lock, an
+// open state, or locked-at-load re-classifies the door as real. This is
+// the predicate narration, numbering, and the room-shape door snapshot
+// must share — they must never disagree on what "kosmetisch" means.
+bool IsDoorCosmetic(void* serverDoor);
+
 // Root-cause fix (2026-07-19, rev 2): the Endar Spire opening HOLDS the global
 // fade at alpha=1.0 (engine re-asserts it every frame, so it can't be cleared)
 // after the fade animation finishes, while the player keeps world control. That
