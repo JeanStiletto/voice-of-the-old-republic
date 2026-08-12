@@ -33,7 +33,7 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
-<h2>Unreleased</h2>
+<h2>v0.7.1</h2>
 
 <h3>Bug fixes:</h3>
 
@@ -54,10 +54,6 @@ and add the German in parentheses if it genuinely aids clarity.
   to KOTOR 1's. Untested in game yet; any anchor that doesn't match falls
   back to speaking the raw combat text.
 
-<h2>v0.7.1</h2>
-
-<h3>KOTOR 2:</h3>
-
 - The mod now speaks your installed language instead of always German. Language
   detection ran only from a KOTOR-1-only startup hook, so on KOTOR 2 the string
   table stayed on its compiled-in German default for everyone; detection (and
@@ -75,6 +71,16 @@ and add the German in parentheses if it genuinely aids clarity.
   download and the release-tag lookup now retry with backoff before falling
   back, and one install run resolves the release tag once instead of twice,
   halving the API requests spent when the fallback is needed.
+
+- Russian KOTOR 2 now gets Russian text, not just Russian content files. The
+  Russian TSLRCM Workshop edition is the only one that carries its own text
+  table — it has to, since the game was never sold in Russian — and the
+  installer skipped it under a blanket rule written for the German, French,
+  Italian and Spanish editions, which correctly ship none because those
+  players already have a localized text table from the game itself. Russian
+  players were left reading English for everything outside the translated
+  dialog files. The previous `dialog.tlk` is kept as
+  `dialog.tlk.pre-tslrcm.bak`.
 
 <h2>v0.7.0</h2>
 

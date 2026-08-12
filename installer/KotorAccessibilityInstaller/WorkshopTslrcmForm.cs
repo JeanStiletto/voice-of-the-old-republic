@@ -12,24 +12,35 @@ namespace KotorAccessibilityInstaller
     /// <summary>
     /// Installs the LOCALIZED TSLRCM for non-English players, by copying the
     /// TSLRCM team's official per-language Steam Workshop item into the game
-    /// folder — and deliberately never touching <c>dialog.tlk</c>.
+    /// folder — taking the player's <c>dialog.tlk</c> from wherever it is
+    /// actually right, which for all but one locale means leaving it alone.
     ///
-    /// <para><b>Why this replaced a tlk harvest.</b> This class used to fetch a
-    /// localized <c>dialog.tlk</c> out of the Workshop item. That could never
-    /// work: those items contain no text table at all. Verified against the
-    /// German item — 677 files, not one <c>.tlk</c> among them. The localized
-    /// TSLRCM embeds its new player-visible strings directly in the <c>.dlg</c>
-    /// files (28 German strings across 10 companion dialogs), and takes
-    /// everything else from StrRefs in the game's OWN localized table. So a
-    /// localized TSLRCM needs no tlk, and must not overwrite one.</para>
+    /// <para><b>Where a localized text table comes from.</b> Not from TSLRCM.
+    /// The German, French, Italian and Spanish Workshop items contain no text
+    /// table at all (verified against the German item — 677 files, not one
+    /// <c>.tlk</c> among them). Those locales already have a vanilla localized
+    /// <c>dialog.tlk</c> from their own Steam language depot, and the
+    /// translation teams embedded TSLRCM's new player-visible strings directly
+    /// in the <c>.dlg</c> files (28 German strings across 10 companion
+    /// dialogs) so that nothing has to be appended to it. Measured: de, fr, it
+    /// and es all carry 136,329 strings, vanilla's own count, and the dev's
+    /// TSLRCM-modified German install carries exactly the same — TSLRCM never
+    /// touched it.</para>
+    ///
+    /// <para><b>Russian is the exception, and needs the opposite.</b>
+    /// LucasArts never shipped a Russian KOTOR 2, so there is no vanilla
+    /// Russian table to defer to; the Russian team translated the whole thing
+    /// themselves and their item DOES ship a <c>dialog.tlk</c> (136,375
+    /// strings, Windows-1251). Skipping it — which a blanket "never touch the
+    /// tlk" rule did — left Russian players with translated content files and
+    /// an English text table for everything else. See
+    /// <see cref="InstallItemTextTable"/>.</para>
     ///
     /// <para><b>Why the English installer is wrong for these users.</b> The
     /// DeadlyStream TSLRCM 1.8.6 exe is English-only and ships a full English
     /// <c>dialog.tlk</c> that replaces the player's. On a German copy that
     /// turns the entire game's text English — a straight loss, since the
-    /// German text was already correct. The English tlk is not merely a
-    /// convenience either: it carries appended strings (StrRefs 136364+) that a
-    /// handful of item fixes depend on.</para>
+    /// German text was already correct.</para>
     ///
     /// <para><b>Why copying out is safe, when subscribing is not.</b> The
     /// DeadlyStream thread "Why not to use the Steam Workshop" documents the
@@ -74,6 +85,19 @@ namespace KotorAccessibilityInstaller
             }
         }
 
+        /// <summary>
+        /// Whether this locale's Workshop item carries its own
+        /// <c>dialog.tlk</c>. Russian alone does, for the reason given in the
+        /// class summary.
+        ///
+        /// <para>This decides only what we PROMISE the user before the
+        /// download — "your game's text stays as it is" versus "this brings
+        /// the Russian text with it". The install itself follows what is
+        /// actually in the item, so a wrong answer here misphrases one
+        /// sentence rather than installing the wrong thing.</para>
+        /// </summary>
+        public static bool ItemShipsTextTable(GameLocale locale) => locale == GameLocale.Russian;
+
         // Give the user ample time to find the Subscribe button and Steam time
         // to pull ~335 MB; the Cancel button is live the whole way.
         private static readonly TimeSpan OverallTimeout = TimeSpan.FromMinutes(20);
@@ -92,6 +116,13 @@ namespace KotorAccessibilityInstaller
 
         public bool Success { get; private set; }
 
+        /// <summary>
+        /// Whether the item's own <c>dialog.tlk</c> was installed over the
+        /// game's. Only the Russian item ships one; the caller uses this to
+        /// tell the player their text table changed.
+        /// </summary>
+        public bool TextTableInstalled { get; private set; }
+
         /// <summary>Failure detail; null when the user cancelled or timed out silently.</summary>
         public string FailureReason { get; private set; }
 
@@ -105,7 +136,7 @@ namespace KotorAccessibilityInstaller
             FormClosing += (s, e) =>
             {
                 if (_finished) return;
-                Logger.Info("Workshop tlk harvest window closed; cancelling");
+                Logger.Info("Workshop TSLRCM window closed; cancelling");
                 _cts.Cancel();
             };
         }
@@ -165,7 +196,7 @@ namespace KotorAccessibilityInstaller
             };
             _cancelButton.Click += (s, e) =>
             {
-                Logger.Info("Workshop tlk harvest cancelled via button");
+                Logger.Info("Workshop TSLRCM install cancelled via button");
                 _cts.Cancel();
             };
 
@@ -256,7 +287,7 @@ namespace KotorAccessibilityInstaller
                 string itemDir = Path.GetFullPath(Path.Combine(
                     _k2GamePath, "..", "..", "workshop", "content",
                     Config.Kotor2WorkshopAppId, _itemId));
-                Logger.Info($"Workshop tlk harvest: expecting content under {itemDir}");
+                Logger.Info($"Workshop TSLRCM: expecting content under {itemDir}");
 
                 OpenWorkshopPage(reopened: false);
 
@@ -275,8 +306,11 @@ namespace KotorAccessibilityInstaller
                     return;
                 }
 
+                TextTableInstalled = await Task.Run(() => InstallItemTextTable(itemDir));
+
                 Logger.Info($"Workshop TSLRCM ({_expectedLocale}): copied {copied} files into {_k2GamePath}; " +
-                            "dialog.tlk deliberately untouched");
+                            (TextTableInstalled ? "the item's own dialog.tlk installed"
+                                                : "the game's own dialog.tlk kept"));
                 Success = true;
             }
             catch (Exception ex)
@@ -291,11 +325,6 @@ namespace KotorAccessibilityInstaller
             }
         }
 
-        /// <summary>
-        /// Polls the workshop item folder for dialog.tlk until it exists with a
-        /// stable size (Steam finished writing it). Returns null on cancel
-        /// (FailureReason stays null) or timeout (FailureReason set).
-        /// </summary>
         /// <summary>
         /// Whether Steam's own workshop bookkeeping mentions this item yet.
         ///
@@ -486,10 +515,10 @@ namespace KotorAccessibilityInstaller
         /// Copy the item's content folders into the game, overwriting. Returns
         /// the number of files copied.
         ///
-        /// <para><c>dialog.tlk</c> is never copied, and cannot be: it is not in
-        /// the item, and the whole point of this route is that the player's own
-        /// localized table stays. Any stray .tlk that ever did appear is skipped
-        /// explicitly rather than trusted not to exist.</para>
+        /// <para>A <c>.tlk</c> inside a content folder is skipped: the engine
+        /// reads its text table from the game root, so a copy in Override
+        /// could only be a stray. The one text table that matters sits at the
+        /// item root and is handled by <see cref="InstallItemTextTable"/>.</para>
         ///
         /// <para>Destination folder names come from the INSTALL, not the item.
         /// The item spells them lowercase; a real install may not, and creating
@@ -513,7 +542,8 @@ namespace KotorAccessibilityInstaller
                 {
                     if (Path.GetExtension(file).Equals(".tlk", StringComparison.OrdinalIgnoreCase))
                     {
-                        Logger.Info($"Skipping {Path.GetFileName(file)} -- the player's own text table stays");
+                        Logger.Info($"Skipping {folder}/{Path.GetFileName(file)} -- a text table only " +
+                                    "counts at the game root");
                         continue;
                     }
 
@@ -529,6 +559,54 @@ namespace KotorAccessibilityInstaller
             }
 
             return copied;
+        }
+
+        /// <summary>
+        /// Install the item's own <c>dialog.tlk</c> when it ships one, keeping
+        /// a backup of the game's. Returns whether a table was installed.
+        ///
+        /// <para>Driven by what is IN the item rather than by the locale: a
+        /// localized item's text table is by definition that locale's own, so
+        /// where one exists it is the right file for this player. In practice
+        /// that is Russian only — see <see cref="ItemShipsTextTable"/> — and
+        /// the item root is where it sits, outside the content folders
+        /// <see cref="CopyItemIntoGame"/> walks.</para>
+        ///
+        /// <para>The backup is written once and never overwritten. Running the
+        /// installer twice would otherwise back the Russian table up over the
+        /// pristine original, which is the copy worth keeping.</para>
+        ///
+        /// <para>Copy errors are deliberately NOT swallowed — same as the
+        /// content copy. Silently returning false here would leave a Russian
+        /// player with translated content, an English text table, and a
+        /// success message saying otherwise.</para>
+        /// </summary>
+        private bool InstallItemTextTable(string itemDir)
+        {
+            string src = Path.Combine(itemDir, "dialog.tlk");
+            if (!File.Exists(src))
+            {
+                if (ItemShipsTextTable(_expectedLocale))
+                {
+                    Logger.Warning($"Workshop item {_itemId} ships no dialog.tlk although " +
+                                   $"{_expectedLocale} expects one; the game's own text table stays");
+                }
+                return false;
+            }
+
+            string dest = Path.Combine(_k2GamePath, "dialog.tlk");
+            string backup = dest + ".pre-tslrcm.bak";
+
+            if (File.Exists(dest) && !File.Exists(backup))
+            {
+                File.Copy(dest, backup);
+                Logger.Info($"Backed the game's text table up as {Path.GetFileName(backup)}");
+            }
+
+            File.Copy(src, dest, overwrite: true);
+            Logger.Info($"Installed the item's dialog.tlk ({new FileInfo(src).Length} bytes) " +
+                        $"as the {_expectedLocale} text table");
+            return true;
         }
 
         /// <summary>

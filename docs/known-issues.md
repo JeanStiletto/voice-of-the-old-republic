@@ -12,25 +12,7 @@ When an entry is closed, move it out of this file (the corresponding fix or comm
 
 ## Bugs
 
-### Installer: K2 workshop TLK harvest cannot work for French/Italian/Spanish
-
-Found 2026-08-12 while sourcing K2 combat anchors. The FR/IT/ES TSLRCM
-workshop items (485553656 / 485556965 / 485555217) ship **no dialog.tlk at
-all** — those translation teams embedded their text inline in the `.dlg`
-files (verified: 17 of 19 dlg files in the French item's override carry
-cp1252 accented text; all three items are ~333.9 MB vs German's 335.0 MB,
-which does ship a TLK). `WorkshopTlkHarvestForm` polls for a size-stable
-`dialog.tlk` in the item folder, so for these three locales it waits out
-its 20-minute timeout and fails; only German (tested) and Russian (item is
-+54 MB, TLK presence still to be confirmed) can ever succeed.
-
-Consequence for FR/IT/ES users: their localized text lives in the game's
-own vanilla dialog.tlk (Steam language setting) plus the inline dlg text —
-so the right installer flow is: back up the vanilla localized dialog.tlk
-BEFORE the TSLRCM exe overwrites it with English, then restore it after
-(instead of harvesting from the workshop). Not yet implemented; the
-harvest form should also skip straight to that path for these locales
-rather than time out.
+_None currently._
 
 ## Unreproduced
 

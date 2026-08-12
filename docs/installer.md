@@ -186,8 +186,22 @@ mod setup without it.
   What the files actually show, verified against the German item (485551190,
   677 files, 335,023,091 bytes — byte-exact against Steam's manifest):
 
-  - **The localized items contain no `dialog.tlk` at all.** Not one `.tlk`
-    anywhere. There was never a text table to harvest.
+  - **The FIGS items contain no `dialog.tlk` at all.** Not one `.tlk`
+    anywhere in the German item, and none in the French, Italian or Spanish
+    ones either. There was never a text table to harvest for those four —
+    they defer to the vanilla localized table the player's own Steam
+    language depot ships. Confirmed by counting: de (from a
+    TSLRCM-modified install), fr, it and es all carry 136,329 strings,
+    which is exactly vanilla's own count.
+  - **Russian is the exception and needs the opposite treatment.** Item
+    2143250983 DOES ship a `dialog.tlk` (136,375 strings, Windows-1251).
+    It has to: LucasArts never shipped a Russian KOTOR 2, so there is no
+    vanilla Russian table to defer to and the team translated the whole
+    thing. A blanket "never touch the tlk" rule left Russian players with
+    translated content files and an English text table for everything
+    else, so `WorkshopTslrcmForm.InstallItemTextTable` installs the item's
+    table when the item has one — keeping the previous file as
+    `dialog.tlk.pre-tslrcm.bak`.
   - **They embed their new player-visible strings directly in the `.dlg`
     files** — 28 German strings across 10 companion dialogs (`atton.dlg`,
     `kreia.dlg`, …), e.g. `[Atton ist bewußtlos, du kannst jetzt nicht mit ihm
@@ -196,8 +210,9 @@ mod setup without it.
   - **The English DeadlyStream edition does the opposite**: it ships a full
     English `dialog.tlk` that replaces the player's. On a German copy that
     turns the whole game's text English — pure loss, since the German text was
-    already right. Its tlk is not merely a convenience either: it appends
-    strings (StrRefs 136364+) that item fixes depend on.
+    already right. Its tlk also appends strings past vanilla's 136,329 that a
+    few item fixes point at (the Russian item's 136,375-string table is a
+    translation of it, which is where that count comes from).
   - **Completeness**: comparing the English installer's own Inno log against
     the item, per-folder counts match exactly (modules 87/87, lips 9/9, movies
     3/3, kaevee 48/48; override 471 vs 477). Only 16 files differ, and 15 are
@@ -230,8 +245,10 @@ mod setup without it.
   Implemented in `WorkshopTslrcmForm` (was `WorkshopTlkHarvestForm`): open the
   page, user subscribes, wait until Steam's manifest lists the item AND the
   bytes on disk match the size it declares, copy `override` / `modules` /
-  `lips` / `movies` / `streammusic` / `streamvoice` into the install (skipping
-  any `.tlk` explicitly), tell the user to unsubscribe. Routing lives in
+  `lips` / `movies` / `streammusic` / `streamvoice` into the install, install
+  the item's root `dialog.tlk` if it has one (Russian only — a `.tlk` inside a
+  content folder is still skipped, since the engine only reads a text table
+  from the game root), tell the user to unsubscribe. Routing lives in
   `InstallFlow.RunLocalizedTslrcmInstall` and keys off the installer's chosen
   language. Declining does NOT fall back to the English edition — arriving at an
   English text table as an unrequested fallback is the one outcome this path
@@ -257,9 +274,11 @@ mod setup without it.
   swap is the complete localization story. Re-run caveat: once English
   TSLRCM is installed, the original language is no longer detectable from
   the install — the harvest offer only appears in the same run that
-  installed TSLRCM.~~ **(Superseded — see above. The premise was wrong: those
-  items ship no `dialog.tlk`. The re-run caveat is also gone, since routing now
-  keys off the installer's language rather than reading the game's table.)**
+  installed TSLRCM.~~ **(Superseded — see above. The premise was wrong: only
+  the Russian item ships a `dialog.tlk`, and the four FIGS locales never
+  needed one harvested because their own install already has the right table.
+  The re-run caveat is also gone, since routing now keys off the installer's
+  language rather than reading the game's table.)**
 - **Auto-download problem: no GitHub presence, no API-friendly host.** This is
   the one essential mod without a clean scripted download path. Options, in
   preference order: (1) ask the TSLRCM team (zbyl2 et al.) for permission to

@@ -166,8 +166,10 @@ namespace KotorAccessibilityInstaller
         /// </summary>
         /// <param name="installerLanguage">
         /// The language the user picked for the installer itself. Decides which
-        /// localized TSLRCM text is offered — see the harvest block for why the
-        /// game's own dialog.tlk cannot answer that question.
+        /// localized TSLRCM edition is offered. Deliberately not the game's own
+        /// dialog.tlk: once an earlier English TSLRCM has replaced it, the file
+        /// reports English no matter what the player reads, and Russian players
+        /// have no localized table to be detected from in the first place.
         /// </param>
         internal static void RunKotor2ModFlow(string k2Path, string installerLanguage)
         {
@@ -209,9 +211,11 @@ namespace KotorAccessibilityInstaller
             // The DeadlyStream exe is English-only and ships a full English
             // dialog.tlk that replaces the player's — turning a German game's
             // entire text English, losing a translation that was already right.
-            // The localized editions exist only as Workshop items, ship no text
-            // table at all, and embed their new strings in the content files, so
-            // they leave the player's table alone. See WorkshopTslrcmForm.
+            // The localized editions exist only as Workshop items and get the
+            // text table right for each locale: de/fr/it/es embed their new
+            // strings in the content files and leave the player's own table
+            // alone, and Russian — which has no vanilla localized table at all
+            // — brings its own. See WorkshopTslrcmForm.
             var tslrcmLocale = GameLocaleDetector.FromInstallerLanguage(installerLanguage);
             bool useLocalizedTslrcm =
                 k2Path != null &&
@@ -390,8 +394,15 @@ namespace KotorAccessibilityInstaller
             WorkshopTslrcmForm.TryGetWorkshopItem(locale, out string itemId);
             Logger.Info($"TSLRCM: taking the localized Workshop edition for {locale} (item {itemId})");
 
+            // What the offer promises about the text table differs for the one
+            // locale whose item brings its own — see ItemShipsTextTable.
+            string textTableNote = InstallerLocale.Get(
+                WorkshopTslrcmForm.ItemShipsTextTable(locale)
+                    ? "K2Lang_Offer_BringsText"
+                    : "K2Lang_Offer_KeepsText");
+
             var offer = MessageBox.Show(
-                InstallerLocale.Format("K2Lang_Offer_Text", locale.ToString()),
+                InstallerLocale.Format("K2Lang_Offer_Text", locale.ToString(), textTableNote),
                 InstallerLocale.Get("K2Prep_Title"),
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Question);
@@ -413,8 +424,12 @@ namespace KotorAccessibilityInstaller
 
             if (form.Success)
             {
+                string done = InstallerLocale.Get("K2Lang_Done_Text");
+                if (form.TextTableInstalled)
+                    done += "\n\n" + InstallerLocale.Get("K2Lang_Done_TextInstalled");
+
                 MessageBox.Show(
-                    InstallerLocale.Get("K2Lang_Done_Text"),
+                    done,
                     InstallerLocale.Get("K2Prep_Title"),
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information);
