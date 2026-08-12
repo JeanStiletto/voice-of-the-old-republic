@@ -17,6 +17,10 @@ namespace KotorAccessibilityInstaller
     {
         private readonly HttpClient _httpClient;
 
+        // repoUrl -> latest release tag, resolved once per client instance
+        // (see ResolveLatestTagAsync).
+        private readonly Dictionary<string, string> _latestTagCache = new Dictionary<string, string>();
+
         public GitHubClient()
         {
             _httpClient = new HttpClient();
@@ -99,31 +103,43 @@ namespace KotorAccessibilityInstaller
         // metadata fetch.
         //
         // The redirect host can 504 during partial GitHub outages (the bug fixed
-        // for the in-game updater in v0.4.1). So on failure we FALL BACK to the
+        // for the in-game updater in v0.4.1), or drop connections outright (the
+        // v0.7.0 release-day outage: github.com intermittently returned empty
+        // replies while api.github.com stayed up). So the direct path RETRIES
+        // with backoff first — an intermittent frontend often succeeds on the
+        // second or third attempt, which keeps users off the rate-limited API
+        // entirely. Only when all attempts fail do we FALL BACK to the
         // api.github.com asset endpoint with Accept: application/octet-stream —
         // the resilient path that stays up during those outages. It is
         // rate-limited, but only runs during an outage, exactly when there is no
         // steady traffic competing for the IP's hourly budget.
         private async Task<string> DownloadTaggedAssetAsync(string repoUrl, string tag, string assetName, Action<int> progress)
         {
+            const int maxAttempts = 4;
             string tempFile = Path.Combine(Path.GetTempPath(), assetName);
             string directUrl =
                 $"{repoUrl}/releases/download/{Uri.EscapeDataString(tag)}/{Uri.EscapeDataString(assetName)}";
 
-            try
+            Logger.Info($"Downloading {assetName} (direct release-download) from: {directUrl}");
+            for (int attempt = 1; attempt <= maxAttempts; attempt++)
             {
-                Logger.Info($"Downloading {assetName} (direct release-download) from: {directUrl}");
-                await DownloadFileAsync(directUrl, tempFile, progress);
-                return tempFile;
-            }
-            catch (Exception ex) when (
-                ex is HttpRequestException || ex is TaskCanceledException || ex is IOException)
-            {
-                Logger.Warning(
-                    $"Direct download of {assetName} failed ({ex.Message}); " +
-                    "falling back to api.github.com asset endpoint");
+                try
+                {
+                    await DownloadFileAsync(directUrl, tempFile, progress);
+                    return tempFile;
+                }
+                catch (Exception ex) when (
+                    ex is HttpRequestException || ex is TaskCanceledException || ex is IOException)
+                {
+                    Logger.Warning($"Direct download attempt {attempt}/{maxAttempts} of {assetName} failed: {ex.Message}");
+                    if (attempt < maxAttempts)
+                    {
+                        await Task.Delay(BackoffDelay(attempt));
+                    }
+                }
             }
 
+            Logger.Warning($"All direct download attempts for {assetName} failed; falling back to api.github.com asset endpoint");
             await DownloadViaApiAssetAsync(repoUrl, tag, assetName, tempFile, progress);
             return tempFile;
         }
@@ -164,22 +180,48 @@ namespace KotorAccessibilityInstaller
         /// Resolve a repo's latest release tag. The PRIMARY path reads the
         /// redirect target of github.com/.../releases/latest (which 302s to
         /// .../releases/tag/&lt;tag&gt;) — no api.github.com call, no rate-limit
-        /// hit. Falls back to the rate-limited API only if the redirect path
-        /// fails (e.g. during a partial GitHub outage).
+        /// hit. Retries the redirect with backoff (intermittent github.com
+        /// outages often clear within a second or two) and falls back to the
+        /// rate-limited API only when every attempt fails.
+        ///
+        /// The result is cached per client instance: one install run resolves
+        /// "latest" for the version check AND the download, and both must see
+        /// the same tag anyway — a release published mid-install should not
+        /// switch the asset out from under the recorded version.
         /// </summary>
         private async Task<string> ResolveLatestTagAsync(string repoUrl)
         {
-            try
+            if (_latestTagCache.TryGetValue(repoUrl, out string cached))
+                return cached;
+
+            const int maxAttempts = 3;
+            for (int attempt = 1; attempt <= maxAttempts; attempt++)
             {
-                string tag = await ResolveLatestTagViaRedirectAsync(repoUrl);
-                if (!string.IsNullOrEmpty(tag)) return tag;
-                Logger.Warning("Could not parse tag from /releases/latest redirect; falling back to API");
+                try
+                {
+                    string tag = await ResolveLatestTagViaRedirectAsync(repoUrl);
+                    if (!string.IsNullOrEmpty(tag))
+                    {
+                        _latestTagCache[repoUrl] = tag;
+                        return tag;
+                    }
+                    Logger.Warning("Could not parse tag from /releases/latest redirect; falling back to API");
+                    break; // a parseable-but-wrong redirect won't improve on retry
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warning($"/releases/latest redirect attempt {attempt}/{maxAttempts} failed: {ex.Message}");
+                    if (attempt < maxAttempts)
+                    {
+                        await Task.Delay(BackoffDelay(attempt));
+                    }
+                }
             }
-            catch (Exception ex)
-            {
-                Logger.Warning($"/releases/latest redirect failed ({ex.Message}); falling back to API");
-            }
-            return await ResolveLatestTagViaApiAsync(repoUrl);
+
+            string apiTag = await ResolveLatestTagViaApiAsync(repoUrl);
+            if (!string.IsNullOrEmpty(apiTag))
+                _latestTagCache[repoUrl] = apiTag;
+            return apiTag;
         }
 
         private async Task<string> ResolveLatestTagViaRedirectAsync(string repoUrl)

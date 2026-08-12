@@ -44,6 +44,17 @@ and add the German in parentheses if it genuinely aids clarity.
   now runs as part of the one-time speech init both games share, before the
   first spoken word.
 
+<h3>Installer:</h3>
+
+- Downloading the mod survives a flaky GitHub. The v0.7.0 release-day outage
+  had github.com intermittently dropping connections while the GitHub API
+  stayed up: the installer's single direct-download attempt failed straight
+  into the rate-limited API fallback, which can answer 403 on shared (CGNAT /
+  VPN) addresses — "the patch file could not be downloaded". The direct
+  download and the release-tag lookup now retry with backoff before falling
+  back, and one install run resolves the release tag once instead of twice,
+  halving the API requests spent when the fallback is needed.
+
 <h2>v0.7.0</h2>
 
 <h3>KOTOR 2:</h3>
