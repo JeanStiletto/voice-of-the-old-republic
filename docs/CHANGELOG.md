@@ -33,6 +33,29 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>v0.7.3</h2>
+
+<h3>Bug fixes:</h3>
+
+- Switching party leader with Tab no longer announces a direction the camera
+  never faced. The compass reads the heading as "camera towards character", and
+  a Tab swap moves the character half to the new leader a frame or two before
+  the camera catches up — so for that moment the reading pointed roughly
+  backwards, and you heard the wrong direction followed by a correction. Such
+  jumps are now recognised as jumps rather than very fast turns, and the
+  direction is spoken once the camera has settled. Tabbing quickly past one
+  party member to reach another announces only the one you stop on, and a swap
+  between members facing the same way stays silent. The same applies to engine
+  camera cuts, which produced the same stray pair of cues.
+
+- Turning the camera continuously no longer fires bursts of direction cues.
+  While turning, the announcement is deliberately rate-limited, but the check
+  for "the turn has ended" ran off a clock too coarse to measure a single
+  frame: often enough it read the time between two frames as zero, concluded
+  the camera had stopped, and announced immediately — up to three sectors in
+  one second. Timing now comes from a source fine enough to see one frame, so
+  a continuous turn produces evenly spaced cues and a single one when you stop.
+
 <h2>v0.7.2</h2>
 
 <h3>KOTOR 2:</h3>

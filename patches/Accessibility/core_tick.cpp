@@ -102,10 +102,25 @@ const char* g_worstName = nullptr;
 double      g_worstMs   = 0.0;
 double      g_totalMs   = 0.0;
 
+// Timestamp of the tick currently being dispatched, in ms (see NowMs).
+DWORD g_tickNowMs = 0;
+
 inline LARGE_INTEGER QpcNow() {
     LARGE_INTEGER t;
     QueryPerformanceCounter(&t);
     return t;
+}
+
+// QPC → ms, wrapping at 2^32 exactly like GetTickCount so every existing
+// `now - then >= window` comparison stays valid unsigned arithmetic. Split
+// into whole seconds + remainder rather than multiplying the raw counter by
+// 1000, which would overflow int64 after ~29 years of uptime at a 10 MHz
+// counter.
+inline DWORD QpcToMs(const LARGE_INTEGER& t) {
+    if (g_qpcFreq.QuadPart == 0) return GetTickCount();
+    LONGLONG secs = t.QuadPart / g_qpcFreq.QuadPart;
+    LONGLONG rem  = t.QuadPart % g_qpcFreq.QuadPart;
+    return static_cast<DWORD>(secs * 1000 + (rem * 1000) / g_qpcFreq.QuadPart);
 }
 
 inline double QpcMs(const LARGE_INTEGER& a, const LARGE_INTEGER& b) {
@@ -136,6 +151,9 @@ LARGE_INTEGER WatchdogBeginTick() {
     g_totalMs   = 0.0;
 
     LARGE_INTEGER now = QpcNow();
+    // Publish this tick's timestamp before anything in the fan-out runs, so
+    // every subsystem that asks sees the same "now" for the whole tick.
+    g_tickNowMs = QpcToMs(now);
     if (g_haveLast) {
         double gap = QpcMs(g_lastEnd, now);
         if (gap >= kSlowGapMs) {
@@ -309,6 +327,13 @@ void WatchDeadKeyboard() {
 }
 
 }  // namespace
+
+DWORD NowMs() {
+    // Before the first tick (bring-up, or a hook that fires ahead of any
+    // Update) there is nothing published yet — fall back to the coarse clock
+    // rather than handing out 0, which would read as "a very long time ago".
+    return g_tickNowMs != 0 ? g_tickNowMs : GetTickCount();
+}
 
 void Dispatch() {
     LARGE_INTEGER tickStart = WatchdogBeginTick();
