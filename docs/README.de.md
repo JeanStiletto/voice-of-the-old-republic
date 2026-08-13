@@ -13,9 +13,9 @@ permalink: /docs/README.de.html
 
 Im aktuellen Stand ist Knights of the Old Republic I vollständig spielbar und durchspielbar, mit allen Minispielen, Quests und Spielweisen. Es lässt sich mit der Tastatur oder mit einem Xbox-artigen Controller spielen — die Mod bringt ihre eigene Controller-Unterstützung mit (siehe den Controller-Abschnitt unten); nur die Minispiele erwarten vorerst noch die Tastatur.
 
-Am Port für Teil II wird gearbeitet.
+Knights of the Old Republic II ist portiert: Der Installer richtet die Mod auch dafür ein, und das Spiel spricht. Durchgespielt wurde es aber noch nicht, und einige Blocker müssen dafür erst noch beseitigt werden — seine Minispiele und Tutorial-Meldungen sind noch nicht abgedeckt.
 
-Die Mod ist in alle unterstützten Sprachen übersetzt — Englisch, Deutsch, Französisch, Italienisch, Spanisch — und unterstützt außerdem eine polnische und eine russische Übersetzung. Unterstützt werden die Steam- und GoG-Version 1.03 sowie die 2004er-Version, die von den polnischen und russischen Übersetzungen verwendet wird.
+Die Mod ist in alle unterstützten Sprachen übersetzt — Englisch, Deutsch, Französisch, Italienisch, Spanisch — und unterstützt außerdem eine polnische und eine russische Übersetzung. Für Knights of the Old Republic I werden die Steam- und GoG-Version 1.03 sowie die 2004er-Version unterstützt, die von den polnischen und russischen Übersetzungen verwendet wird. Für Knights of the Old Republic II wird ausschließlich Aspyrs Fassung von 2015 unterstützt — die, die Steam und GoG heute ausliefern.
 
 <h2>Was sind die Knights of the Old Republic-Spiele</h2>
 

@@ -121,10 +121,17 @@
     "ModInstall_TweakProgress_Format": "Tweak Pack: {0}",
     "ModInstall_TweakHeartbeat_Format": "Instalación del Tweak Pack en curso ({0} seg)...",
 
-    "Polish_Detected_Heading": "TraducciÃ³n al polaco detectada",
-    "Polish_Detected_Body": "Tu dialog.tlk es la localizaciÃ³n polaca oficial, asÃ­ que el mod hablarÃ¡ en polaco. El texto polaco es una primera versiÃ³n traducida automÃ¡ticamente y los colaboradores lo irÃ¡n mejorando.",
-    "Polish_NotFound_Heading": "TraducciÃ³n polaca del juego",
-    "Polish_NotFound_Body": "Has elegido polaco, pero esta instalaciÃ³n de KOTOR no estÃ¡ traducida al polaco. El mod puede hablar en polaco, pero el texto del juego seguirÃ¡ en su idioma actual.\n\nKOTOR se publicÃ³ oficialmente en polaco en 2004 por Licomp Empik Multimedia (LEM), solo con subtÃ­tulos. Esa ediciÃ³n nunca se vendiÃ³ en Steam ni GoG, y sus archivos son contenido de LucasArts: no podemos incluirlos, descargarlos ni redistribuirlos por ti.\n\nSi tienes la ediciÃ³n polaca, copia de ella dialog.tlk, dialogF.tlk y el contenido de la carpeta Override a tu carpeta de juego. No hace falta copiar su swkotor.exe: el mod sÃ­ admite ese ejecutable, pero el de Steam o GoG funciona igual de bien con el texto polaco, y Steam restaura el suyo de todos modos.\n\nInstala primero el texto polaco y vuelve a ejecutar este instalador. Lo detectarÃ¡ automÃ¡ticamente.",
+    "Russian_Detected_Heading": "Traducción rusa detectada",
+    "Russian_Detected_Body": "Tu dialog.tlk es una traducción rusa de la comunidad, así que el mod hablará en ruso. El texto ruso del mod es una primera versión traducida automáticamente y los colaboradores lo irán mejorando.",
+    "Russian_NotFound_Heading": "Traducción rusa del juego",
+    "Russian_NotFound_Body": "Has elegido ruso, pero esta instalación de KOTOR no está traducida al ruso. El mod puede hablar en ruso, pero el texto del juego seguirá en su idioma actual.\n\nKOTOR nunca se publicó oficialmente en ruso. La traducción de la comunidad es de Artyom «Allard» Andreev, basada en la localización Zone of Games de SerGEAnt. No podemos incluirla ni descargarla por ti: no se publica bajo una licencia que permita su redistribución y no tiene una dirección de descarga estable que podamos verificar.\n\nConsigue la traducción a través de los canales del autor:\n  https://vk.com/allardchannel\n  http://www.rpgnuke.ru\n\nInstala primero la traducción y vuelve a ejecutar este instalador. Detectará el texto ruso automáticamente.",
+    "Russian_K1cpUntested_Heading": "Nota sobre K1CP con la traducción rusa",
+    "Russian_K1cpUntested_Body": "El autor de la traducción rusa indica que el KOTOR 1 Community Patch no se ha probado con ella. K1CP sigue siendo recomendable para todos los demás, pero en una instalación rusa esta combinación no está probada por ninguno de los dos proyectos. Puedes dejar K1CP activado, o desmarcarlo en la página de mods opcionales si prefieres no arriesgarte.",
+
+    "Polish_Detected_Heading": "Traducción al polaco detectada",
+    "Polish_Detected_Body": "Tu dialog.tlk es la localización polaca oficial, así que el mod hablará en polaco. El texto polaco es una primera versión traducida automáticamente y los colaboradores lo irán mejorando.",
+    "Polish_NotFound_Heading": "Traducción polaca del juego",
+    "Polish_NotFound_Body": "Has elegido polaco, pero esta instalación de KOTOR no está traducida al polaco. El mod puede hablar en polaco, pero el texto del juego seguirá en su idioma actual.\n\nKOTOR se publicó oficialmente en polaco en 2004 por Licomp Empik Multimedia (LEM), solo con subtítulos. Esa edición nunca se vendió en Steam ni GoG, y sus archivos son contenido de LucasArts: no podemos incluirlos, descargarlos ni redistribuirlos por ti.\n\nSi tienes la edición polaca, copia de ella dialog.tlk, dialogF.tlk y el contenido de la carpeta Override a tu carpeta de juego. No hace falta copiar su swkotor.exe: el mod sí admite ese ejecutable, pero el de Steam o GoG funciona igual de bien con el texto polaco, y Steam restaura el suyo de todos modos.\n\nInstala primero el texto polaco y vuelve a ejecutar este instalador. Lo detectará automáticamente.",
 
     "Main_TitleInstaller": "Voice of the Old Republic - Instalador",
     "Main_TitleUpdater": "Voice of the Old Republic - Actualización",

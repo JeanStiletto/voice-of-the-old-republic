@@ -16,13 +16,37 @@ namespace {
 // Engine global holding the CExoInput facade pointer (the same symbol
 // HideLoadScreen reads before calling SetActive). Verified in Lane's DB:
 // SYMBOL ExoInput @0x007a39e4.
-const uintptr_t kAddrExoInputGlobal = acc::addr::TodoGlobal(0x007a39e4);
+//
+// KOTOR 2 @0x00a1b48c, resolved 2026-08-13 (it sat on TodoGlobal until then,
+// so BOTH constants here were 0 on KOTOR 2 and every reacquire/release faulted
+// into the SEH handler below — 25 "exception during SetActive" lines in one
+// short session, i.e. the focus-theft fix did not exist there). Two
+// independent witnesses agree:
+//   * the constructor at 0x0072f760 writes the CExoInput RTTI vtable
+//     (0x0099cab8) into the new object, and 0x00409c7e stores that object to
+//     0x00a1b48c;
+//   * the engine's global-pointer cluster keeps KOTOR 1's relative layout
+//     (ExoResMan/GuiMan/Aurora/AppMan/VM/Tlk/Rules deltas all match), and
+//     KOTOR 1's ExoInput is likewise the dword below ExoResMan.
+const uintptr_t kAddrExoInputGlobal =
+    acc::addr::PickGlobal(0x007a39e4, 0x00a1b48c);
 
 // CExoInput::SetActive(this, int active) @0x005df540. Sets the facade +
 // CExoInputInternal active flags and forwards to
 // CExoRawInputInternal::SetActive, which Acquire()s the DirectInput
 // keyboard/mouse/joystick devices on the 0->1 transition.
-const uintptr_t kAddrCExoInputSetActive = acc::addr::R(0x005df540);
+//
+// KOTOR 2 @0x0072fb20 — the same three-layer chain, decompiled 2026-08-13:
+// 0x0072fb20 forwards this->internal to CExoInputInternal::SetActive
+// (0x0072df60), which stores the flag and forwards to
+// CExoRawInputInternal::SetActive (0x00733090). That last one confirms the
+// design this file depends on: it early-outs when the requested state already
+// matches, then calls IDirectInputDevice8::Acquire (vtable +0x1c) or
+// ::Unacquire (+0x20) on the keyboard, the mouse and every joystick. So the
+// 0->1 edge ForceReacquireInput drives is required on KOTOR 2 for the same
+// reason it is on KOTOR 1.
+const uintptr_t kAddrCExoInputSetActive =
+    acc::addr::Pick(0x005df540, 0x0072fb20);
 
 typedef void(__thiscall* PFN_CExoInputSetActive)(void* this_, int active);
 

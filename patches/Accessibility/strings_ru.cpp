@@ -219,7 +219,9 @@ const char* Get(Id id) {
         case Id::PortraitRaceAsian:    return "\xE0\xE7\xE8\xE0\xF2\xF1\xEA\xE0\xFF \xE2\xED\xE5\xF8\xED\xEE\xF1\xF2\xFC";
         case Id::PortraitRaceDark:     return "\xF2\xB8\xEC\xED\xE0\xFF \xEA\xEE\xE6\xE0";
         case Id::PortraitRaceLight:    return "\xF1\xE2\xE5\xF2\xEB\xE0\xFF \xEA\xEE\xE6\xE0";
+        case Id::PortraitRaceTypeH:    return "\xF2\xE8\xEF H";
         case Id::FmtPortraitDescription: return "%s %s %d";
+        case Id::FmtClassNameWithDescription: return "%s. %s";
 
         case Id::FmtPartyPortraitInTeam:    return "%s, \xE2 \xEE\xF2\xF0\xFF\xE4\xE5";
         case Id::FmtPartyPortraitAvailable: return "%s, \xE4\xEE\xF1\xF2\xF3\xEF\xE5\xED";

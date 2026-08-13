@@ -35,7 +35,37 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h2>v0.7.2</h2>
 
+<h3>KOTOR 2:</h3>
+
+- The keyboard comes back after another window takes the focus. On KOTOR 2 the
+  mod could never re-grab the engine's DirectInput devices, because the two
+  addresses it needs — the input singleton and `CExoInput::SetActive` — were
+  only ever filled in for KOTOR 1 and silently resolved to nothing on KOTOR 2.
+  Every attempt failed inside the safety net, so the recovery that KOTOR 1 has
+  had since v0.5.1 simply did not exist there: after a screen reader or any
+  other window stole the foreground, keys could stop reaching the game with no
+  way back. The same gap also meant KOTOR 2 never released the keyboard when it
+  lost the foreground, so keystrokes meant for another window went on reaching
+  the game in the background. Both work now.
+
+<h3>Bug fixes:</h3>
+
+- Russian and Polish: character creation announces the class descriptions
+  again. Two entries were missing from those two translation tables, and one of
+  them is the sentence pattern that joins a class name to its description — so
+  instead of falling back to the plain name, class rows with a description
+  announced nothing at all. The other missing entry is KOTOR 2's fourth
+  portrait head family, which read as silence in the portrait picker.
+
 <h3>Installer:</h3>
+
+- The Polish-translation dialogs read correctly in German, French, Italian,
+  Spanish and Russian. Their text had been through a bad encoding conversion,
+  so accented letters arrived as pairs of symbols; the Russian version was
+  unreadable throughout rather than merely blemished.
+
+- The three Russian-translation dialogs now appear in German, French, Italian
+  and Spanish instead of falling back to English.
 
 - "Collect logs for beta test" now bundles both games. It used to collect a
   single game, chosen without asking and without saying which — and the choice

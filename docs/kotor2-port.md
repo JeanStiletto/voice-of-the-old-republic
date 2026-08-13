@@ -14,6 +14,40 @@ plan.
 
 ## WHERE TO RESUME (read this first)
 
+**DirectInput reacquire/release — RESOLVED 2026-08-13 (offline, zero test
+rounds; built green, NOT tested in game).** Found during the pre-0.7.2 audit,
+not by a bug report: `engine_input.cpp` held BOTH of its constants as KOTOR-1
+only (`TodoGlobal` for the ExoInput singleton, bare `R()` for
+`CExoInput::SetActive`), so both resolved to 0 on KOTOR 2 and every
+`ForceReacquireInput` / `ReleaseInput` faulted straight into its `__except`.
+Twenty-five "exception during SetActive" lines in one short KOTOR 2 session
+against zero in the KOTOR 1 session the same day. Net effect: the whole
+v0.5.1 focus-theft / keyboard-death recovery, and the release-on-focus-loss
+that stops background key bleed, were absent on KOTOR 2 while looking
+installed.
+
+- **ExoInput singleton = 0x00a1b48c.** Two independent witnesses: the
+  constructor at 0x0072f760 writes the CExoInput RTTI vtable (0x0099cab8) into
+  the object and 0x00409c7e stores it to that global; and the engine's
+  global-pointer cluster keeps KOTOR 1's relative layout exactly
+  (ExoResMan → GuiMan 0x0c, → Aurora 4, → AppMan 4, → VM 4, → Tlk 8,
+  → Rules 0x20 on both games), with ExoInput the dword below ExoResMan in
+  both. Teardown at 0x0078b1d6 nulls it.
+- **`CExoInput::SetActive` = 0x0072fb20** → `CExoInputInternal::SetActive`
+  0x0072df60 (stores the flag at internal+0x1b4, forwards when internal+0x1a0
+  is non-null) → `CExoRawInputInternal::SetActive` 0x00733090.
+- **0x00733090 confirms the design this code depends on**: it early-outs when
+  the requested state already equals `this->active` (which is exactly why
+  `SetActive(1)` alone cannot fix a stale-1 flag and the 0→1 edge is
+  mandatory), then calls IDirectInputDevice8::Acquire (vtable +0x1c) for
+  active=1 or ::Unacquire (+0x20) otherwise, on the keyboard (this+0x24), the
+  mouse (this+0x28) and each joystick (this+0x2c array, count at this+0x18).
+- **Test item:** on KOTOR 2, alt-tab away and back (or let the screen reader
+  take the foreground) and confirm the keyboard still drives the game. The log
+  should show `DrainPendingReacquire` followed by
+  `ForceReacquireInput: CExoInput::SetActive(...) cycle dispatched` — and no
+  "exception during SetActive" lines at all.
+
 **Workbench round 4 — two polish fixes (IMPLEMENTED 2026-08-12 after the
 round-3 confirm; patch-20260812-161807.log; offline, built green, applied,
 NOT retested).** Install now works; two follow-ups the user flagged:

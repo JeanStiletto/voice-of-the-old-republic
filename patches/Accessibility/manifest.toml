@@ -3,7 +3,7 @@ id = "accessibility"
 name = "Voice of the Old Republic"
 version = "0.7.2"
 author = "Fabian"
-description = "Screen reader accessibility for KotOR 1. Minimal infrastructure test patch."
+description = "Screen reader accessibility for KotOR 1 and KotOR 2: speech for menus and dialogue, navigation and guidance aids, combat and status narration, and audio cues for the minigames."
 
 requires = []
 conflicts = []
@@ -29,7 +29,9 @@ kotor1_gog_103_cdrepack = "761F9466F456A83909036BAEBB5C43167D722387BE66E54617BA2
 # string). Both therefore use one hooks file and one rebase table; only the
 # hashes differ.
 kotor1_allard_ru_172 = "7B961A140667336D22B06686CBDCBE2DDDF8A0EA13C20A27B63BDC57A75D7628"
-# KOTOR 2, Aspyr's 2015 rebuild — PORT IN PROGRESS, NOT A SUPPORTED GAME YET.
+# KOTOR 2, Aspyr's 2015 rebuild — a supported game since v0.7.0. The port is
+# not finished: the minigames and the tutorial messages are not covered, and
+# no playthrough has reached the end yet.
 #
 # Declaring these hashes makes the framework willing to install into KOTOR 2.
 # Its hooks live in kotor2.hooks.toml, whose target_versions cover exactly
