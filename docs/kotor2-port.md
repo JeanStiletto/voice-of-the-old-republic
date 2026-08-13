@@ -49,8 +49,22 @@ installed.
   "exception during SetActive" lines at all.
 
 **Workbench round 4 — two polish fixes (IMPLEMENTED 2026-08-12 after the
-round-3 confirm; patch-20260812-161807.log; offline, built green, applied,
-NOT retested).** Install now works; two follow-ups the user flagged:
+round-3 confirm; patch-20260812-161807.log; offline, built green, applied.
+CONFIRMED IN GAME the same evening — patch-20260812-163118.log; this header
+said "NOT retested" until 2026-08-13 and was simply never updated, which cost
+a pre-release audit a false finding).** The witness is the announcement
+flipping exactly as designed on the same field35 evidence: 161807 (round 3)
+logs `field35: 00000000 -> 00000000` and still speaks "Aufwertung eingesetzt"
+— the false positive — while 163118 logs the same unchanged field35 and
+speaks "Aufwertung nicht möglich". Real installs still speak "Aufwertung
+eingesetzt" in that session, so the new verdict did not swallow the success
+case. `menus_crafting.cpp` rode along in the same session: fg-edge titles for
+kind=42 ("Upgrade-Werkbank") and kind=44 ("Aufwerten: <item>"), the
+auto-open→item-list redirect, and row-commit all behaved. **Not seen in any
+log yet: the lab-station crafting screen** (only kinds 42/44 ever appear), and
+the non-German K2 combat anchors, which need a non-German install.
+
+Install now works; two follow-ups the user flagged:
 
 - **False "Aufwertung eingesetzt" on an incompatible slot.** Picking a mod
   for a disabled slot (e.g. a scope slot on a weapon that can't take one)

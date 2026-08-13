@@ -330,6 +330,22 @@ namespace KotorAccessibilityInstaller
                 UpdateProgress(45);
                 stagingRoot = await Task.Run(() => installationManager.StagePatcherRuntime(downloadedKpatch));
 
+                // Step 2b: refuse an unrecognised build with an answer the player
+                // can act on. KPatchCore would refuse it anyway, but only as a
+                // generic failure carrying its own English error text.
+                if (!installationManager.IsAccessibilityPatchSupported(stagingRoot, out string exeFingerprint))
+                {
+                    MessageBox.Show(
+                        InstallerLocale.Format("Main_UnsupportedBuild_Format",
+                                               _target.DisplayName, _target.ExeName, exeFingerprint),
+                        InstallerLocale.Get("Main_UnsupportedBuild_Title"),
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error);
+                    SetControlsEnabled(true);
+                    _progressBar.Visible = false;
+                    return;
+                }
+
                 // Step 3: apply via KPatchCore
                 UpdateStatus(InstallerLocale.Get("Main_StatusApplying"));
                 UpdateProgress(60);

@@ -67,6 +67,16 @@ and add the German in parentheses if it genuinely aids clarity.
 - The three Russian-translation dialogs now appear in German, French, Italian
   and Spanish instead of falling back to English.
 
+- An unsupported game version is now refused with an explanation, in your
+  language, instead of a generic "patch application failed" carrying a line of
+  English developer text. The mod is tied to the exact program file of each
+  release it supports, so the two things worth telling you are which of them
+  applies: another mod has already rewritten the game executable — in which
+  case restoring it and re-running the installer fixes it — or the release
+  simply is not covered yet, which is a bug report. The message names your
+  game, the executable, and its fingerprint, so a report carries what is needed
+  to add the build. Nothing is written to the game folder before this check.
+
 - "Collect logs for beta test" now bundles both games. It used to collect a
   single game, chosen without asking and without saying which — and the choice
   was always KOTOR 1 when both were installed, so a KOTOR 2 bug report arrived

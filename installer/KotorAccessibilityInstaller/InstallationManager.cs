@@ -183,6 +183,51 @@ namespace KotorAccessibilityInstaller
         }
 
         /// <summary>
+        /// Whether the accessibility patch itself declares support for this
+        /// executable, checked BEFORE <see cref="ApplyKPatch"/> so the caller can
+        /// explain the one failure a user can act on.
+        ///
+        /// <para>Without this the case still fails safe — KPatchCore's version gate
+        /// refuses the install — but it surfaces as the generic "patch application
+        /// failed" dialog carrying KPatchCore's English error string, which tells a
+        /// player nothing about what to do. The bundled third-party patches are
+        /// deliberately NOT covered here: an executable they don't declare is
+        /// normal and is silently skipped in <see cref="ApplyKPatch"/>.</para>
+        ///
+        /// <para><paramref name="exeFingerprint"/> is the short SHA-256 prefix, for
+        /// the message and for the bug report that should follow it.</para>
+        /// </summary>
+        public bool IsAccessibilityPatchSupported(string stagingRoot, out string exeFingerprint)
+        {
+            exeFingerprint = "unknown";
+            string gameExe = Path.Combine(_gameDir, _target.ExeName);
+            var repository = new PatchRepository(Path.Combine(stagingRoot, "patches"));
+            var scanResult = repository.ScanPatches();
+            if (!scanResult.Success)
+            {
+                // Can't tell — let ApplyKPatch run and report whatever it hits,
+                // rather than blocking an install on our own pre-flight failing.
+                Logger.Warning($"Version pre-check skipped: {scanResult.Error}");
+                return true;
+            }
+
+            try
+            {
+                exeFingerprint = KPatchCore.Common.FileHasher.ComputeSha256(gameExe).Substring(0, 16);
+            }
+            catch (Exception ex)
+            {
+                Logger.Warning($"Version pre-check could not hash {_target.ExeName}: {ex.Message}");
+                return true;
+            }
+
+            bool supported = IsPatchSupportedForExe(repository, Config.PatchId, gameExe, out string reason);
+            if (!supported)
+                Logger.Error($"Unsupported game build: {reason}");
+            return supported;
+        }
+
+        /// <summary>
         /// Whether a staged patch declares support for this exact executable.
         /// Compares the file's SHA-256 against the patch manifest's
         /// supported_versions rather than asking for a version *name*, because an
