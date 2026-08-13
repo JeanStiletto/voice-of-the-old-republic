@@ -168,6 +168,62 @@ All `__thiscall`. Pass GuiManager as first arg via the C++ pointer.
 - `SetMousePos(int x, int y)` `@ 0x5df5d0` — `__thiscall` on `*(CExoInput**)0x7A39E4`.
   Engine-internal; usually you call `MoveMouseToPosition` instead.
 
+### SetActive discards pending key transitions — never cycle it with a key down
+
+Decompiled 2026-08-14, chasing the runaway-camera / walks-off-by-itself beta
+reports. `ForceReacquireInput`'s `SetActive(0)->(1)` edge is **not** a passive
+"wake the keyboard up" — it destroys input state, and doing it while a key is
+held strands that key down in the engine forever.
+
+The chain (KOTOR 1; the KOTOR 2 twin is below and behaves identically):
+
+- `CExoInput::SetActive @0x005df540` — forwards to `this->internal`.
+- `CExoInputInternal::SetActive @0x005dffb0` — stores the flag, forwards to
+  `this->raw_input`.
+- `CExoRawInputInternal::SetActive @0x005e3c20` — the one that matters. Early-
+  outs when `param_1 == this->active`, so only a real edge does anything.
+  - `1->0`: `Unacquire()` on the keyboard, the mouse and every joystick.
+    Nothing is delivered at all while it is down.
+  - `0->1`: `Acquire()`, then **`ClearKeyboardBuffer` + `ClearMouseBuffer`**,
+    then zeroes 0x14 dwords of per-device event state at `field11_0x2c` and
+    restamps the high-resolution timer.
+
+`ClearKeyboardBuffer @0x005e3010` loops `GetDeviceData(0x14, NULL, &count, 0)`
+until the buffer is empty — an explicit discard of every queued transition.
+
+The reason that is fatal rather than merely lossy: keyboard input is read
+**buffered**, not as polled level state. `GetKeyboardBuffer @0x005e3ae0` calls
+`IDirectInputDevice::GetDeviceData` into a 0x1400 allocation, i.e. the engine
+sees a *stream of transitions* and derives "is this key down" from it. A
+discarded key-up is discarded permanently — nothing re-reads the true state, so
+the engine's down-flag for that key stays set until something presses and
+releases it again.
+
+**KOTOR 2 — same defect, decompiled 2026-08-14.** `0x0072fb20` ->
+`0x0072df60` -> `0x00733090`, and that last one is the same function with the
+same shape: `param_1 != *(this+4)` early-out, keyboard device at `+0x24`, mouse
+at `+0x28`, joystick array at `+0x2c`, `Acquire` / `Unacquire` on vtable slots
+`+0x1c` / `+0x20` (same slots as KOTOR 1). After the flag flips it calls
+`FUN_007311c0` (keyboard) and `FUN_007312a0` (mouse) — both loop
+`GetDeviceData(0x14, NULL, &count, 0)` on vtable `+0x28` until drained, i.e.
+the identical discard. Treat the rule below as engine-wide, not KOTOR 1-only.
+
+**How to apply:** any code path that drives `SetActive(0)->(1)` must first
+establish that no key is held — including keys the mod itself is synthesising
+(`camera_orient` holds a real turn scancode down; `pad_movement` holds WASD).
+`core_tick.cpp`'s `WatchDeadKeyboard` is built around this rule: a hold that
+looks unanswered only *arms* a suspicion, and the recovery cycle waits for the
+release. See the comment block there for the beta-log evidence — one user's
+camera free-spinning at ~200°/s for 15 s after a swallowed key-up, another's
+character sliding dead straight for 39 s with the yaw frozen.
+
+`RetryColdStartReacquire` in the same file carries the same precondition. Its
+old comment claimed the 200 ms throttle protected "a key that is mid-delivery"
+from being shredded by a (0) phase — it does not and cannot, since the clear is
+wholesale. Nothing had implicated that path (it runs pre-world, gated on
+`IsInputPumpLive`), but the reasoning it rested on was the same wrong one, so it
+now refuses to cycle while a key is held plus a 150 ms settle after release.
+
 ## Struct offsets
 
 `CSWGuiControl` (extends what `project_kotor_gui_struct_offsets.md` documents

@@ -368,6 +368,8 @@ void NoteLeaderFootstep() {
     g_last_leader_footstep_ms = GetTickCount64();
 }
 
+uint64_t LastLeaderFootstepMs() { return g_last_leader_footstep_ms; }
+
 void Tick() {
     Vector pos;
     if (!acc::engine::GetPlayerPosition(pos)) {

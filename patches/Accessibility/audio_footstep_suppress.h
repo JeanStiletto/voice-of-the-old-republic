@@ -34,6 +34,8 @@
 
 #pragma once
 
+#include <cstdint>   // LastLeaderFootstepMs
+
 namespace acc::audio::footstep_suppress {
 
 // Self-gates on player resolved; idempotent.
@@ -55,5 +57,16 @@ bool StuckSustainedFor(unsigned int min_ms);
 // Stamps the timestamp the stuck-direction probe gates on. Called from
 // OnPlayFootstep without exposing internal state.
 void NoteLeaderFootstep();
+
+// GetTickCount64() at the last leader footstep, 0 if none this session.
+//
+// Second reader, added 2026-08-14: the dead-keyboard watchdog treats this as a
+// liveness channel. A footstep is the engine acting on a held movement key, and
+// it keeps firing when the player is walking into a wall — the one case where
+// position and camera yaw both stay put while the keyboard is demonstrably
+// fine. Witnessed on K2 (patch-20260813-232824.log, "Sackgasse" dead end): the
+// engine logged footsteps with stuck=1 throughout, and the watchdog still armed
+// three times because it could not see them.
+uint64_t LastLeaderFootstepMs();
 
 }  // namespace acc::audio::footstep_suppress

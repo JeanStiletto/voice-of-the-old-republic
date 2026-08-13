@@ -67,6 +67,32 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h3>Bug fixes:</h3>
 
+- The camera no longer starts spinning on its own, and your character no longer
+  walks off in one direction without being told to. Both games. Two testers hit
+  this repeatedly; it took hold after walking a long stretch with a movement key
+  held, and once it started, letting go of the key did not stop it.
+
+  The mod was causing it. A watchdog meant to revive a keyboard that the engine
+  had stopped listening to decided the keyboard was dead whenever a key had been
+  held for a while with no keypress reaching the engine — but in-world movement
+  keys never reach the part of the engine it was watching, so during ordinary
+  walking that condition is permanently true. Holding a key for a second and a
+  half was enough to trigger it, which is to say: walking. Its recovery then ran
+  every 0.7 s for as long as the key was held, up to 256 times in one tester's
+  session.
+
+  That recovery is not harmless. Re-acquiring the engine's input device throws
+  away every keyboard event still queued, and the engine tracks keys by
+  press-and-release events rather than by re-reading which keys are down. Throw
+  away a release and the engine believes that key is still held, permanently —
+  a movement key walks you forward forever, a turn key spins the camera forever.
+
+  The watchdog now waits until you have let go before doing anything, so there
+  is no release for it to lose; it recognises that the engine is responding by
+  watching your character move, the camera turn, and your footsteps play, rather
+  than by the one signal that could not see walking at all; and it gives up
+  after a few attempts instead of running without limit.
+
 - Pressing Enter on a map landmark walks you there instead of acting on
   something else entirely. Landmarks are waypoints — map markers with no
   physical presence — so the engine has no action for one and quietly answered
