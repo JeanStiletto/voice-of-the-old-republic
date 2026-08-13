@@ -12,45 +12,7 @@ When an entry is closed, move it out of this file (the corresponding fix or comm
 
 ## Bugs
 
-### KOTOR 2 lab station: nothing can actually be crafted
-
-On KOTOR 2's "Neue Gegenstände erzeugen" screen (the lab station / workbench
-crafting panel, `PanelKind::WorkbenchCreateItem` / `WorkbenchCreateMedical`),
-pressing Enter on a recipe row does nothing, and a subsequent press on "Objekt
-erstellen" does nothing either. The screen reads correctly — titles, rows, the
-create/breakdown view flip — but no item can be made from the keyboard.
-Reported 2026-08-13 during the pre-0.7.2 audit.
-
-**The screen had never been exercised.** It was written offline in the K2
-crafting batch and no log had ever contained it: every earlier workbench
-session shows only panel kinds 42 (`Upgrade-Werkbank`) and 44 (`Aufwerten:
-<item>`). The first sighting of kind 45 anywhere is
-`patch-20260813-113119.log`, the session that produced this report.
-
-**What the log establishes.** `menus_crafting.cpp`'s row-commit fires on the
-Enter, finds the right control, and delivers the activate — `row-commit
-panel=... btn(id=12)=... fired=1`, twice. So `BTN_Accept` exists on the panel
-and the event reaches it. The engine simply declines to act on it.
-
-**Working hypothesis (not yet verified).** `DispatchRowCommit` writes the
-listbox selection index and then fires `BTN_Accept` directly, never running the
-recipe row's own activate handler — so the engine's notion of which recipe is
-selected is never set, and Accept has nothing to build. The user's own press on
-"Objekt erstellen" fails for the same reason. This is the shape workbench round
-3 already found on K2: the real work lives in the row's own activate handler
-(`OnUpgradeSelected`), not in a separate commit button. The same
-write-index-then-fire-button recipe works for `BTN_UPGRADEITEMS` because that
-button only has to open a panel for whatever row is selected, not build
-anything.
-
-If that holds, the fix also carries a UX decision: Enter on a recipe row should
-*select* the recipe, leaving "Objekt erstellen" as a separate press, rather than
-today's attempt to build immediately on the row press.
-
-Needs its own session, starting with one offline Ghidra round on K2's
-`component_p` / `chemical_p` panel class — find the row activate handler and
-what state `BTN_Accept` reads. See the entry under WHERE TO RESUME in
-`docs/kotor2-port.md`.
+_None currently._
 
 ## Unreproduced
 

@@ -55,6 +55,45 @@ bool ResolveRowCommit(void* panel, void* control,
 // by .gui id. SEH-guarded throughout; logs the outcome.
 void DispatchRowCommit(void* panel, void* listBox, void* row, int buttonId);
 
+// Per-row price quote, spoken after the row's name on each chain step —
+// the crafting counterpart of store::AnnounceChainStepSuffix. In the create
+// view it speaks what the recipe costs; in the break-down view, what tearing
+// the item apart hands back (the cost scaled by the bench skill, min 1, so
+// the two numbers differ and the difference is the point).
+//
+// The number comes from the engine's own cost function, NOT from the
+// screen's price label: that label only refreshes on the row's mouse-enter
+// event, which the keyboard path never fires, so it reads stale. Silent on
+// anything that isn't a row of the currently actionable list.
+void AnnounceChainStepSuffix(void* panel, void* control);
+
+// The K2 crafting screen's BTN_Examine ("Inventar betrachten"), or nullptr
+// when `panel` isn't one of the two crafting screens. Two callers: the Q/E
+// handler fires it, and RebindChain filters it out of the chain — the same
+// trade the store makes with its buy/sell button, so both screens read the
+// same way (Q or E flips the list; the button itself is not a stop).
+void* ViewToggleButton(void* panel);
+
+// Q / E on a K2 crafting screen: flip create <-> break down by firing the
+// panel's own view button. Returns false (and does nothing) when the
+// foreground isn't a crafting screen, which is what lets the container and
+// store handlers share these keys. Polled from Tick.
+bool ToggleViewFromHotkey();
+
+// Mirror chain focus into the engine's own listbox selection on a K2
+// crafting screen, so the panel's "Objekt erstellen" button acts on the row
+// the user is standing on.
+//
+// Same mechanism as chargen_attr::SyncSelectedAbilityFromChainFocus — called
+// per chain step from the input handler, writes engine state only (no engine
+// calls, so nothing re-enters the input hook). Without it the separate
+// button press is a no-op: BTN_Accept builds whatever the listbox's
+// selection_index points at, and arrow navigation alone never moves it.
+//
+// No-op unless the chain sits on a row of the crafting screen's visible item
+// list. See SelectRow in the .cpp for what "selected" has to mean here.
+void SyncSelectedRowFromChainFocus();
+
 // True iff `panel` is a K2 crafting screen and `listBox` is its currently
 // HIDDEN item list (LB_SHOPITEMS or LB_INVITEMS with the visibility bit
 // clear). RebindChain skips such listboxes so chain navigation can't land

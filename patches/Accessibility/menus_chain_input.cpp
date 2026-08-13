@@ -507,6 +507,9 @@ void HandleNavStep(void* activePanel, int code, int val, bool& consumed) {
     // Same for the chargen Skills panel — different field
     // (selected_skill_index) on a different panel, same mechanism.
     acc::menus::chargen_skills::SyncSelectedSkillFromChainFocus();
+    // Same for the K2 workbench / lab-station crafting screens — the engine's
+    // listbox selection_index is what "Objekt erstellen" builds from.
+    acc::menus::crafting::SyncSelectedRowFromChainFocus();
     // Per-row info suffixes / descriptions across panels that need them.
     // Each helper no-ops on every panel except its own.
     acc::menus::chargen_attr::AnnounceChainStepSuffix(g_chainPanel, e.control);
@@ -514,6 +517,7 @@ void HandleNavStep(void* activePanel, int code, int val, bool& consumed) {
     acc::menus::chargen_skills::AnnounceChainStepSuffix(g_chainPanel, e.control);
     acc::menus::chargen_skills::AnnounceChainStepDescription(g_chainPanel, e.control);
     acc::menus::store::AnnounceChainStepSuffix(g_chainPanel, e.control);
+    acc::menus::crafting::AnnounceChainStepSuffix(g_chainPanel, e.control);
     // Inventory rows (CSWGuiInGameInventory / Container loot listbox): append
     // "N Stück" when stack_size > 1. Store rows are deliberately excluded —
     // the store suffix above already speaks "Lager N" / "du besitzt N".

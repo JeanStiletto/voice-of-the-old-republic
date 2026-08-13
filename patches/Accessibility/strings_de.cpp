@@ -372,6 +372,8 @@ const char* Get(Id id) {
         case Id::FmtStorePriceSell:         return "Preis %d Credits, du besitzt %d";
         case Id::StoreModeBuy:              return "Modus Kaufen";
         case Id::StoreModeSell:             return "Modus Verkaufen";
+        case Id::FmtCraftCost:              return "Kosten %d";
+        case Id::FmtCraftYield:             return "Ergibt %d";
         case Id::StoreCannotSell:           return "Kann nicht verkauft werden";
         case Id::StoreCannotBuy:            return "Kann nicht gekauft werden";
         case Id::FmtStoreSoldFor:           return "Verkauft f\xFC""r %d Credits";  // f?r
@@ -745,6 +747,7 @@ const char* Get(Id id) {
         case Id::KbNameQueueClearAll:       return "Warteschlange leeren";
         case Id::KbNameContainerGiveMode:   return "Beh\xE4lter Geben-Modus";
         case Id::KbNameStoreModeToggle:     return "Laden Kaufen oder Verkaufen";
+        case Id::KbNameCraftViewToggle:     return "Werkbank Erstellen oder Zerlegen";
         case Id::KbNameEditboxReReadUp:     return "Eingabefeld erneut lesen hoch";
         case Id::KbNameEditboxReReadDown:   return "Eingabefeld erneut lesen runter";
         case Id::KbNameEditboxSubmit:       return "Eingabe best\xE4tigen";

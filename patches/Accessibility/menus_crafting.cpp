@@ -13,10 +13,12 @@
 #include "engine_manager.h"   // GetForegroundPanel, kAddrGuiManagerPtr
 #include "engine_offsets.h"
 #include "engine_panels.h"    // IdentifyPanel, PanelKind
+#include "engine_reads.h"     // ResolveItemFromClientHandle — row -> CSWSItem*
 #include "log.h"
 #include "menus_chain.h"      // RebindChainPreserveIndex on list changes
 #include "menus_pending.h"    // QueueActivate — auto-open redirect (BTN_BACK)
 #include "menus_extract.h"    // FromControl — title label read
+#include "hotkeys.h"          // Pressed() for Q/E (CraftViewToggle)
 #include "menus_internal.h"   // detail::FindControlById
 #include "strings.h"
 #include "prism.h"
@@ -41,6 +43,22 @@ constexpr int kUpgradeBackBtnId    = 13;  // upgrade_p BTN_BACK ("Abbrechen")
 constexpr int kCraftShopListId     = 4;   // LB_SHOPITEMS (craftable list)
 constexpr int kCraftInvListId      = 5;   // LB_INVITEMS (breakdown list)
 constexpr int kCraftAcceptBtnId    = 12;  // BTN_Accept ("Objekt erstellen")
+// BTN_Examine ("Inventar betrachten") — the create/breakdown view flip. The
+// two .gui files disagree on its id: component_p numbers it 13 and puts
+// BTN_Cancel at 27, chemical_p has BTN_Cancel at 13 and Examine at 14. Firing
+// id 13 blind on a lab station would close the screen instead of flipping it.
+constexpr int kCraftExamineBtnComponentId = 13;
+constexpr int kCraftExamineBtnChemicalId  = 14;
+// The screen's own per-selection number labels, LBL_COST_VALUE (id 8) and
+// LBL_STOCK_VALUE (id 11), are deliberately NOT read. Live evidence
+// (patch-20260813-132834.log): they held "12" / "0" across every keyboard
+// selection change and only moved when a craft committed — the engine
+// refreshes them from the row's own mouse-enter event, which the keyboard
+// path never fires. Quoting them per row would have announced a stale price.
+// AnnounceChainStepSuffix calls the engine's cost function on the focused
+// row's item instead, which cannot go stale. The pool label (id 6) IS
+// reliable — it is written whenever the pool changes — and is surfaced as a
+// virtual chain row by menus_credits.
 constexpr int kCreateItemTitleId   = 19;  // component_p LBL_TITLE
 constexpr int kCreateMedTitleId    = 15;  // chemical_p LBL_TITLE
 
@@ -196,6 +214,18 @@ int RowIndexIn(void* listBox, void* row) {
     }
 }
 
+// The engine's own selected-row index for a listbox, -1 on fault.
+int ReadListBoxSelection(void* listBox) {
+    if (!listBox) return -1;
+    __try {
+        return *reinterpret_cast<short*>(
+            reinterpret_cast<unsigned char*>(listBox) +
+            kListBoxSelectionIndexOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+}
+
 // Row count of a listbox, -1 on fault.
 int ReadListBoxRowCount(void* listBox) {
     if (!listBox) return -1;
@@ -220,6 +250,85 @@ bool WriteListBoxSelection(void* listBox, int index) {
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
     }
+}
+
+// Make `row` the engine's selected row of `listBox`: what a mouse click on
+// the row leaves behind, minus the click.
+//
+// Both halves are load-bearing, and the second one is what the screen was
+// missing (2026-08-13, kotor2 Ghidra):
+//
+//   * selection_index — BTN_Accept's handler (component 0x008D2150 /
+//     chemical 0x008D7A80) fetches the row to act on with
+//     CSWGuiListBox::GetSelectedRow (0x0041FFB0), which is literally
+//     `GetRow(this->selection_index)`; GetRow (0x0041FF70) indexes the same
+//     controls array RowIndexIn scans, so our index IS the engine's index.
+//   * is_active — every one of the four worker functions the Accept handler
+//     dispatches into (component create 0x008D4AC0 / breakdown 0x008D4680,
+//     chemical create 0x008D98F0 / breakdown 0x008D95E0) opens with
+//     `if (row->is_active == 0) return;` and returns SILENTLY. Normally the
+//     listbox raises it by firing the row's HandleInputEvent(0) when the
+//     mouse enters it; our keyboard path never generates that event (the
+//     cursor warp's hit-test does not land on these rows), so the flag stayed
+//     zero, Accept fired, and the engine declined without a sound. That is
+//     the whole "nothing can be crafted" bug.
+//
+// Returns false only if the selection write itself faulted.
+bool SelectRow(void* listBox, void* row, int index) {
+    if (!WriteListBoxSelection(listBox, index)) return false;
+    __try {
+        acc::menus::pending::RaiseIsActiveIfZero(row);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    return true;
+}
+
+// The CSWSItem* behind a crafting row, or null. Same two hops the engine's
+// own create/breakdown workers take on the row's object id at +0x1d0.
+void* ResolveRowItem(void* row) {
+    if (!row) return nullptr;
+    uint32_t handle = 0;
+    __try {
+        handle = *reinterpret_cast<uint32_t*>(
+            reinterpret_cast<unsigned char*>(row) +
+            kStoreItemEntryObjIdOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+    if (!handle) return nullptr;
+    return acc::engine::ResolveItemFromClientHandle(handle);
+}
+
+// Price quote from the engine's own cost function. The two crafting screens
+// use different ones (see kAddrCraftComponentCost). 0 on fault.
+typedef unsigned int (__thiscall* PFN_CraftCost)(void* this_, void* item);
+
+unsigned int CallCraftCost(uintptr_t fnAddr, void* panel, void* item) {
+    if (!fnAddr || !panel || !item) return 0;
+    __try {
+        auto fn = reinterpret_cast<PFN_CraftCost>(fnAddr);
+        return fn(panel, item);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+}
+
+// The panel's ctor-cached skill factor. 0.0f on fault or a nonsense value —
+// callers stay silent rather than quote a yield they can't trust.
+float ReadSkillFactor(void* panel, bool medical) {
+    size_t off = medical ? kCraftChemicalSkillFactorOffset
+                         : kCraftComponentSkillFactorOffset;
+    if (!acc::off::Ok(off)) return 0.0f;
+    float v = 0.0f;
+    __try {
+        v = *reinterpret_cast<float*>(
+            reinterpret_cast<unsigned char*>(panel) + off);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0.0f;
+    }
+    if (!(v > 0.0f) || v > 1.0f) return 0.0f;
+    return v;
 }
 
 bool FireActivate(void* control) {
@@ -270,7 +379,7 @@ void DispatchRowCommit(void* panel, void* listBox, void* row, int buttonId) {
                       row, listBox, panel);
         return;
     }
-    if (!WriteListBoxSelection(listBox, idx)) {
+    if (!SelectRow(listBox, row, idx)) {
         acclog::Write("Crafting",
                       "row-commit dropped: selection write failed lb=%p idx=%d",
                       listBox, idx);
@@ -283,6 +392,13 @@ void DispatchRowCommit(void* panel, void* listBox, void* row, int buttonId) {
                       buttonId, panel);
         return;
     }
+    // The commit button gates the same way its row does; every other
+    // hand-fired dispatch in the mod raises both (see EquipCommit /
+    // WorkbenchUpgradeCommit in menus_pending.cpp).
+    __try {
+        acc::menus::pending::RaiseIsActiveIfZero(btn);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+    }
     bool ok = FireActivate(btn);
     acclog::Write("Crafting",
                   "row-commit panel=%p lb=%p row=%p idx=%d btn(id=%d)=%p fired=%d",
@@ -293,6 +409,116 @@ void DispatchRowCommit(void* panel, void* listBox, void* row, int buttonId) {
     // one-to-two-frame delay before the panel actually fronts.
     if (ok && buttonId == kSelUpgradeItemsBtn) {
         g_userOpenedUpgradeTtl = 20;
+    }
+}
+
+void AnnounceChainStepSuffix(void* panel, void* control) {
+    if (!panel || !control || !acc::game::IsKotor2()) return;
+    PanelKind pk = IdentifyPanel(panel);
+    if (!IsCraftingKind(pk)) return;
+
+    // Only rows of the list the user can act on. Buttons and the resource
+    // row fall out here.
+    void* lb = FindActiveCraftList(panel);
+    if (!lb || RowIndexIn(lb, control) < 0) return;
+
+    void* item = ResolveRowItem(control);
+    if (!item) {
+        acclog::Write("Crafting",
+                      "chain-step suffix row=%p: item resolve failed", control);
+        return;
+    }
+
+    bool medical = (pk == PanelKind::WorkbenchCreateMedical);
+    unsigned int cost = CallCraftCost(
+        medical ? kAddrCraftChemicalCost : kAddrCraftComponentCost,
+        panel, item);
+    if (cost == 0) return;  // fault, or an item the engine prices at nothing
+
+    // Which list is showing decides which number is the useful one: what it
+    // costs to build, or what breaking it down hands back. They are not the
+    // same — the return is the cost scaled by the bench skill, min 1, which
+    // is why a low-skill character loses material on every teardown.
+    bool breakdown = (FindControlById(panel, kCraftShopListId) != lb);
+    char msg[96];
+    if (breakdown) {
+        float factor = ReadSkillFactor(panel, medical);
+        if (factor <= 0.0f) return;
+        int yield = (int)((float)cost * factor);
+        if (yield < 1) yield = 1;
+        snprintf(msg, sizeof(msg),
+                 acc::strings::Get(acc::strings::Id::FmtCraftYield), yield);
+    } else {
+        snprintf(msg, sizeof(msg),
+                 acc::strings::Get(acc::strings::Id::FmtCraftCost), (int)cost);
+    }
+    prism::Speak(msg, /*interrupt=*/false);
+    acclog::Write("Crafting",
+                  "chain-step suffix row=%p item=%p %s cost=%u -> \"%s\"",
+                  control, item, breakdown ? "breakdown" : "create", cost, msg);
+}
+
+void* ViewToggleButton(void* panel) {
+    if (!panel || !acc::game::IsKotor2()) return nullptr;
+    PanelKind pk = IdentifyPanel(panel);
+    if (pk == PanelKind::WorkbenchCreateItem) {
+        return FindControlById(panel, kCraftExamineBtnComponentId);
+    }
+    if (pk == PanelKind::WorkbenchCreateMedical) {
+        return FindControlById(panel, kCraftExamineBtnChemicalId);
+    }
+    return nullptr;
+}
+
+// Q / E — flip create <-> break down. Mirrors store::ToggleModeFromHotkey:
+// the button is the engine's own, we just fire it from a key instead of
+// leaving it in the chain. The resulting view flip is announced by Tick's
+// existing shopVis edge, so nothing is spoken here.
+bool ToggleViewFromHotkey() {
+    void* mgr = nullptr;
+    __try {
+        mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    if (!mgr) return false;
+    void* fg = acc::engine::GetForegroundPanel(mgr);
+    void* btn = ViewToggleButton(fg);
+    if (!btn) return false;
+    if (acc::menus::pending::IsPending()) {
+        acclog::Write("Crafting",
+                      "Q/E (view toggle) -- op already pending; ignoring");
+        return false;
+    }
+    acc::menus::pending::QueueActivate(btn);
+    acclog::Write("Crafting",
+                  "Q/E (view toggle) -> FireActivate BTN_Examine panel=%p "
+                  "target=%p", fg, btn);
+    return true;
+}
+
+void SyncSelectedRowFromChainFocus() {
+    if (!acc::game::IsKotor2()) return;
+    void* panel = acc::menus::chain::g_chainPanel;
+    if (!panel || !IsCraftingKind(IdentifyPanel(panel))) return;
+    if (acc::menus::chain::g_chainIndex < 0 ||
+        acc::menus::chain::g_chainIndex >= acc::menus::chain::g_chainCount) {
+        return;
+    }
+    void* focused =
+        acc::menus::chain::g_chain[acc::menus::chain::g_chainIndex].control;
+    void* lb = FindActiveCraftList(panel);
+    if (!lb || !focused) return;
+    int idx = RowIndexIn(lb, focused);
+    if (idx < 0) return;  // focus is on a button / category, not an item row
+
+    static void* s_lastRow = nullptr;
+    if (!SelectRow(lb, focused, idx)) return;
+    if (focused != s_lastRow) {
+        s_lastRow = focused;
+        acclog::Write("Crafting",
+                      "chain focus -> engine selection panel=%p lb=%p row=%p "
+                      "idx=%d", panel, lb, focused, idx);
     }
 }
 
@@ -326,6 +552,15 @@ void Tick() {
     void* mgr = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
     void* fg = mgr ? acc::engine::GetForegroundPanel(mgr) : nullptr;
     PanelKind pk = fg ? IdentifyPanel(fg) : PanelKind::Unknown;
+
+    // Q/E view toggle. Polled here for the same reason the store polls its
+    // own: the engine eats these scancodes before the menu dispatcher sees
+    // them, so the keyboard has to be read directly. ToggleViewFromHotkey
+    // re-checks the foreground itself, which is what keeps this key from
+    // colliding with the container and store handlers on the same keys.
+    if (acc::hotkeys::Pressed(acc::hotkeys::Action::CraftViewToggle)) {
+        ToggleViewFromHotkey();
+    }
 
     bool edge = fg != s_lastFg;
     s_lastFg = fg;

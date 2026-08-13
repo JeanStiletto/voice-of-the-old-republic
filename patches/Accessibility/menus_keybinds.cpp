@@ -85,6 +85,7 @@ constexpr ActionEntry kMenus[] = {
     { A::QueueClearAll,     S::KbNameQueueClearAll },
     { A::ContainerGiveMode, S::KbNameContainerGiveMode },
     { A::StoreModeToggle,   S::KbNameStoreModeToggle },
+    { A::CraftViewToggle,   S::KbNameCraftViewToggle },
     { A::EditboxReReadUp,   S::KbNameEditboxReReadUp },
     { A::EditboxReReadDown, S::KbNameEditboxReReadDown },
     { A::EditboxSubmit,     S::KbNameEditboxSubmit },

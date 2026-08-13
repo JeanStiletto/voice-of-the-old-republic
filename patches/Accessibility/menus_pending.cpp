@@ -40,8 +40,6 @@
 
 namespace acc::menus::pending {
 
-namespace {
-
 // Raise a control's is_active flag from 0 to 1 and return what it was.
 //
 // Every engine dispatch we fire by hand needs this first, because several
@@ -73,6 +71,8 @@ uint32_t RaiseIsActiveIfZero(void* control) {
     if (prev == 0) *isActive = 1;
     return prev;
 }
+
+namespace {
 
 enum class Kind {
     None,

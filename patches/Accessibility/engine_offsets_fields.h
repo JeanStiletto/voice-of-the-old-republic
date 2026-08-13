@@ -1554,7 +1554,30 @@ const size_t    kStorePlayerGoldOffset                 = acc::off::Todo(0x2270);
 // +4 in KOTOR 2, observed: its CSWGuiPanel hit-test tests bit 0 of this+0x48
 // to decide whether to letterbox-adjust the cursor, where KOTOR 1 uses +0x44.
 const size_t    kControlBitFlagsOffset                 = acc::off::Pick(0x44, 0x48);
-const uint32_t  kStoreListBoxVisibleBit                = acc::off::Todo(0x2);
+// K2 crafting screens: the ctor-cached skill factor, a float. Workbench =
+// GetSkillRank(Repair)/20, lab station = GetSkillRank(Treat Injury)/20, both
+// clamped to at most 1.0. Breaking an item down returns
+// max(1, (int)(cost * this)) of the screen's resource, so a low skill gets
+// back less than the item cost to make. The two panels put it at different
+// offsets — their whole field blocks are shifted relative to each other.
+const size_t    kCraftComponentSkillFactorOffset = acc::off::Kotor2Only(0x3ed4);
+const size_t    kCraftChemicalSkillFactorOffset  = acc::off::Kotor2Only(0x33f4);
+
+// This is a BIT MASK inside the per-game-selected field above, not an offset
+// — so `Todo()` was the wrong tool for it and actively harmful. Todo() poisons
+// to 0x7BAD0000 on KOTOR 2, which turned every `bit_flags & visible_bit` test
+// into a read of the field's uninitialised UPPER bits: nondeterministic per
+// run. Two KOTOR 2 sessions 70 minutes apart, same save, same code path, gave
+// opposite answers — one showed the workbench recipe list, the next showed an
+// empty screen, because the chain skips a listbox this says is hidden
+// (2026-08-13). K2's store buy/sell mode detection rode on the same coin flip.
+// Bit 0x02 is confirmed identical in KOTOR 2 by its own crafting-panel code:
+// the create-view switch (0x008D6850) sets `LB_SHOPITEMS.bit_flags |= 2` and
+// clears the same bit on LB_INVITEMS, the breakdown switch (0x008D65D0) does
+// the inverse, and BTN_Examine's toggle (0x008D4F60) branches on
+// `(LB_SHOPITEMS.bit_flags >> 1) & 1` — all at +0x48, i.e. exactly
+// kControlBitFlagsOffset. Same bit, both games.
+const uint32_t  kStoreListBoxVisibleBit                = acc::off::Same(0x2);
 // The same bit_flags 0x02 is the general CSWGuiControl "shown" bit. The
 // StatusSummary popup lays out one label per notification type and sets
 // this bit only on the row(s) it actually displays — hidden template rows

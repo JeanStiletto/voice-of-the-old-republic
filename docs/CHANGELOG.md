@@ -37,6 +37,33 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h3>KOTOR 2:</h3>
 
+- Workbenches and lab stations can craft. Pressing Enter on a recipe, or the
+  screen's own "Create Item" button, did nothing at all — the engine refuses to
+  build unless the recipe row carries the internal "active" flag that only a
+  real mouse-over sets, so every keyboard attempt was declined in silence. The
+  flag is now set the way a click would, and the row you are standing on is
+  kept as the engine's selection, so both routes work. Breaking items down for
+  materials works the same way.
+
+- The workbench and lab-station item lists were empty about as often as not.
+  The test for which of the two lists (create / break down) is currently
+  showing was reading uninitialised memory on KOTOR 2, so it answered
+  differently from one session to the next, and a list it judged hidden had all
+  its rows dropped from keyboard navigation. The same test also decides a
+  KOTOR 2 store's buy-versus-sell mode, which was equally unreliable.
+
+- Q and E switch between creating items and breaking them down, matching what
+  those keys already do in containers and shops. The screen's "View Inventory"
+  button is no longer a navigation stop in exchange.
+
+- Crafting screens announce what a recipe costs and what a teardown returns.
+  Arrowing over a recipe speaks "Costs 12" after its name; in the break-down
+  list rows speak "Returns 3" — your skill decides how much of the material
+  actually comes back, so the two numbers are rarely the same. The screen's
+  running total is a navigation row of its own at the top of the list, the way
+  credits are in a shop, and names its own resource ("All Components" at a
+  workbench, "All Chemicals" at a lab station).
+
 - The keyboard comes back after another window takes the focus. On KOTOR 2 the
   mod could never re-grab the engine's DirectInput devices, because the two
   addresses it needs — the input singleton and `CExoInput::SetActive` — were

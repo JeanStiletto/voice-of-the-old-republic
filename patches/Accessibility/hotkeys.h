@@ -71,6 +71,10 @@ enum class Action : int {
     // ----- Store mode toggle -----
     StoreModeToggle,       // Q or E inside an open Store panel (flips Buy/Sell)
 
+    // ----- K2 crafting view toggle -----
+    CraftViewToggle,       // Q or E on a K2 workbench / lab-station crafting
+                           // screen (flips Create / Break down)
+
     // ----- In-world cycle (Pillar 4) -----
     CycleItemPrev,         // ,
     CycleCategoryPrev,     // Shift+,

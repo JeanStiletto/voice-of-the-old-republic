@@ -1287,6 +1287,16 @@ enum class Id : int {
     FmtStorePriceSell,
     StoreModeBuy,
     StoreModeSell,
+    // ---- K2 crafting per-row suffix, the same idea as the store prices
+    //      above. The resource is deliberately unnamed ("costs 12", not
+    //      "costs 12 components"): the screen's own resource-pool row already
+    //      says which resource this bench spends, in the game's own wording,
+    //      and repeating it on every single row would be noise.
+    //          FmtCraftCost  — create view. One `%d` (cost to build).
+    //          FmtCraftYield — break-down view. One `%d` (what you get back,
+    //              already reduced by your skill).
+    FmtCraftCost,
+    FmtCraftYield,
     // ---- Per-trade speech, fired after Enter on a Store row.
     //      `StoreSold` / `StoreBought`     — fired when the active
     //          listbox shrinks/grows within ~2 ticks of DispatchTradeAction
@@ -1936,6 +1946,7 @@ enum class Id : int {
     KbNameQueueClearAll,
     KbNameContainerGiveMode,
     KbNameStoreModeToggle,
+    KbNameCraftViewToggle,
     KbNameEditboxReReadUp,
     KbNameEditboxReReadDown,
     KbNameEditboxSubmit,

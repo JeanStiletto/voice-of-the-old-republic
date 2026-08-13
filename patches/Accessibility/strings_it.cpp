@@ -368,6 +368,8 @@ const char* Get(Id id) {
         case Id::FmtStorePriceSell:         return "Prezzo %d crediti, ne possiedi %d";
         case Id::StoreModeBuy:              return "Modalit\xE0 acquisto";
         case Id::StoreModeSell:             return "Modalit\xE0 vendita";
+        case Id::FmtCraftCost:              return "Costa %d";
+        case Id::FmtCraftYield:             return "Rende %d";
         case Id::StoreCannotSell:           return "Non pu\xF2 essere venduto";
         case Id::StoreCannotBuy:            return "Non pu\xF2 essere acquistato";
         case Id::FmtStoreSoldFor:           return "Venduto per %d crediti";
@@ -726,6 +728,7 @@ const char* Get(Id id) {
         case Id::KbNameQueueClearAll:       return "Svuota coda";
         case Id::KbNameContainerGiveMode:   return "Contenitore modalit\xE0 dare";
         case Id::KbNameStoreModeToggle:     return "Negozio compra o vendi";
+        case Id::KbNameCraftViewToggle:     return "Banco da lavoro crea o smonta";
         case Id::KbNameEditboxReReadUp:     return "Rileggi campo verso l'alto";
         case Id::KbNameEditboxReReadDown:   return "Rileggi campo verso il basso";
         case Id::KbNameEditboxSubmit:       return "Conferma immissione";

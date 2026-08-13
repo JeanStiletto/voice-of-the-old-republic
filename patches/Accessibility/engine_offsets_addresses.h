@@ -966,6 +966,19 @@ const uintptr_t kAddrItemAddK2Extra2        = acc::addr::Kotor2Only(0x0060A0D0);
 const uintptr_t kAddrItemAddK2Extra3        = acc::addr::Kotor2Only(0x0060A4F0);
 const uintptr_t kAddrItemAddK2Extra4        = acc::addr::Kotor2Only(0x0060B360);
 
+// K2 crafting cost — __thiscall(panel, CSWSItem*) -> uint. What one unit of
+// this recipe costs to build, and (before the skill multiplier) what breaking
+// the item down returns. The two crafting screens have separate functions with
+// separate divisors on the item's gold value: the workbench charges
+// max(1, value / 20) in components, the lab station max(1, value / 2) in
+// chemicals. Both ignore their `this` entirely (it is stored and never read),
+// so they are pure functions of the item — safe to call for a read-only
+// price quote, which is exactly what the per-row announcement does.
+// Decompiled 2026-08-13; the engine calls these to gate create ("not enough
+// components") and to compute the breakdown yield.
+const uintptr_t kAddrCraftComponentCost     = acc::addr::Kotor2Only(0x008D6B40);
+const uintptr_t kAddrCraftChemicalCost      = acc::addr::Kotor2Only(0x008DB5E0);
+
 // CExoString default constructor — __thiscall(CExoString* this). Initialises a
 // valid empty string the engine builders can append to. (GetPropertyDescription
 // calls this on its accumulator before the Add* sequence.)

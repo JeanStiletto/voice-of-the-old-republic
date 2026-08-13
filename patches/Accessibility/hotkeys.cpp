@@ -99,6 +99,7 @@ const char* const kActionNames[static_cast<int>(Action::COUNT)] = {
     "QueueClearAll",
     "ContainerGiveMode",
     "StoreModeToggle",
+    "CraftViewToggle",
     "CycleItemPrev",
     "CycleCategoryPrev",
     "CycleItemNext",
@@ -282,6 +283,15 @@ void InitDefaults() {
     // handlers gate on the foreground panel kind, so only one fires per
     // press.
     bind(Action::StoreModeToggle,      'Q', 'E', 0, 0);
+
+    // ----- K2 crafting view toggle. Third action on the same keys, same
+    // rule: the handler gates on the foreground panel kind, so exactly one
+    // of the three fires per press. Flips the workbench / lab-station
+    // screen between the create list and the break-down list, which is what
+    // its "Inventar betrachten" button does — the button is filtered out of
+    // the chain in exchange, so the screen reads the same way a store or a
+    // container does.
+    bind(Action::CraftViewToggle,      'Q', 'E', 0, 0);
 
     // ----- In-world cycle -----
     // Cycle navigate keys use VK_OEM_COMMA / VK_OEM_PERIOD — same VK on

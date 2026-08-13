@@ -23,7 +23,25 @@
 
 #pragma once
 
+#include <cstdint>
+
 namespace acc::menus::pending {
+
+// Raise a control's is_active flag from 0 to 1 and return what it was.
+//
+// Every engine dispatch we fire by hand needs this first: several engine
+// handlers gate on `this->is_active != 0` and silently do nothing (or divert)
+// when it is zero, because normally only HandleLMouseDown ever sets it. The
+// raise is deliberately CONDITIONAL — some controls carry non-zero engine
+// bookkeeping in the field and clobbering it corrupts engine state. The full
+// rationale, including the crash that established the conditional form, lives
+// with the definition in menus_pending.cpp.
+//
+// Exported because the same rule binds every hand-fired dispatch, including
+// the ones outside this module (menus_crafting's K2 workbench / lab-station
+// row commit). Do not re-derive it inline — that is how the unconditional
+// write gets reintroduced.
+uint32_t RaiseIsActiveIfZero(void* control);
 
 // Queue a cursor-warp to (x, y). On drain calls MoveMouseToPosition(gm, x, y).
 // `target` is the chain control we're warping to — kept on the op struct

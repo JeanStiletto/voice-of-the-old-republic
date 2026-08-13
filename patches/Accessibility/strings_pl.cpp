@@ -373,6 +373,8 @@ const char* Get(Id id) {
         case Id::FmtStorePriceSell:         return "Cena %d kredyt\xF3w, posiadasz %d";
         case Id::StoreModeBuy:              return "Tryb kupna";
         case Id::StoreModeSell:             return "Tryb sprzeda\xBFy";
+        case Id::FmtCraftCost:              return "Koszt %d";
+        case Id::FmtCraftYield:             return "Daje %d";
         case Id::StoreCannotSell:           return "Nie mo\xBFna sprzeda\xE6";
         case Id::StoreCannotBuy:            return "Nie mo\xBFna kupi\xE6";
         case Id::FmtStoreSoldFor:           return "Sprzedano za %d kredyt\xF3w";
@@ -725,6 +727,7 @@ const char* Get(Id id) {
         case Id::KbNameQueueClearAll:       return "Wyczy\x9C\xE6 kolejk\xEA";
         case Id::KbNameContainerGiveMode:   return "Tryb oddawania do pojemnika";
         case Id::KbNameStoreModeToggle:     return "Sklep: kupno lub sprzeda\xBF";
+        case Id::KbNameCraftViewToggle:     return "Warsztat: tworzenie lub rozk³""ad";
         case Id::KbNameEditboxReReadUp:     return "Pole edycji: czytaj w g\xF3r\xEA";
         case Id::KbNameEditboxReReadDown:   return "Pole edycji: czytaj w d\xF3\xB3";
         case Id::KbNameEditboxSubmit:       return "Zatwierd\x9F wpis";
