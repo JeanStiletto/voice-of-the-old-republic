@@ -1554,6 +1554,18 @@ const size_t    kStorePlayerGoldOffset                 = acc::off::Todo(0x2270);
 // +4 in KOTOR 2, observed: its CSWGuiPanel hit-test tests bit 0 of this+0x48
 // to decide whether to letterbox-adjust the cursor, where KOTOR 1 uses +0x44.
 const size_t    kControlBitFlagsOffset                 = acc::off::Pick(0x44, 0x48);
+// K2 crafting row: the engine's own "you can make this" flag. Zero means the
+// character's skill is short of the recipe's requirement — both create workers
+// (component 0x008D4AC0, chemical 0x008D98F0, identical offset) test it before
+// anything else and pop a message box instead of building.
+//
+// Worth reading because the list deliberately shows recipes you CANNOT make
+// yet: the populate filter admits any recipe whose required level is at most
+// your rank PLUS EIGHT (it also filters on category, a base-skill minimum and
+// your alignment tier). So an unmakeable row is normal, not an error, and the
+// only thing distinguishing it is this flag.
+const size_t    kCraftRowCraftableFlagOffset     = acc::off::Kotor2Only(0x3b4);
+
 // K2 crafting screens: the ctor-cached skill factor, a float. Workbench =
 // GetSkillRank(Repair)/20, lab station = GetSkillRank(Treat Injury)/20, both
 // clamped to at most 1.0. Breaking an item down returns

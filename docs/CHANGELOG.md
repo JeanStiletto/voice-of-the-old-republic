@@ -53,8 +53,12 @@ and add the German in parentheses if it genuinely aids clarity.
   KOTOR 2 store's buy-versus-sell mode, which was equally unreliable.
 
 - Q and E switch between creating items and breaking them down, matching what
-  those keys already do in containers and shops. The screen's "View Inventory"
-  button is no longer a navigation stop in exchange.
+  those keys already do in containers and shops. The screen's two action
+  buttons, "View Inventory" and "Create Item", stop appearing as navigation
+  stops in exchange: Q and E do the first, and Enter on a recipe already does
+  the second. This is the same arrangement as a shop, where Enter on a row
+  trades and the Buy/Sell button is hidden — worth knowing if you have watched
+  someone play with a mouse, because there it really is two separate clicks.
 
 - Crafting screens announce what a recipe costs and what a teardown returns.
   Arrowing over a recipe speaks "Costs 12" after its name; in the break-down
@@ -63,6 +67,12 @@ and add the German in parentheses if it genuinely aids clarity.
   running total is a navigation row of its own at the top of the list, the way
   credits are in a shop, and names its own resource ("All Components" at a
   workbench, "All Chemicals" at a lab station).
+
+- Recipes your character isn't skilled enough to make say so, as "not
+  available" after the cost. The game deliberately lists recipes up to eight
+  skill ranks beyond your current one, mixed in with the rest, and answers an
+  attempt on one with a message box and nothing built — so a list you can only
+  partly use is normal here, and now audible.
 
 - The keyboard comes back after another window takes the focus. On KOTOR 2 the
   mod could never re-grab the engine's DirectInput devices, because the two

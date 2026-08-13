@@ -1295,13 +1295,12 @@ void RebindChain(void* panel) {
     ResolveStoreActionButtons(panel, storeCancelBtn, storeToggleBtn,
                               storeAcceptBtn);
 
-    // K2 crafting screens: same trade as the store's toggle button above.
-    // "Inventar betrachten" only swaps the create list for the break-down
-    // list, and Q/E does that now, so leaving it in the chain just adds an
-    // entry the user has to step over between the recipes and the commit
-    // button. "Objekt erstellen" deliberately STAYS — it is a real second
-    // way to commit the focused row, not a view switch.
+    // K2 crafting screens: the same trade as the store's action buttons
+    // above. Q/E swaps the create list for the break-down list and Enter on a
+    // row commits it, so both buttons would be stops that repeat what a key
+    // already does.
     void* craftViewToggleBtn = acc::menus::crafting::ViewToggleButton(panel);
+    void* craftCommitBtn     = acc::menus::crafting::CommitButton(panel);
 
     // Resolve the engine's localized close caption (strref 1582 →
     // "Schliess."/"Close"/…) once per rebind, for the universal
@@ -1328,7 +1327,7 @@ void RebindChain(void* panel) {
         if (c == portraitChargenSkip) continue;
         if (c == storeCancelBtn || c == storeToggleBtn ||
             c == storeAcceptBtn) continue;
-        if (c == craftViewToggleBtn) continue;
+        if (c == craftViewToggleBtn || c == craftCommitBtn) continue;
 
         if (IsChainNavigable(c)) {
             if (IsDecorativeControl(panel, c, closeCaption, haveCloseCaption)) {

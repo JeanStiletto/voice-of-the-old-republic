@@ -74,6 +74,14 @@ void AnnounceChainStepSuffix(void* panel, void* control);
 // same way (Q or E flips the list; the button itself is not a stop).
 void* ViewToggleButton(void* panel);
 
+// The screen's BTN_Accept ("Objekt erstellen"), or nullptr off the crafting
+// screens. RebindChain filters it out for the same reason the store filters
+// its Buy/Sell button: Enter on a row already commits that row, so the button
+// is a second stop that does exactly what the user just did. Note this is a
+// deliberate divergence from the mouse flow, where selecting a row and
+// pressing the button are two separate acts.
+void* CommitButton(void* panel);
+
 // Q / E on a K2 crafting screen: flip create <-> break down by firing the
 // panel's own view button. Returns false (and does nothing) when the
 // foreground isn't a crafting screen, which is what lets the container and

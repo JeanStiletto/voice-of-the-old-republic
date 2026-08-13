@@ -300,6 +300,19 @@ void* ResolveRowItem(void* row) {
     return acc::engine::ResolveItemFromClientHandle(handle);
 }
 
+// Can the character actually make (or break down) this row? Reads the
+// engine's own gate; true on fault, so a bad read never invents a refusal.
+bool IsRowCraftable(void* row) {
+    if (!row || !acc::off::Ok(kCraftRowCraftableFlagOffset)) return true;
+    __try {
+        return *reinterpret_cast<int*>(
+            reinterpret_cast<unsigned char*>(row) +
+            kCraftRowCraftableFlagOffset) != 0;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return true;
+    }
+}
+
 // Price quote from the engine's own cost function. The two crafting screens
 // use different ones (see kAddrCraftComponentCost). 0 on fault.
 typedef unsigned int (__thiscall* PFN_CraftCost)(void* this_, void* item);
@@ -452,10 +465,22 @@ void AnnounceChainStepSuffix(void* panel, void* control) {
         snprintf(msg, sizeof(msg),
                  acc::strings::Get(acc::strings::Id::FmtCraftCost), (int)cost);
     }
+    // The list shows recipes up to eight skill ranks above the character, so
+    // "you can't make this one yet" is ordinary and has to be audible — the
+    // engine answers a press on such a row with a message box and nothing
+    // else. Same wording the mod already uses for unavailable buttons.
+    bool craftable = IsRowCraftable(control);
+    if (!craftable) {
+        size_t used = strlen(msg);
+        snprintf(msg + used, sizeof(msg) - used, "%s",
+                 acc::strings::Get(acc::strings::Id::DisabledSuffix));
+    }
     prism::Speak(msg, /*interrupt=*/false);
     acclog::Write("Crafting",
-                  "chain-step suffix row=%p item=%p %s cost=%u -> \"%s\"",
-                  control, item, breakdown ? "breakdown" : "create", cost, msg);
+                  "chain-step suffix row=%p item=%p %s cost=%u craftable=%d "
+                  "-> \"%s\"",
+                  control, item, breakdown ? "breakdown" : "create", cost,
+                  craftable ? 1 : 0, msg);
 }
 
 void* ViewToggleButton(void* panel) {
@@ -468,6 +493,12 @@ void* ViewToggleButton(void* panel) {
         return FindControlById(panel, kCraftExamineBtnChemicalId);
     }
     return nullptr;
+}
+
+void* CommitButton(void* panel) {
+    if (!panel || !acc::game::IsKotor2()) return nullptr;
+    if (!IsCraftingKind(IdentifyPanel(panel))) return nullptr;
+    return FindControlById(panel, kCraftAcceptBtnId);
 }
 
 // Q / E — flip create <-> break down. Mirrors store::ToggleModeFromHotkey:
