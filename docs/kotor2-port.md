@@ -14,6 +14,40 @@ plan.
 
 ## WHERE TO RESUME (read this first)
 
+**NEXT SESSION: the K2 lab station cannot craft anything (OPEN, reported
+2026-08-13).** Enter on a recipe row does nothing; a following press on "Objekt
+erstellen" does nothing either. Full symptom write-up and the working
+hypothesis are in `docs/known-issues.md` under Bugs — read that first, this
+entry is only the execution plan.
+
+- **The panel is kind 45**, `"Neue Gegenstände erzeugen"`, first seen anywhere
+  in `patch-20260813-113119.log`. Every earlier workbench log shows only kinds
+  42 and 44, so this screen shipped from the offline crafting batch without
+  ever being exercised. Its `.gui` is `component_p` (create items) or
+  `chemical_p` (create medical); `menus_crafting.cpp` maps them to
+  `PanelKind::WorkbenchCreateItem` / `WorkbenchCreateMedical`.
+- **Not the problem:** control lookup or event delivery. The log has
+  `row-commit panel=1B024010 lb=1B0275FC row=... idx=0 btn(id=12)=1B024FF4
+  fired=1` twice, so `kCraftAcceptBtnId` (12, `BTN_Accept`) resolves on this
+  panel and `FireActivate` delivered 0x27 to it. The engine declined.
+- **Round 1 (offline, no test round):** decompile the K2 create-item panel
+  class. Two questions answered together — what `BTN_Accept`'s handler reads to
+  decide what to build, and what the recipe row's own activate handler sets.
+  Expect the round-3 shape (`OnUpgradeSelected` @0x008cdb00 is the precedent):
+  the row handler owns the state, and `DispatchRowCommit`'s
+  write-index-then-fire-button never runs it. Entry points: find the panel
+  class via RTTI (`rtti_scan.py` on swkotor2.exe found `CExoInput` cleanly, so
+  the CSWGui classes are there too), then `call_sites.py` / `block.py` over its
+  method block. Both scripts live in `tools/re-scripts/`.
+- **Carries a UX decision, ask before implementing:** if the hypothesis holds,
+  Enter on a recipe row should *select* the recipe and leave "Objekt erstellen"
+  a separate press, instead of today's build-immediately-on-row-press. That is
+  a behaviour change the user has to sign off, not an implementation detail.
+- **Test items when it lands:** create an item from a recipe the character can
+  afford; try one it cannot afford (the engine's own refusal must not be
+  silent); and the breakdown view, which shares the panel and has never been
+  exercised either.
+
 **DirectInput reacquire/release — RESOLVED 2026-08-13 (offline, zero test
 rounds; built green, NOT tested in game).** Found during the pre-0.7.2 audit,
 not by a bug report: `engine_input.cpp` held BOTH of its constants as KOTOR-1

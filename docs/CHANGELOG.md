@@ -99,6 +99,15 @@ and add the German in parentheses if it genuinely aids clarity.
   modules most likely to be at fault. Both are kept now, as is the bundled
   widescreen patch.
 
+<h3>Documentation:</h3>
+
+- The README now states plainly where KOTOR 2 stands: the mod installs and
+  speaks there, but the game has not been played through to the end yet, some
+  blockers still have to be removed, and its minigames and tutorial messages
+  are not covered. The supported-version list is also split per game — Aspyr's
+  2015 build for KOTOR 2 — where it previously named only the KOTOR 1
+  releases. All seven translations carry the same wording.
+
 <h3>Development:</h3>
 
 - The mod now builds with debug symbols, so a crash report can be traced to a
