@@ -9,6 +9,8 @@
 #include "engine_options.h"  // GetMouseLook
 #include "engine_player.h"   // GetCameraYawRadians / GetCameraPosition /
                              // GetPlayerPosition + chain constants
+#include "core_tick.h"       // NowMs — the rate below divides by an inter-tick
+                             // interval, which GetTickCount cannot resolve
 #include "hotkeys.h"         // IsForegroundGame — guard only when focused
 #include "log.h"
 #include "engine_offsets_select.h"
@@ -141,7 +143,7 @@ void EndEpisode(DWORD now, float endYaw) {
 }  // namespace
 
 void Tick() {
-    DWORD now = GetTickCount();
+    DWORD now = acc::tick::NowMs();
 
     // In-world gate: player position resolvable. Resets the rate sample
     // when we leave the world so we don't log a bogus jump on re-entry, and
@@ -174,15 +176,31 @@ void Tick() {
     }
 
     // --- Rotation rate from the quaternion yaw ---
+    //
+    // A tick is one rendered frame, so this divides by an interval shorter
+    // than GetTickCount can resolve (~15.6 ms against ~16.7 ms at 60 Hz vsync,
+    // ~6.9 ms at 144 Hz). Two ticks in one quantum give dt == 0, and on the
+    // old clock that silently reported 0 deg/s — below kGuardRateThresh, so
+    // the guard skipped a correction on a frame the camera really was spinning.
+    // Self-correcting on the next frame, but it is the same defect that made
+    // camera_announce speak three false stop cues in one second.
+    //
+    // Timing now comes from the tick clock (QPC-backed, sampled once before
+    // the fan-out), and a zero-length interval HOLDS the previous sample
+    // rather than replacing it: a measurement we do not have yet is not a
+    // measurement of zero, and keeping the old sample lets the next tick
+    // measure across a real interval.
     float rateDegPerSec = 0.0f;
+    bool  haveRate      = false;
     if (g_state.have && quatYawDeg >= 0.0f) {
         DWORD dt = now - g_state.prevMs;
         if (dt > 0) {
             rateDegPerSec =
                 AngularDelta(quatYawDeg, g_state.prevYaw) * 1000.0f / (float)dt;
+            haveRate = true;
         }
     }
-    if (quatYawDeg >= 0.0f) {
+    if (quatYawDeg >= 0.0f && (haveRate || !g_state.have)) {
         g_state.prevYaw = quatYawDeg;
         g_state.prevMs  = now;
         g_state.have    = true;
