@@ -146,6 +146,16 @@ void SpeakIfChanged(int channel, const char* text) {
     prism::Speak(text, /*interrupt=*/false);
 }
 
+bool AlreadySpokenOnAnyChannel(const char* text) {
+    if (!text) return false;
+    for (int c = 0; c < 2; ++c) {
+        if (strncmp(s_lastSpoken[c], text, sizeof(s_lastSpoken[c])) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 }  // namespace acc::menus
 
 using acc::menus::SpeakIfChanged;

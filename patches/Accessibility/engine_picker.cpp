@@ -319,6 +319,53 @@ bool Drive(uint32_t targetServerHandle, ActionSnapshot* outSnapshot,
     // dispatching.
     SnapshotDescriptor(internal, &localSnap);
 
+    // Step 3b — is this descriptor actually about the object we asked for?
+    //
+    // GetDefaultActions builds into a fixed slot on the client internal, and
+    // when it has nothing to say about the new target it leaves what was
+    // already there. The descriptor then still carries the PREVIOUS target's
+    // id and verb, and looks perfectly valid. Waypoints are the reproducible
+    // case — not clickable, so the engine never rebuilds for one — and since
+    // the dispatch below trusts target_id over the handle we asked about, the
+    // action lands on whoever was asked about last: in the beta log, Enter on
+    // a landmark opened a conversation with a party member, 12 landmark
+    // presses out of 12 (patch-20260813-150242, 15:07-15:22).
+    //
+    // The mismatch is only conclusive when OUR handle names a real object.
+    // Some callers arrive with a pointer-shaped value in the wrong namespace
+    // (see the radial re-anchor note below); there the descriptor's own target
+    // is the better answer, so leave those alone and let the existing
+    // target_id fallback do its job.
+    // A noop descriptor is not an action. 0x404 is the engine's own "nothing
+    // to do here" verb (see the action_id table in engine_picker.h, and
+    // IsWalkToActVerb which already excludes it) — for an object the engine
+    // will not let you interact with at all, it fills the slot with 0x404 and
+    // the label "No Action". Treated as valid, that produced two misleading
+    // announcements in a row for a ground item that simply cannot be picked
+    // up: the engine's internal label spoken as if it were a verb ("No Action
+    // g_w_sbrcrstl11"), then a dispatch of it, then "Interact with ... failed"
+    // when the dispatch predictably went nowhere. Reporting no default action
+    // routes it to the same honest "no actions available" wording every other
+    // actionless target gets.
+    if (localSnap.valid && localSnap.action_id == kActionIdNoop) {
+        acclog::Write("Picker", "descriptor is the engine noop verb "
+            "(action_id=0x%x label=[%s] target=0x%08x) — treating as no "
+            "default action",
+            localSnap.action_id, localSnap.label, localSnap.target_id);
+        localSnap.valid = false;
+    }
+
+    if (localSnap.valid && localSnap.target_id &&
+        localSnap.target_id != targetClient &&
+        acc::engine::ResolveClientObjectHandle(targetClient)) {
+        acclog::Write("Picker", "descriptor belongs to 0x%08x, not 0x%08x "
+            "(label=[%s] action_id=0x%x) — engine did not rebuild for this "
+            "target; treating as no default action",
+            localSnap.target_id, targetClient, localSnap.label,
+            localSnap.action_id);
+        localSnap.valid = false;
+    }
+
     if (!localSnap.valid || forceRadial) {
         // Diagnostic — capture leader name + target class/state BEFORE
         // calling the wrapper. Lets us tell, when action_lists comes back

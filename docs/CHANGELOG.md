@@ -37,6 +37,35 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h3>Bug fixes:</h3>
 
+- Pressing Enter on a map landmark walks you there instead of acting on
+  something else entirely. Landmarks are waypoints — map markers with no
+  physical presence — so the engine has no action for one and quietly answered
+  with whatever it had been asked about last. That answer was then carried out:
+  usually nothing happened and you heard "movement cancelled, way blocked" a
+  second later, but if the last thing asked about was a person, it started a
+  conversation with them. Landmarks now walk to the coordinate, the way
+  Shift+Minus on the same target already did, and an answer that belongs to a
+  different object is no longer accepted from the engine at all.
+
+- Items lying on the ground are named properly and no longer report a failure
+  they can't avoid. Such an item usually carries no name of its own — the name
+  comes from its template — so it was announced by its internal resource id
+  ("g_w_sbrcrstl11"). It now uses the same name a sighted player sees. Objects
+  the game genuinely offers nothing for say so once, rather than announcing the
+  engine's internal "No Action" label as though it were a verb and then
+  reporting that it failed.
+
+- The equipment screen stops calling everything unavailable. While the item
+  list for a slot is open the game switches that slot's button off, because the
+  list has taken over — and every swap re-read the slot and announced it as
+  unavailable. The "unavailable" wording is kept for what it means (an option
+  you cannot use) and no longer appears while a picker list is open. Same for
+  the workbench.
+
+- Confirmation prompts are read once. A message box's text is both the panel's
+  new content and its only selectable row, and the two announcers each spoke
+  it, so "Are you sure you want to overwrite the save game?" arrived twice.
+
 - Switching party leader with Tab no longer announces a direction the camera
   never faced. The compass reads the heading as "camera towards character", and
   a Tab swap moves the character half to the new leader a frame or two before

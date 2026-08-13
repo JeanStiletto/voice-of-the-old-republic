@@ -672,6 +672,22 @@ bool GetObjectBaseName(void* gameObject, char* outBuf, size_t bufSize) {
         case K::Item:
             got = TryReadLocString(gameObject, kItemLocNameOffset,
                                    outBuf, bufSize);
+            if (!got || outBuf[0] == '\0') {
+                // Same fallback the Creature case uses, for the same reason:
+                // an item dropped in the world usually carries no LocName of
+                // its own (the displayed name comes from its template / base
+                // item), so this fell through to the raw tag and announced a
+                // resref — "g_w_sbrcrstl11" instead of a lightsaber crystal
+                // (patch-20260813-150242, spoken eight times). The engine's
+                // universal accessor gives the string a sighted player reads
+                // in the tooltip. Falls through to the tag as before when it
+                // has nothing either.
+                uint32_t handle = GetObjectHandle(gameObject);
+                outBuf[0] = '\0';
+                got = handle != 0u &&
+                      GetObjectDisplayNameByHandle(handle, outBuf, bufSize) &&
+                      outBuf[0] != '\0';
+            }
             break;
         case K::Waypoint:
             // For a landmark waypoint the curated map-note label (+0x230)

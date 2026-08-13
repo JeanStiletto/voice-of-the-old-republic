@@ -31,6 +31,9 @@
 #include "log.h"
 #include "menus_charsheet.h"
 #include "menus_credits.h"
+#include "menus_listbox.h"      // IsEquipPickerArmed / IsWorkbenchUpgradePickerArmed
+                                // — an armed picker clears the panel buttons'
+                                // interactive bit; see AppendDisabledSuffix
 #include "menus_equipstats.h"
 #include "menus_pazaakdeck.h"
 #include "menus_internal.h"
@@ -2299,6 +2302,25 @@ void AppendToggleSuffix(void* control, char* outBuf, size_t bufSize) {
 // the suffix.
 void AppendDisabledSuffix(void* control, void* ownerPanel,
                           char* outBuf, size_t bufSize) {
+    // While a row picker is armed, the engine clears the interactive bit on
+    // the buttons of the panel underneath it — the equip slots, the workbench
+    // slots — because the picker owns input until it commits or cancels. That
+    // is "not right now", not "not available to you", and the suffix says the
+    // latter. Every item swap therefore re-announced the slot as unavailable
+    // the instant its text changed: "Body, Echani Fiber Armor, unavailable",
+    // sixteen distinct lines in the beta log and present as far back as the
+    // 0.5.7 logs. The slot reads cleanly again the moment the picker closes,
+    // which is exactly what the log shows once the user backs out — so the
+    // flag is right and the timing is what makes it meaningless.
+    //
+    // Not gated on ownerPanel: an armed picker owns its panel exclusively (it
+    // disarms when that panel leaves the manager's panels[]), and several
+    // announce paths reach here with no owner resolved.
+    if (acc::menus::listbox::IsEquipPickerArmed() ||
+        acc::menus::listbox::IsWorkbenchUpgradePickerArmed()) {
+        return;
+    }
+
     uint32_t bitFlags = *reinterpret_cast<uint32_t*>(
         reinterpret_cast<unsigned char*>(control) + kControlBitFlagsOffset);
     uint32_t disabledMask = 0x2;

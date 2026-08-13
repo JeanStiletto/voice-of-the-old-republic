@@ -248,14 +248,25 @@ void DispatchInteractImpl(void* target, uint32_t handle, bool forceRadial) {
             leader, leaderId, leaderName);
     }
 
-    // Transitions are TRIGGER regions that fire on walk-IN, not on "use". The
-    // engine action picker has no verb for a trigger, so the dispatch below would
-    // fall through to the UseObject fallback, which queues a walk-to-use the
-    // engine can't resolve (no use-node) → the PC never moves → false "Weg
-    // versperrt". Walk to the trigger's coordinate instead (engine A*, input left
-    // enabled like the cycle coord-walk); crossing into the region fires the
-    // transition. Same fix as cycle_input::OnPathfindFocus.
-    if (cat == acc::filter::CycleCategory::Transition) {
+    // Transitions are TRIGGER regions that fire on walk-IN, not on "use", and
+    // landmarks are WAYPOINTS — map markers with no physical presence at all.
+    // Neither has a use-node, so the engine action picker has no verb for
+    // either, and the dispatch below would fall through to the UseObject
+    // fallback, which queues a walk-to-use the engine can't resolve → the PC
+    // never moves → false "Weg versperrt". Walk to the coordinate instead
+    // (engine A*, input left enabled like the cycle coord-walk); for a
+    // transition, crossing into the region fires it. Same fix as
+    // cycle_input::OnPathfindFocus, which routes both the same way — Shift+-
+    // on a landmark walked there correctly all through the beta session while
+    // Enter on the same object did not.
+    //
+    // Landmarks were added here after the beta log showed every one of them
+    // taking the picker path and coming back with another object's descriptor
+    // (see the Step 3b note in engine_picker). That check now stops the wrong
+    // action from being dispatched; this branch is what makes the right thing
+    // happen instead of an empty radial.
+    if (cat == acc::filter::CycleCategory::Transition ||
+        cat == acc::filter::CycleCategory::Landmark) {
         Vector tpos{};
         if (acc::engine::GetObjectPosition(target, tpos) &&
             acc::guidance::WalkTo(tpos)) {
@@ -267,16 +278,20 @@ void DispatchInteractImpl(void* target, uint32_t handle, bool forceRadial) {
             // restore (matches the cycle WalkTo path).
             ArmInteractApproach(name, target, /*inputDisabled=*/false,
                                 /*isDialog=*/false);
-            acclog::Write("Interact", "%s -> [%s] transition trigger via "
-                "WalkTo(coord) target=0x%08x pos=(%.2f,%.2f,%.2f)",
-                forceRadial ? "Shift+Enter" : "Enter", tmsg, handle,
-                tpos.x, tpos.y, tpos.z);
+            acclog::Write("Interact", "%s -> [%s] %s via WalkTo(coord) "
+                "target=0x%08x pos=(%.2f,%.2f,%.2f)",
+                forceRadial ? "Shift+Enter" : "Enter", tmsg,
+                cat == acc::filter::CycleCategory::Landmark
+                    ? "landmark waypoint" : "transition trigger",
+                handle, tpos.x, tpos.y, tpos.z);
             return;
         }
         // Couldn't resolve the position / WalkTo faulted — fall through to the
         // normal picker pipeline as a backup.
-        acclog::Write("Interact", "transition WalkTo dispatch unavailable — "
-            "falling through to picker/UseObject");
+        acclog::Write("Interact", "%s WalkTo dispatch unavailable — "
+            "falling through to picker/UseObject",
+            cat == acc::filter::CycleCategory::Landmark ? "landmark"
+                                                        : "transition");
     }
 
     // First: try the engine action picker. It runs the same picker the
@@ -390,8 +405,14 @@ void DispatchInteractImpl(void* target, uint32_t handle, bool forceRadial) {
     uint32_t dispatchHandle = (snap.valid && snap.target_id)
         ? (snap.target_id & ~0x80000000u)
         : handle;
+    // kInvalidObjectId belongs in this list and was missing: the engine writes
+    // it into a descriptor's target when there is no target, and we dispatched
+    // it as if it were an object (patch-20260813-150242 logs the whole
+    // sequence three times — "usable=1" on 0x7f000000, then FAILED). The
+    // object resolvers in engine_area already treat all four the same way.
     const bool handleUsable = dispatchHandle != 0u && dispatchHandle != 1u &&
-                              dispatchHandle != 0xFFFFFFFFu;
+                              dispatchHandle != 0xFFFFFFFFu &&
+                              dispatchHandle != kInvalidObjectId;
 
     acclog::Write("Interact", "dispatch handle=0x%08x (param=0x%08x "
         "snap.target_id=0x%08x) usable=%d",

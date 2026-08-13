@@ -37,6 +37,15 @@ void ClearPendingAnnounce();
 void SpeakIfChanged(int channel, const char* text);
 void MarkSpoken(int channel, const char* text);
 
+// True when `text` is what was last spoken on EITHER channel. For announce
+// paths that own no channel of their own — the panel-content monitor — and
+// must not repeat a line a focus or row announce has just delivered. The
+// content monitor speaks a message box's text, and so does the row hook when
+// the box's single label is the active row, so a confirm prompt was read out
+// twice ("Are you sure you want to overwrite the save game?" — beta log
+// 15:22:38, and the quit prompt at 15:31:09).
+bool AlreadySpokenOnAnyChannel(const char* text);
+
 // g_drilledIntoSubScreen retargets arrow-key nav from the InGameMenu
 // strip (engine's strip-stays-fg pattern) to the visible sub-screen.
 // Originally armed only on strip-icon Enter; direct-open paths (Esc,

@@ -37,6 +37,12 @@
 
 namespace acc::picker {
 
+// The engine's "nothing to do here" verb. GetDefaultActions writes it, with
+// the label "No Action", for a target it will not let the player interact
+// with. It is not an action: it never walks, never dispatches, and Drive()
+// reports no default action when it sees one.
+constexpr uint32_t kActionIdNoop = 0x404;
+
 // Walk-to-act world verbs that GetDefaultActions emits for targets the PC must
 // approach before acting: 0x3ea talk, 0x3f7 use/open, 0x3f5 bash, 0x3f2 door
 // toggle, 0x3f4 disable mine. These share one composite shape — the engine

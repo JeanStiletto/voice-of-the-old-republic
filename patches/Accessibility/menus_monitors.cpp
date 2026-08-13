@@ -679,8 +679,21 @@ void SpeakNewSegments(const char* prev, const char* curr) {
             size_t cp = segLen < sizeof(seg) - 1 ? segLen : sizeof(seg) - 1;
             memcpy(seg, p, cp);
             seg[cp] = '\0';
-            prism::Speak(seg, /*interrupt=*/false);
-            acclog::Write("ContentChange", "  spoke \"%s\"", seg);
+            // This monitor owns no dedup channel, and on a message box it
+            // competes with the row hook: the box's prompt is both the panel's
+            // new content AND its single active row, so both paths spoke it
+            // and confirm prompts were read out twice. Marking after speaking
+            // closes the other direction too — whichever focus announce runs
+            // next won't repeat what was just said here.
+            if (acc::menus::AlreadySpokenOnAnyChannel(seg)) {
+                acclog::Write("ContentChange",
+                    "  already spoken by a focus/row announce — skipped \"%s\"",
+                    seg);
+            } else {
+                prism::Speak(seg, /*interrupt=*/false);
+                acc::menus::MarkSpoken(/*channel=*/0, seg);
+                acclog::Write("ContentChange", "  spoke \"%s\"", seg);
+            }
         }
         if (!end) break;
         p = end + sepLen;
