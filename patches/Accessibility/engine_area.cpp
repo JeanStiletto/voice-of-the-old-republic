@@ -365,6 +365,76 @@ bool TryReadTag(void* obj, char* outBuf, size_t bufSize) {
     }
 }
 
+// Strip the two kinds of authoring residue KOTOR 2's object names carry into
+// speech. Both are things the module designers left in the name string itself,
+// so they reach us through the ordinary LocName/tag read and there is nothing
+// upstream to fix.
+//
+//  * A trailing {...} note. K2's doors and containers are routinely named
+//    "Blast Door{HK-50}", "Emergency Blast Door{103PER}", "Medical Bay
+//    Container{Chems}", "Door{Kreia Prison Warning}" — module codes, script
+//    hints and disambiguators for the level designer. A few read as almost
+//    useful ("Blast Door{Starboard Dormitory}") but most are noise, and read
+//    aloud they are noise every single time the object is announced, including
+//    inside action prompts ("Open Medical Bay Container{Chems}").
+//
+//  * An unsubstituted <FullName> token. The engine replaces it with the
+//    player's name when it renders the string; we read the string before that
+//    happens, so the Peragus medbay tank announced as "<FullName>'s Kolto
+//    Tank" (four times in the beta log). Substituted with the PC's name —
+//    the chargen name, not the active leader, since it is the PC's tank.
+//    Falls back to dropping the token when the name can't be resolved, which
+//    still reads better than speaking the angle brackets.
+void CleanAuthoredName(char* buf, size_t bufSize) {
+    if (!buf || bufSize < 2 || !buf[0]) return;
+
+    // <FullName> → the PC's name. Only this token is known to appear in
+    // placed-object names; anything else in angle brackets is left alone
+    // rather than guessed at.
+    const char* kToken = "<FullName>";
+    const size_t kTokenLen = 10;
+    char* hit = strstr(buf, kToken);
+    if (hit) {
+        // The chargen-name slot is the right source, but it comes back empty
+        // on KOTOR 2 (witnessed 2026-08-13: the Peragus tank announced as
+        // "Kolto-Tank von " with nothing after the preposition). Fall back to
+        // the active leader, which resolves in-world on both games.
+        char pcName[64] = "";
+        if (!acc::engine::GetPlayerCharacterName(pcName, sizeof(pcName)) ||
+            pcName[0] == '\0') {
+            pcName[0] = '\0';
+            if (!acc::engine::GetActiveLeaderName(pcName, sizeof(pcName))) {
+                pcName[0] = '\0';
+            }
+        }
+        // Substituting an empty string leaves dangling grammar — "'s Kolto
+        // Tank", "Kolto-Tank von " — which is worse than the raw token,
+        // because at least the token tells the listener a name is missing
+        // rather than sounding like a finished sentence. Leave it alone.
+        if (pcName[0] != '\0') {
+            size_t nameLen = strlen(pcName);
+            size_t tailLen = strlen(hit + kTokenLen);
+            size_t headLen = static_cast<size_t>(hit - buf);
+            if (headLen + nameLen + tailLen + 1 <= bufSize) {
+                memmove(hit + nameLen, hit + kTokenLen, tailLen + 1);
+                memcpy(hit, pcName, nameLen);
+            }
+        }
+    }
+
+    // Trailing {...}, plus any whitespace it was separated by.
+    size_t len = strlen(buf);
+    if (len >= 2 && buf[len - 1] == '}') {
+        for (size_t i = len - 1; i-- > 0;) {
+            if (buf[i] == '{') {
+                while (i > 0 && (buf[i - 1] == ' ' || buf[i - 1] == '\t')) --i;
+                buf[i] = '\0';
+                break;
+            }
+        }
+    }
+}
+
 // Append ", <text>" to outBuf if there's room. No-op when text is empty
 // or outBuf is already at capacity.
 void AppendCommaSeparated(char* outBuf, size_t bufSize, const char* text) {
@@ -726,8 +796,13 @@ bool GetObjectBaseName(void* gameObject, char* outBuf, size_t bufSize) {
             return false;
     }
 
-    if (got && outBuf[0] != '\0') return true;
-    return TryReadTag(gameObject, outBuf, bufSize);
+    if (got && outBuf[0] != '\0') {
+        CleanAuthoredName(outBuf, bufSize);
+        return outBuf[0] != '\0';
+    }
+    if (!TryReadTag(gameObject, outBuf, bufSize)) return false;
+    CleanAuthoredName(outBuf, bufSize);
+    return outBuf[0] != '\0';
 }
 
 bool IsUsablePlaceable(void* placeable) {

@@ -31,6 +31,7 @@
 #include "log.h"
 #include "menus.h"           // SpeakIfChanged (empty-state dedup)
 #include "menus_extract.h"
+#include "menus_chain.h"      // chain focus: the K2 save/load selection sync
 #include "menus_internal.h"
 #include "menus_pending.h"
 #include "strings.h"
@@ -60,9 +61,11 @@ constexpr int kContainerBtnOkId      = 3;
 constexpr int kContainerBtnGiveId    = 4;
 constexpr int kContainerBtnCancelId  = 5;
 
-constexpr int kSaveLoadLbGamesId     =  0;
-constexpr int kSaveLoadBtnBackId     = 12;
-constexpr int kSaveLoadBtnSaveLoadId = 14;
+// Per-game — see the id table in menus_internal.cpp. K2 re-authored the
+// screen: the listbox is id=12 there and Cancel is id=13.
+inline int SaveLoadLbGamesId()     { return acc::game::IsKotor2() ? 12 :  0; }
+inline int SaveLoadBtnBackId()     { return acc::game::IsKotor2() ? 13 : 12; }
+inline int SaveLoadBtnSaveLoadId() { return 14; }
 }
 
 namespace acc::menus::listbox {
@@ -283,10 +286,25 @@ constexpr ListBoxPanelSpec kContainerSpec = {
 // SaveLoad — Spiel laden / Spiel speichern dialog.
 // ============================================================================
 
-bool SaveLoadMatches(void* p) { return IsSaveLoadPanel(p); }
+// K1 only, deliberately. The spec consumes Up/Down outright to drive the
+// listbox, which is right on K1 where the only two actions the screen needs —
+// Load and Cancel — hang off Enter and Esc. KOTOR 2's version of the screen
+// has five buttons (Cancel, Load, Delete, Switch Characters, Cloud Saves),
+// and walking them is how the player reaches the last three; enabling the
+// spec there swallowed the arrow keys and lost them (reported 2026-08-13,
+// immediately after the id fix made the spec match K2 for the first time).
+//
+// K2 keeps ordinary chain navigation over rows AND buttons — the arrangement
+// it always had — and gets correctness from SyncK2SaveLoadSelection below,
+// which drives the engine's selection index to whatever row the chain is on.
+// That was the actual defect: chain focus moved and spoke the row, but
+// nothing told the engine, so Load always loaded the default (newest) save.
+bool SaveLoadMatches(void* p) {
+    return !acc::game::IsKotor2() && IsSaveLoadPanel(p);
+}
 
 void* SaveLoadFindLb(void* p) {
-    return FindControlById(p, kSaveLoadLbGamesId);
+    return FindControlById(p, SaveLoadLbGamesId());
 }
 
 // Speak on every step (no per-tick monitor watches the SaveLoad listbox).
@@ -342,13 +360,13 @@ bool SaveLoadOnEnter(void* panel) {
     if (!acc::engine::GetPlayerPosition(scratch)) {
         acc::transitions::NotifyExternalLoadStarting("SaveLoad load from menu");
     }
-    QueueButtonByIdActivate(panel, kSaveLoadBtnSaveLoadId,
+    QueueButtonByIdActivate(panel, SaveLoadBtnSaveLoadId(),
                             "SaveLoad: Enter -> saveload_button");
     return true;
 }
 
 bool SaveLoadOnEsc(void* panel) {
-    QueueButtonByIdActivate(panel, kSaveLoadBtnBackId,
+    QueueButtonByIdActivate(panel, SaveLoadBtnBackId(),
                             "SaveLoad: Esc -> back_button");
     return true;
 }
@@ -1718,10 +1736,156 @@ void PollContainerGiveModeKey() {
 
 }  // namespace
 
+// K2 save/load preview-label ids, witnessed on panel 1C1F2990 in
+// patch-20260813-212757 (18 children; ids 0..11 are the preview block).
+constexpr int kK2SaveLoadLblPlanetId = 3;
+constexpr int kK2SaveLoadLblAreaId   = 5;
+constexpr int kK2SaveLoadLblTimeId   = 9;
+
+// Set by the sync, consumed by the announce one tick later.
+void* s_pendingInfoPanel = nullptr;
+
+// Index of `control` among the listbox's row children, or -1. SEH-guarded:
+// the chain can outlive a control by a tick.
+int FindListBoxRowIndex(void* listbox, void* control) {
+    if (!listbox || !control) return -1;
+    __try {
+        auto* list = reinterpret_cast<CExoArrayList*>(
+            reinterpret_cast<unsigned char*>(listbox) + kListBoxControlsOffset);
+        if (!list->data || list->size <= 0) return -1;
+        int n = list->size > 512 ? 512 : list->size;
+        for (int i = 0; i < n; ++i) {
+            if (list->data[i] == control) return i;
+        }
+        return -1;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+}
+
+// The engine's own selection commit — real row highlight, native scroll, and
+// the onSelectionChanged work the preview labels depend on. playSound=0: the
+// chain step has already spoken the row, and the engine's click blip on top of
+// that reads as a stutter.
+bool SetListBoxSelectedControl(void* listbox, int index) {
+    if (!listbox || index < 0) return false;
+    __try {
+        auto setSel = reinterpret_cast<PFN_CSWGuiListBoxSetSelectedControl>(
+            kAddrCSWGuiListBoxSetSelectedControl);
+        setSel(listbox, index, /*playSound=*/0);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+// KOTOR 2 save/load: tell the engine which row the keyboard is on.
+//
+// K2 navigates this screen with the ordinary chain (rows and the five action
+// buttons in one list), which is what the player expects and what makes Delete
+// / Switch Characters / Cloud Saves reachable at all. But chain focus is OUR
+// state: it moves and speaks the row while the engine's own selection index
+// never changes, so Load loaded whatever was selected by default — the newest
+// save, no matter which one had been announced. On K1 the mouse-teleport that
+// accompanies a chain step lands on the row and the engine's hover-select
+// follows it; on K2's layout the same teleport resolves to the list container
+// or to nothing, so nothing ever propagates.
+//
+// Drive the engine's own SetSelectedControl from the chain's focused row —
+// same call the listbox spec uses on K1, just sourced from chain focus instead
+// of from a key press. Runs per tick rather than off the keypress because the
+// chain step itself is deferred to the Update tick.
+void MonitorK2SaveLoadSelection() {
+    if (!acc::game::IsKotor2()) return;
+    void* panel = acc::menus::chain::g_chainPanel;
+    if (!panel || !IsSaveLoadPanel(panel)) return;
+
+    void* lb = SaveLoadFindLb(panel);
+    if (!lb) return;
+
+    int idx = acc::menus::chain::g_chainIndex;
+    if (idx < 0 || idx >= acc::menus::chain::kMaxChainEntries) return;
+    void* focused = acc::menus::chain::g_chain[idx].control;
+    if (!focused) return;
+
+    // Which row of the listbox is focused? Chain focus is just as likely to be
+    // one of the action buttons, in which case there is nothing to sync and
+    // the last row selection must stand — that is the save Load will act on.
+    int row = FindListBoxRowIndex(lb, focused);
+    if (row < 0) return;
+
+    static void* s_lastLb  = nullptr;
+    static int   s_lastRow = -1;
+    if (lb == s_lastLb && row == s_lastRow) return;
+    s_lastLb  = lb;
+    s_lastRow = row;
+
+    if (!SetListBoxSelectedControl(lb, row)) return;
+    acclog::Write("SaveLoad", "K2 chain sync: lb=%p row=%d control=%p",
+                  lb, row, focused);
+
+    // Announce the location on the NEXT tick, once the engine has repopulated
+    // its preview labels from the selection we just set.
+    s_pendingInfoPanel = panel;
+}
+
+// KOTOR 2 save/load: the per-slot location, one tick after the sync.
+//
+// K1 reads planet and area straight off the row object. That is not available
+// here: a bounded scan of the K2 row for string fields (patch-20260813-214802)
+// found nothing but coincidental pointer/length pairs, so the strings simply
+// are not on the row — there are no offsets to port, and the probe that looked
+// for them has been removed rather than left running.
+//
+// The panel's preview labels are the source instead. They are per-selection,
+// not per-game, and they refresh through the engine's onSelectionChanged —
+// which is precisely what the sync above now triggers, since it commits via
+// the engine's own SetSelectedControl rather than a raw index write. Reading
+// them a tick later gives the engine its frame to fill them in.
+//
+//   id=3  planet / module   ("Ebon Hawk")
+//   id=5  area              ("Innenbereich")
+//   id=9  play time         ("Zeit: 8S 16M")
+//
+// Play time is included where K1 does not, because K1's row text already
+// carries it ("Game 1 - 21h 23m") and K2's does not — same information, from
+// wherever each game happens to keep it.
+void AnnounceK2SaveLoadInfo() {
+    void* panel = s_pendingInfoPanel;
+    if (!panel) return;
+    s_pendingInfoPanel = nullptr;
+    if (panel != acc::menus::chain::g_chainPanel) return;
+
+    char planet[128] = "", area[128] = "", played[128] = "";
+    void* c = FindControlById(panel, kK2SaveLoadLblPlanetId);
+    if (c) acc::menus::extract::FromControl(c, planet, sizeof(planet), panel);
+    c = FindControlById(panel, kK2SaveLoadLblAreaId);
+    if (c) acc::menus::extract::FromControl(c, area, sizeof(area), panel);
+    c = FindControlById(panel, kK2SaveLoadLblTimeId);
+    if (c) acc::menus::extract::FromControl(c, played, sizeof(played), panel);
+
+    char msg[384];
+    msg[0] = '\0';
+    const char* parts[3] = { planet, area, played };
+    for (int i = 0; i < 3; ++i) {
+        if (!parts[i][0]) continue;
+        if (msg[0]) strncat_s(msg, ", ", _TRUNCATE);
+        strncat_s(msg, parts[i], _TRUNCATE);
+    }
+    if (!msg[0]) return;
+
+    // Channel 1 (the listbox-row channel): arrowing back onto a row whose
+    // location was just spoken should not repeat it.
+    acc::menus::SpeakIfChanged(/*channel=*/1, msg);
+    acclog::Write("SaveLoad", "K2 slot info -> \"%s\"", msg);
+}
+
 void TickListboxMonitors() {
     MonitorContainerSelection();
     TickPickerMonitors();  // menus_listbox_picker.cpp — equip + workbench upgrade
     PollContainerGiveModeKey();
+    AnnounceK2SaveLoadInfo();     // consumes last tick's sync
+    MonitorK2SaveLoadSelection();
 }
 
 const char* GetTitleOverride(void* panel) {

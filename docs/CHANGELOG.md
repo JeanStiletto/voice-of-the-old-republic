@@ -35,6 +35,36 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h2>v0.7.3</h2>
 
+<h3>KOTOR 2:</h3>
+
+- The save screen loads the save you picked. It always loaded the newest one,
+  whichever you had arrowed to and heard announced. KOTOR 2 lays this screen
+  out differently from KOTOR 1 — the save list and every button but Load sit at
+  different places in the panel — so the mod never recognised it as a save
+  screen at all, and while the keyboard moved and spoke the rows, nothing told
+  the game which row that was. Load then acted on the game's own idea of the
+  selection, which never left the top of the list.
+
+- Save slots announce where you were and how long you had played — "Ebon Hawk,
+  Interior, Time: 8h 16m" after the slot's name and date. KOTOR 1 has had this;
+  on KOTOR 2 the information is not attached to the list row, so it was
+  missing entirely.
+
+- Objects whose name contains a placeholder for your character's name say your
+  name. The Peragus medical bay's kolto tank announced as "<FullName>'s Kolto
+  Tank", reading the placeholder aloud.
+
+- Doors and containers no longer read out the level designer's notes. KOTOR 2
+  leaves working annotations in object names — "Blast Door{HK-50}", "Emergency
+  Blast Door{103PER}", "Medical Bay Container{Chems}" — and they were spoken
+  every time the object was announced, including inside action prompts ("Open
+  Medical Bay Container{Chems}").
+
+- Character generation's Feats screen no longer opens by announcing "Items
+  Available to Place in Container and blah blah blah". That is a leftover from
+  the container transfer screen sitting in the Feats layout, and being the
+  first piece of text on the panel it was taken for the screen's title.
+
 <h3>Bug fixes:</h3>
 
 - Pressing Enter on a map landmark walks you there instead of acting on

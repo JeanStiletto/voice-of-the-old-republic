@@ -203,6 +203,16 @@ static void AnnouncePanelTitle(void* panel) {
     // tab strip (1484E768): the first label child was "1" (the tab number
     // next to "Portrait"), so the user heard just "1" after submitting the
     // name. Bound: text up to 3 chars, every byte ASCII-digit.
+    // KOTOR 2's chargen Feats panel leads with a leftover from the container
+    // transfer screen — "Items Available to Place in Container and blah blah
+    // blah" — and being the first label child it won the title slot and was
+    // read out on entry (beta log 17:50:31). It is a developer placeholder,
+    // untranslated in every K2 localisation we have seen, so match it by its
+    // distinctive tail rather than in full.
+    auto isDevPlaceholder = [](const char* s) {
+        return strstr(s, "blah blah blah") != nullptr;
+    };
+
     auto isShortNumeric = [](const char* s) {
         size_t n = 0;
         for (; s[n]; ++n) {
@@ -231,8 +241,38 @@ static void AnnouncePanelTitle(void* panel) {
                               panel, child, text);
                 continue;
             }
-            acclog::Write("Menus.PanelWalk", "title parent=%p label=%p text=\"%s\"",
-                          panel, child, text);
+            if (isDevPlaceholder(text)) {
+                acclog::Write("Menus.PanelWalk",
+                              "title parent=%p label=%p text=\"%s\" "
+                              "(skipped: dev placeholder)",
+                              panel, child, text);
+                continue;
+            }
+            // DO NOT filter title candidates on the visible bit. Tried and
+            // reverted the same day (2026-08-13): on KOTOR 2 the flag word at
+            // kControlBitFlagsOffset reads garbage for LABELS — five labels on
+            // the K2 load screen came back 0x2130140a, 0x965b7e8a, 0x3d5c210a,
+            // 0x272f1d0a, 0x6375920a, all with a consistent low byte and noise
+            // above it — so every real panel title, "Spiel laden" included, was
+            // suppressed as invisible. The offset is game-selected and works
+            // for BUTTONS on both games; labels are evidently laid out
+            // differently on K2 and would need their own witness first.
+            //
+            // Logged so a future pass has the data rather than a guess. The
+            // problem this was meant to solve — K2's chargen Feats panel
+            // leading with a leftover container-screen string — is handled by
+            // the placeholder check above instead.
+            uint32_t flags = 0;
+            __try {
+                flags = *reinterpret_cast<uint32_t*>(
+                    reinterpret_cast<unsigned char*>(child) +
+                    kControlBitFlagsOffset);
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                flags = 0;
+            }
+            acclog::Write("Menus.PanelWalk", "title parent=%p label=%p "
+                          "text=\"%s\" bit_flags=0x%x",
+                          panel, child, text, flags);
             prism::Speak(text, /*interrupt=*/false);
             return;
         }

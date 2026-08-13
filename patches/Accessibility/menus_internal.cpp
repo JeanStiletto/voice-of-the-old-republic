@@ -21,6 +21,7 @@
 #include "menus_internal.h"
 #include "strings.h"
 #include "menus_pending.h"   // QueueButtonByIdActivate defers the activate
+#include "engine_game.h"      // IsKotor2 — the save/load control ids differ
 #include "engine_offsets.h"
 #include "engine_panels.h"   // HasVtable
 #include "engine_reads.h"
@@ -36,10 +37,26 @@ using namespace acc::engine;
 //   id=11  delete_button       ("L\xF6schen" / "Delete")
 //   id=12  back_button         ("Abbrechen" / "Cancel")
 //   id=14  saveload_button     ("Laden" / "Save" / etc.)
-constexpr int kSaveLoadLbGamesId    =  0;
-constexpr int kSaveLoadBtnDeleteId  = 11;
-constexpr int kSaveLoadBtnBackId    = 12;
-constexpr int kSaveLoadBtnSaveLoadId = 14;
+//
+// KOTOR 2 re-authored the same screen and every id but the action button
+// moved. Witnessed live in patch-20260813-212757 (panel 1C1F2990, 18
+// children): the listbox is id=12, Cancel id=13, Delete id=15, and ids 0..11
+// are the preview labels and their frames. The consequence of assuming K1's
+// numbering there was severe and silent — IsSaveLoadPanel found no listbox at
+// id=0, so the whole SaveLoad spec never engaged on K2, the rows were walked
+// as ordinary chain buttons, nothing ever drove the engine's selection index,
+// and Load loaded whatever was selected by default: the newest save, whatever
+// the player picked.
+//
+//   K1                              K2
+//   id=0   games_listbox            id=12  games_listbox
+//   id=11  delete_button            id=15  delete_button
+//   id=12  back_button              id=13  back_button
+//   id=14  saveload_button          id=14  saveload_button (unchanged)
+inline int SaveLoadLbGamesId() { return acc::game::IsKotor2() ? 12 :  0; }
+inline int SaveLoadBtnDeleteId() { return acc::game::IsKotor2() ? 15 : 11; }
+inline int SaveLoadBtnBackId() { return acc::game::IsKotor2() ? 13 : 12; }
+inline int SaveLoadBtnSaveLoadId() { return 14; }
 
 // KOTOR 2's GUI authoring width. Every _p.gui in its gui.bif declares
 // MAIN_PNL as 800x600 and the engine stretches that to the window.
@@ -172,7 +189,7 @@ void* acc::menus::detail::FindControlById(void* panel, int id) {
 bool acc::menus::detail::IsSaveLoadPanel(void* panel) {
     if (!panel) return false;
 
-    void* lb = FindControlById(panel, kSaveLoadLbGamesId);
+    void* lb = FindControlById(panel, SaveLoadLbGamesId());
     if (!lb) return false;
     void* lbVtable = nullptr;  // guarded: control may be freed mid-check
     if (!acc::engine::TryReadPtr(lb, 0, &lbVtable) ||
@@ -195,9 +212,9 @@ bool acc::menus::detail::IsSaveLoadPanel(void* panel) {
             return false;
         }
     };
-    return isBtn(FindControlById(panel, kSaveLoadBtnSaveLoadId)) &&
-           isBtn(FindControlById(panel, kSaveLoadBtnBackId))     &&
-           isBtn(FindControlById(panel, kSaveLoadBtnDeleteId));
+    return isBtn(FindControlById(panel, SaveLoadBtnSaveLoadId())) &&
+           isBtn(FindControlById(panel, SaveLoadBtnBackId()))     &&
+           isBtn(FindControlById(panel, SaveLoadBtnDeleteId()));
 }
 
 // Read the user-visible text of a CExoString-style field on a control. Returns
