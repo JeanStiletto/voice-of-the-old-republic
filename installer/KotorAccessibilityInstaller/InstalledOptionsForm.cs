@@ -39,8 +39,9 @@ namespace KotorAccessibilityInstaller
             // itself as "... KOTOR 1. Status of your games: ..." — claiming a
             // single game and then immediately describing two.
             //
-            // The remaining per-game action is the log bundle, which follows
-            // `target`; Reinstall re-runs the whole flow and asks which games.
+            // Nothing here is single-game any more either: the log bundle
+            // covers every installed game, and Reinstall re-runs the whole flow
+            // and asks which games.
             Text = InstallerLocale.Get("Program_UpToDate_Title");
             Size = new Size(700, 420);
             FormBorderStyle = FormBorderStyle.FixedDialog;

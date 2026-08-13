@@ -8,14 +8,19 @@ namespace KotorAccessibilityInstaller
     /// <summary>
     /// Shrinks a Windows minidump by dropping the captured memory of modules we
     /// never inspect during KOTOR triage (Windows + GPU-driver DLLs), while
-    /// keeping everything our diagnostics actually use: swkotor.exe + our own
-    /// DLLs (code+data), every thread stack, all crash-referenced heap, the
+    /// keeping everything our diagnostics actually use: the game executable +
+    /// our own DLLs (code+data), every thread stack, all crash-referenced heap, the
     /// thread contexts, the exception record, and the full module list.
     ///
-    /// On a real ~151 MB WER dump (CustomDumpFlags 0x2141), ~145 MB is stock
-    /// system/driver module code+data — reconstructible from disk and pure
-    /// noise for us. Dropping it lands the dump at ~6 MB (then ~2-4 MB once
-    /// 7-zipped), small enough to send over Discord without a file host.
+    /// Nearly all of a dump is stock system/driver module code+data —
+    /// reconstructible from disk and pure noise for us. Measured against live
+    /// dumps of both games taken with WER's own flag set (0x2141), each with a
+    /// save loaded and the mod attached:
+    ///   KOTOR 1: 173 MB raw -> 11.0 MB stripped (162 MB dropped, 448 ranges)
+    ///   KOTOR 2: 293 MB raw -> 14.4 MB stripped (279 MB dropped, 493 ranges)
+    /// Both stripped dumps together 7-zip to 4.0 MB, so even the worst case —
+    /// a bundle carrying a crash from each game — sends over Discord without a
+    /// file host.
     ///
     /// Layout it relies on (verified against WER's output for our flag set):
     /// memory blobs form a contiguous tail; the header, stream directory,
@@ -43,10 +48,31 @@ namespace KotorAccessibilityInstaller
             public long DroppedMemoryBytes;
         }
 
-        /// <summary>Modules whose code+data we keep. Lowercase, file name only.</summary>
+        /// <summary>
+        /// Modules whose code+data we keep. Lowercase, file name only.
+        ///
+        /// <para>Both game executables are listed, not just the one the bundle
+        /// was collected for: this list is matched against module names inside
+        /// a dump, so a KOTOR 2 dump run through a KOTOR-1-only list would have
+        /// the faulting executable's own code and globals dropped as
+        /// uninteresting — exactly the memory triage starts from.</para>
+        ///
+        /// <para><c>accessibility.dll</c> is our patch itself and was missing
+        /// here from the start. The cost was narrower than it looks: our DLL is
+        /// unpacked on disk and byte-identical to the loaded image, so its code
+        /// was always recoverable from the shipped file (and carries no symbols
+        /// either way — the patch builds without <c>/Zi</c>). What the omission
+        /// really lost is its <c>.data</c>/<c>.bss</c> — our globals and statics
+        /// at crash time, which nothing else in the bundle reconstructs. That is
+        /// worth the 2.6 MB slot, but it is not why past dumps were readable:
+        /// stacks, heap, contexts, the exception record and the module list were
+        /// never dropped, and that is what triage actually runs on.</para>
+        /// </summary>
         public static readonly string[] KeepModules =
         {
-            "swkotor.exe", "kotorpatcher.dll", "dinput8.dll", "prism.dll", "sqlite3.dll",
+            "swkotor.exe", "swkotor2.exe",
+            "accessibility.dll", "kotorpatcher.dll", "dinput8.dll", "prism.dll", "sqlite3.dll",
+            "widescreen.dll",
         };
 
         private const uint Signature = 0x504D444D;   // 'MDMP'

@@ -33,6 +33,42 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>v0.7.2</h2>
+
+<h3>Installer:</h3>
+
+- "Collect logs for beta test" now bundles both games. It used to collect a
+  single game, chosen without asking and without saying which — and the choice
+  was always KOTOR 1 when both were installed, so a KOTOR 2 bug report arrived
+  with KOTOR 1's log attached. The crash dump had the mirrored problem: its
+  filename filter matched either game, so a bundle labelled KOTOR 1 could carry
+  KOTOR 2's dump. Each game's newest log and dump are now included, prefixed
+  `k1-` / `k2-`, and the bundled system-info file describes both installs, so a
+  report says which games are present and how each is set up. Typical cost is a
+  few dozen KB, since patch logs compress 10-70x; a bundle carrying a crash
+  from both games at once measures 4 MB.
+
+- Crash dumps in that bundle keep the memory a crash report is actually about.
+  Dumps are shrunk by dropping the captured memory of modules we never read,
+  but the keep-list named only KOTOR 1's executable and never listed the mod's
+  own `accessibility.dll` at all. Measured against live dumps of both games, a
+  KOTOR 2 dump was arriving 9.4 MB short — the whole game executable plus our
+  patch — and a KOTOR 1 dump 3.4 MB short. This never made a dump unreadable
+  (stacks, heap, thread contexts and the module list were always kept, which is
+  what most diagnosis runs on), but it removed the code and state of the two
+  modules most likely to be at fault. Both are kept now, as is the bundled
+  widescreen patch.
+
+<h3>Development:</h3>
+
+- The mod now builds with debug symbols, so a crash report can be traced to a
+  named function and source line instead of an offset into `accessibility.dll`.
+  The symbol file is not shipped to players and does not change what the
+  installer downloads — the patch is byte-for-byte the same size as before. The
+  release script archives each version's symbols locally, three releases back,
+  because symbols only match the exact build they came from and a report often
+  arrives from someone who has not updated yet.
+
 <h2>v0.7.1</h2>
 
 <h3>Bug fixes:</h3>

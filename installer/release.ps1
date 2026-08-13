@@ -329,4 +329,53 @@ Invoke-Native "Create GitHub release" {
 
 Remove-Item $notesFile -ErrorAction SilentlyContinue
 
+# ── 10. Archive this build's debug symbols locally ──────────────────────────
+# A PDB is stamped with a GUID that must match the exact binary it was built
+# from, so a crash report from a tester still on an older version can only be
+# symbolised if we kept THAT build's symbols. Archived after the release
+# succeeds, because only a shipped build can produce a report.
+#
+# Local and gitignored, never a release asset: symbols make a binary trivially
+# readable, and nothing about them is useful to a player. Three versions back
+# is the working window — the in-game F5 updater keeps testers close to
+# current, and anything older can be rebuilt from its tag.
+
+Write-Host "`nArchiving debug symbols..." -ForegroundColor Cyan
+$symbolsRoot = Join-Path $root 'symbols'
+$symbolDir   = Join-Path $symbolsRoot $tag
+New-Item -ItemType Directory -Force $symbolDir | Out-Null
+
+$pdbPath = Join-Path $root 'build\accessibility.pdb'
+if (Test-Path $pdbPath) {
+    Copy-Item $pdbPath $symbolDir -Force
+    # The matching image goes with it: symbolising a dump needs the PDB *and*
+    # the exact DLL. It is also inside the published .kpatch, so this copy is
+    # convenience rather than the only source.
+    $builtDll = Join-Path $root 'build\objcache\windows_x86.dll'
+    if (Test-Path $builtDll) {
+        Copy-Item $builtDll (Join-Path $symbolDir 'accessibility.dll') -Force
+    }
+    $pdbMb = [math]::Round((Get-Item $pdbPath).Length / 1MB, 1)
+    Write-Host "  Symbols archived to symbols\$tag ($pdbMb MB PDB)" -ForegroundColor Green
+} else {
+    # Not fatal: the release is already published. Loud, because it means the
+    # next crash report against this version lands without symbols.
+    #
+    # ASCII-only inside the string, deliberately: this file is UTF-8 without a
+    # BOM and PS 5.1 decodes it as ANSI, so an em-dash here becomes the CP1252
+    # smart quote 0x94 and terminates the string literal mid-sentence. Safe in
+    # comments (this one included), never in a string.
+    Write-Host "WARNING: build\accessibility.pdb not found - $tag ships without archived symbols." -ForegroundColor Yellow
+}
+
+# Prune to the three most recent releases. Sorted by write time rather than by
+# parsing the version, so pre-release tags (v0.8.0-beta1) order sanely instead
+# of throwing on a [version] cast.
+$keepVersions = 3
+$stale = @(Get-ChildItem $symbolsRoot -Directory | Sort-Object LastWriteTime -Descending | Select-Object -Skip $keepVersions)
+foreach ($d in $stale) {
+    Remove-Item $d.FullName -Recurse -Force -Confirm:$false
+    Write-Host "  Pruned old symbols: $($d.Name)" -ForegroundColor DarkGray
+}
+
 Write-Host "`nRelease $tag published successfully." -ForegroundColor Green

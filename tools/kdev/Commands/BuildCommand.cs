@@ -15,7 +15,19 @@ public static class BuildCommand
     // Compile/link flags MUST mirror create-patch.bat so the incremental DLL is
     // equivalent to the legacy full bat build. (bat: /LD /O2 /MD /W3 /EHsc
     // /std:c++17, link /DEF:exports.def /LIBPATH lib sqlite3.lib.)
-    private const string CompileFlags = "/nologo /c /O2 /MD /W3 /EHsc /std:c++17";
+    //
+    // Deliberate divergence from the bat: /Z7 + /DEBUG produce accessibility.pdb
+    // so a crash dump can name our functions instead of a bare module+offset.
+    // Debug info does not change codegen, so the DLL stays equivalent — it only
+    // gains a debug directory pointing at the PDB. The bat path has no symbols.
+    //
+    // /Z7 rather than /Zi is forced by this build's shape: /Zi has every cl
+    // process write a shared vc140.pdb in its working directory, and we compile
+    // ~110 TUs in parallel with the working directory set to the SOURCE folder —
+    // so /Zi would both serialise on that file and litter patches/Accessibility/.
+    // /Z7 embeds the debug info in each .obj instead, which the object cache
+    // then carries for free and the linker collects at link time.
+    private const string CompileFlags = "/nologo /c /O2 /MD /W3 /EHsc /std:c++17 /Z7";
     private const string LinkFlags    = "/nologo /LD /MD";
 
     public static Command Build()
@@ -164,8 +176,19 @@ public static class BuildCommand
         if (File.Exists(dll)) File.Delete(dll);
         Console.WriteLine("Linking windows_x86.dll...");
         var objList = string.Join(" ", units.Select(u => $"\"{u.Obj}\""));
+        // Named accessibility.pdb, not windows_x86.pdb: the DLL is installed as
+        // patches/accessibility.dll, and a debugger looks for symbols under the
+        // loaded module's name. The path is recorded inside the DLL, so the
+        // matching PDB is found automatically when it sits alongside.
+        var pdb = Path.Combine(objCache, "accessibility.pdb");
+        // /OPT:REF,ICF are not optional extras here: /DEBUG flips the linker's
+        // defaults to /OPT:NOREF,NOICF, so adding symbols alone kept every
+        // unreferenced function and stopped identical-COMDAT folding — the DLL
+        // went from ~2.6 MB to ~3.5 MB purely as a side effect. Restating them
+        // puts the release-style link back; symbols are unaffected.
         var linkArgs =
-            $"{LinkFlags} {objList} /Fe\"{dll}\" /link /DEF:\"{exportsDef}\" /LIBPATH:\"{libDir}\" sqlite3.lib";
+            $"{LinkFlags} {objList} /Fe\"{dll}\" /link /DEF:\"{exportsDef}\" /LIBPATH:\"{libDir}\" sqlite3.lib " +
+            $"/DEBUG /PDB:\"{pdb}\" /OPT:REF /OPT:ICF";
         var (linkExit, linkOut, linkErr) = RunCl(clExe, env, linkArgs, objCache);
         if (linkExit != 0 || !File.Exists(dll))
         {
@@ -175,8 +198,23 @@ public static class BuildCommand
             return 4;
         }
 
-        // Package the .kpatch (manifest + hooks + binaries/windows_x86.dll).
+        // Publish the PDB next to the .kpatch at a stable path. It is
+        // deliberately NOT inside the .kpatch: users never need it and it would
+        // multiply the download size. release.ps1 archives this copy per
+        // version so an old tester's crash can still be symbolised.
         Directory.CreateDirectory(config.BuildOutput);
+        if (File.Exists(pdb))
+        {
+            var publishedPdb = Path.Combine(config.BuildOutput, "accessibility.pdb");
+            File.Copy(pdb, publishedPdb, overwrite: true);
+            Console.WriteLine($"Symbols: {publishedPdb}");
+        }
+        else
+        {
+            Console.WriteLine("WARNING: link produced no PDB; crash dumps from this build cannot be symbolised.");
+        }
+
+        // Package the .kpatch (manifest + hooks + binaries/windows_x86.dll).
         var kpatch = Path.Combine(config.BuildOutput, "Accessibility.kpatch");
         if (File.Exists(kpatch)) File.Delete(kpatch);
         using (var zip = ZipFile.Open(kpatch, ZipArchiveMode.Create))

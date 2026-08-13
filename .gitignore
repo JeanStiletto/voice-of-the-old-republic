@@ -9,6 +9,13 @@
 # Often hundreds of MB (full-heap WER dumps); never redistributable.
 /userlogs/
 
+# Debug symbols for shipped builds, archived per release tag by
+# installer/release.ps1 (three versions back). A PDB only matches the one
+# binary it was built from, so these are what turn a tester's crash dump into
+# named functions and line numbers instead of a module+offset. Local-only:
+# symbols make the binary trivially readable and are recreatable from the tag.
+/symbols/
+
 # dinput8.dll proxy loader — source in loader/ is tracked, binaries
 # rebuilt via loader/build.bat.
 /loader/*.dll

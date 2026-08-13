@@ -107,6 +107,8 @@ Each is a verb: short, descriptive, predictable.
 
 - **`kdev build`** — incrementally compiles `patches/Accessibility/` (+ upstream `Common/` and `Common/GameAPI/`) into a cached object set under `build/objcache/`, links `windows_x86.dll`, and packages the `.kpatch` into `build/`. Recompiles only changed TUs (header deps tracked via `/showIncludes`). `--clean` forces a full recompile; `--bat` uses the legacy `create-patch.bat` staging path (stdout/stderr to `logs/build-<utc>.log`). See §5.
 
+  Also emits `build/accessibility.pdb` — debug symbols for the patch DLL, so a beta tester's crash dump resolves to function names and line numbers instead of a bare `accessibility.dll+offset`. Compiled with `/Z7` rather than `/Zi` because ~110 TUs compile in parallel with the working directory set to the *source* folder, where `/Zi`'s shared `vc140.pdb` would both serialise and litter. The PDB is deliberately not packaged into the `.kpatch`; `installer/release.ps1` archives it under the gitignored `symbols/<tag>/` (three releases back), since a PDB only matches the exact build it came from. Note that `/DEBUG` flips the linker to `/OPT:NOREF,NOICF`, so `/OPT:REF /OPT:ICF` are restated explicitly — without them the DLL grows ~900 KB from retained dead code.
+
 - **`kdev clean`** — kills any running KOTOR process, calls `KPatchCore.Applicators.PatchRemover.RemoveAllPatches(gameExe)`. Idempotent — if nothing to clean, says so and exits 0.
 
 - **`kdev apply`** — copies `build/Accessibility.kpatch` into the runtime patches directory, calls `PatchApplicator.InstallPatches({ PatchIds: ["accessibility"] })`. Streams `InstallResult.Messages` to stdout.

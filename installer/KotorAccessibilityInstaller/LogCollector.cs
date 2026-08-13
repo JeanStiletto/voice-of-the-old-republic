@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
@@ -10,9 +11,20 @@ using Microsoft.Win32;
 namespace KotorAccessibilityInstaller
 {
     /// <summary>
-    /// Bundles the freshest patch log, crash dump, installer log, and a small
-    /// system-info file into a single zip in the user's Downloads folder so
-    /// beta testers have a one-file artefact to attach to a bug report.
+    /// Bundles the freshest patch log and crash dump of EVERY installed game,
+    /// plus the installer log and a small system-info file, into a single
+    /// archive in the user's Downloads folder so beta testers have a one-file
+    /// artefact to attach to a bug report.
+    ///
+    /// <para>Every game rather than one: the dialog that offers this has no
+    /// game picker, and the target it passed in was whichever game the
+    /// maintenance flow happened to resolve — always KOTOR 1 when both are
+    /// modded, since that is the head of <see cref="GameTarget.All"/>. A KOTOR 2
+    /// bug therefore arrived with KOTOR 1's log attached, and neither the
+    /// tester nor the dialog gave any sign of it. Collecting both costs
+    /// tens of KB in the normal case (patch logs are repetitive enough to
+    /// compress 10-70x) and is the only variant with no silent wrong
+    /// answer.</para>
     /// </summary>
     public static class LogCollector
     {
@@ -20,12 +32,26 @@ namespace KotorAccessibilityInstaller
         {
             public bool Success;
             public string ArchivePath;
+            /// <summary>Patch logs across all games — at most one per game.</summary>
             public int LogCount;
+            /// <summary>Crash dumps across all games — at most one per game.</summary>
             public int DumpCount;
             public bool IncludedInstallerLog;
             public string Error;
         }
 
+        /// <summary>An installed game and where it lives.</summary>
+        private sealed class GameSite
+        {
+            public GameTarget Target;
+            public string Path;
+        }
+
+        /// <param name="target">
+        /// The game the calling flow resolved. Only used to honour a path the
+        /// caller knows about but detection would not find (an explicit
+        /// command-line path); every other game is discovered here.
+        /// </param>
         public static Result Collect(GameTarget target, string gamePath)
         {
             var result = new Result();
@@ -44,46 +70,63 @@ namespace KotorAccessibilityInstaller
 
                 try
                 {
-                    string newestLog = FindNewestPatchLog(gamePath);
-                    if (newestLog != null)
-                    {
-                        File.Copy(newestLog, Path.Combine(staging, Path.GetFileName(newestLog)), overwrite: true);
-                        result.LogCount = 1;
-                        Logger.Info($"[LogCollector] Included patch log: {newestLog}");
-                    }
-                    else
-                    {
-                        Logger.Warning("[LogCollector] No patch logs found");
-                    }
+                    var sites = DiscoverGames(target, gamePath);
+                    Logger.Info("[LogCollector] Collecting for: " +
+                        (sites.Count == 0 ? "(no game install found)"
+                                          : string.Join(", ", sites.Select(s => $"{s.Target.DisplayName} @ {s.Path}"))));
 
-                    string newestDump = FindNewestCrashDump();
-                    if (newestDump != null)
+                    foreach (var site in sites)
                     {
-                        string dumpDest = Path.Combine(staging, Path.GetFileName(newestDump));
-                        // Strip the dump down to what triage uses (swkotor.exe +
-                        // our DLLs, thread stacks, referenced heap, contexts,
-                        // module list), dropping stock system/driver module
-                        // code+data. A real ~150 MB dump becomes ~6 MB this way,
-                        // so the bundle fits Discord without a file host. Any
-                        // structural surprise throws — we then bundle the full
-                        // dump so we never ship nothing.
-                        try
+                        // Staged flat with a game-id prefix rather than in
+                        // per-game subfolders: both games name their logs
+                        // patch-<timestamp>.log, so a flat copy could collide,
+                        // and a prefix keeps the archive one linear list to
+                        // read instead of a tree to walk.
+                        string newestLog = FindNewestPatchLog(site.Path);
+                        if (newestLog != null)
                         {
-                            var st = MinidumpStripper.StripFile(newestDump, dumpDest);
-                            Logger.Info($"[LogCollector] Stripped crash dump {newestDump}: " +
-                                $"{st.OriginalBytes / 1048576.0:F1} MB -> {st.StrippedBytes / 1048576.0:F1} MB " +
-                                $"(kept {st.KeptRanges} ranges, dropped {st.DroppedRanges})");
+                            File.Copy(newestLog,
+                                      Path.Combine(staging, $"{site.Target.Id}-{Path.GetFileName(newestLog)}"),
+                                      overwrite: true);
+                            result.LogCount++;
+                            Logger.Info($"[LogCollector] Included {site.Target.DisplayName} patch log: {newestLog}");
                         }
-                        catch (Exception ex)
+                        else
                         {
-                            Logger.Warning($"[LogCollector] Dump strip failed ({ex.Message}); bundling full dump");
-                            File.Copy(newestDump, dumpDest, overwrite: true);
+                            Logger.Warning($"[LogCollector] No patch logs found for {site.Target.DisplayName}");
                         }
-                        result.DumpCount = 1;
-                    }
-                    else
-                    {
-                        Logger.Info("[LogCollector] No swkotor crash dumps found");
+
+                        string newestDump = FindNewestCrashDump(site.Target);
+                        if (newestDump != null)
+                        {
+                            string dumpDest = Path.Combine(staging, $"{site.Target.Id}-{Path.GetFileName(newestDump)}");
+                            // Strip the dump down to what triage uses (the game
+                            // executable + our DLLs, thread stacks, referenced
+                            // heap, contexts, module list), dropping stock
+                            // system/driver module code+data. Measured on live
+                            // dumps: 173 MB -> 11 MB (K1), 293 MB -> 14 MB (K2),
+                            // and both together 7-zip to 4 MB, so even a
+                            // two-crash bundle fits Discord without a file host.
+                            // Any structural surprise throws — we then bundle
+                            // the full dump so we never ship nothing.
+                            try
+                            {
+                                var st = MinidumpStripper.StripFile(newestDump, dumpDest);
+                                Logger.Info($"[LogCollector] Stripped crash dump {newestDump}: " +
+                                    $"{st.OriginalBytes / 1048576.0:F1} MB -> {st.StrippedBytes / 1048576.0:F1} MB " +
+                                    $"(kept {st.KeptRanges} ranges, dropped {st.DroppedRanges})");
+                            }
+                            catch (Exception ex)
+                            {
+                                Logger.Warning($"[LogCollector] Dump strip failed ({ex.Message}); bundling full dump");
+                                File.Copy(newestDump, dumpDest, overwrite: true);
+                            }
+                            result.DumpCount++;
+                        }
+                        else
+                        {
+                            Logger.Info($"[LogCollector] No {site.Target.ExeName} crash dumps found");
+                        }
                     }
 
                     string installerLog = Logger.GetLogPath();
@@ -93,7 +136,7 @@ namespace KotorAccessibilityInstaller
                         result.IncludedInstallerLog = true;
                     }
 
-                    WriteSystemInfo(Path.Combine(staging, "system-info.txt"), target, gamePath);
+                    WriteSystemInfo(Path.Combine(staging, "system-info.txt"), sites);
 
                     if (result.LogCount == 0 && result.DumpCount == 0 && !result.IncludedInstallerLog)
                     {
@@ -266,6 +309,38 @@ namespace KotorAccessibilityInstaller
             stream.CopyTo(fileStream);
         }
 
+        /// <summary>
+        /// Every game with a real install on this machine. Games without the
+        /// mod are included too — they simply have no patch logs, and their
+        /// line in system-info.txt ("present, not modded") is an answer worth
+        /// having in a bug report.
+        /// </summary>
+        private static List<GameSite> DiscoverGames(GameTarget preferred, string preferredPath)
+        {
+            var sites = new List<GameSite>();
+            foreach (var t in GameTarget.All)
+            {
+                // The caller already resolved one game's path and may have got
+                // it from an explicit command-line argument that detection
+                // cannot reproduce, so for that game its answer wins.
+                string path = (t == preferred && GamePathDetector.IsValidGamePath(t, preferredPath))
+                    ? preferredPath
+                    : GamePathDetector.Detect(t);
+                if (!GamePathDetector.IsValidGamePath(t, path)) continue;
+                if (sites.Any(s => string.Equals(s.Path, path, StringComparison.OrdinalIgnoreCase))) continue;
+                sites.Add(new GameSite { Target = t, Path = path });
+            }
+
+            // Last resort: a caller-supplied folder that holds logs but no
+            // executable (a moved or partially removed install). The old
+            // single-game path collected from it without validating, so
+            // refusing here would lose bundles that used to work.
+            if (sites.Count == 0 && !string.IsNullOrEmpty(preferredPath) && Directory.Exists(preferredPath))
+                sites.Add(new GameSite { Target = preferred, Path = preferredPath });
+
+            return sites;
+        }
+
         private static string FindNewestPatchLog(string gamePath)
         {
             string logsDir = Path.Combine(gamePath, "logs");
@@ -276,13 +351,21 @@ namespace KotorAccessibilityInstaller
                 .FirstOrDefault()?.FullName;
         }
 
-        private static string FindNewestCrashDump()
+        private static string DumpsDir => Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "CrashDumps");
+
+        /// <summary>
+        /// WER names its dumps <c>&lt;image name&gt;.&lt;pid&gt;.dmp</c>, so the
+        /// executable name is the game filter. Anchoring on the full name
+        /// matters: the old <c>swkotor*.dmp</c> pattern also matched
+        /// <c>swkotor2.exe.*.dmp</c>, which is how a KOTOR 2 dump could end up
+        /// in a bundle labelled KOTOR 1.
+        /// </summary>
+        private static string FindNewestCrashDump(GameTarget target)
         {
-            string dumpsDir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "CrashDumps");
-            if (!Directory.Exists(dumpsDir)) return null;
-            return Directory.EnumerateFiles(dumpsDir, "swkotor*.dmp")
+            if (!Directory.Exists(DumpsDir)) return null;
+            return Directory.EnumerateFiles(DumpsDir, $"{target.ExeName}*.dmp")
                 .Select(p => new FileInfo(p))
                 .OrderByDescending(f => f.LastWriteTimeUtc)
                 .FirstOrDefault()?.FullName;
@@ -298,16 +381,14 @@ namespace KotorAccessibilityInstaller
             return Path.Combine(profile, "Downloads");
         }
 
-        private static void WriteSystemInfo(string path, GameTarget target, string gamePath)
+        private static void WriteSystemInfo(string path, List<GameSite> sites)
         {
             var sb = new StringBuilder();
             sb.AppendLine("Voice of the Old Republic — beta-test log bundle");
             sb.AppendLine($"Captured: {DateTime.Now:yyyy-MM-dd HH:mm:ss zzz}");
             sb.AppendLine();
-            sb.AppendLine($"Game:                 {target.DisplayName}");
-            sb.AppendLine($"Installed mod version: {RegistryManager.GetRegisteredVersion(target) ?? "(unknown)"}");
-            sb.AppendLine($"Game install path:    {gamePath}");
-            sb.AppendLine($"Game exe present:     {File.Exists(Path.Combine(gamePath, target.ExeName))}");
+            sb.AppendLine($"Games covered:        " +
+                (sites.Count == 0 ? "(none found)" : string.Join(", ", sites.Select(s => s.Target.DisplayName))));
             sb.AppendLine($"OS:                   {Environment.OSVersion}");
             sb.AppendLine($"CLR:                  {Environment.Version}");
             sb.AppendLine($"64-bit OS:            {Environment.Is64BitOperatingSystem}");
@@ -316,46 +397,54 @@ namespace KotorAccessibilityInstaller
             // reads very differently depending on whether the pins were the
             // embedded ones or a refreshed remote set.
             sb.AppendLine($"Mod source pins:      {SourcePins.Origin}");
-            sb.AppendLine();
-
-            string dumpsDir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "CrashDumps");
-            sb.AppendLine($"Crash-dump folder:    {dumpsDir}");
-            if (Directory.Exists(dumpsDir))
-            {
-                var dumps = Directory.EnumerateFiles(dumpsDir, "swkotor*.dmp")
-                    .Select(p => new FileInfo(p))
-                    .OrderByDescending(f => f.LastWriteTimeUtc)
-                    .Take(10)
-                    .ToList();
-                sb.AppendLine($"Recent swkotor dumps ({dumps.Count}):");
-                foreach (var d in dumps)
-                    sb.AppendLine($"  {d.LastWriteTimeUtc:yyyy-MM-ddTHH:mm:ssZ}  {d.Length,12:N0}  {d.Name}");
-            }
-            else
-            {
+            sb.AppendLine($"Crash-dump folder:    {DumpsDir}");
+            if (!Directory.Exists(DumpsDir))
                 sb.AppendLine("(crash-dump folder does not exist — WER may not have captured anything yet)");
-            }
-            sb.AppendLine();
-
-            string logsDir = Path.Combine(gamePath, "logs");
-            sb.AppendLine($"Patch-log folder:     {logsDir}");
-            if (Directory.Exists(logsDir))
-            {
-                var logs = Directory.EnumerateFiles(logsDir, "patch-*.log")
-                    .Select(p => new FileInfo(p))
-                    .OrderByDescending(f => f.LastWriteTimeUtc)
-                    .Take(10)
-                    .ToList();
-                sb.AppendLine($"Recent patch logs ({logs.Count}):");
-                foreach (var l in logs)
-                    sb.AppendLine($"  {l.LastWriteTimeUtc:yyyy-MM-ddTHH:mm:ssZ}  {l.Length,12:N0}  {l.Name}");
-            }
             sb.AppendLine();
 
             foreach (var t in GameTarget.All)
                 sb.AppendLine($"WER LocalDumps for {t.ExeName}: {(WerLocalDumps.IsEnabled(t) ? "ENABLED" : "NOT ENABLED")}");
+
+            // One block per game. Both games' recent-file lists are here even
+            // when only one of them crashed, because "KOTOR 2 has no logs at
+            // all" and "KOTOR 2 ran fine" look identical from the archive's
+            // file list alone.
+            foreach (var site in sites)
+            {
+                sb.AppendLine();
+                sb.AppendLine($"=== {site.Target.DisplayName} ({site.Target.Id}) ===");
+                sb.AppendLine($"Installed mod version: {RegistryManager.GetRegisteredVersion(site.Target) ?? "(unknown)"}");
+                sb.AppendLine($"Game install path:    {site.Path}");
+                sb.AppendLine($"Game exe present:     {File.Exists(Path.Combine(site.Path, site.Target.ExeName))}");
+                sb.AppendLine($"Mod DLL present:      " +
+                    File.Exists(Path.Combine(site.Path, "patches", "accessibility.dll")));
+
+                if (Directory.Exists(DumpsDir))
+                {
+                    var dumps = Directory.EnumerateFiles(DumpsDir, $"{site.Target.ExeName}*.dmp")
+                        .Select(p => new FileInfo(p))
+                        .OrderByDescending(f => f.LastWriteTimeUtc)
+                        .Take(10)
+                        .ToList();
+                    sb.AppendLine($"Recent {site.Target.ExeName} dumps ({dumps.Count}):");
+                    foreach (var d in dumps)
+                        sb.AppendLine($"  {d.LastWriteTimeUtc:yyyy-MM-ddTHH:mm:ssZ}  {d.Length,12:N0}  {d.Name}");
+                }
+
+                string logsDir = Path.Combine(site.Path, "logs");
+                sb.AppendLine($"Patch-log folder:     {logsDir}");
+                if (Directory.Exists(logsDir))
+                {
+                    var logs = Directory.EnumerateFiles(logsDir, "patch-*.log")
+                        .Select(p => new FileInfo(p))
+                        .OrderByDescending(f => f.LastWriteTimeUtc)
+                        .Take(10)
+                        .ToList();
+                    sb.AppendLine($"Recent patch logs ({logs.Count}):");
+                    foreach (var l in logs)
+                        sb.AppendLine($"  {l.LastWriteTimeUtc:yyyy-MM-ddTHH:mm:ssZ}  {l.Length,12:N0}  {l.Name}");
+                }
+            }
 
             File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
         }

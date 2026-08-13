@@ -742,10 +742,14 @@ namespace KotorAccessibilityInstaller
 
         /// <summary>
         /// Build a beta-test archive (.7z, LZMA2; .zip fallback) in the user's
-        /// Downloads folder containing the newest patch log, the newest swkotor
-        /// crash dump, the installer log, and a system-info summary. Opens
-        /// Explorer with the archive selected so the user can attach it to a
-        /// bug report directly.
+        /// Downloads folder containing the newest patch log and crash dump of
+        /// every installed game, the installer log, and a system-info summary.
+        /// Opens Explorer with the archive selected so the user can attach it
+        /// to a bug report directly.
+        ///
+        /// <para><paramref name="target"/> no longer decides which game is
+        /// collected — <see cref="LogCollector"/> covers them all — but is still
+        /// passed so a caller-supplied game path survives detection.</para>
         /// </summary>
         internal static void CollectLogsAndReport(GameTarget target, string gamePath)
         {
