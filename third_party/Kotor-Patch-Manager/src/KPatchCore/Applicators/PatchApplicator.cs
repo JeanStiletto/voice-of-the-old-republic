@@ -100,6 +100,57 @@ public class PatchApplicator
         /// Additional messages
         /// </summary>
         public List<string> Messages { get; init; } = new();
+
+        /// <summary>
+        /// Why the install failed, for callers that need to react to a specific
+        /// refusal rather than relay <see cref="Error"/> verbatim.
+        ///
+        /// <para>Exists because <see cref="Error"/> is a developer-facing English
+        /// string, and a front-end that wants to explain a refusal in the user's
+        /// language would otherwise have to either match on that text or
+        /// re-implement the check in front of the install — and a second copy of
+        /// a rule drifts from the original. Callers that don't care can keep
+        /// ignoring this.</para>
+        ///
+        /// <para>Derived from <see cref="Success"/> so that the many failure
+        /// sites that predate this property still classify honestly: a failure
+        /// that names no reason reads as <see cref="InstallFailure.Other"/>,
+        /// never as "no failure".</para>
+        /// </summary>
+        public InstallFailure Failure
+        {
+            get => Success
+                ? InstallFailure.None
+                : (_failure == InstallFailure.None ? InstallFailure.Other : _failure);
+            init => _failure = value;
+        }
+
+        private readonly InstallFailure _failure = InstallFailure.None;
+    }
+
+    /// <summary>
+    /// Classifies an install failure. Only refusals a caller can meaningfully
+    /// act on get their own value; everything else stays <see cref="Other"/>.
+    /// </summary>
+    public enum InstallFailure
+    {
+        /// <summary>Install succeeded.</summary>
+        None = 0,
+
+        /// <summary>
+        /// Something went wrong that the caller can only report. Read
+        /// <see cref="InstallResult.Error"/>.
+        /// </summary>
+        Other,
+
+        /// <summary>
+        /// The executable is not a build the selected patches declare support
+        /// for, and <c>AllowVersionMismatch</c> was not set. Nothing has been
+        /// written to the game: this is decided during patch validation, before
+        /// the backup step and before any hook is applied.
+        /// <see cref="InstallResult.DetectedVersion"/> carries what was found.
+        /// </summary>
+        UnsupportedGameVersion
     }
 
     public PatchApplicator(PatchRepository repository)
@@ -235,6 +286,7 @@ public class PatchApplicator
                     return new InstallResult
                     {
                         Success = false,
+                        Failure = InstallFailure.UnsupportedGameVersion,
                         Error = versionCheckResult.Error,
                         DetectedVersion = gameVersion,
                         Messages = messages

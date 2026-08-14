@@ -33,6 +33,25 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>Unreleased</h2>
+
+<h3>Installer:</h3>
+
+- Installing or updating on a KOTOR 2 that already has the mod works again. The
+  installer refused it as an unsupported game build, on machines where the mod
+  was running perfectly well. KOTOR 2 gets two engine patches (4 GB memory,
+  borderless fullscreen) that rewrite the game's executable, so from the second
+  install onward the file no longer matches any release the mod declares — and a
+  version check added in v0.7.2 compared the file directly instead of asking the
+  patch framework, which has always known how to recognise an executable it
+  patched itself. KOTOR 1 was never affected: nothing the mod installs there
+  writes to the executable.
+
+- Uninstalling now puts the game's executable back the way it was, undoing those
+  two engine patches. It previously left them in place while deleting the record
+  of what the file had been, so a later install could no longer identify the game
+  and refused to install into it.
+
 <h2>v0.7.3</h2>
 
 <h3>KOTOR 2:</h3>

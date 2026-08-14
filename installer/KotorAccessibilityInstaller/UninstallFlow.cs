@@ -23,9 +23,14 @@ namespace KotorAccessibilityInstaller
 
             try
             {
-                // No restore: install no longer creates <game exe>.backup.* files.
-                // The uninstall confirmation text tells the user to verify game
-                // files via Steam or reinstall from GoG to get vanilla back.
+                // The executable itself. Install no longer creates
+                // <game exe>.backup.* files, so there is nothing to restore
+                // wholesale — but our bundled engine patches (KOTOR 2's 4 GB and
+                // borderless) write static hooks into it, and those we put back
+                // by hand. Must run BEFORE the deletions below: it reads
+                // kpm_install_state.json to learn which build the executable
+                // started as, and that file is on the list.
+                new InstallationManager(target, gamePath).RevertBundledExePatches();
 
                 // Everything we drop into the game root, in one list.
                 //

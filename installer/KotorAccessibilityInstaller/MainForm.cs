@@ -6,6 +6,7 @@ using System.IO;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using KPatchCore.Applicators;
 using KotorAccessibilityInstaller.ModInstallers;
 
 namespace KotorAccessibilityInstaller
@@ -350,22 +351,6 @@ namespace KotorAccessibilityInstaller
                 UpdateProgress(45);
                 stagingRoot = await Task.Run(() => installationManager.StagePatcherRuntime(downloadedKpatch));
 
-                // Step 2b: refuse an unrecognised build with an answer the player
-                // can act on. KPatchCore would refuse it anyway, but only as a
-                // generic failure carrying its own English error text.
-                if (!installationManager.IsAccessibilityPatchSupported(stagingRoot, out string exeFingerprint))
-                {
-                    MessageBox.Show(
-                        InstallerLocale.Format("Main_UnsupportedBuild_Format",
-                                               _target.DisplayName, _target.ExeName, exeFingerprint),
-                        InstallerLocale.Get("Main_UnsupportedBuild_Title"),
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Error);
-                    SetControlsEnabled(true);
-                    _progressBar.Visible = false;
-                    return;
-                }
-
                 // Step 3: apply via KPatchCore
                 UpdateStatus(InstallerLocale.Get("Main_StatusApplying"));
                 UpdateProgress(60);
@@ -377,9 +362,27 @@ namespace KotorAccessibilityInstaller
                 if (!applyResult.Success)
                 {
                     Logger.Error($"KPatchCore install failed: {applyResult.Error}");
+
+                    // One refusal is the player's to act on, so it gets its own
+                    // message in their own language instead of KPatchCore's
+                    // developer-facing English string: this build of the game is
+                    // not one the mod covers. KPatchCore decides that — asking it
+                    // ourselves beforehand meant maintaining a second copy of the
+                    // rule, and the copy was wrong (it could not recognise an
+                    // executable our own bundled patches had rewritten, so it
+                    // refused every re-install on KOTOR 2). Nothing has been
+                    // written to the game at this point: the version gate runs
+                    // during patch validation, before backup and before the first
+                    // static hook.
+                    bool unsupportedBuild =
+                        applyResult.Failure == PatchApplicator.InstallFailure.UnsupportedGameVersion;
                     MessageBox.Show(
-                        InstallerLocale.Format("Main_ApplyFailed_Format", applyResult.Error ?? "(no detail)"),
-                        InstallerLocale.Get("Main_ApplyFailed_Title"),
+                        unsupportedBuild
+                            ? InstallerLocale.Format("Main_UnsupportedBuild_Format",
+                                                     _target.DisplayName, _target.ExeName,
+                                                     installationManager.GetExeFingerprint() ?? "unknown")
+                            : InstallerLocale.Format("Main_ApplyFailed_Format", applyResult.Error ?? "(no detail)"),
+                        InstallerLocale.Get(unsupportedBuild ? "Main_UnsupportedBuild_Title" : "Main_ApplyFailed_Title"),
                         MessageBoxButtons.OK,
                         MessageBoxIcon.Error);
                     SetControlsEnabled(true);

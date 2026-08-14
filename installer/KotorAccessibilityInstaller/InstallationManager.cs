@@ -189,48 +189,147 @@ namespace KotorAccessibilityInstaller
         }
 
         /// <summary>
-        /// Whether the accessibility patch itself declares support for this
-        /// executable, checked BEFORE <see cref="ApplyKPatch"/> so the caller can
-        /// explain the one failure a user can act on.
+        /// The short fingerprint of this game's executable, for the unsupported-
+        /// build message and the bug report that should follow it. Returns null
+        /// when the file cannot be read — the message has a placeholder for that.
         ///
-        /// <para>Without this the case still fails safe — KPatchCore's version gate
-        /// refuses the install — but it surfaces as the generic "patch application
-        /// failed" dialog carrying KPatchCore's English error string, which tells a
-        /// player nothing about what to do. The bundled third-party patches are
-        /// deliberately NOT covered here: an executable they don't declare is
-        /// normal and is silently skipped in <see cref="ApplyKPatch"/>.</para>
-        ///
-        /// <para><paramref name="exeFingerprint"/> is the short SHA-256 prefix, for
-        /// the message and for the bug report that should follow it.</para>
+        /// <para>Presentation only. Whether a build is supported is KPatchCore's
+        /// call and nobody else's: it resolves an executable our own static
+        /// patches have rewritten back to the build it started life as, which a
+        /// plain hash comparison here cannot do. An earlier version of this class
+        /// did compare hashes, and refused every re-install on a KOTOR 2 machine
+        /// the mod was already installed on.</para>
         /// </summary>
-        public bool IsAccessibilityPatchSupported(string stagingRoot, out string exeFingerprint)
+        public string GetExeFingerprint()
         {
-            exeFingerprint = "unknown";
             string gameExe = Path.Combine(_gameDir, _target.ExeName);
-            var repository = new PatchRepository(Path.Combine(stagingRoot, "patches"));
-            var scanResult = repository.ScanPatches();
-            if (!scanResult.Success)
-            {
-                // Can't tell — let ApplyKPatch run and report whatever it hits,
-                // rather than blocking an install on our own pre-flight failing.
-                Logger.Warning($"Version pre-check skipped: {scanResult.Error}");
-                return true;
-            }
-
             try
             {
-                exeFingerprint = KPatchCore.Common.FileHasher.ComputeSha256(gameExe).Substring(0, 16);
+                return KPatchCore.Common.FileHasher.ComputeSha256(gameExe).Substring(0, 16);
             }
             catch (Exception ex)
             {
-                Logger.Warning($"Version pre-check could not hash {_target.ExeName}: {ex.Message}");
-                return true;
+                Logger.Warning($"Could not fingerprint {_target.ExeName}: {ex.Message}");
+                return null;
             }
+        }
 
-            bool supported = IsPatchSupportedForExe(repository, Config.PatchId, gameExe, out string reason);
-            if (!supported)
-                Logger.Error($"Unsupported game build: {reason}");
-            return supported;
+        /// <summary>
+        /// Puts the game's executable back the way we found it, undoing the
+        /// static hooks our bundled engine patches wrote into it (KOTOR 2: 4 GB
+        /// memory and borderless fullscreen; KOTOR 1 ships nothing that writes to
+        /// the exe). Call this BEFORE deleting kpm_install_state.json — that file
+        /// is what says which build the executable started life as.
+        ///
+        /// <para>Everything else we install is a file we can delete. This is the
+        /// one thing that edits a file the game shipped, so it is the one thing an
+        /// uninstall has to actively reverse. Leaving it meant an uninstalled game
+        /// kept an executable that matches no known build, with the record of what
+        /// it had been deleted in the same breath — which strands the next install
+        /// with no way to identify the file, recoverable only by verifying the
+        /// game files in Steam.</para>
+        ///
+        /// <para>Best-effort by design: a failure here must not stop the rest of
+        /// the uninstall, and the revert is byte-exact — a site that no longer
+        /// holds our replacement bytes belongs to somebody else now and is left
+        /// alone (see StaticHookApplicator.RevertStaticHooks).</para>
+        /// </summary>
+        public void RevertBundledExePatches()
+        {
+            if (_target.BundledPatches.Count == 0)
+                return;
+
+            string gameExe = Path.Combine(_gameDir, _target.ExeName);
+            if (!File.Exists(gameExe))
+                return;
+
+            // Which build this executable started as picks the hooks file, and
+            // KPM's install-state record is the only thing that still knows once
+            // static hooks have changed the file. Without it we fall back to
+            // trying every build a patch declares: the byte-exact guard means a
+            // wrong guess reverts nothing rather than corrupting anything, and
+            // that fallback is what rescues an install stranded by the earlier
+            // uninstaller, which deleted the record and left the hooks in place.
+            string originalHash = null;
+            var stateResult = InstallStateManager.Load(gameExe);
+            if (stateResult.Success && stateResult.Data != null)
+                originalHash = stateResult.Data.OriginalHash;
+
+            string stagingRoot = Path.Combine(Path.GetTempPath(), $"kotor_acc_revert_{Guid.NewGuid():N}");
+            try
+            {
+                string patchesDir = Path.Combine(stagingRoot, "patches");
+                Directory.CreateDirectory(patchesDir);
+
+                foreach (var (assetName, _) in _target.BundledPatches)
+                    ExtractEmbeddedResource(assetName, Path.Combine(patchesDir, assetName));
+
+                var repository = new PatchRepository(patchesDir);
+                var scanResult = repository.ScanPatches();
+                if (!scanResult.Success)
+                {
+                    Logger.Warning($"Could not read the bundled engine patches, leaving {_target.ExeName} as it is: {scanResult.Error}");
+                    return;
+                }
+
+                foreach (var (_, patchId) in _target.BundledPatches)
+                    RevertOneBundledPatch(repository, patchId, gameExe, originalHash);
+            }
+            catch (Exception ex)
+            {
+                Logger.Warning($"Could not revert the bundled engine patches in {_target.ExeName}: {ex.Message}");
+            }
+            finally
+            {
+                try { if (Directory.Exists(stagingRoot)) Directory.Delete(stagingRoot, recursive: true); }
+                catch { /* best-effort */ }
+            }
+        }
+
+        /// <summary>
+        /// Reverts one bundled patch's static hooks. <paramref name="originalHash"/>
+        /// selects the hooks file when known; when it is null every build the patch
+        /// declares is tried, and the byte-exact revert decides which one was real.
+        /// </summary>
+        private static void RevertOneBundledPatch(
+            PatchRepository repository, string patchId, string gameExe, string originalHash)
+        {
+            var entry = repository.GetPatch(patchId);
+            if (!entry.Success || entry.Data?.Manifest == null)
+                return;
+
+            var candidates = originalHash != null
+                ? new List<string> { originalHash }
+                : entry.Data.Manifest.SupportedVersions.Values.ToList();
+
+            foreach (var versionHash in candidates)
+            {
+                var hooksResult = repository.LoadHooksForVersion(patchId, versionHash);
+                if (!hooksResult.Success || hooksResult.Data == null || hooksResult.Data.Count == 0)
+                    continue;
+
+                var revertResult = StaticHookApplicator.RevertStaticHooks(gameExe, hooksResult.Data);
+                if (!revertResult.Success)
+                {
+                    Logger.Warning($"Could not revert '{patchId}' in {Path.GetFileName(gameExe)}: {revertResult.Error}");
+                    continue;
+                }
+
+                var summary = revertResult.Data as StaticHookApplicator.RevertSummary;
+
+                // While guessing the build, "left it alone" is the expected answer
+                // for every candidate but the right one, so it is not worth
+                // reporting -- only a revert that actually happened is. Once one
+                // lands, the build is known and the remaining candidates are moot.
+                if (summary != null && summary.Reverted == 0 && originalHash == null)
+                    continue;
+
+                foreach (var msg in revertResult.Messages)
+                    Logger.Info($"Uninstall: {patchId}: {msg}");
+
+                if (summary != null && summary.Reverted > 0)
+                    return;
+            }
         }
 
         /// <summary>
@@ -259,18 +358,28 @@ namespace KotorAccessibilityInstaller
                 return false;
             }
 
-            foreach (var supported in entry.Data.Manifest.SupportedVersions)
+            if (ManifestDeclaresHash(repository, patchId, hash))
             {
-                if (string.Equals(supported.Value, hash, StringComparison.OrdinalIgnoreCase))
-                {
-                    reason = null;
-                    return true;
-                }
+                reason = null;
+                return true;
             }
 
             reason = $"this {Path.GetFileName(gameExe)} (SHA-256 {hash.Substring(0, 16)}...) is not one of the " +
                      $"{entry.Data.Manifest.SupportedVersions.Count} builds it supports";
             return false;
+        }
+
+        /// <summary>
+        /// Whether a staged patch's manifest declares this exact SHA-256.
+        /// </summary>
+        private static bool ManifestDeclaresHash(PatchRepository repository, string patchId, string hash)
+        {
+            var entry = repository.GetPatch(patchId);
+            if (!entry.Success || entry.Data?.Manifest == null)
+                return false;
+
+            return entry.Data.Manifest.SupportedVersions
+                .Any(v => string.Equals(v.Value, hash, StringComparison.OrdinalIgnoreCase));
         }
 
         /// <summary>

@@ -887,6 +887,116 @@ failing.
 
 ---
 
+### PR-11. `InstallResult` should say *why* an install was refused
+
+**Repo:** `LaneDibello/Kotor-Patch-Manager`
+**Status:** Applied in our vendored tree 2026-08-14; not yet offered upstream.
+
+**What.** `PatchApplicator.InstallResult` reports a failure as `Success = false`
+plus `Error`, a developer-facing English string. Add an `InstallFailure` enum
+(`None` / `Other` / `UnsupportedGameVersion`) so a caller can recognise the one
+refusal an end user can act on without parsing prose.
+
+**Why it matters.** A front-end that wants to explain "this build of the game is
+not covered" in the user's language has exactly three options today, and two of
+them are bad:
+
+1. Match on `Error`'s text — breaks whenever the wording changes.
+2. Run its own version check *before* `InstallPatches`, so it can refuse first
+   with its own message.
+3. Read a typed reason off the result. Not available.
+
+Our installer took option 2, and option 2 is a trap. The check in front is a
+second copy of the rule, written by someone who does not know what the original
+knows. Ours compared the executable's SHA-256 against the manifest's
+`supported_versions` — which is right up until KPM's own static hooks rewrite the
+executable, at which point the file no longer hashes to any declared build.
+`PatchApplicator` handles that correctly via `kpm_install_state.json`; the copy
+in front could not, so it refused **every install after the first** on any game
+where a bundled patch carries a static hook (for us: KOTOR 2, whose 4 GB and
+borderless patches both do). Users who successfully installed were locked out of
+their next update, with a message telling them their game build was unsupported.
+
+The general shape: any caller that needs a better message than `Error` is pushed
+into re-implementing the gate, and a re-implemented gate drifts from the real one.
+
+**Fix.** Add to `InstallResult`:
+
+```csharp
+public InstallFailure Failure { get; init; }
+```
+
+derived from `Success` so that the failure sites that predate it still classify
+honestly — a failure naming no reason reads as `Other`, never as `None`. Set
+`UnsupportedGameVersion` at the `ValidateAllPatchesSupported` refusal, which
+already carries `DetectedVersion` for the caller's message. Everything else keeps
+the default.
+
+**Files to change:** `src/KPatchCore/Applicators/PatchApplicator.cs` only.
+
+**Risks.** None to existing callers: the property is additive and every current
+code path keeps its behaviour. `Other` is deliberately coarse — values get added
+when a caller has something specific to do about them, not to enumerate the
+error space.
+
+---
+
+### PR-12. Static hooks can be applied but never un-applied
+
+**Repo:** `LaneDibello/Kotor-Patch-Manager`
+**Status:** Applied in our vendored tree 2026-08-14; not yet offered upstream.
+
+**What.** `StaticHookApplicator` has `ApplyStaticHooks` and no counterpart. Add
+`RevertStaticHooks(exePath, hooks)`, which restores each static hook's
+`original_bytes` wherever its `replacement_bytes` are still in place.
+
+**Why it matters.** A STATIC hook is the only thing an install writes into a file
+the game shipped. Everything else KPM installs is a file it can delete, and
+`PatchRemover` deletes them — but its only answer for the executable is
+`BackupManager.RestoreBackup`. So an install that ran with `CreateBackup = false`
+has no way back at all: `RemoveAllPatches` reports success while leaving the
+executable rewritten.
+
+The result is worse than "one setting stays behind", because the same uninstall
+deletes `kpm_install_state.json` — the only record of what the executable *was*.
+The user is left with a binary that matches no known build and nothing that
+remembers why, which `GameDetector` can only report as Unknown. The next install
+refuses it, correctly, and the only recovery is Steam's "Verify integrity of game
+files". We shipped exactly that trap: our installer disables backups (KOTOR is a
+click away in a store client, and timestamped copies of a 6 MB exe in the game
+folder are clutter), and KOTOR 2 gets two bundled patches that both carry static
+hooks.
+
+**Fix.** Mirror `ApplyStaticHooks`, with its own conservatism inverted:
+
+- Site holds `replacement_bytes` → write `original_bytes` back.
+- Site already holds `original_bytes` → count as done. Reverting is idempotent
+  for the same reason applying is.
+- Site holds neither → leave it alone and report it. Someone else owns those
+  bytes now — another mod, another patcher — and writing "originals" over them
+  would corrupt their work. Reported, not failed: an uninstall has to finish.
+- Only a PE-parse, read, or write failure fails the call.
+
+Return a small `RevertSummary` on `PatchResult.Data` (reverted / already-original
+/ not-ours counts). A caller that has lost the install state and is trying each
+declared build in turn needs to tell "wrong build, reverted nothing" from
+"right build, but those bytes are not ours anymore", and that is not a question
+to answer by parsing the summary string.
+
+`PatchRemover.RemoveAllPatches` should call it when no backup is available, which
+would fix the general case for every KPM front-end; our installer calls it
+directly because it also knows which bundled patches it shipped.
+
+**Files to change:** `src/KPatchCore/Applicators/StaticHookApplicator.cs` (new
+method), optionally `PatchRemover.cs` (call it in the no-backup branch).
+
+**Risks.** Low, and bounded by byte equality: the method can only write bytes a
+hook declares, only at addresses that hook names, and only where the bytes it
+expects to find are actually there. Nothing that exists today changes behaviour —
+it is a new method.
+
+---
+
 ## Conventions
 
 - One PR per coherent change. Keep them small and reviewable.
