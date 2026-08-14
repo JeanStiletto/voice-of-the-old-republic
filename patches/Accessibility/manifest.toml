@@ -1,7 +1,7 @@
 [patch]
 id = "accessibility"
 name = "Voice of the Old Republic"
-version = "0.7.3"
+version = "0.7.4"
 author = "Fabian"
 description = "Screen reader accessibility for KotOR 1 and KotOR 2: speech for menus and dialogue, navigation and guidance aids, combat and status narration, and audio cues for the minigames."
 

@@ -206,6 +206,7 @@ const char* Get(Id id) {
         case Id::LevelUpAlreadyOpen:   return "Ekran awansu jest ju\xBF otwarty";
         case Id::LevelUpNotReady:      return "Za ma\xB3o do\x9Cwiadczenia na awans";
         case Id::LevelUpScreenHint:    return "Strza\xB3kami wybierz kategori\xEA i naci\x9Cnij Enter, aby j\xB9 otworzy\xE6. Rozdziel tam punkty, a potem wybierz Akceptuj, aby zako\xF1""czy\xE6.";
+        case Id::LevelUpGrantedPopupHint: return "Naci\x9Cnij Enter, aby potwierdzi\xE6.";
 
         case Id::PortraitLabel:        return "Portret";
         case Id::FmtPortraitArrow:     return "%s: %s";

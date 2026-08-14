@@ -691,6 +691,12 @@ enum class Id : int {
     // an active in-world level-up wizard (see SkillInfoBoxTitleOverride); the
     // chargen Feats flow keeps its own ChargenFeatGrantedTitle. No args.
     LevelUpScreenHint,
+    // Appended to the SAME SkillInfoBox popup's real title once Annehmen has
+    // committed and destroyed the wizard. The engine mounts that popup under
+    // the wizard, so it resurfaces as the top modal afterwards and its OK
+    // button is the only way back to the world — a dead end for a blind player
+    // who has just been told (twice) how to pick a category. No args.
+    LevelUpGrantedPopupHint,
 
     // ---- Chargen portrait selection (CSWGuiPortraitCharGen).
     //      The left/right arrow buttons have no own text (image-only);

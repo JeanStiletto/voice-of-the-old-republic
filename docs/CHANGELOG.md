@@ -33,7 +33,19 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
-<h2>Unreleased</h2>
+<h2>v0.7.4</h2>
+
+<h3>Bug fixes:</h3>
+
+- Levelling up with Shift+L no longer leaves the keyboard dead after you choose
+  Accept. A second popup listing the talents you just gained sits underneath the
+  level-up wizard and becomes the active window the moment the wizard closes, but
+  the mod handed keyboard control back to the world right then — nothing could
+  reach the popup's OK button, and opening and closing the Escape menu was the
+  only way out. Press Enter to confirm it.
+
+- That popup now says what you gained ("You have received the following
+  talent(s) this level") instead of repeating the level-up screen's instructions.
 
 <h3>Installer:</h3>
 

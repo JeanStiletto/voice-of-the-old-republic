@@ -196,6 +196,7 @@ const char* Get(Id id) {
         case Id::LevelUpAlreadyOpen:   return "Stufenaufstieg bereits offen";
         case Id::LevelUpNotReady:      return "Noch nicht genug Erfahrung f\xFCr einen Stufenaufstieg"; // f?r
         case Id::LevelUpScreenHint:    return "W\xE4hle mit den Pfeiltasten eine Kategorie und dr\xFC""cke Enter, um sie zu \xF6""ffnen. Verteile dort deine Punkte und w\xE4hle dann Annehmen, um abzuschlie\xDF""en."; // Wahle druecke oeffnen abschliessen
+        case Id::LevelUpGrantedPopupHint: return "Enter zum Best\xE4tigen.";  // Bestaetigen
 
         case Id::PortraitLabel:        return "Portr\xE4t";              // Portr?t
         case Id::FmtPortraitArrow:     return "%s: %s";

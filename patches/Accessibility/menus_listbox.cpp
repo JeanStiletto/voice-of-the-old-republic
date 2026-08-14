@@ -17,6 +17,7 @@
 #include <windows.h>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 
 #include "menus_listbox.h"
 
@@ -557,6 +558,7 @@ constexpr ListBoxPanelSpec kEquipPickerSpec = {
 // which we then read for the per-row enrichment speech.
 // ============================================================================
 
+constexpr int kSkillInfoBoxTitleId    = 0;
 constexpr int kSkillInfoBoxLbSkillsId = 2;
 constexpr int kSkillInfoBoxBtnOkId    = 4;
 
@@ -728,24 +730,57 @@ bool SkillInfoBoxOnEnter(void* panel) {
     return true;
 }
 
+// Read the panel's own title label, and say whether it still holds the BioWare
+// dev-leftover baked into skillinfo.gui ("Items Available to Place in Container
+// and blah blah blah"). Not localised — the string lives in the .gui, not the
+// TLK, and came back verbatim on a German install.
+//
+// This is what separates the level-up popup's two lives. While the wizard is up
+// the label is still the placeholder and the popup is a silent passenger. Once
+// Annehmen commits, the engine writes the real "Du hast in diesem Level
+// folgende(s) Talent(e) erhalten." onto the same label and the popup becomes the
+// last thing standing between the user and the world.
+bool SkillInfoBoxTitleIsPlaceholder(void* panel, char* outText, size_t outSize) {
+    if (outSize) outText[0] = '\0';
+    void* title = FindControlById(panel, kSkillInfoBoxTitleId);
+    if (!title ||
+        !acc::menus::extract::FromControl(title, outText, outSize, panel) ||
+        outText[0] == '\0') {
+        return true;   // unreadable — the placeholder is the safe assumption
+    }
+    return strstr(outText, "blah blah blah") != nullptr ||
+           strncmp(outText, "Items Available", 15) == 0;
+}
+
 // Title override: substitute the localised "Du erhÃ¤ltst diese Talente"
 // string for the BioWare placeholder text baked into skillinfo.gui.
 // Only applies in the chargen Feats flow — gated by FindFeatsCharGenPanel
 // so future Force-Powers / Skills reuse can layer on different titles.
-const char* SkillInfoBoxTitleOverride(void* /*panel*/) {
+const char* SkillInfoBoxTitleOverride(void* panel) {
     if (FindFeatsCharGenPanel()) {
         return acc::strings::Get(acc::strings::Id::ChargenFeatGrantedTitle);
     }
-    // In-world level-up (Shift+L): the SkillInfoBox rides along on the category
-    // screen carrying the same BioWare placeholder ("Items Available to Place in
-    // Container and blah blah blah"), which the level-up flow never overwrites.
-    // Speak a short level-up hint instead — the "what do I do here" a blind
-    // player can't see — which also silences that gibberish. Gated on an active
-    // in-world level-up wizard so it never fires for a SkillInfoBox shown from
-    // any other host.
+    // In-world level-up (Shift+L). Gated on an active in-world level-up wizard
+    // so neither branch fires for a SkillInfoBox shown from any other host.
     if (acc::engine::HasActiveLevelUpPanel() ||
         acc::engine_levelup::IsOpeningLevelUp()) {
-        return acc::strings::Get(acc::strings::Id::LevelUpScreenHint);
+        static char s_composed[512];
+        char title[320];
+        if (SkillInfoBoxTitleIsPlaceholder(panel, title, sizeof(title))) {
+            // Wizard opening: the popup rides along on the category screen
+            // carrying the placeholder. Speak a short level-up hint instead —
+            // the "what do I do here" a blind player can't see — which also
+            // silences that gibberish.
+            return acc::strings::Get(acc::strings::Id::LevelUpScreenHint);
+        }
+        // Wizard committed and destroyed: this popup is now the top modal and
+        // the user has to press Enter on its OK button to get back to the
+        // world. Speak what it actually says plus the way out — repeating the
+        // category hint here was both wrong and a verbatim repeat of the
+        // opening narration.
+        snprintf(s_composed, sizeof(s_composed), "%s %s", title,
+                 acc::strings::Get(acc::strings::Id::LevelUpGrantedPopupHint));
+        return s_composed;
     }
     return nullptr;  // unknown SkillInfoBox host — let the generic walk run
 }

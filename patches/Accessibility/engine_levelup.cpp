@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <cstdint>
 
+#include "engine_manager.h"   // GetGuiManager, ReadModalStack — trailing-popup hold
 #include "engine_panels.h"    // ResolveGuiInGame, HasActiveLevelUpPanel
 #include "engine_player.h"    // GetClientLeader, kClientObjectServerObjectOffset
 #include "engine_offsets.h"   // kCreatureStatsPointerOffset
@@ -183,6 +184,33 @@ bool s_sawPanel  = false;   // wizard panel observed live at least once — guar
 // level-up hint instead of the BioWare placeholder. (Later re-sights are covered
 // by HasActiveLevelUpPanel once the wizard is on the stack.)
 bool s_openingLevelUp = false;
+bool s_heldForPopup   = false;  // logged-once flag for the trailing-popup hold
+
+// True while the granted-feats SkillInfoBox popup is still on the modal stack.
+//
+// The level-up flow mounts that popup BEFORE the wizard (modal[0], with the
+// wizard pushed on top at modal[2]), so committing with Annehmen destroys the
+// wizard and leaves the popup as the new top modal, waiting for its OK button.
+// Releasing input_class/sw_gui_status at that moment strands it: the popup is
+// foreground and modal, but the keyboard is world-routed again, so nothing the
+// user presses can reach its OK — the "dead keyboard until I open and close the
+// Escape menu once" report (patch-20260814-145837.log, 14:59:12-14:59:19; the
+// Escape menu re-set sw_gui_status=3 on its way in, which is what unstuck it).
+//
+// Modal stack, not panels[]: only a modal popup can actually consume the keys we
+// are holding the routing open for. A SkillInfoBox lingering in panels[] without
+// being modal is not dismissable by us and must not freeze the world.
+bool GrantedFeatsPopupStillModal() {
+    void* modal[32];
+    int n = acc::engine::ReadModalStack(acc::engine::GetGuiManager(), modal, 32);
+    for (int i = 0; i < n; ++i) {
+        if (modal[i] && acc::engine::IdentifyPanel(modal[i]) ==
+                            acc::engine::PanelKind::SkillInfoBox) {
+            return true;
+        }
+    }
+    return false;
+}
 
 void NoteLevelUpOpened(void* gui) {
     if (s_pauseHeld) return;  // idempotent per open
@@ -197,8 +225,9 @@ void NoteLevelUpOpened(void* gui) {
     acc::engine::SetGuiInputClass(2);
     DriveSWGuiStatus(gui, 3, 1);
     acc::engine::BeginOverlayPause(acc::engine::OverlayPauseOwner::LevelUp);
-    s_pauseHeld = true;
-    s_sawPanel  = false;
+    s_pauseHeld   = true;
+    s_sawPanel    = false;
+    s_heldForPopup = false;
     acclog::Write("LevelUp", "wizard opened: input_class=2 + sw_gui_status=3 + "
         "overlay pause (input routed to wizard, world frozen)");
 }
@@ -324,6 +353,15 @@ void TickLevelUpPause() {
     }
     if (!s_sawPanel) return; // just opened; panel not registered yet — wait
                              // until we've seen it before releasing the pause
+    if (GrantedFeatsPopupStillModal()) {
+        if (!s_heldForPopup) {
+            s_heldForPopup = true;
+            acclog::Write("LevelUp",
+                "wizard gone but granted-feats popup still modal — holding "
+                "input_class/status so Enter reaches its OK button");
+        }
+        return;
+    }
     // Reverse the three open touches, in reverse order. status 4 =
     // "sub-screen finishing": the decompile restores sw_gui_status to 1 (unless
     // it was 2) and re-adds the HUD panel. input_class 0 = back to in-world key
@@ -332,7 +370,8 @@ void TickLevelUpPause() {
     DriveSWGuiStatus(acc::engine::ResolveGuiInGame(), 4, 1);
     acc::engine::SetGuiInputClass(0);
     acc::engine::EndOverlayPause(acc::engine::OverlayPauseOwner::LevelUp);
-    s_pauseHeld = false;
+    s_pauseHeld    = false;
+    s_heldForPopup = false;
     acclog::Write("LevelUp",
         "wizard closed — input_class/status restored + overlay pause released");
 }

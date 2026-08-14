@@ -192,6 +192,7 @@ const char* Get(Id id) {
         case Id::LevelUpAlreadyOpen:   return "Aumento di livello gi\xE0 aperto";
         case Id::LevelUpNotReady:      return "Esperienza non ancora sufficiente per aumentare di livello";
         case Id::LevelUpScreenHint:    return "Usa le frecce per scegliere una categoria e premi Invio per aprirla. Distribuisci i tuoi punti, poi scegli Accetta per completare.";
+        case Id::LevelUpGrantedPopupHint: return "Premi Invio per confermare.";
 
         case Id::PortraitLabel:        return "Ritratto";
         case Id::FmtPortraitArrow:     return "%s: %s";
