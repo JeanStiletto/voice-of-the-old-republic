@@ -23,6 +23,8 @@ namespace KotorAccessibilityInstaller
         private Label _titleLabel;
         private Label _statusLabel;
         private ProgressBar _progressBar;
+        private Label _eventLogLabel;
+        private EventLogView _eventLog;
 
         private readonly string _k2GamePath;
         private readonly ModSelection _selection;
@@ -48,7 +50,7 @@ namespace KotorAccessibilityInstaller
         private void InitializeComponents()
         {
             Text = Config.DisplayName;
-            Size = new Size(560, 190);
+            Size = new Size(560, 330);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
@@ -81,7 +83,24 @@ namespace KotorAccessibilityInstaller
             };
             _progressBar.AccessibleName = Text;
 
-            Controls.AddRange(new Control[] { _titleLabel, _statusLabel, _progressBar });
+            _eventLogLabel = new Label
+            {
+                Text = InstallerLocale.Get("EventLog_Label"),
+                Location = new Point(20, 133),
+                Size = new Size(510, 18)
+            };
+
+            _eventLog = new EventLogView
+            {
+                Location = new Point(20, 153),
+                Size = new Size(510, 125),
+                AccessibleName = InstallerLocale.Get("EventLog_Label")
+            };
+
+            Controls.AddRange(new Control[]
+            {
+                _titleLabel, _statusLabel, _progressBar, _eventLogLabel, _eventLog
+            });
         }
 
         private async Task RunAsync()
@@ -153,11 +172,15 @@ namespace KotorAccessibilityInstaller
             _progressBar.Value = Math.Max(0, Math.Min(100, value));
         }
 
-        private void UpdateStatus(string message)
+        // logKey groups repeating lines onto ONE row in the event log (see
+        // EventLogView). The pipeline's own status strings are distinct steps and
+        // pass none; HoloPatcher's elapsed-seconds heartbeat passes one.
+        private void UpdateStatus(string message, string logKey = null)
         {
-            if (InvokeRequired) { BeginInvoke(new Action(() => UpdateStatus(message))); return; }
+            if (InvokeRequired) { BeginInvoke(new Action(() => UpdateStatus(message, logKey))); return; }
             _statusLabel.Text = message;
             Logger.Info(message);
+            _eventLog?.Report(message, logKey);
 
             ScreenReaderAnnouncer.Announce(_statusLabel, message);
         }

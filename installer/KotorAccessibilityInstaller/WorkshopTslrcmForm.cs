@@ -105,6 +105,8 @@ namespace KotorAccessibilityInstaller
         private Label _titleLabel;
         private Label _statusLabel;
         private ProgressBar _progressBar;
+        private Label _eventLogLabel;
+        private EventLogView _eventLog;
         private Button _cancelButton;
         private Button _reopenButton;
 
@@ -144,7 +146,7 @@ namespace KotorAccessibilityInstaller
         private void InitializeComponents()
         {
             Text = Config.DisplayName;
-            Size = new Size(560, 200);
+            Size = new Size(560, 368);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
@@ -180,9 +182,23 @@ namespace KotorAccessibilityInstaller
             // view, or the user can close it — and until this existed, that left
             // them staring at a form waiting forever for a subscription they had
             // no way to reach.
+            _eventLogLabel = new Label
+            {
+                Text = InstallerLocale.Get("EventLog_Label"),
+                Location = new Point(20, 138),
+                Size = new Size(510, 18)
+            };
+
+            _eventLog = new EventLogView
+            {
+                Location = new Point(20, 158),
+                Size = new Size(510, 110),
+                AccessibleName = InstallerLocale.Get("EventLog_Label")
+            };
+
             _reopenButton = new Button
             {
-                Location = new Point(20, 135),
+                Location = new Point(20, 280),
                 Size = new Size(260, 30),
                 Text = InstallerLocale.Get("K2Lang_ReopenPageButton")
             };
@@ -190,7 +206,7 @@ namespace KotorAccessibilityInstaller
 
             _cancelButton = new Button
             {
-                Location = new Point(390, 135),
+                Location = new Point(390, 280),
                 Size = new Size(140, 30),
                 Text = InstallerLocale.Get("Main_CancelButton")
             };
@@ -202,7 +218,8 @@ namespace KotorAccessibilityInstaller
 
             Controls.AddRange(new Control[]
             {
-                _titleLabel, _statusLabel, _progressBar, _reopenButton, _cancelButton
+                _titleLabel, _statusLabel, _progressBar,
+                _eventLogLabel, _eventLog, _reopenButton, _cancelButton
             });
 
             CancelButton = _cancelButton;
@@ -482,12 +499,17 @@ namespace KotorAccessibilityInstaller
                     // nothing to do but wait for a timeout that would never
                     // resolve.
                     bool steamHasItem = SteamKnowsWorkshopItem();
+                    // One row for the wait, counting up. The two variants share
+                    // the key on purpose: it is the same wait either way, and
+                    // Steam picking the subscription up mid-wait should rewrite
+                    // that row rather than start a second one beside it.
                     UpdateStatus(
                         InstallerLocale.Format(
                             steamHasItem ? "K2Lang_WaitingHeartbeat_Format"
                                          : "K2Lang_NotSubscribedHeartbeat_Format",
                             elapsedSec),
-                        announce: true);
+                        announce: true,
+                        logKey: "workshop-wait");
                 }
 
                 try { await Task.Delay(2000, _cts.Token); }
@@ -630,14 +652,18 @@ namespace KotorAccessibilityInstaller
             return Path.Combine(_k2GamePath, folderName);
         }
 
-        private void UpdateStatus(string message, bool announce)
+        // logKey groups repeating lines onto ONE row in the event log (see
+        // EventLogView). The wait heartbeat ticks every two seconds while Steam
+        // fetches a 335 MB item, so it passes one; the step messages pass none.
+        private void UpdateStatus(string message, bool announce, string logKey = null)
         {
             if (InvokeRequired)
             {
-                BeginInvoke(new Action(() => UpdateStatus(message, announce)));
+                BeginInvoke(new Action(() => UpdateStatus(message, announce, logKey)));
                 return;
             }
             _statusLabel.Text = message;
+            _eventLog?.Report(message, logKey);
             if (!announce) return;
 
             ScreenReaderAnnouncer.Announce(_statusLabel, message);

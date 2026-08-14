@@ -29,6 +29,8 @@ namespace KotorAccessibilityInstaller
         private Button _installButton;
         private Button _cancelButton;
         private ProgressBar _progressBar;
+        private Label _eventLogLabel;
+        private EventLogView _eventLog;
         private CheckBox _launchCheckBox;
         private CheckBox _readmeCheckBox;
 
@@ -71,7 +73,7 @@ namespace KotorAccessibilityInstaller
                            + " — " + _target.DisplayName;
 
             Text = title;
-            Size = new Size(520, 360);
+            Size = new Size(520, 560);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
@@ -124,10 +126,24 @@ namespace KotorAccessibilityInstaller
                 Visible = false
             };
 
+            _eventLogLabel = new Label
+            {
+                Text = InstallerLocale.Get("EventLog_Label"),
+                Location = new Point(20, 228),
+                Size = new Size(470, 18)
+            };
+
+            _eventLog = new EventLogView
+            {
+                Location = new Point(20, 248),
+                Size = new Size(470, 120),
+                AccessibleName = InstallerLocale.Get("EventLog_Label")
+            };
+
             _launchCheckBox = new CheckBox
             {
                 Text = InstallerLocale.Get("Main_LaunchCheckBox"),
-                Location = new Point(20, 230),
+                Location = new Point(20, 378),
                 Size = new Size(300, 25),
                 // Headless = invoked by in-game updater; the calling batch
                 // script relaunches the game, so this checkbox would race
@@ -138,7 +154,7 @@ namespace KotorAccessibilityInstaller
             _readmeCheckBox = new CheckBox
             {
                 Text = InstallerLocale.Get("Main_ReadmeCheckBox"),
-                Location = new Point(20, 255),
+                Location = new Point(20, 403),
                 Size = new Size(400, 25),
                 // Headless = unattended; don't pop a browser tab during what
                 // the user is treating as a transparent restart.
@@ -148,7 +164,7 @@ namespace KotorAccessibilityInstaller
             _installButton = new Button
             {
                 Text = InstallerLocale.Get(_updateOnly ? "Main_UpdateButton" : "Main_InstallButton"),
-                Location = new Point(300, 290),
+                Location = new Point(300, 438),
                 Size = new Size(90, 30)
             };
             _installButton.Click += InstallButton_Click;
@@ -156,7 +172,7 @@ namespace KotorAccessibilityInstaller
             _cancelButton = new Button
             {
                 Text = InstallerLocale.Get("Main_CancelButton"),
-                Location = new Point(400, 290),
+                Location = new Point(400, 438),
                 Size = new Size(90, 30)
             };
             _cancelButton.Click += (s, e) => Close();
@@ -164,7 +180,8 @@ namespace KotorAccessibilityInstaller
             Controls.AddRange(new Control[]
             {
                 _titleLabel, _statusLabel, _pathLabel, _pathTextBox, _browseButton,
-                _progressBar, _launchCheckBox, _readmeCheckBox, _installButton, _cancelButton
+                _progressBar, _eventLogLabel, _eventLog,
+                _launchCheckBox, _readmeCheckBox, _installButton, _cancelButton
             });
 
             // ValidatePath sets the status text AND refreshes the accessible
@@ -221,7 +238,10 @@ namespace KotorAccessibilityInstaller
             // disabled, and the only feedback was red text. Colour is also not
             // a signal a screen-reader user can perceive, so the reason has to
             // be spoken.
-            UpdateStatus(message, isError: notFound);
+            // Keyed: this fires once at construction and again on every Browse,
+            // and re-announcing which folder is selected must not push the
+            // install's own history down the log.
+            UpdateStatus(message, isError: notFound, logKey: "path");
 
             // Keep the button's accessible description in step with the state
             // it describes. It used to be captured once at construction, so it
@@ -598,12 +618,16 @@ namespace KotorAccessibilityInstaller
 
         private void UpdateStatus(string message) => UpdateStatus(message, isError: false);
 
-        private void UpdateStatus(string message, bool isError)
+        // logKey groups repeating lines onto ONE row in the event log (see
+        // EventLogView). Null = its own entry, which is what every distinct
+        // install step wants.
+        private void UpdateStatus(string message, bool isError, string logKey = null)
         {
-            if (InvokeRequired) { Invoke(new Action(() => UpdateStatus(message, isError))); return; }
+            if (InvokeRequired) { Invoke(new Action(() => UpdateStatus(message, isError, logKey))); return; }
             _statusLabel.Text = message;
             _statusLabel.ForeColor = isError ? Color.Red : SystemColors.ControlText;
             Logger.Info(message);
+            _eventLog?.Report(message, logKey);
             RaiseNotification(message);
         }
 

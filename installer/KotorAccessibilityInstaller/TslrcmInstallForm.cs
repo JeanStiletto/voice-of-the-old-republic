@@ -68,6 +68,8 @@ namespace KotorAccessibilityInstaller
         private Label _titleLabel;
         private Label _statusLabel;
         private ProgressBar _progressBar;
+        private Label _eventLogLabel;
+        private EventLogView _eventLog;
         private Button _cancelButton;
 
         private readonly string _k2GamePath;
@@ -129,7 +131,7 @@ namespace KotorAccessibilityInstaller
         private void InitializeComponents()
         {
             Text = Config.DisplayName;
-            Size = new Size(560, 220);
+            Size = new Size(560, 385);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
@@ -161,9 +163,23 @@ namespace KotorAccessibilityInstaller
             };
             _progressBar.AccessibleName = Text;
 
+            _eventLogLabel = new Label
+            {
+                Text = InstallerLocale.Get("EventLog_Label"),
+                Location = new Point(20, 133),
+                Size = new Size(510, 18)
+            };
+
+            _eventLog = new EventLogView
+            {
+                Location = new Point(20, 153),
+                Size = new Size(510, 125),
+                AccessibleName = InstallerLocale.Get("EventLog_Label")
+            };
+
             _cancelButton = new Button
             {
-                Location = new Point(390, 140),
+                Location = new Point(390, 290),
                 Size = new Size(140, 35),
                 Text = InstallerLocale.Get("Main_CancelButton")
             };
@@ -175,7 +191,8 @@ namespace KotorAccessibilityInstaller
 
             Controls.AddRange(new Control[]
             {
-                _titleLabel, _statusLabel, _progressBar, _cancelButton
+                _titleLabel, _statusLabel, _progressBar,
+                _eventLogLabel, _eventLog, _cancelButton
             });
 
             CancelButton = _cancelButton;
@@ -314,7 +331,8 @@ namespace KotorAccessibilityInstaller
                 {
                     UpdateStatus(
                         InstallerLocale.Format("K2Tslrcm_SilentHeartbeat_Format", elapsedSec),
-                        announce);
+                        announce,
+                        logKey: "silent-install");
                 }
             }
 
@@ -424,7 +442,8 @@ namespace KotorAccessibilityInstaller
                     if (announce) _lastAnnouncedBucket = bucket;
                     UpdateStatus(
                         InstallerLocale.Format("K2Tslrcm_Progress_Format", doneMb, totalMb),
-                        announce);
+                        announce,
+                        logKey: "download");
                 }));
             }
             catch (InvalidOperationException)
@@ -433,14 +452,23 @@ namespace KotorAccessibilityInstaller
             }
         }
 
-        private void UpdateStatus(string message, bool announce)
+        // logKey groups repeating lines onto ONE row in the event log (see
+        // EventLogView). The download reports every percent and the silent
+        // install every five seconds, so both pass a key; the one-shot step
+        // messages pass none and stand as their own entries.
+        //
+        // The log is written even when announce is false: not interrupting the
+        // user on every percent is the right call for speech, but the history is
+        // exactly where that detail belongs.
+        private void UpdateStatus(string message, bool announce, string logKey = null)
         {
             if (InvokeRequired)
             {
-                Invoke(new Action(() => UpdateStatus(message, announce)));
+                Invoke(new Action(() => UpdateStatus(message, announce, logKey)));
                 return;
             }
             _statusLabel.Text = message;
+            _eventLog?.Report(message, logKey);
             if (!announce) return;
 
             ScreenReaderAnnouncer.Announce(_statusLabel, message);

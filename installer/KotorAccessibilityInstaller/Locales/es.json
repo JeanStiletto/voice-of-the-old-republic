@@ -148,6 +148,7 @@
     "Main_InstallButton": "Instalar",
     "Main_UpdateButton": "Actualizar",
     "Main_CancelButton": "Cancelar",
+    "EventLog_Label": "Registro de eventos (usa las flechas para repasar):",
 
     "Main_ConfirmInstall_Title": "Confirmar instalación",
     "Main_ConfirmInstall_Format": "Instalar Voice of the Old Republic en:\n{0}\n\n¿Continuar?",
