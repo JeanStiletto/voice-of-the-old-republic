@@ -375,6 +375,14 @@ namespace KotorAccessibilityInstaller
                 UpdateProgress(83);
                 await Task.Run(() => installationManager.InstallLoader());
 
+                // Step 4.05: drop the Visual C++ runtime next to the game exe.
+                // Must run before the first launch, not before any other install
+                // step — accessibility.dll and KotorPatcher.dll both import it,
+                // and an outdated system msvcp140.dll crashes the mod during
+                // start-up (see InstallationManager.InstallVcRuntime).
+                UpdateProgress(84);
+                await Task.Run(() => installationManager.InstallVcRuntime());
+
                 // Step 4.1: drop Prism speech runtime alongside accessibility.dll
                 UpdateStatus(InstallerLocale.Get("Main_StatusCopyingPrism"));
                 UpdateProgress(85);

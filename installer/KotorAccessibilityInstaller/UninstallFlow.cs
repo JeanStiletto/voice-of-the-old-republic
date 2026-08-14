@@ -52,6 +52,12 @@ namespace KotorAccessibilityInstaller
                 // survive a disable-then-uninstall on a real install.
                 rootFiles.AddRange(SpatialAudioManager.DeployedFiles);
 
+                // The app-local Visual C++ runtime we drop next to the game exe.
+                // We put it there, so we take it back out; the game itself never
+                // needed it (it predates this CRT by a decade). Same reasoning as
+                // above for sourcing the names from InstallationManager.
+                rootFiles.AddRange(InstallationManager.VcRuntimeFileNames);
+
                 // Artifacts from installer versions that no longer exist. No
                 // current code path writes either name, and both were found in
                 // a real KOTOR 1 folder — the uninstaller is the only thing that

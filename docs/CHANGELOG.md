@@ -65,6 +65,16 @@ and add the German in parentheses if it genuinely aids clarity.
   the container transfer screen sitting in the Feats layout, and being the
   first piece of text on the panel it was taken for the screen's title.
 
+<h3>Installer:</h3>
+
+- The game no longer closes itself the instant you launch it after a fresh
+  install. Both games. On a PC whose Visual C++ runtime was several years out of
+  date, the mod crashed during start-up before the game had drawn anything, so
+  there was nothing to see but the game disappearing. The installer now places
+  the matching Visual C++ runtime next to the game executable, so the mod runs
+  against a known-good copy instead of whatever the system happens to have.
+  Uninstalling removes it again.
+
 <h3>Bug fixes:</h3>
 
 - The camera no longer starts spinning on its own, and your character no longer

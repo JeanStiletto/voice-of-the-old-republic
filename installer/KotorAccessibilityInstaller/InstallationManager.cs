@@ -28,6 +28,12 @@ namespace KotorAccessibilityInstaller
         private const string PrismDllName = "prism.dll";
         private const string LoaderDllName = "dinput8.dll";
 
+        // Visual C++ runtime, deployed app-locally into the game root — see
+        // InstallVcRuntime. Exposed so UninstallFlow can source the names from
+        // here instead of keeping a second copy of the list.
+        private static readonly string[] VcRuntimeFiles = { "msvcp140.dll", "vcruntime140.dll" };
+        public static IReadOnlyList<string> VcRuntimeFileNames => VcRuntimeFiles;
+
         // WAV samples shipped into <game>/Override/ for the engine's
         // ResLoader to pick up by bare resref. Uninstall removes
         // AllOverrideAssetNamesEverInstalled, not this list — see below.
@@ -297,6 +303,45 @@ namespace KotorAccessibilityInstaller
                 throw new LoaderBlockedException(_gameDir, dest, ex);
             }
             Logger.Info($"Installed dinput8.dll proxy loader to: {dest}");
+        }
+
+        /// <summary>
+        /// Drops the Visual C++ 2015-2022 runtime (x86) into the game root, so
+        /// the mod runs against a known-good CRT instead of whatever the machine
+        /// has in System32.
+        /// <para>The game root — not <c>patches\</c> — is the only placement that
+        /// works: the loader resolves a DLL's imports against the *executable's*
+        /// directory, so a copy next to accessibility.dll would be ignored and
+        /// System32 would still win. Next to swkotor.exe it wins for
+        /// accessibility.dll and KotorPatcher.dll alike.</para>
+        /// <para>Why it matters: MSVC 17.8 made std::mutex's constructor
+        /// constexpr, so a global mutex is constant-initialised in .data and
+        /// depends on a 14.38-or-newer <c>_Mtx_lock</c> to initialise it lazily
+        /// on first lock. An older msvcp140.dll dereferences the still-zeroed
+        /// critical section: instant access violation on the first lock the mod
+        /// takes, which is in settings::GetInt during speech bring-up — before
+        /// the game ever shows a window, so it reads to the player as "the game
+        /// closes itself". One beta tester on 14.28.29910 hit exactly this.</para>
+        /// <para>Best-effort by design. On a machine whose system CRT is already
+        /// current these files change nothing, so a write failure (antivirus, a
+        /// read-only folder, the game still running) must not fail the install.</para>
+        /// </summary>
+        public void InstallVcRuntime()
+        {
+            foreach (var name in VcRuntimeFiles)
+            {
+                string dest = Path.Combine(_gameDir, name);
+                try
+                {
+                    ExtractEmbeddedResource(name, dest);
+                    Logger.Info($"Installed VC++ runtime file to: {dest}");
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warning($"Could not install {name}: {ex.Message} " +
+                                   "(the mod will fall back to the system copy)");
+                }
+            }
         }
 
         /// <summary>

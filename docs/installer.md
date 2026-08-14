@@ -634,10 +634,52 @@ After a successful install of a Steam KOTOR copy, the install root contains:
 
 - `swkotor.exe` (patched with static hooks, `.backup.<ts>` saved by KPatchCore)
 - `KotorPatcher.dll`, `sqlite3.dll`, `addresses.db`, `patch_config.toml`
+- `dinput8.dll` (proxy loader; the game imports it, so it auto-loads the patcher)
+- `msvcp140.dll`, `vcruntime140.dll` (app-local Visual C++ runtime — see below)
 - `patches/accessibility.dll` (extracted from the downloaded `.kpatch`)
 - `patches/prism.dll` (bundled with the installer)
 - `KotorAccessibility_Uninstaller.exe` (persistent copy of the installer EXE,
   so Add/Remove Programs keeps working after the original download is deleted)
+
+### The Visual C++ runtime ships app-locally (2026-08-14)
+
+`accessibility.dll` and `KotorPatcher.dll` both import `MSVCP140.dll` +
+`VCRUNTIME140.dll`. Until now nothing shipped them, so the mod ran against
+whatever the machine had in System32.
+
+A beta tester on **14.28.29910** (VS 2019-era, 2020) crashed on every launch,
+before the game drew anything — reported as "the game closes itself on first
+open". Cause: MSVC 17.8 made `std::mutex`'s constructor `constexpr`, so a global
+mutex is constant-initialised in `.data` and relies on a **14.38-or-newer**
+`_Mtx_lock` to initialise it lazily at first lock. An older `msvcp140.dll` walks
+straight into the still-zeroed critical section. The first mutex the mod ever
+takes is `g_mtx` in `mod_settings_store.cpp`, reached from `prism::Init` during
+speech bring-up — so the crash is deterministic and very early. Evidence:
+`userlogs/firstopen_extracted/` (patch log stops one line short of
+`Settings: loaded …`; the dump's `g_mtx` reads `_Type=2`, zeroed critical
+section, `_Thread_id=-1` — exactly what the `constexpr` constructor writes).
+
+Decisions:
+
+- **Game root, not `patches/`.** The loader resolves a DLL's imports against the
+  *executable's* directory; the importing DLL's own directory is not in the
+  default search order. A copy in `patches/` would be ignored. Neither name is a
+  KnownDLL, so the game-root copy wins over System32 — the same mechanism that
+  already makes the `dinput8.dll` proxy work.
+- **Two files is the whole chain.** `msvcp140.dll` needs only `vcruntime140.dll`
+  plus the `api-ms-win-crt-*` API sets, which are part of Windows.
+- **Unconditional copy**, not "only if the system copy is old". Deterministic
+  beats clever for something this hard to diagnose remotely, and the shipped
+  version matches the toolset we build with.
+- **Best-effort.** A write failure logs a warning and continues; on a machine
+  with a current system CRT these files change nothing.
+- Removed again on uninstall, sourced from `InstallationManager.VcRuntimeFileNames`.
+
+Maintenance: these are checked in by hand (like `dsoal-*`, `7zr.exe`,
+`HoloPatcher.exe`), *not* refreshed by `release.ps1`. If the MSVC toolset is
+upgraded past the shipped runtime, re-copy both from
+`VC\Redist\MSVC\<ver>\x86\Microsoft.VC143.CRT\`. Currently shipping 14.44.35211
+against toolset 14.44.35207.
 
 ### Project layout
 

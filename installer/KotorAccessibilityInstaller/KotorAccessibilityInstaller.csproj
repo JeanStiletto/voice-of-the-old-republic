@@ -33,6 +33,25 @@
          KotorPatcher.dll when the user launches the game from Steam or a
          shortcut — no separate launcher EXE. Source: loader/. -->
     <EmbeddedResource Include="Resources\dinput8.dll" />
+    <!-- Visual C++ 2015-2022 runtime (x86, 14.44.35211), deployed app-locally
+         into the game root. accessibility.dll and KotorPatcher.dll both import
+         MSVCP140.dll + VCRUNTIME140.dll, and without these the mod is at the
+         mercy of whatever the machine happens to have in System32.
+
+         The concrete failure: MSVC 17.8 made std::mutex's constructor constexpr,
+         so a global mutex is constant-initialised in .data and relies on a
+         14.38-or-newer _Mtx_lock to finish the job lazily. An older msvcp140.dll
+         dereferences the still-zeroed critical section instead. A beta tester on
+         14.28.29910 crashed at 0xC0000005 on the first lock the mod ever takes
+         (settings::GetInt, reached from prism::Init) - i.e. every launch died
+         before a window appeared. See userlogs/firstopen_extracted/.
+
+         Two files is the whole dependency chain: msvcp140.dll needs only
+         vcruntime140.dll plus the api-ms-win-crt-* API sets, and those are part
+         of Windows itself. Redistributable app-locally per Microsoft's
+         distributable code list. -->
+    <EmbeddedResource Include="Resources\msvcp140.dll" />
+    <EmbeddedResource Include="Resources\vcruntime140.dll" />
     <EmbeddedResource Include="Resources\kotor1_0_3.db" />
     <!-- Lane's Widescreen patch (runtime-detour DLL @ IsValidResolution).
          Tiny + pinned + SHA-gated; bundled rather than downloaded. -->
