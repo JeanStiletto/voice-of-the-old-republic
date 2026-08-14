@@ -49,6 +49,14 @@ struct ApproachState {
     bool          haveProgress  = false;
     Vector        lastPos       = {0.0f, 0.0f, 0.0f};
     DWORD         progressAt    = 0;
+
+    // Did the walk ever physically start? Latched by the movement branch. False
+    // at the stall verdict means the PC has not taken one step since the arm —
+    // the dispatch never became motion, however healthy the queue looked.
+    bool          movedSinceArm = false;
+    // The coordinate-walk retry is one-shot per arm; without this a target the
+    // A* also can't reach would re-dispatch every stall window forever.
+    bool          coordRetried  = false;
 };
 ApproachState g_st;
 
@@ -77,6 +85,46 @@ bool WithinReach() {
     float dx = tgt.x - pos.x;
     float dy = tgt.y - pos.y;
     return (dx * dx + dy * dy) <= kReachedMSq;
+}
+
+// The walk never physically started (see the header note): re-issue it as a
+// plain coordinate walk to the target position rather than hand the player a
+// "way blocked" they would reasonably read as "there is no route at all".
+// Returns true when a retry is in flight — caller must not announce.
+//
+// Gated on movement, not on the action queue. Both observed shapes of a
+// never-started walk look healthy in the queue: the discarded use action leaves
+// it flat (0→1→0 in ~50ms), and the unroutable one drives a re-plan loop that
+// thrashes 4↔6 for the whole stall window. Neither moves the PC one step.
+bool TryCoordinateWalkRetry(const Vector& tgt) {
+    if (g_st.movedSinceArm || g_st.coordRetried) return false;
+
+    // Clear the failed plan first. In the re-plan-loop case the engine is still
+    // churning actions that would fight the coordinate walk; in the discarded
+    // case the queue is already empty and this is a no-op.
+    acc::guidance::CancelMovement();
+
+    // WalkTo manages its own AI level and needs manual input left enabled — the
+    // same reason cycle_input's map-pin branch never disables it. Hand input
+    // back first and drop the flag so a later OnBlocked can't restore twice.
+    if (g_st.inputDisabled) {
+        acc::engine::SetPlayerInputEnabled(true);
+        g_st.inputDisabled = false;
+    }
+
+    g_st.coordRetried = true;
+    if (!acc::guidance::WalkTo(tgt)) {
+        acclog::Write("Approach", "walk never started; coordinate-walk retry "
+            "failed to queue name=[%s] — falling through to blocked", g_st.name);
+        return false;
+    }
+
+    g_st.haveProgress = false;          // restart the stall window clean
+    g_st.progressAt   = GetTickCount();
+    acclog::Write("Approach", "walk never started (PC has not moved since arm) "
+        "— retrying as coordinate walk to (%.2f,%.2f,%.2f) name=[%s]",
+        tgt.x, tgt.y, tgt.z, g_st.name);
+    return true;
 }
 
 // Break a blocked approach: cancel the bouncing walk, restore input if the
@@ -225,8 +273,9 @@ void TickApproach() {
     float dx = pos.x - g_st.lastPos.x;
     float dy = pos.y - g_st.lastPos.y;
     if ((dx * dx + dy * dy) >= kProgressEpsSq) {
-        g_st.lastPos    = pos;
-        g_st.progressAt = now;
+        g_st.lastPos       = pos;
+        g_st.progressAt    = now;
+        g_st.movedSinceArm = true;
         return;
     }
     if (now - g_st.progressAt < kStallMs) return;          // brief pause / still
@@ -261,6 +310,13 @@ void TickApproach() {
         g_st.active = false;
         return;
     }
+    // Out of reach and stalled. Before calling it blocked, check whether the
+    // walk ever actually started: a use dispatch the engine accepted but never
+    // turned into motion leaves the PC rooted where it stood, and announcing
+    // "way blocked" there tells the player no route exists when the coordinate
+    // A* would have walked them straight to it.
+    if (TryCoordinateWalkRetry(tgt)) return;
+
     OnBlocked(now - g_st.progressAt);
 }
 

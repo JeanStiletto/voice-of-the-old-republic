@@ -33,6 +33,21 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>v0.7.5</h2>
+
+<h3>Bug fixes:</h3>
+
+- Guiding yourself to a distant object with Shift+minus now walks there instead
+  of announcing "way blocked" without moving. The mod asks the engine to walk
+  over and use the object, and the engine reports that it accepted the request
+  even when it then fails to turn it into a route — so a target in another room,
+  a door across the map, or a map marker would leave your character standing
+  still, and after two seconds the mod concluded the way was impassable and said
+  so. It now notices that no step was ever taken and quietly re-issues the walk
+  as a plain route to the target's position, which the engine handles over
+  distances the first request refuses. "Way blocked" is still spoken when it is
+  true — when the walk starts and then wedges against geometry or a locked door.
+
 <h2>v0.7.4</h2>
 
 <h3>Bug fixes:</h3>

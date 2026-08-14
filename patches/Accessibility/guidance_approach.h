@@ -22,6 +22,18 @@
 // queue to 0 transiently between walkmesh waypoints and UseObject's composite
 // queue never drains, so a depth read mistakes live walks for finished ones.
 //
+// That same movement signal separates the two verdicts a stall can carry. A
+// walk that started and then wedged has moved at least once; a walk that never
+// started has not moved at all, and for that case "way blocked" is a lie — the
+// player hears "there is no route" when the route is fine and only the dispatch
+// failed. AddUseObjectAction produces both shapes and reports success for each:
+// it discards the action a frame later when it cannot resolve a use-node (queue
+// 0→1→0 in ~50ms), or it drives a re-plan loop that churns the queue for the
+// whole stall window (4↔6, PC rooted). So on a stall with no movement since the
+// arm, the tracker clears the failed plan and retries once as a plain
+// coordinate walk — the engine's coordinate A* routes over distances the use
+// action refuses — and only announces "way blocked" if that stalls too.
+//
 // Input restore on SUCCESS stays with engine_player's queue-watched session
 // (TickPlayerInputRestore) — it knows the queue state. This tracker only
 // force-restores on the BLOCKED path, where it is actively intervening, so the
