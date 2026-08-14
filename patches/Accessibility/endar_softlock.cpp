@@ -63,6 +63,18 @@ constexpr DWORD kHintDelayMs = 500;
 // Re-scan the plot globals at most this often for the diagnostic edge-log.
 constexpr DWORD kDiagScanIntervalMs = 500;
 
+// END_TRASK_DLG is in the snapshot as an open-investigation probe, not because
+// this module acts on it. Two beta logs (2026-07-05, 2026-08-14) show the Jedi
+// duel outside the bridge running forever: its cutscene (end_cut04, started
+// from end_door16's OnOpen via the end_jedicut placeable) never plays, so the
+// two plot-immortal duellists stay locked at "dying" and the player is left
+// with no signpost. k_pend_door16 writes END_TRASK_DLG in its first few
+// instructions, before anything that could fail — so if this number moves at
+// the moment the door opens, the script ran and the fault is downstream in the
+// conversation start; if it does not move, the engine never fired OnOpen at
+// all. Correlate against the "CuePlayer: play cue=DoorOpen pos=(29.18,106.03…)"
+// line, which timestamps the open. Delete this field once that is settled.
+
 bool  g_inModule        = false;
 int   g_door16Attempts  = 0;
 bool  g_spokeBattleHint = false;
@@ -77,11 +89,12 @@ DWORD g_lastDiagScanMs = 0;
 // Last edge-logged plot snapshot. -2 = never logged (forces a first emit).
 struct Snapshot {
     int room3 = -2, room5 = -2, room7 = -2, room8 = -2, sith = -2;
-    int bridgeCombat = -2, inCombat = -2;
+    int bridgeCombat = -2, inCombat = -2, traskDlg = -2;
     bool operator==(const Snapshot& o) const {
         return room3 == o.room3 && room5 == o.room5 && room7 == o.room7 &&
                room8 == o.room8 && sith == o.sith &&
-               bridgeCombat == o.bridgeCombat && inCombat == o.inCombat;
+               bridgeCombat == o.bridgeCombat && inCombat == o.inCombat &&
+               traskDlg == o.traskDlg;
     }
 };
 Snapshot g_lastSnap;
@@ -112,15 +125,16 @@ Snapshot ReadSnapshot() {
     s.sith         = ReadGlobalNumber("END_SITH_DEAD");
     s.bridgeCombat = ReadGlobalNumber("END_BRIDGE_COMBAT");
     s.inCombat     = acc::engine::IsAnyPartyMemberInCombat() ? 1 : 0;
+    s.traskDlg     = ReadGlobalNumber("END_TRASK_DLG");
     return s;
 }
 
 void LogSnapshot(const char* why, const Snapshot& s) {
     acclog::Write("Endar.Diag",
         "%s room3=%d room5=%d room7=%d room8=%d sith=%d bridgeCombat=%d "
-        "inCombat=%d door16Tries=%d",
+        "inCombat=%d traskDlg=%d door16Tries=%d",
         why, s.room3, s.room5, s.room7, s.room8, s.sith, s.bridgeCombat,
-        s.inCombat, g_door16Attempts);
+        s.inCombat, s.traskDlg, g_door16Attempts);
 }
 
 void ResetVisit() {
