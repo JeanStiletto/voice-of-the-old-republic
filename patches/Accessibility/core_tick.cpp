@@ -66,6 +66,11 @@
 #include "view_mode.h"
 #include "engine_game.h"
 
+// core_dllmain.cpp — the once-per-session stand-up (guards, Prism, language,
+// config snapshot, keymap, focus probe, bring-up nag). Forward-declared the
+// same way EnsurePrismInitialized is in the menu translation units.
+void EnsureSessionBringup();
+
 namespace acc::tick {
 
 namespace {
@@ -572,6 +577,15 @@ void Dispatch() {
     // those subsystems. Later batches clear their own phases from this gate.
     const bool k1 = acc::game::IsKotor1();
 
+    // KOTOR 2 session bring-up. KOTOR 1 stands the session up from OnRulesInit;
+    // KOTOR 2 has no rules-init hook, so the first engine tick is the earliest
+    // point that is both past the loader lock (this does file I/O and starts
+    // two worker threads) and guaranteed to be reached — unlike any menu hook,
+    // which depends on a panel existing. Idempotent, and it must run before the
+    // reacquire drains below: the focus probe it starts is what produces the
+    // requests they drain.
+    if (!k1) EnsureSessionBringup();
+
     // Snapshot hotkey state for the whole tick — EndTick at the bottom
     // shifts now→last for next tick's rising-edge math.
     acc::hotkeys::BeginTick();
@@ -916,6 +930,19 @@ void Dispatch() {
 
     // Audio-glossary delayed-playback timer.
     PHASE("modsettings", acc::menus::modsettings::Tick());
+
+    // KOTOR 2 kick-off for the background version check. KOTOR 1 starts it from
+    // the MainMenu first-sight handler, deliberately late — WinHTTP bring-up
+    // (DNS, WPAD, TLS, thread pool, implicit COM apartments) competes with Bink
+    // playback and the DirectInput handshake if it runs during engine startup.
+    // KOTOR 2's first-sight path is a different handler with no such call, so
+    // it never ran there at all. The input pump going live is the equivalent
+    // "demonstrably past the delicate startup window" signal, and it is already
+    // the latch this tick uses for the cold-start reacquire. Idempotent (atomic
+    // compare-exchange inside), so the per-tick cost once started is one load.
+    if (!k1 && acc::bringup_announce::IsInputPumpLive()) {
+        acc::update_checker::StartBackgroundCheck();
+    }
 
     // In-game auto-updater: F5 poll + background-check announce + handoff
     // batch spawn on download completion. Cheap when idle (one atomic load).

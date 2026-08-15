@@ -4,8 +4,10 @@
 #include <atomic>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 
 #include "log.h"
+#include "engine_game.h"
 #include "engine_rebase.h"
 #include "pad_input.h"   // CodeHint — the KOTOR 2 pad shares this numbering
 
@@ -49,6 +51,90 @@ const uintptr_t kAddrCExoInputSetActive =
     acc::addr::Pick(0x005df540, 0x0072fb20);
 
 typedef void(__thiscall* PFN_CExoInputSetActive)(void* this_, int active);
+
+// ---------------------------------------------------------------------------
+// CExoRawInputInternal::InitializeDirectInputMouse — no-mouse crash guard
+// ---------------------------------------------------------------------------
+// Vanilla engine bug, present in both games. The function's whole job is
+// IDirectInput8::CreateDevice(GUID_SysMouse, &this->mouse_device, NULL), and it
+// loads the interface's vtable without ever testing the interface for NULL:
+//
+//     MOV EDX, [this + direct_input_interface]
+//     MOV EDX, [EDX]          <-- AV when the interface is NULL
+//     MOV EAX, [EDX + 0xc]    <-- IDirectInput8 vtable slot 3 = CreateDevice
+//     CALL EAX
+//
+// The interface is NULL exactly when the engine has already torn DirectInput
+// down. On any device bring-up failure it calls ShutDownDirectInput, which
+// nulls the field — and then reports success to its caller anyway. The mouse
+// device pointer is left NULL too, so the per-frame mouse update re-enters
+// through the lazy "create the device if we haven't got one" path and
+// dereferences the NULL interface. Uptime to the crash is however long the
+// intro takes to reach the first main-loop frame.
+//
+// Who hits it: players with no mouse attached at all — which, for a mod whose
+// entire premise is that the game is playable without one, is not an edge case.
+//
+// The guard returns the engine's own failure value when the interface is NULL.
+// That is a state both callers already handle: the caller re-tests the device
+// pointer and returns 0, and the mouse update compares against 1 and skips the
+// frame's mouse handling. Nothing downstream sees a novel state.
+//
+// Why an inline trampoline rather than a hooks.toml detour: an earlier attempt
+// hooked this entry through the standard KPatchManager wrapper and broke the
+// engine's input-pipeline bring-up — the menu came up keyboard-dead and users
+// had to alt-tab after every launch. The suspected cause is the wrapper's
+// PUSHAD/PUSHFD/CALL overhead colliding with DirectInput's foreground-
+// cooperative-level handshake. A bare JMP has none of that overhead.
+//
+// Crash reports: userlogs/swkotor.exe.58504.dmp (KOTOR 1, fixed v0.4.x) and
+// userlogs/kennygamecrashes.7z :: swkotor2.exe.348.dmp (KOTOR 2). The KOTOR 2
+// half was unguarded from the first K2 build until this change: the installer
+// ran only from OnRulesInit, which is a KOTOR-1-only hook (absent from
+// kotor2.hooks.toml) and additionally gated on HandlerEnabled().
+const uintptr_t kAddrInitMouse =
+    acc::addr::Pick(0x005e3fa0, 0x00731070);
+
+// Where the trampoline rejoins the engine: the instruction after the prologue
+// bytes we displace, plus (KOTOR 1 only) the interface load the trampoline
+// re-executes itself.
+const uintptr_t kAddrInitMouseContinue =
+    acc::addr::Pick(0x005e3faa, 0x00731076);
+
+// KOTOR 1's failure exit (POP EDI; XOR EAX,EAX; ...). KOTOR 1 needs it because
+// its prologue has already pushed ESI/EDI by the time we test, so the fail path
+// has a frame to unwind. KOTOR 2's function takes no stack arguments and ends
+// in a bare RET, so its trampoline tests BEFORE building any frame and returns
+// inline — there is no K2 address to find here, hence Kotor1Only.
+const uintptr_t kAddrInitMouseFailEpilogue =
+    acc::addr::Kotor1Only(0x005e401f);
+
+// Entry bytes we displace, verified before we overwrite them. A mismatch means
+// the address is wrong for the running build; skipping is the safe answer,
+// since writing a JMP into the middle of an unrelated function corrupts state
+// long before it faults.
+const uint8_t kInitMousePrologueK1[] = {
+    0x83, 0xec, 0x14,  // SUB ESP, 0x14
+    0x56,              // PUSH ESI
+    0x57,              // PUSH EDI
+    0x8b, 0xf9,        // MOV EDI, ECX        (this)
+};
+const uint8_t kInitMousePrologueK2[] = {
+    0x55,              // PUSH EBP
+    0x8b, 0xec,        // MOV EBP, ESP
+    0x83, 0xec, 0x30,  // SUB ESP, 0x30
+};
+
+// JMP rel32. Twin of save_crash_guard.cpp's WriteRel32Jmp — the other place in
+// this patch that hand-writes a trampoline. Kept file-local in both rather than
+// promoted to a shared header: two call sites, four lines, and no third caller
+// in sight.
+void WriteJmpRel32(uint8_t* at, uintptr_t target) {
+    at[0] = 0xe9;
+    int32_t rel = static_cast<int32_t>(
+        target - (reinterpret_cast<uintptr_t>(at) + 5));
+    memcpy(at + 1, &rel, 4);
+}
 
 }  // namespace
 
@@ -169,6 +255,92 @@ int ManagerTranslateCode(int code) {
     case 0xb9:            return 0x40;
     default:              return code;
     }
+}
+
+void InstallDirectInputMouseGuard() {
+    static bool installed = false;
+    if (installed) return;
+    installed = true;
+
+    const bool k2 = acc::game::IsKotor2();
+
+    if (!acc::addr::Ok(kAddrInitMouse) ||
+        !acc::addr::Ok(kAddrInitMouseContinue) ||
+        (!k2 && !acc::addr::Ok(kAddrInitMouseFailEpilogue))) {
+        acclog::Write("EngineInput",
+            "DirectInput mouse guard: no address for this build (%s); skipped",
+            acc::game::BuildName());
+        return;
+    }
+
+    auto* entry = reinterpret_cast<uint8_t*>(kAddrInitMouse);
+    const uint8_t* expect = k2 ? kInitMousePrologueK2 : kInitMousePrologueK1;
+    const size_t expectLen =
+        k2 ? sizeof(kInitMousePrologueK2) : sizeof(kInitMousePrologueK1);
+    if (memcmp(entry, expect, expectLen) != 0) {
+        acclog::Write("EngineInput",
+            "DirectInput mouse guard: entry bytes at %p are not the expected "
+            "prologue (got %02x %02x %02x %02x %02x); skipped — the address is "
+            "wrong for this build and patching it would corrupt .text",
+            entry, entry[0], entry[1], entry[2], entry[3], entry[4]);
+        return;
+    }
+
+    constexpr size_t kTrampolineSize = 32;
+    auto* tramp = static_cast<uint8_t*>(VirtualAlloc(
+        nullptr, kTrampolineSize, MEM_COMMIT | MEM_RESERVE,
+        PAGE_EXECUTE_READWRITE));
+    if (!tramp) {
+        acclog::Write("EngineInput",
+            "DirectInput mouse guard install failed: VirtualAlloc returned NULL");
+        return;
+    }
+
+    uint8_t* p = tramp;
+    if (k2) {
+        // Test first, before any frame exists: at the entry ECX is still `this`
+        // and nothing has been pushed, so the failure path is a bare
+        // XOR EAX,EAX / RET. The function takes no stack arguments (its sole
+        // caller pushes nothing and it ends in a plain RET), so that returns 0
+        // to the caller with the stack exactly as it found it.
+        *p++ = 0x8b; *p++ = 0x41; *p++ = 0x20;  // MOV EAX, [ECX+0x20]
+        *p++ = 0x85; *p++ = 0xc0;               // TEST EAX, EAX
+        *p++ = 0x74; *p++ = 0x0b;               // JZ +11 -> the XOR below
+        memcpy(p, kInitMousePrologueK2, sizeof(kInitMousePrologueK2));
+        p += sizeof(kInitMousePrologueK2);
+        WriteJmpRel32(p, kAddrInitMouseContinue); p += 5;
+        *p++ = 0x33; *p++ = 0xc0;               // XOR EAX, EAX
+        *p++ = 0xc3;                            // RET
+    } else {
+        // KOTOR 1 keeps the layout it has shipped with since v0.4.x, byte for
+        // byte: run the displaced prologue (which is what puts `this` in EDI),
+        // re-execute the interface load, then branch to the engine's own
+        // continue point or its failure epilogue.
+        memcpy(p, kInitMousePrologueK1, sizeof(kInitMousePrologueK1));
+        p += sizeof(kInitMousePrologueK1);
+        *p++ = 0x8b; *p++ = 0x47; *p++ = 0x1c;  // MOV EAX, [EDI+0x1c]
+        *p++ = 0x85; *p++ = 0xc0;               // TEST EAX, EAX
+        *p++ = 0x74; *p++ = 0x05;               // JZ +5 -> the fail JMP
+        WriteJmpRel32(p, kAddrInitMouseContinue); p += 5;
+        WriteJmpRel32(p, kAddrInitMouseFailEpilogue); p += 5;
+    }
+
+    DWORD oldProtect = 0;
+    if (!VirtualProtect(entry, 5, PAGE_EXECUTE_READWRITE, &oldProtect)) {
+        acclog::Write("EngineInput",
+            "DirectInput mouse guard install failed: VirtualProtect entry");
+        return;
+    }
+    WriteJmpRel32(entry, reinterpret_cast<uintptr_t>(tramp));
+    DWORD ignored = 0;
+    VirtualProtect(entry, 5, oldProtect, &ignored);
+
+    FlushInstructionCache(GetCurrentProcess(), entry, 5);
+    FlushInstructionCache(GetCurrentProcess(), tramp, kTrampolineSize);
+
+    acclog::Write("EngineInput",
+        "DirectInput mouse guard installed (%s, InitializeDirectInputMouse "
+        "@%p, trampoline @%p)", acc::game::TitleName(), entry, tramp);
 }
 
 bool EnsureInputAcquired() {

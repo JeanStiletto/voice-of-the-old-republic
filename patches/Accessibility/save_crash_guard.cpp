@@ -92,6 +92,26 @@ void InstallSaveScreenshotGuard() {
     if (installed) return;
     installed = true;
 
+    // KOTOR 2 resolves every address here to 0, and needs none of them. This
+    // guard exists solely to neutralise a side effect of the KOTOR-1-only
+    // `Frame Buffer=0` ini default — the installer sets that on KOTOR 1
+    // because it fixes the crash-after-character-creation and loadscreen
+    // faults, and it is what makes the framebuffer capture zero-sized. The
+    // installer deliberately does NOT set it on KOTOR 2 (see GameTarget.cs),
+    // which keeps its shipped Frame Buffer=1, so the divide-by-zero cannot
+    // occur there. This is a genuine "obsolete on KOTOR 2", not an unported
+    // guard. Without the check the shared bring-up path would try to
+    // VirtualProtect address 0 and log a misleading install failure.
+    if (!acc::addr::Ok(kImageScaleAddr) ||
+        !acc::addr::Ok(kImageScaleContinue) ||
+        !acc::addr::Ok(kEngineOperatorNew)) {
+        acclog::Write("SaveGuard",
+            "save-crash guard: no ImageScale address for this build; skipped "
+            "(expected on KOTOR 2, which keeps Frame Buffer=1 and so never "
+            "hands the scaler a zero-sized source)");
+        return;
+    }
+
     // Layout of the executable block we allocate:
     //   [0]  trampoline: 8 relocated prologue bytes + JMP kImageScaleContinue
     //   [13] wrapper stub: JMP [pWrapper]  (absolute-indirect, reaches the

@@ -88,6 +88,22 @@ void RequestInputRelease();
 // ReleaseInput on a pending focus-loss.
 void DrainPendingReacquire();
 
+// Install the no-mouse crash guard on
+// CExoRawInputInternal::InitializeDirectInputMouse. Vanilla engine bug, both
+// games: that function loads the vtable of the object's DirectInput interface
+// without checking it for NULL, and the engine nulls exactly that field
+// (ShutDownDirectInput) whenever device bring-up fails — while still reporting
+// success. A player with no mouse attached therefore crashes on the first
+// per-frame mouse update, a few seconds after launch. See the block comment on
+// the implementation for the trampoline layout and why it is not a normal hook.
+//
+// Idempotent, and safe to call under the loader lock: it allocates one page,
+// writes it, and rewrites five bytes of .text — no LoadLibrary, no COM, no
+// allocation that can re-enter the loader. Callers: OnRulesInit on KOTOR 1
+// (unchanged timing, after the engine's first mouse init), DllMain on KOTOR 2,
+// which has no rules-init hook to install from.
+void InstallDirectInputMouseGuard();
+
 // ---- Engine keyboard liveness -------------------------------------------
 //
 // Called from both input hooks (the in-world CClientExoAppInternal route and

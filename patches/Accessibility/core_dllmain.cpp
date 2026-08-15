@@ -15,6 +15,7 @@
 #include "focus_guard.h"
 #include "diag_settings.h"
 #include "engine_game.h"
+#include "engine_input.h"
 #include "engine_keymap.h"
 #include "log.h"
 #include "mod_version.h"
@@ -198,129 +199,53 @@ void EnsurePrismInitialized() {
     }
 }
 
-// CExoRawInputInternal::InitializeDirectInputMouse guard (vanilla engine
-// crash for users with no mouse). The function dereferences
-// `this->direct_input_interface` (+0x1c) at +0xa. On internal Acquire
-// failure the engine calls ShutDownDirectInput (nulling +0x1c) but still
-// returns 1; the next GetMouseState re-enters and AVs on the NULL.
+// Everything the patch has to stand up once per session, in the order that
+// matters. Idempotent and game-agnostic.
 //
-// Earlier attempt at a KPatchManager detour at the function entry broke
-// the engine's input pipeline initialisation in a way that focus-loss
-// then -regain reset — users had to alt-tab after every launch to wake
-// the menu. Likely interaction between the wrapper PUSHAD/PUSHFD/CALL
-// overhead and DirectInput's foreground-cooperative-level handshake.
+// It lives in its own function because the two games reach it from different
+// places. KOTOR 1 calls it from OnRulesInit, the CSWRules constructor detour.
+// KOTOR 2 has no rules-init hook (there is no such entry in
+// kotor2.hooks.toml), so it calls it from the first engine tick — see
+// core_tick.cpp. Before that call existed, every line below was KOTOR 1 only,
+// and several of them are subsystems that KOTOR 2 code *consumes* without ever
+// having started: the focus probe is the producer of every
+// RequestInputReacquire / RequestInputRelease, so its absence made the tick's
+// DrainPendingReacquire a permanent no-op on KOTOR 2 and left the focus-theft
+// recovery missing there even after its SetActive constants were resolved.
 //
-// Workaround: install a small inline trampoline *after* the engine's
-// first successful mouse init has run, from inside OnRulesInit. By the
-// time CSWRules constructs, GetMouseState has already done its initial
-// device bring-up. For a with-mouse user our trampoline is silent —
-// the function is never called again. For a no-mouse user it intercepts
-// the SECOND (AV-prone) call and routes to the engine's own return-0
-// epilogue at 0x005e401f.
-//
-// The trampoline runs the engine's prelude (the 5+2 bytes we displace),
-// reads direct_input_interface, and on NULL jumps to the fail epilogue;
-// on non-NULL it jumps past the prelude to 0x005e3faa to continue.
-//
-// Crash report: userlogs/swkotor.exe.58504.dmp.
-namespace {
+// Everything here is past the loader lock at both call sites, which the file
+// I/O and the two worker threads below require.
+void EnsureSessionBringup() {
+    static bool done = false;
+    if (done) return;
+    done = true;
 
-const uintptr_t kInitMouseAddr = acc::addr::R(0x005e3fa0);  // function entry
-const uintptr_t kInitMouseContinue = acc::addr::R(0x005e3faa);  // MOV ECX,[EAX]
-const uintptr_t kInitMouseFailEpilogue = acc::addr::R(0x005e401f); // POP EDI; XOR EAX,EAX; ...
-
-void InstallMouseGuard() {
-    static bool installed = false;
-    if (installed) return;
-    installed = true;
-
-    constexpr size_t kTrampolineSize = 32;
-    void* tramp = VirtualAlloc(
-        nullptr, kTrampolineSize,
-        MEM_COMMIT | MEM_RESERVE,
-        PAGE_EXECUTE_READWRITE);
-    if (!tramp) {
-        acclog::Write("EngineInput",
-            "DirectInput mouse guard install failed: VirtualAlloc returned NULL");
-        return;
-    }
-
-    auto* p = static_cast<uint8_t*>(tramp);
-    // Engine's prelude (the bytes we displace with the JMP at +0).
-    *p++ = 0x83; *p++ = 0xec; *p++ = 0x14;  // SUB ESP, 0x14
-    *p++ = 0x56;                             // PUSH ESI
-    *p++ = 0x57;                             // PUSH EDI
-    *p++ = 0x8b; *p++ = 0xf9;                // MOV EDI, ECX (this)
-    // NULL check on this->direct_input_interface.
-    *p++ = 0x8b; *p++ = 0x47; *p++ = 0x1c;  // MOV EAX, [EDI+0x1c]
-    *p++ = 0x85; *p++ = 0xc0;                // TEST EAX, EAX
-    *p++ = 0x74; *p++ = 0x05;                // JZ +5 (skip continue-jmp, take fail-jmp)
-    // Continue path: jump to 0x005e3faa (MOV ECX, [EAX]).
-    {
-        uintptr_t from = reinterpret_cast<uintptr_t>(p) + 5;
-        int32_t rel = static_cast<int32_t>(kInitMouseContinue - from);
-        *p++ = 0xe9;
-        memcpy(p, &rel, 4); p += 4;
-    }
-    // Fail path: jump to 0x005e401f (engine's return-0 epilogue).
-    {
-        uintptr_t from = reinterpret_cast<uintptr_t>(p) + 5;
-        int32_t rel = static_cast<int32_t>(kInitMouseFailEpilogue - from);
-        *p++ = 0xe9;
-        memcpy(p, &rel, 4); p += 4;
-    }
-
-    // Patch the function entry with JMP rel32 to the trampoline.
-    void* entry = reinterpret_cast<void*>(kInitMouseAddr);
-    DWORD oldProtect = 0;
-    if (!VirtualProtect(entry, 5, PAGE_EXECUTE_READWRITE, &oldProtect)) {
-        acclog::Write("EngineInput",
-            "DirectInput mouse guard install failed: VirtualProtect entry");
-        return;
-    }
-    auto* dst = static_cast<uint8_t*>(entry);
-    int32_t rel = static_cast<int32_t>(
-        reinterpret_cast<uintptr_t>(tramp) - (kInitMouseAddr + 5));
-    dst[0] = 0xe9;
-    memcpy(&dst[1], &rel, 4);
-    DWORD ignored = 0;
-    VirtualProtect(entry, 5, oldProtect, &ignored);
-
-    FlushInstructionCache(GetCurrentProcess(), entry, 5);
-    FlushInstructionCache(GetCurrentProcess(), tramp, kTrampolineSize);
-
-    acclog::Write("EngineInput",
-        "DirectInput mouse guard installed (trampoline at %p)", tramp);
-}
-
-}  // namespace
-
-// CSWRules::CSWRules construction detour (hooks.toml @ 0x00552c9a).
-// First fire is the "patch alive" signal and Prism-init trigger (which
-// also detects the user's installed language). File I/O is safe here
-// (we're well past loader lock by the time CSWRules runs).
-extern "C" void __cdecl OnRulesInit(void* /*rulesThis*/) {
-    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
-    static bool fired = false;
-    if (fired) return;
-    fired = true;
-    acclog::BringupMark("rules_init");
-    InstallMouseGuard();
+    // No-mouse DirectInput crash guard. On KOTOR 2 this has already run from
+    // DllMain (the crash can land before the first tick); the call is
+    // idempotent, and on KOTOR 1 this is where it installs — after the
+    // engine's first successful mouse init, the timing the shipped fix was
+    // validated against.
+    acc::engine::InstallDirectInputMouseGuard();
+    // Save-thumbnail divide-by-zero guard. Declines on KOTOR 2 by design —
+    // see the note at its install site.
     acc::save_guard::InstallSaveScreenshotGuard();
     // Language detection + codepage pinning happen inside
-    // EnsurePrismInitialized (before its greeting), so KOTOR 2 — which has no
-    // rules-init hook — gets them too.
+    // EnsurePrismInitialized, before its greeting.
     EnsurePrismInitialized();
-    // Baseline snapshot of swkotor.ini + install-root DLLs so every support
+    // Baseline snapshot of the game ini + install-root DLLs so every support
     // bundle from now on carries the user's full config without needing a
-    // follow-up "what's in your ini?" round-trip.
+    // follow-up "what's in your ini?" round-trip. Picks swkotor2.ini on
+    // KOTOR 2 — it was already per-game aware, it was simply never called
+    // there, which is why KOTOR 2 support bundles carried no config at all.
     acc::diag::settings::LogStartupSnapshot();
     // Build the engine keybinding table (hardcoded command -> scancode -> VK,
     // resolved against the active keyboard layout) so the input hooks can
     // swallow the engine's bare-key action when a modifier-using mod hotkey
     // shadows an engine-bound key. The shadowed gameplay hotkeys are hardcoded
     // in the engine (not in the rebindable Key Mapping screen), so this is a
-    // one-time build per session.
+    // one-time build per session. VksForCode self-heals via a lazy Rebuild if
+    // it is asked first, so this call is about doing it once, up front, with
+    // the table dumped to the log where support can read it.
     acc::engine_keymap::Rebuild();
     // Apartment probe — see diag_focus.h. prism.dll's SAPI backend
     // calls CoInitializeEx internally; if it picks MTA on the engine's
@@ -336,19 +261,36 @@ extern "C" void __cdecl OnRulesInit(void* /*rulesThis*/) {
     acc::focus_guard::StartFocusProbe();
     // Bringup-phase nag — speaks "Game is still loading" once if the
     // user presses an arrow / Enter / Space during the post-intro
-    // pre-pump-live window. Silent during movies + after pump live.
+    // pre-pump-live window. Silent during movies + after pump live. Its phase
+    // machine keys on the "SWMovieWindow" and "Render Window" class names,
+    // both of which are present in the KOTOR 2 binary.
     acc::bringup_announce::Start();
-    // NOTE: update_checker::StartBackgroundCheck() used to fire here, but
-    // OnRulesInit runs DURING engine bringup — before intro-movie playback
+    // NOTE: update_checker::StartBackgroundCheck() deliberately does NOT fire
+    // here. This runs DURING engine bringup — before intro-movie playback
     // completes and before the OpenGL/DirectInput pipeline is settled.
     // Starting WinHTTP I/O here (DNS, WPAD, TLS, thread-pool init,
     // implicit COM apartments) competes with Bink playback for window-
     // foreground / message-loop state and is a leading suspect for
     // intermittent "menu loaded but unresponsive, alt-tab fixes it" /
-    // "intro movie plays twice" reports. The kick-off has been moved to
-    // the first-sight handler for the MainMenu panel (see menus.cpp
-    // AnnouncePanelTitle), at which point the engine is demonstrably
-    // past its delicate startup window.
+    // "intro movie plays twice" reports. KOTOR 1 kicks it off from the
+    // MainMenu first-sight handler (menus.cpp AnnouncePanelTitle); KOTOR 2's
+    // first-sight path is a different handler, so it uses the equivalent
+    // past-the-startup-window signal from the tick — see core_tick.cpp.
+}
+
+// CSWRules::CSWRules construction detour (hooks.toml @ 0x00552c9a).
+// First fire is the "patch alive" signal and Prism-init trigger (which
+// also detects the user's installed language). File I/O is safe here
+// (we're well past loader lock by the time CSWRules runs).
+extern "C" void __cdecl OnRulesInit(void* /*rulesThis*/) {
+    // KOTOR 2 never reaches this: it has no rules-init hook to install. The
+    // gate stays as a belt-and-braces assertion of that.
+    if (!acc::game::HandlerEnabled()) return;
+    static bool fired = false;
+    if (fired) return;
+    fired = true;
+    acclog::BringupMark("rules_init");
+    EnsureSessionBringup();
     acclog::Write("Init", "first CSWRules construction; detour active");
 }
 
@@ -374,6 +316,25 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD reason, LPVOID) {
         // KOTOR 2 bring-up runs in.
         acclog::Write("Game.Identity", "title=%s build=%s",
                       acc::game::TitleName(), acc::game::BuildName());
+        // No-mouse crash guard, KOTOR 2 only. It has to go here for the same
+        // reason the identity line above does: KOTOR 2 has no rules-init hook,
+        // and this must be in place even in a session where no hook ever fires.
+        // The guard cannot be deferred to the first hook that does fire — the
+        // crash lands on the first main-loop frame that updates the mouse,
+        // which on a no-mouse machine can precede any menu panel we hook.
+        //
+        // Loader-lock safe: one VirtualAlloc, one VirtualProtect, a memcpy and
+        // a FlushInstructionCache. No LoadLibrary, no COM, nothing re-entrant.
+        //
+        // Ordering is a non-issue. The trampoline only diverges when the
+        // engine's DirectInput interface is already NULL, which is a state the
+        // engine reaches on its own and never recovers from — so installing
+        // before the engine's own DirectInput bring-up is harmless: a
+        // with-mouse player's interface is non-NULL and the guard falls
+        // straight through to the original code.
+        if (acc::game::IsKotor2()) {
+            acc::engine::InstallDirectInputMouseGuard();
+        }
         // Prism init deferred — loader lock.
     }
     return TRUE;

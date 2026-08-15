@@ -35,6 +35,30 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h2>v0.7.5</h2>
 
+<h3>KOTOR 2:</h3>
+
+- KOTOR 2 no longer crashes a few seconds after launch on a machine with no
+  mouse attached. The engine creates its DirectInput mouse device without ever
+  checking that its DirectInput interface still exists — and it discards that
+  interface itself whenever device setup fails, while reporting success anyway.
+  The first frame that polls the mouse then reads through nothing and the game
+  dies. KOTOR 1 has been guarded against this since v0.4.x, but the guard was
+  only ever reached through a hook KOTOR 2 does not have, so on KOTOR 2 it had
+  never run once. Both games now install it.
+- The keyboard recovers on KOTOR 2 when another program takes the foreground.
+  Alt-tabbing away, or an app such as Discord or a screen reader grabbing focus,
+  could leave the game unable to re-acquire its keyboard for the rest of the
+  session. The recovery itself was made to work on KOTOR 2 in v0.7.2, but the
+  window watcher that asks for it only ever started on KOTOR 1, so nothing was
+  there to request it.
+- Pressing a key while KOTOR 2 is still starting up now answers with "game is
+  still loading" instead of silence.
+- KOTOR 2 checks for mod updates on startup, as KOTOR 1 already did.
+- KOTOR 2 support logs now carry the startup snapshot — the game's ini settings,
+  the audio and input DLLs present in the install folder, the Override file
+  count — and window focus events. KOTOR 2 log bundles previously contained none
+  of this, which left remote diagnosis of a KOTOR 2 report mostly guesswork.
+
 <h3>Bug fixes:</h3>
 
 - Guiding yourself to a distant object with Shift+minus now walks there instead
