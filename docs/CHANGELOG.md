@@ -33,6 +33,20 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>Unreleased</h2>
+
+<h3>Installer:</h3>
+
+- "Collect logs" now bundles the patch log of the session that actually
+  crashed, instead of only the newest one. After a crash the player relaunches,
+  so by collection time the newest log is the session *after* the crash — one
+  real report arrived with a log that started 24 seconds after its crash dump
+  and ended in a clean Quit, which reads as though nothing had gone wrong. The
+  dump is now matched to the log that had already started when it was written,
+  and that pairing is stated in `system-info.txt`. Each game's newest log still
+  ships alongside it when it is a different session, so reports that are not
+  about a crash are unaffected.
+
 <h2>v0.7.5</h2>
 
 <h3>KOTOR 2:</h3>

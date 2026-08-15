@@ -11,7 +11,9 @@ using Microsoft.Win32;
 namespace KotorAccessibilityInstaller
 {
     /// <summary>
-    /// Bundles the freshest patch log and crash dump of EVERY installed game,
+    /// Bundles the newest crash dump of EVERY installed game together with the
+    /// patch log of the session that actually produced it (plus that install's
+    /// newest log when it is a different session),
     /// plus the installer log and a small system-info file, into a single
     /// archive in the user's Downloads folder so beta testers have a one-file
     /// artefact to attach to a bug report.
@@ -75,6 +77,8 @@ namespace KotorAccessibilityInstaller
                         (sites.Count == 0 ? "(no game install found)"
                                           : string.Join(", ", sites.Select(s => $"{s.Target.DisplayName} @ {s.Path}"))));
 
+                    var dumpPairings = new List<string>();
+
                     foreach (var site in sites)
                     {
                         // Staged flat with a game-id prefix rather than in
@@ -82,21 +86,65 @@ namespace KotorAccessibilityInstaller
                         // patch-<timestamp>.log, so a flat copy could collide,
                         // and a prefix keeps the archive one linear list to
                         // read instead of a tree to walk.
+                        //
+                        // The dump is resolved FIRST because it decides which log
+                        // matters. Bundling "the newest log" on its own was
+                        // reliably wrong: a crash is followed by the player
+                        // relaunching, so by the time anyone collects, the newest
+                        // log is the session AFTER the crash and the crashing
+                        // session's log is second-newest. One real bundle shipped
+                        // a log that began 24 s after its dump was written and
+                        // ended in a clean Quit — which reads as "no crash
+                        // happened here" and cost a dump-parsing detour to
+                        // recover what the right log would have said outright.
+                        string newestDump = FindNewestCrashDump(site.Target);
+                        DateTime? dumpUtc = newestDump != null
+                            ? new FileInfo(newestDump).LastWriteTimeUtc
+                            : (DateTime?)null;
+
+                        string sessionLog = dumpUtc.HasValue
+                            ? FindPatchLogForSession(site.Path, dumpUtc.Value)
+                            : null;
                         string newestLog = FindNewestPatchLog(site.Path);
-                        if (newestLog != null)
+
+                        // Ship the crashing session's log AND the newest one when
+                        // they differ. The first says what went wrong; the second
+                        // is the install's current state, and is the only one that
+                        // matters for a report that isn't about a crash. Deduped,
+                        // so the ordinary case is still a single file per game.
+                        var logsToCopy = new List<string>();
+                        if (sessionLog != null) logsToCopy.Add(sessionLog);
+                        if (newestLog != null &&
+                            !string.Equals(newestLog, sessionLog, StringComparison.OrdinalIgnoreCase))
                         {
-                            File.Copy(newestLog,
-                                      Path.Combine(staging, $"{site.Target.Id}-{Path.GetFileName(newestLog)}"),
+                            logsToCopy.Add(newestLog);
+                        }
+
+                        foreach (string log in logsToCopy)
+                        {
+                            File.Copy(log,
+                                      Path.Combine(staging, $"{site.Target.Id}-{Path.GetFileName(log)}"),
                                       overwrite: true);
                             result.LogCount++;
-                            Logger.Info($"[LogCollector] Included {site.Target.DisplayName} patch log: {newestLog}");
+                            Logger.Info($"[LogCollector] Included {site.Target.DisplayName} patch log: {log}" +
+                                        (log == sessionLog ? " (session that produced the dump)" : " (newest)"));
                         }
-                        else
+                        if (logsToCopy.Count == 0)
                         {
                             Logger.Warning($"[LogCollector] No patch logs found for {site.Target.DisplayName}");
                         }
 
-                        string newestDump = FindNewestCrashDump(site.Target);
+                        // State the pairing in the bundle. Without it the reader
+                        // has to re-derive which log belongs to the dump from
+                        // timestamps — exactly the work the pairing exists to save.
+                        if (newestDump != null)
+                        {
+                            dumpPairings.Add(sessionLog != null
+                                ? $"{site.Target.Id}: {Path.GetFileName(newestDump)}  <-  {Path.GetFileName(sessionLog)}"
+                                : $"{site.Target.Id}: {Path.GetFileName(newestDump)}  <-  (no patch log covers this " +
+                                  "crash — the mod may not have been loaded for it, or its log was deleted)");
+                        }
+
                         if (newestDump != null)
                         {
                             string dumpDest = Path.Combine(staging, $"{site.Target.Id}-{Path.GetFileName(newestDump)}");
@@ -136,7 +184,7 @@ namespace KotorAccessibilityInstaller
                         result.IncludedInstallerLog = true;
                     }
 
-                    WriteSystemInfo(Path.Combine(staging, "system-info.txt"), sites);
+                    WriteSystemInfo(Path.Combine(staging, "system-info.txt"), sites, dumpPairings);
 
                     if (result.LogCount == 0 && result.DumpCount == 0 && !result.IncludedInstallerLog)
                     {
@@ -351,6 +399,66 @@ namespace KotorAccessibilityInstaller
                 .FirstOrDefault()?.FullName;
         }
 
+        /// <summary>
+        /// Session start encoded in a patch log's file name, as UTC. acclog names
+        /// them <c>patch-yyyyMMdd-HHmmss.log</c> off the UTC clock — the same
+        /// clock as <c>FileInfo.LastWriteTimeUtc</c> and WER's dump timestamps,
+        /// so all three compare directly with no timezone handling. Returns null
+        /// for a name that doesn't parse (a hand-renamed or copied file).
+        /// </summary>
+        private static DateTime? ParsePatchLogStartUtc(string path)
+        {
+            const string prefix = "patch-";
+            string name = Path.GetFileNameWithoutExtension(path);
+            if (name == null || !name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return null;
+
+            if (!DateTime.TryParseExact(
+                    name.Substring(prefix.Length),
+                    "yyyyMMdd-HHmmss",
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.AssumeUniversal |
+                    System.Globalization.DateTimeStyles.AdjustToUniversal,
+                    out DateTime parsed))
+            {
+                return null;
+            }
+            return parsed;
+        }
+
+        /// <summary>
+        /// The patch log for the session that produced the dump written at
+        /// <paramref name="dumpUtc"/>: the newest log that had already STARTED
+        /// when the dump landed.
+        ///
+        /// <para>Matching on start time rather than on an overlap test is
+        /// deliberate. A crashing session's log stops being written the instant
+        /// the process dies, and WER finishes writing the dump a few seconds
+        /// later — so the log's last-write time is slightly BEFORE the dump's,
+        /// and "does this log's span contain the crash?" rejects the very log we
+        /// want. Start time has no such race: every later session started after
+        /// the crash, and every earlier one started before the one we want.</para>
+        ///
+        /// <para>Returns null when every log started after the dump (an old dump
+        /// with newer sessions on top, or logs since deleted). Falls back to the
+        /// newest log when no name parses at all.</para>
+        /// </summary>
+        private static string FindPatchLogForSession(string gamePath, DateTime dumpUtc)
+        {
+            string logsDir = Path.Combine(gamePath, "logs");
+            if (!Directory.Exists(logsDir)) return null;
+
+            var dated = Directory.EnumerateFiles(logsDir, "patch-*.log")
+                .Select(p => new { Path = p, Start = ParsePatchLogStartUtc(p) })
+                .Where(x => x.Start.HasValue)
+                .ToList();
+            if (dated.Count == 0) return FindNewestPatchLog(gamePath);
+
+            return dated
+                .Where(x => x.Start.Value <= dumpUtc)
+                .OrderByDescending(x => x.Start.Value)
+                .FirstOrDefault()?.Path;
+        }
+
         private static string DumpsDir => Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "CrashDumps");
@@ -381,7 +489,7 @@ namespace KotorAccessibilityInstaller
             return Path.Combine(profile, "Downloads");
         }
 
-        private static void WriteSystemInfo(string path, List<GameSite> sites)
+        private static void WriteSystemInfo(string path, List<GameSite> sites, List<string> dumpPairings)
         {
             var sb = new StringBuilder();
             sb.AppendLine("Voice of the Old Republic — beta-test log bundle");
@@ -404,6 +512,19 @@ namespace KotorAccessibilityInstaller
 
             foreach (var t in GameTarget.All)
                 sb.AppendLine($"WER LocalDumps for {t.ExeName}: {(WerLocalDumps.IsEnabled(t) ? "ENABLED" : "NOT ENABLED")}");
+
+            // Which bundled log belongs to which bundled dump. The newest log is
+            // usually NOT the crashing one — the player relaunches after a crash —
+            // so this pairing is stated rather than left to be re-derived from
+            // timestamps by whoever opens the archive.
+            if (dumpPairings != null && dumpPairings.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine("Crash dump -> log of the session that produced it:");
+                foreach (string pairing in dumpPairings)
+                    sb.AppendLine($"  {pairing}");
+                sb.AppendLine("(any second log per game is that install's newest session, for current state)");
+            }
 
             // One block per game. Both games' recent-file lists are here even
             // when only one of them crashed, because "KOTOR 2 has no logs at
