@@ -32,6 +32,7 @@
 #include "menus_inventory.h"
 #include "menus_modsettings.h"
 #include "menus_pazaakdeck.h"
+#include "minigame_pazaak.h"   // wager .gui ids (per game)
 #include "menus_crafting.h"  // IsHiddenCraftingListBox — K2 crafting view filter
 #include "menus_store.h"
 #include "prism.h"
@@ -547,12 +548,17 @@ bool IsDecorativeControl(void* panel, void* c,
             return true;
         }
     }
-    // Pazaak wager popup: mask the less/more SpeedButtons (gui ids 4/5).
+    // Pazaak wager popup: mask the less/more SpeedButtons (ids 4/5 on KOTOR 1,
+    // 6/7 on KOTOR 2 — see acc::pazaak::WagerLessButtonGuiId).
     // The wager is adjusted with Left/Right (held = auto-repeat) via
     // pazaak::Tick's polled stepper, so these buttons are redundant in the
     // chain — dropping them lets Up/Down step straight from the wager row
     // to Setzen/Beenden.
-    if (pk == PanelKind::PazaakWager && (cid == 4 || cid == 5)) return true;
+    if (pk == PanelKind::PazaakWager &&
+        (cid == acc::pazaak::WagerLessButtonGuiId() ||
+         cid == acc::pazaak::WagerMoreButtonGuiId())) {
+        return true;
+    }
     // Charsheet decorative ids are strictly per game: K2's panel dropped
     // the party portraits/pagination entirely and re-numbered the model
     // rotator (BTN_3DCHAR 1 → 5) — and K1's ids 65/66 are K2's BTN_AUTO /

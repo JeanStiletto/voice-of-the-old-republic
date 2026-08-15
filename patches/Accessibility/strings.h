@@ -1330,6 +1330,16 @@ enum class Id : int {
     PazaakFmtPlain,
     PazaakFmtFlipBoth,
     PazaakFmtFlipCurrently,
+    // KOTOR 2 only — the five special side-deck cards it adds at card indices
+    // 18..22 (KOTOR 1 has no counterpart; on KOTOR 1 index 18 is already the
+    // first main-deck card). Named from the engine's own on-card glyphs, read
+    // out of CSWGuiPazaakCard::SetCard: "+1T"/"-1T", "D", "2&4", "3&6", and a
+    // bare number for the value card.
+    PazaakFmtCardTiebreaker,   // wraps a ±1 label: "%s, tiebreaker"
+    PazaakCardDouble,          // "D" — doubles the previous card
+    PazaakCardTwoFour,         // "2&4"
+    PazaakCardThreeSix,        // "3&6"
+    PazaakCardValue,           // the value card before it has a value
     PazaakFmtYouDrew,
     PazaakOverTwenty,
     PazaakFmtYouPlayed,
@@ -1351,6 +1361,9 @@ enum class Id : int {
     PazaakNoPlayable,
     PazaakNotYourTurn,
     PazaakChooseSign,
+    // KOTOR 2's value card picks a face (1 or 2) as well as a sign, so its
+    // chooser has one more axis than PazaakChooseSign describes.
+    PazaakChooseSignAndValue,
     PazaakCancelled,
     // Side-deck builder (CSWGuiPazaakStart)
     PazaakDeckAvailable,
@@ -1358,6 +1371,8 @@ enum class Id : int {
     PazaakDeckSlotFilled,
     PazaakDeckSlotEmpty,
     PazaakDeckPlay,
+    // KOTOR 2's setup screen adds a "clear the chosen cards" button.
+    PazaakDeckCleared,
     PazaakDeckAdded,
     PazaakDeckRemoved,
     PazaakDeckFull,

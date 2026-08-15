@@ -187,8 +187,11 @@ bool GetCurrentAreaResName(char* outBuf, size_t bufSize);
 // CServerExoApp::GetGlobalVariableTable @0x004aee60 + GetValueNumber
 // @0x00529240. Returns -1 on any null link / fault; the engine writes 0 for an
 // unknown name. Language-independent (globals are keyed by ASCII name). Read
-// live — plot scripts mutate these. (Mirrors swoop_race's private reader; this
-// is the shared home for non-swoop callers.)
+// live — plot scripts mutate these. Both games (K2 twins @0x0051C890 /
+// @0x00654860 — see the call site for the witnesses).
+//
+// This is the ONLY reader: swoop_race used to carry a byte-identical private
+// copy and now calls this.
 int ReadGlobalNumber(const char* name);
 
 // CServerExoApp::GetLoadFromSaveGame @0x004af050 — the engine's own "I am

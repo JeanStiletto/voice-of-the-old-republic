@@ -33,7 +33,40 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
-<h2>Unreleased</h2>
+<h2>v0.7.6</h2>
+
+<h3>Translations:</h3>
+
+- Russian translation fixes.
+
+<h3>KOTOR 2:</h3>
+
+- The KOTOR 2 pazaak and swoop-racing support below ships untested. Both were
+  ported from the KOTOR 1 implementation against the decompiled KOTOR 2 engine
+  and build clean, but nobody has played either minigame on KOTOR 2 yet. Please
+  report anything that misbehaves.
+- Pazaak is playable on KOTOR 2. The board navigator (your hand, your table, the
+  opponent's table, Stand / End turn), the side-deck builder, the wager popup and
+  every spoken cue now work there as they do on KOTOR 1. KOTOR 2's own additions
+  are read out too: it ships five side-deck cards KOTOR 1 does not have — a ±1
+  tiebreaker, a double card, "2 or 4", "3 or 6" and a value card — and they are
+  named rather than announced as bare numbers. Those five sit at card slots that
+  KOTOR 1 uses for its main deck, so without this every KOTOR 2 card from 18
+  upward would have been announced as the wrong number.
+- The card chooser handles KOTOR 2's value card, whose face the player picks as
+  well as its sign: Left and Right choose plus or minus as before, Up and Down
+  choose between 1 and 2, and Enter plays the card with both.
+- KOTOR 2's "clear cards" button is reachable in the side-deck builder. It sits
+  beside "Play" in the controls row and reports the deck empty once it has run.
+- Swoop racing is supported on KOTOR 2: race start and its keybind summary, gear
+  shifts, the "you can shift now" cue, the finish-line time, and the obstacle and
+  accelerator-pad audio. On a KOTOR 2 track only the nearest few obstacles sound
+  at once — its tracks carry up to 151 of them where KOTOR 1's carry 22, and
+  cueing every one in range would be a wall of noise.
+- The obstacle and pad cues stay silent on a swoop track whose layout the cue
+  geometry cannot describe, instead of pointing the wrong way. All three shipped
+  KOTOR 2 tracks are checked at race start; race start/end, gear and the race
+  clock are unaffected either way.
 
 <h3>Installer:</h3>
 

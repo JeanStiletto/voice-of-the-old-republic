@@ -1,5 +1,23 @@
 # Pazaak Accessibility — Investigation & Concept
 
+> **Every address and offset in this document is KOTOR 1.** Pazaak was ported to
+> KOTOR 2 on 2026-08-15; the model is the same but almost none of the numbers
+> are. Two differences will bite a reader who assumes otherwise: `CPazaakCard` is
+> **12 bytes** on KOTOR 2 (a third dword holds the resolved value of its new
+> undecided-value cards), which moves every array stride and every field above
+> one; and the **card numbering diverges after index 17** — KOTOR 2 inserts five
+> special cards at 18..22 (±1 tiebreaker, double, "2&4", "3&6", value card) and
+> its main deck runs 23..32, where §5 below has the main deck at 18..27. The
+> KOTOR 2 values, with their witnesses, are at the constant declarations in
+> `patches/Accessibility/minigame_pazaak.cpp` and `menus_pazaakdeck.cpp`; the
+> port ledger is in `docs/kotor2-port.md` under WHERE TO RESUME.
+>
+> One rule difference worth knowing: KOTOR 2's "2&4" and "3&6" are not value
+> choosers. Playing one **inverts the sign of every card already on your table
+> whose value is 2 or 4** (resp. 3 or 6) — engine-confirmed in its
+> `UsePlayerSidedeckCard` twin @0x008FEE40, which calls the flipper @0x008FFDB0
+> with those literal pairs.
+
 Status: **board game implemented (`patches/Accessibility/pazaak.cpp`), pending in-game
 test; pre-game start/deck-build menu (§11) still TODO.** This doc captures the full
 reverse-engineering of KOTOR 1's Pazaak minigame plus the resulting accessibility concept.

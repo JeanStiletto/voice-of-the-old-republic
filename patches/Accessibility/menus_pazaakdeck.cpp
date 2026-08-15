@@ -18,6 +18,7 @@
 #include "engine_input.h"    // kInputNav* / kInputEnter*
 #include "engine_manager.h"  // IsPanelInManager
 #include "engine_offsets.h"  // CExoArrayList, kPanelControlsOffset, kControlIdOffset
+#include "menus_extract.h"   // FromControl — reads BTN_CLEARCARDS' own label
 #include "menus_pending.h"   // QueueActivate (Play button)
 #include "minigame_pazaak.h"          // FormatCardLabel, CardContext
 #include "prism.h"
@@ -33,13 +34,31 @@ const uintptr_t kVtablePazaakStart = acc::addr::Pick(0x007532e8, 0x009A614C);  /
 const uintptr_t kVtablePazaakCard  = acc::addr::Pick(0x007531c0, 0x009A5DA4);  // CSWGuiPazaakCard
 const uintptr_t kVtableCSWGuiLabel = acc::addr::Pick(0x0073e5b8, 0x009878BC);  // CSWGuiLabel (overlay text)
 
-const size_t kAllCardsOff    = acc::off::Todo(0x1A4);   // all_cards[18]   (stride 0x31C)
-const size_t kSidedeckGuiOff = acc::off::Todo(0x501C);  // sidedeck_gui[10] (stride 0x31C)
-const size_t kCardCountsOff  = acc::off::Todo(0x755C);  // int card_counts[18]
-const size_t kSidedeckOff    = acc::off::Todo(0x75A4);  // CPazaakCard sidedeck[10]
-const size_t kCardStride     = acc::off::Todo(0x31C);
-constexpr int    kNumTypes = 18;
+// KOTOR 2's setup screen is the same layout scaled up: 24 collectable card
+// types instead of 18 (its pazaaksetup_p.gui lays out BTN_AVAIL00..05, 10..15,
+// 20..25 and 30..35 — four rows of six), a card control that grew 0x31C ->
+// 0x334, and a CPazaakCard that grew 8 -> 12 bytes.
+//
+// Every offset below is witnessed in the panel's own drop handlers, which index
+// the arrays literally: the chosen-slot handler @0x0088A960 and the available-
+// card handler @0x0088A8E0 both test `control == panel + 0x6d50 + i*0x334` for
+// i < 10 (the sidedeck GUI cards) and `control == panel + 0x1b0 + i*0x334` for
+// i < 0x18 (the collection), and read the model card as
+// `[panel + 0x9540 + i*0xc]`. The constructor @0x00887da0 closes the gap
+// between them: it zeroes card_counts as 24 dwords from +0x94e0, immediately
+// below the sidedeck at +0x9540, and stores pointers to both GUI arrays.
+const size_t kAllCardsOff    = acc::off::Pick(0x1A4,  0x1B0);   // all_cards[N]     (gui stride)
+const size_t kSidedeckGuiOff = acc::off::Pick(0x501C, 0x6D50);  // sidedeck_gui[10] (gui stride)
+const size_t kCardCountsOff  = acc::off::Pick(0x755C, 0x94E0);  // int card_counts[N]
+const size_t kSidedeckOff    = acc::off::Pick(0x75A4, 0x9540);  // CPazaakCard sidedeck[10]
+const size_t kCardStride     = acc::off::Pick(0x31C,  0x334);   // CSWGuiPazaakCard control
+const size_t kModelCardStride = acc::off::Pick(0x8,   0xC);     // CPazaakCard
 constexpr int    kNumSlots = 10;
+
+// Collectable card types: 18 on KOTOR 1 (6 plus, 6 minus, 6 flip), 24 on
+// KOTOR 2 (those plus its five specials, with the grid's last cell unused).
+int NumTypes() { return acc::game::IsKotor2() ? 24 : 18; }
+constexpr int kMaxTypes = 24;   // array bound for both games
 
 bool VtableIs(void* p, uintptr_t vt) {
     __try { return *reinterpret_cast<uintptr_t*>(p) == vt; }
@@ -58,7 +77,7 @@ bool Classify(void* panel, void* control, bool& outAvailable, int& outIdx) {
     auto* base = reinterpret_cast<unsigned char*>(panel);
     auto* c    = reinterpret_cast<unsigned char*>(control);
     ptrdiff_t a = c - (base + kAllCardsOff);
-    if (a >= 0 && static_cast<size_t>(a) < static_cast<size_t>(kNumTypes) * kCardStride &&
+    if (a >= 0 && static_cast<size_t>(a) < static_cast<size_t>(NumTypes()) * kCardStride &&
         a % static_cast<ptrdiff_t>(kCardStride) == 0) {
         outAvailable = true; outIdx = static_cast<int>(a / static_cast<ptrdiff_t>(kCardStride));
         return true;
@@ -88,7 +107,7 @@ bool ExtractCardLabel(void* panel, void* control, char* outBuf, size_t bufSize) 
 
     char name[80];
     if (avail) {
-        if (idx < 0 || idx >= kNumTypes) return false;
+        if (idx < 0 || idx >= NumTypes()) return false;
         int count = ReadIntAt(panel, kCardCountsOff + static_cast<size_t>(idx) * 4);
         // all_cards[i] always represents card type i.
         acc::pazaak::FormatCardLabel(idx, 0, acc::pazaak::CardContext::Collection,
@@ -99,7 +118,7 @@ bool ExtractCardLabel(void* panel, void* control, char* outBuf, size_t bufSize) 
     }
 
     if (idx < 0 || idx >= kNumSlots) return false;
-    size_t slotOff = kSidedeckOff + static_cast<size_t>(idx) * 8;  // CPazaakCard{index,is_flipped}
+    size_t slotOff = kSidedeckOff + static_cast<size_t>(idx) * kModelCardStride;  // CPazaakCard{index,is_flipped}
     int cardIdx = ReadIntAt(panel, slotOff + 0);
     int flip    = ReadIntAt(panel, slotOff + 4);
     if (cardIdx < 0) {
@@ -122,7 +141,7 @@ bool IsChainDecorative(void* panel, void* control) {
     // through addable cards.
     if (VtableIs(control, kVtablePazaakCard)) {
         bool avail; int idx;
-        if (Classify(panel, control, avail, idx) && avail && idx >= 0 && idx < kNumTypes) {
+        if (Classify(panel, control, avail, idx) && avail && idx >= 0 && idx < NumTypes()) {
             if (ReadIntAt(panel, kCardCountsOff + static_cast<size_t>(idx) * 4) <= 0) return true;
         }
     }
@@ -135,11 +154,32 @@ namespace {
 
 typedef int (__thiscall* PFN_AddChosenCard)(void* panel, int cardType, int slot);
 typedef int (__thiscall* PFN_RemoveChosenCard)(void* panel, int slot);
-const uintptr_t kAddrAddChosenCard = acc::addr::R(0x0067fb10);
-const uintptr_t kAddrRemoveChosenCard = acc::addr::R(0x0067fd10);
-constexpr int kControlPlayId = 78;  // "Spielen" button (.gui id, locale-stable)
+// KOTOR 2 twins, both taken straight out of its own drop handlers: the
+// available-card handler @0x0088A8E0 calls RemoveChosenCard(slot) then
+// AddChosenCard(cardType, slot); the chosen-slot handler @0x0088A960 calls the
+// same pair while swapping two slots. Signatures and argument order are
+// KOTOR 1's — one int for remove, (type, slot) for add.
+const uintptr_t kAddrAddChosenCard = acc::addr::Pick(0x0067fb10, 0x00889DD0);
+const uintptr_t kAddrRemoveChosenCard = acc::addr::Pick(0x0067fd10, 0x0088A0B0);
 
-enum class Op { None, Add, Remove, Play };
+// "Spielen" — BTN_ATEXT, by .gui id (locale-stable). KOTOR 2 renumbers the
+// setup screen: pazaaksetup.gui puts BTN_ATEXT at 78, pazaaksetup_p.gui at 95
+// (it inserts six more available-card buttons, their labels and their count
+// labels ahead of it, and adds BTN_CLEARCARDS at 96).
+const int kControlPlayId = acc::game::IsKotor2() ? 95 : 78;
+
+// BTN_CLEARCARDS — empties the chosen deck in one press. KOTOR 2 only; KOTOR 1's
+// setup screen has no such button, so the id poisons to -1 there and the
+// controls row is one entry long (see RowLength).
+const int kControlClearId = acc::game::IsKotor2() ? 96 : -1;
+
+enum class Op { None, Add, Remove, Play, ClearCards };
+
+// Set when a clear was queued; drained on the FOLLOWING tick, because the
+// engine button it activates only runs in TickPendingOps — which is later in
+// the same tick — so the deck cannot be counted until then. Verifying rather
+// than assuming keeps the confirmation honest if the engine refuses.
+bool g_announceClearOnNextTick = false;
 int   g_row = 0;          // 0 collection, 1 deck slots, 2 controls
 int   g_col = 0;
 void* g_navPanel = nullptr;
@@ -153,11 +193,11 @@ void* g_opPanel = nullptr;
 // cards move between the two zones (the total is conserved).
 int BuildCollection(void* panel, int* outTypes) {
     int n = 0;
-    for (int i = 0; i < kNumTypes; ++i) {
+    for (int i = 0; i < NumTypes(); ++i) {
         int owned = ReadIntAt(panel, kCardCountsOff + static_cast<size_t>(i) * 4);
         if (owned <= 0) {
             for (int s = 0; s < kNumSlots; ++s) {
-                if (ReadIntAt(panel, kSidedeckOff + static_cast<size_t>(s) * 8) == i) {
+                if (ReadIntAt(panel, kSidedeckOff + static_cast<size_t>(s) * kModelCardStride) == i) {
                     owned = 1; break;
                 }
             }
@@ -170,14 +210,18 @@ int BuildCollection(void* panel, int* outTypes) {
 int DeckFilledCount(void* panel) {
     int c = 0;
     for (int s = 0; s < kNumSlots; ++s)
-        if (ReadIntAt(panel, kSidedeckOff + static_cast<size_t>(s) * 8) >= 0) ++c;
+        if (ReadIntAt(panel, kSidedeckOff + static_cast<size_t>(s) * kModelCardStride) >= 0) ++c;
     return c;
 }
 
 int RowLength(void* panel, int row) {
-    if (row == 0) { int t[kNumTypes]; return BuildCollection(panel, t); }
+    if (row == 0) { int t[kMaxTypes]; return BuildCollection(panel, t); }
     if (row == 1) return kNumSlots;
-    return 1;  // controls: Play only
+    // Controls: Play, plus KOTOR 2's "clear the chosen cards" button. Without
+    // this the button would be unreachable there — this navigator owns the
+    // arrows on the panel, so a control it does not list is a control the
+    // player cannot get to.
+    return acc::game::IsKotor2() ? 2 : 1;
 }
 
 void* FindControlById(void* panel, int id) {
@@ -203,7 +247,7 @@ void AnnounceFocus(void* panel) {
     using namespace acc::strings;
     char name[80], msg[160];
     if (g_row == 0) {
-        int types[kNumTypes];
+        int types[kMaxTypes];
         int cnt = BuildCollection(panel, types);
         if (cnt == 0) return;
         if (g_col >= cnt) g_col = cnt - 1;
@@ -218,7 +262,7 @@ void AnnounceFocus(void* panel) {
     } else if (g_row == 1) {
         if (g_col < 0) g_col = 0;
         if (g_col >= kNumSlots) g_col = kNumSlots - 1;
-        size_t off = kSidedeckOff + static_cast<size_t>(g_col) * 8;
+        size_t off = kSidedeckOff + static_cast<size_t>(g_col) * kModelCardStride;
         int idx = ReadIntAt(panel, off);
         int flip = ReadIntAt(panel, off + 4);
         if (idx < 0) {
@@ -229,6 +273,21 @@ void AnnounceFocus(void* panel) {
             snprintf(msg, sizeof(msg), Get(Id::PazaakDeckSlotFilled), g_col + 1, name);
         }
         Speak(msg);
+    } else if (g_col == 1) {
+        // KOTOR 2's BTN_CLEARCARDS. Speak the engine's own label rather than
+        // shipping an eighth translation of "clear cards" — it is a plain
+        // button with real text, and the extractor already knows how to read
+        // one. Falls back to naming the deck's current fill so the row is never
+        // silent if the read fails.
+        void* btn = FindControlById(panel, kControlClearId);
+        char label[128];
+        if (btn && acc::menus::extract::FromControl(btn, label, sizeof(label), panel) &&
+            label[0] != '\0') {
+            Speak(label);
+        } else {
+            snprintf(msg, sizeof(msg), Get(Id::PazaakDeckPlay), DeckFilledCount(panel));
+            Speak(msg);
+        }
     } else {
         snprintf(msg, sizeof(msg), Get(Id::PazaakDeckPlay), DeckFilledCount(panel));
         Speak(msg);
@@ -238,9 +297,9 @@ void AnnounceFocus(void* panel) {
 }  // namespace
 
 bool TryHandleInput(void* panel, int param_1, int param_2, int& rv) {
-    // KOTOR 2 (Batch 1): the side-deck card table offsets and the add/remove
-    // handler addresses are unresolved there (minigame triage is Batch 6).
-    if (acc::game::IsKotor2()) return false;
+    // Both games since the minigame port (2026-08-15). IsDeckPanel is a vtable
+    // compare against the per-game CSWGuiPazaakStart, so this stays inert on
+    // every other panel by itself.
     if (!IsDeckPanel(panel)) return false;
     if (panel != g_navPanel) { g_navPanel = panel; g_row = 0; g_col = 0; }
 
@@ -270,15 +329,17 @@ bool TryHandleInput(void* panel, int param_1, int param_2, int& rv) {
     // Enter: stage the deep action for Tick.
     if (g_op == Op::None) {
         if (g_row == 0) {
-            int types[kNumTypes];
+            int types[kMaxTypes];
             int cnt = BuildCollection(panel, types);
             if (cnt > 0 && g_col >= 0 && g_col < cnt) {
                 g_op = Op::Add; g_opArg = types[g_col]; g_opPanel = panel;
             }
         } else if (g_row == 1) {
-            int idx = ReadIntAt(panel, kSidedeckOff + static_cast<size_t>(g_col) * 8);
+            int idx = ReadIntAt(panel, kSidedeckOff + static_cast<size_t>(g_col) * kModelCardStride);
             if (idx >= 0) { g_op = Op::Remove; g_opArg = g_col; g_opPanel = panel; }
             // empty slot: nothing to remove — stay silent.
+        } else if (g_col == 1) {
+            g_op = Op::ClearCards; g_opPanel = panel;
         } else {
             g_op = Op::Play; g_opPanel = panel;
         }
@@ -287,6 +348,21 @@ bool TryHandleInput(void* panel, int param_1, int param_2, int& rv) {
 }
 
 void Tick() {
+    if (g_announceClearOnNextTick) {
+        g_announceClearOnNextTick = false;
+        if (g_navPanel && acc::engine::IsPanelInManager(g_navPanel) &&
+            IsDeckPanel(g_navPanel)) {
+            const int filled = DeckFilledCount(g_navPanel);
+            char msg[160];
+            if (filled == 0) {
+                Speak(acc::strings::Get(acc::strings::Id::PazaakDeckCleared));
+            } else {
+                snprintf(msg, sizeof(msg),
+                         acc::strings::Get(acc::strings::Id::PazaakDeckPlay), filled);
+                Speak(msg);
+            }
+        }
+    }
     if (g_op == Op::None) return;
     Op    op    = g_op;
     void* panel = g_opPanel;
@@ -311,7 +387,7 @@ void Tick() {
             Speak(Get(Id::PazaakDeckFull));
         }
     } else if (op == Op::Remove) {
-        int idx = ReadIntAt(panel, kSidedeckOff + static_cast<size_t>(arg) * 8);  // before removal
+        int idx = ReadIntAt(panel, kSidedeckOff + static_cast<size_t>(arg) * kModelCardStride);  // before removal
         acc::pazaak::FormatCardLabel(idx, 0, acc::pazaak::CardContext::Collection,
                                      name, sizeof(name));
         int r = 0;
@@ -320,6 +396,14 @@ void Tick() {
         if (r) {
             snprintf(msg, sizeof(msg), Get(Id::PazaakDeckRemoved), name);
             Speak(msg);
+        }
+    } else if (op == Op::ClearCards) {
+        // Let the engine's own button do the work, then report the result —
+        // the deck should read empty afterwards.
+        void* btn = FindControlById(panel, kControlClearId);
+        if (btn) {
+            acc::menus::pending::QueueActivate(btn);
+            g_announceClearOnNextTick = true;
         }
     } else if (op == Op::Play) {
         void* btn = FindControlById(panel, kControlPlayId);

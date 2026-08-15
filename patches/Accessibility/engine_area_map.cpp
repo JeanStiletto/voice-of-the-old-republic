@@ -159,12 +159,22 @@ int ReadGlobalNumber(const char* name) {
     if (!serverApp) return -1;
     __try {
         // table = CServerExoApp::GetGlobalVariableTable(server)
-        // Both stay R() on KOTOR 2 DELIBERATELY: the only consumer is
-        // endar_softlock (Endar-Spire story globals), which is K1-only by
-        // design — no K2 twin is needed until a K2 consumer appears. The
-        // call declines into the SEH below (returns -1) there.
-        const uintptr_t kAddrGetGlobalVarTable = acc::addr::R(0x004aee60);
-        const uintptr_t kAddrGlobalVarGetNumber = acc::addr::R(0x00529240);
+        //
+        // KOTOR 2 twins resolved for the swoop-race port (the race clock reads
+        // MIN_TIME_HOUR/MIN/SEC/MIL, which K2's track heartbeat stamps exactly
+        // as KOTOR 1's does).
+        //   * GetGlobalVariableTable @0x0051C890 — the identical two-line body,
+        //     `return [this+4] + 0x100fc`. The 0x100fc is independently
+        //     confirmed by the table's own Load site @0x005315a0, which reaches
+        //     it as `internal + 0x100fc` before passing "globalcat".
+        //   * GetValueNumber @0x00654860 — found by its own diagnostic string
+        //     ("Script var NUMBER '%s' not in catalogue!"); same signature,
+        //     same single-BYTE write through the out pointer, same catalogue
+        //     index lookup, same "not a NUMBER" type check.
+        const uintptr_t kAddrGetGlobalVarTable =
+            acc::addr::Pick(0x004aee60, 0x0051C890);
+        const uintptr_t kAddrGlobalVarGetNumber =
+            acc::addr::Pick(0x00529240, 0x00654860);
         using PFN_GetTable = void* (__thiscall*)(void*);
         void* table = reinterpret_cast<PFN_GetTable>(kAddrGetGlobalVarTable)(serverApp);
         if (!table) return -1;

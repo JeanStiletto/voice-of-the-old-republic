@@ -14,6 +14,145 @@ plan.
 
 ## WHERE TO RESUME (read this first)
 
+**Minigames — pazaak + swoop race PORTED 2026-08-15, offline (six kotor2 Ghidra
+rounds, two kotor1, plus capstone/PE scans and a GFF/NCS mine of both games'
+minigame areas; zero test rounds). Built green, NOT tested in game.** Both
+subsystems were ported WHOLE per THE METHOD — every constant resolved first,
+every gate cleared, no reduced K2 path. 47 unresolved constants at the start,
+0 left. The port surface and its witnesses live at the declarations; what
+follows is what a reader needs before the first K2 round.
+
+**The single most useful finding: KOTOR 2 keeps the entire minigame
+architecture.** CSWMiniGame / CSWTrackFollower / CSWMiniPlayer / CSWMiniEnemy /
+CSWMGObstacle / CSWMiniGameObject all exist, and the vtable-slot map pairs all
+six with EXACT slot counts — including the four `AsFollower` / `AsPlayer` /
+`AsEnemy` / `AsObstacle` downcast slots at +0x14/+0x18/+0x1c/+0x20, which are
+self_return on exactly the right class and return_zero everywhere else, the same
+fingerprint KOTOR 1 has. The whole "walk the 255-slot object array and classify
+by vtable call" design ports unchanged. Layouts:
+
+- **CSWMiniGame — identical through +0xec**, then grows a tail (0xf0 -> 0x11c:
+  a unit Vector, a swoopupgrade.2da handle and six per-level upgrade rows).
+  type / player / area / the five id-list triples are all at KOTOR 1's offsets.
+- **CSWTrackFollower — +0x30 bigger (0x1a4 -> 0x1d4)** for ONE reason: its
+  per-object script CResRef array went from ten entries to thirteen, because
+  K2's swoop bike has OnAccelerate, OnBrake and OnHitWorld (it can jump).
+  Everything BELOW that array — models +0x68, looping +0x80, sphere_radius
+  +0x84, speed +0x98 — is unmoved; everything above it, i.e. all of
+  CSWMiniPlayer, shifts by exactly 0x30.
+- **CSWMiniGameObject / CSWMGObstacle — byte-identical.** The one thing that did
+  move is inside the renderer: Gob's position went +0x78 -> +0xa4, witnessed on
+  both sides through the same vtable slot (+0x64), whose body is a bare
+  "copy three floats from this+N" in each build.
+- **CSWCArea.mini_game +0x264 -> +0x268**, matching the +4 the map-pin array
+  already had.
+
+**Pazaak's divergence is in the CARDS, not the architecture.** CPazaakCard grew
+8 -> 12 bytes; the third dword is the resolved face value of K2's four
+undecided-value cards. That widening cascades through every array in the model
+(CPazaakPlayer 0x70 -> 0xa4, the deck 40*0xc) and through the setup screen. And
+the card NUMBERING diverges after 17:
+
+    0..5    +1..+6                              both
+    6..11   -1..-6                              both
+    12..17  ±1..±6                              both
+    18..22  ±1T / D / 2&4 / 3&6 / value card    KOTOR 2 ONLY
+    18..27  main deck 1..10                     KOTOR 1
+    23..32  main deck 1..10                     KOTOR 2
+
+That is the trap worth remembering: reusing KOTOR 1's `index >= 18` test would
+have called every K2 special a main-deck draw and every K2 main-deck card by a
+number five too low. Both the label synthesizer and the "did they draw or did
+they play" delta gate now ask per game.
+
+Two of the five carry RULES, not just labels, and both were read out of the
+engine rather than guessed:
+
+- **"2&4" and "3&6" are sign flippers, not value choosers.** Playing one runs
+  the flipper @0x008FFDB0 with the literal pair (2,4) / (3,6) over your own
+  table, inverting the sign of every card already there whose value matches.
+  Nothing to choose at play time, and nothing for the navigator to do beyond
+  playing the card — the new total is re-read and spoken afterwards as usual.
+- **The value card (22) has a face the player picks.** Its BTN_CHANGE handler
+  @0x0088F5A0 toggles the card's third dword between 1 and 2 and repaints. The
+  board's sign chooser therefore grew a second axis on KOTOR 2: Left/Right still
+  pick the sign, Up/Down pick the face, and Enter writes both before playing —
+  the same two fields the engine's own buttons write. On every other card
+  Up/Down deliberately re-reads the current face rather than doing nothing, so
+  the key never lands on silence.
+
+**Two K2-only adaptations, both from MEASURED content differences** (the
+category the port doc says is a legitimate divergence, not a shortcut):
+
+- **Obstacle concurrency cap.** K1's swoop areas carry 22 obstacles; K2's carry
+  151 (211TEL), 62 (371NAR) and 65 (510OND) — counted from each area's own
+  Obstacles list. The uncapped sweep would start dozens of concurrent loops of
+  one metallic sample. K2 now sounds the nearest 6; K1's sweep is bit-identical.
+  Re-tune from the `inRange` / `overBudget` numbers the scan line logs.
+- **Track-axis guard.** The whole spatial module assumes world +Y is the track's
+  forward axis and world X the lane — a KOTOR 1 MEASUREMENT, and one that would
+  not fail gracefully: "ahead" would select obstacles behind the player and the
+  pan would point at the wrong lane. Nothing offline says which way K2's tracks
+  run (its obstacles are named scene objects whose positions live in the room
+  models). So the module now measures: it samples the bike's travel once the
+  race is moving and requires +Y to dominate, staying silent and logging
+  `track axis probe: ... spatial cues OFF` otherwise. Race entry/exit, gear,
+  shift-ready and the race clock read no world geometry and are unaffected.
+
+**What ported for free and is worth knowing:** K2's three swoop tracks stamp the
+same MIN_TIME_HOUR/MIN/SEC/MIL start globals from their heartbeat.ncs, so the
+race clock is a straight port; and its onaccelerate.ncs carries the SAME gear
+ladder (35/60/100/150/210), so the "you can shift now" gate ladder needed no
+change. K2 scales speeds by swoop upgrades (`SWMG_GetSwoopUpgrade`, 1.0 +
+level*0.2), which the gear detector is immune to (it counts max_speed plateaus)
+but which shifts the absolute shift-ready gate slightly early — acceptable, and
+the self-guard already refuses to announce a gate at or above the gear's own
+max_speed. K2's heartbeat also maintains a real `MIN_RACE_GEAR` global; the
+plateau heuristic was kept because it is the tested one, but that global is the
+obvious cross-check if gear numbers look wrong in the round.
+
+**A finding that contradicts a standing note: KOTOR 2 DOES have the turret
+minigame.** 107PER, 421DXN and 505OND each carry a Type==2 mini-game struct.
+`minigame_turret` stays K1-gated because its own constants and aim-assist tuning
+have not been ported or tested — not because the subsystem is absent. The
+engine surface it shares with the swoop race (the object array, the downcasts,
+CSWTrackFollower, CSWMiniPlayer.offset) is now resolved, so what remains is the
+turret-specific offsets plus one test round. The old "not present in KOTOR 2"
+note in the LLM docs and the agent memory is wrong and has been corrected.
+
+**Test items for the next K2 round.**
+Pazaak: (1) start a pazaak game — the board is acquired (log `Pazaak: acquired
+board panel`), the opener speaks, and Up/Down move between hand / your table /
+opponent table / actions; (2) a +/- card offers the sign chooser and plays with
+the chosen sign; (3) one of K2's special cards reads by name ("tiebreaker",
+"double card", "2 or 4", "3 or 6", "value card") rather than as a number, in
+hand AND once played; (3b) playing the value card: Enter opens the chooser,
+Left/Right change the sign, Up/Down change the face between 1 and 2, and the
+card lands on the table with the face that was last spoken; (3c) playing "2&4"
+or "3&6" flips the sign of the matching cards already on your table and the
+new total is spoken; (4) a main-deck draw announces the right number — a drawn
+10 must not read as "5"; (5) s / e / c / t / Shift+C shortcuts; (6) the wager
+popup: Left/Right change the amount and the value is spoken on release, the
+less/more buttons are absent from the chain, Enter on the wager row is not a
+no-op; (7) the deck builder: the collection row steps only through owned cards
+(24 types now), Enter adds, the deck row removes, and "Play" starts the game
+(K2's BTN_ATEXT is .gui id 95, not 78); (7b) the controls row has a second
+entry on K2 — its "clear cards" button, which this navigator has to list
+because it owns the arrows on that panel and anything it does not list is
+unreachable; pressing it empties the deck and the next tick says so; (8) the
+tutorial pazaak game does not freeze on the first draw.
+Swoop: (1) entering a race speaks the opener + keybinds; (2) the gear
+announcement fires on each shift and the shift-ready cue precedes it; (3)
+obstacles and pads are audible and on the correct side — or the log says the
+axis probe rejected the track, which is itself the answer; (4) crossing the
+finish speaks a plausible race time; (5) leaving the race speaks the exit cue
+once, not twice.
+K1 regression (shared code was touched): one pazaak game end to end, one deck
+build, one swoop race. The specific shared edits are the card-label synthesizer,
+the deck-builder array indexing, the wager .gui ids, `ReadGlobalNumber` (the
+swoop module's private copy was deleted in favour of `acc::engine`'s), and the
+obstacle sweep's restructure into collect-then-select.
+
 **K2 crafting — DONE and confirmed in game 2026-08-13.** Workbench and lab
 station can create and break down from the keyboard; per-row cost / yield and
 the resource-pool row ship with it. Five Ghidra rounds; the engine model is in

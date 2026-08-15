@@ -638,8 +638,12 @@ void Dispatch() {
 
     // Pazaak minigame board — runs ahead of TickMonitors and the in-world /
     // menu pollers so it can Consume() the shared keys (Tab / Enter / arrows /
-    // Esc) on its own tick before those pollers sample them.
-    if (k1) PHASE("pazaak", acc::pazaak::Tick());
+    // Esc) on its own tick before those pollers sample them. Both games since
+    // the minigame port (2026-08-15): KOTOR 2's board is the same
+    // CSWGuiPazaakGame driving the same CSWPazaak model, with a wider card
+    // struct and five extra side-deck cards — see minigame_pazaak.cpp. Self-
+    // gated on acquiring a real board panel.
+    PHASE("pazaak", acc::pazaak::Tick());
 
     // Help system — F1 toggles the global keybind list, Ctrl+F1 reads the
     // current screen's keys. Runs ahead of the menu/cycle/interact pollers so
@@ -762,12 +766,26 @@ void Dispatch() {
 
     PHASE("spatial.change_detector", acc::spatial::change_detector::Tick());
 
-    if (k1) {
-        // Swoop race entry/exit cues. Gated to CSWMiniGame.type==0.
-        PHASE("swoop_race", acc::swoop_race::Tick());
+    // Swoop race entry/exit cues, gear watch, race clock and the obstacle /
+    // accelerator-pad spatial audio. Self-gated on CSWMiniGame.type == 1, so it
+    // is inert outside a race. BOTH GAMES since the minigame port
+    // (2026-08-15): KOTOR 2 keeps the whole CSWMiniGame / CSWTrackFollower /
+    // CSWMiniGameObjectArray architecture — its three swoop areas (211TEL,
+    // 371NAR, 510OND) load the same Type==1 minigame, and even stamp the same
+    // MIN_TIME_* start globals the race clock reads. See docs/kotor2-port.md.
+    PHASE("swoop_race", acc::swoop_race::Tick());
 
+    if (k1) {
         // Turret / space-combat gunner minigame — shares CSWMiniGame with the
-        // swoop race but reports type==3. Entry/exit announce + reticle diag.
+        // swoop race but reports type==2. Entry/exit announce + reticle diag.
+        //
+        // STILL KOTOR 1 ONLY, but NOT for the reason previously recorded: KOTOR
+        // 2 does have turret minigames (107PER, 421DXN, 505OND all carry a
+        // Type==2 mini-game struct). The module is gated because its own
+        // constants and its aim-assist tuning have not been ported or tested —
+        // not because the subsystem is absent. The engine surface it shares
+        // with the swoop race is now resolved, so the remaining work is the
+        // turret-specific offsets plus one test round.
         PHASE("turret_game", acc::turret_game::Tick());
     }
 
@@ -950,7 +968,10 @@ void Dispatch() {
 
     // Drain the Pazaak deck-builder's staged add/remove/play before the generic
     // pending-op drain (a Play queues an Activate that drains in TickPendingOps).
-    if (k1) PHASE("pazaakdeck", acc::menus::pazaakdeck::Tick());
+    // Both games since the minigame port (2026-08-15) — it no-ops unless its own
+    // input handler staged something, which only happens on a real
+    // CSWGuiPazaakStart.
+    PHASE("pazaakdeck", acc::menus::pazaakdeck::Tick());
 
     // Drain queued actions LAST — monitors above must see consistent state.
     PHASE("menus.TickPendingOps", acc::menus::TickPendingOps());

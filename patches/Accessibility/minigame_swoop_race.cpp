@@ -53,19 +53,43 @@ using acc::minigame::CallAsCast;
 // ============================================================================
 //
 // CSWCArea.mini_game (verified line 8726, after rooms@+0x260):
-const size_t kClientAreaMiniGameOffset      = acc::off::Todo(0x264);
+//
+// KOTOR 2 = +0x268. Witnessed as a WRITE, not inferred: the K2 area's
+// minigame-load path @0x007A2FB0 allocates 0x11c bytes, runs the CSWMiniGame
+// ctor @0x00839260 on it, and stores the result with `mov [ecx+0x268], edx`;
+// the reader at 0x007AA940 loads the same slot. The +4 shift matches the map-pin
+// array's (kClientAreaMapPinsOffset, 0x1c4 -> 0x1c8) — CSWCArea gained one dword
+// low down and everything above moved together. Same delta again at the tail of
+// the CSWMiniGame ctor, which takes the area's resref from area+0x110 on K2
+// where KOTOR 1 takes it from +0x10c.
+const size_t kClientAreaMiniGameOffset      = acc::off::Pick(0x264, 0x268);
 
 // CSWMiniGame (line 9309). type/counts confirmed by name; obstacle data
 // pointer at +0x44 + count at +0x48 confirmed from the patch-
 // 20260524-163552.log first-fire byte dump (obstacles_ptr=0x1721AA08,
 // count=22, the resref "m03mg" sits at the +0x0c CResRef as expected).
-const size_t kMiniGameVtableOffset          = acc::off::Todo(0x00);  // pointer
-const size_t kMiniGameResrefOffset          = acc::off::Todo(0x0c);  // CResRef[16]
-const size_t kMiniGamePlayerOffset          = acc::off::Todo(0x24);
-const size_t kMiniGameEnemyCountOffset      = acc::off::Todo(0x30);
-const size_t kMiniGameObstacleDataOffset    = acc::off::Todo(0x44);  // CSWMiniGameObject** (verified live)
-const size_t kMiniGameObstacleCountOffset   = acc::off::Todo(0x48);
-const size_t kMiniGameTypeOffset            = acc::off::Todo(0x80);  // 1=swoop, 2=turret
+//
+// KOTOR 2: CSWMiniGame is UNCHANGED through +0xec and merely grows a tail
+// (0xf0 -> 0x11c: a unit Vector, the swoopupgrade.2da handle, and six per-level
+// upgrade rows — K2's swoop-bike upgrades). Every field below is therefore
+// Same(), each with its own witness in the K2 twins:
+//   * ctor @0x00839260 — area at +0x28 (its only argument), player +0x24 nulled,
+//     near/far clip 0.1f/100.0f at +0x68/+0x6c, view angle 65.0f at +0x70, and
+//     five CExoArrayList triples constructed at +0x2c / +0x38 / +0x44 / +0x50 /
+//     +0x5c, exactly the five KOTOR 1 zeroes inline (so the enemy id list stays
+//     at +0x2c with its count at +0x30, and the obstacle list at +0x44 / +0x48);
+//   * Load @0x0083db30 — branches on `[this+0x80] == 1` (swoop) vs `== 2`
+//     (turret) to pick the MovementPerSec default, writes UseInertia/DoBumping
+//     at +0x94/+0x95 and negates AxisX/AxisY at +0x84/+0x88;
+//   * the resref lives in the CResHelper base at +0xc on both, and the streaming
+//     sound source at +0x1c.
+const size_t kMiniGameVtableOffset          = acc::off::Same(0x00);  // pointer
+const size_t kMiniGameResrefOffset          = acc::off::Same(0x0c);  // CResRef[16]
+const size_t kMiniGamePlayerOffset          = acc::off::Same(0x24);
+const size_t kMiniGameEnemyCountOffset      = acc::off::Same(0x30);
+const size_t kMiniGameObstacleDataOffset    = acc::off::Same(0x44);  // CSWMiniGameObject** (verified live)
+const size_t kMiniGameObstacleCountOffset   = acc::off::Same(0x48);
+const size_t kMiniGameTypeOffset            = acc::off::Same(0x80);  // 1=swoop, 2=turret
                                                         // (CSWMiniGame::Load sets
                                                         // type ONLY to 1 or 2; was
                                                         // mis-read at +0x84=axis_x,
@@ -79,14 +103,25 @@ constexpr uint32_t kMiniGameTypeSwoop           = 1;
 //   +0x68..0x73  CExoArrayList models
 //   +0x80        looping
 //   +0x98        speed (float)
-const size_t kFollowerSpeedOffset           = acc::off::Todo(0x98);
+//
+// KOTOR 2: unmoved. `speed` sits BELOW the script-CResRef array that grew from
+// ten entries to thirteen (see minigame_aim.h), so it is one of the fields the
+// +0x30 shift does not reach — its ctor twin @0x00833ba0 writes the same 100.0f
+// default to dword index 0x26 = +0x98.
+const size_t kFollowerSpeedOffset           = acc::off::Same(0x98);
 
 // CSWMiniPlayer (line 15382, extends CSWTrackFollower size 0x1a4).
 // Tunnel-frame offset (X=lane, Y=forward, Z=vertical) and the speed
 // envelope.
-const size_t kMiniPlayerOffsetVectorOffset  = acc::off::Todo(0x1c4);
-const size_t kMiniPlayerMinSpeedOffset      = acc::off::Todo(0x1d8);
-const size_t kMiniPlayerMaxSpeedOffset      = acc::off::Todo(0x1dc);
+//
+// KOTOR 2 adds 0x30 to all three (follower base 0x1a4 -> 0x1d4 — K2's
+// CSWMiniEnemy allocates exactly 0x1d4). min/max speed are direct witnesses:
+// SetMinSpeed @0x00838240 writes +0x208, SetMaxSpeed @0x00838290 writes +0x20c,
+// both reached from CSWMiniPlayer::Load's "Minimum_Speed" / "Maximum_Speed"
+// reads. Full reasoning at kMiniPlayerOffsetVectorOffset in minigame_aim.h.
+const size_t kMiniPlayerOffsetVectorOffset  = acc::off::Pick(0x1c4, 0x1f4);
+const size_t kMiniPlayerMinSpeedOffset      = acc::off::Pick(0x1d8, 0x208);
+const size_t kMiniPlayerMaxSpeedOffset      = acc::off::Pick(0x1dc, 0x20c);
 
 // CSWMGObstacle / CSWMiniEnemy position-resolution offsets, vtable
 // downcast slots, and the global CSWMiniGameObjectArray layout were
@@ -300,42 +335,34 @@ bool LatchedStillValid() {
 // 2026-06-23 (ExecuteCommandGetTimeHour / GetTimeMillisecond / GetGlobalNumber
 // and the CWorldTimer / CSWGlobalVariableTable accessors). The start stamp is
 // constant for the race, so it's cached on first valid read.
-const uintptr_t kAddrCServerExoAppGetWorldTimer = acc::addr::R(0x004aede0);
-const uintptr_t kAddrCWorldTimerGetWorldTime = acc::addr::R(0x004ade40);
-const uintptr_t kAddrCServerExoAppGetGlobalVarTable = acc::addr::R(0x004aee60);
-const uintptr_t kAddrGlobalVarTableGetValueNumber = acc::addr::R(0x00529240);
-const size_t    kWorldTimerMinutesPerHourOffset     = acc::off::Todo(0x38);  // byte
+//
+// KOTOR 2 uses the SAME script scheme — its three swoop tracks (211TEL, 371NAR,
+// 510OND, the Type==1 minigame areas) stamp MIN_TIME_HOUR/MIN/SEC/MIL from their
+// own heartbeat.ncs, exactly as KOTOR 1's do — so this whole reader ports, with
+// only the two engine addresses changing:
+//   * GetWorldTimer @0x0051C370 — `[this+4]` then `[internal+0x10048]`, the same
+//     internal slot as KOTOR 1; cross-checked against the two call sites that
+//     inline it (0x0051D790 / 0x0051E170) and hand the result straight to
+//     GetWorldTime.
+//   * GetWorldTime @0x0051AD20 — instruction-for-instruction KOTOR 1's: paused
+//     check at [this+0x24], the fast path copying [this+0x28] to *outDay and
+//     [this+0x2c] to *outMs, the slow path dividing the snapshot by 1000 and
+//     [this+0x3c]. Four confirmed field offsets in a row is what makes
+//     minutes_per_hour Same() below rather than a guess — and it has its own
+//     witness anyway: K2's hour/minute split @0x0051AB40 reads it with the same
+//     `movzx ecx, byte ptr [reg+0x38]` KOTOR 1's GetWorldTimeHour uses.
+// The global-variable pair moved to acc::engine::ReadGlobalNumber (engine_area),
+// which this file used to duplicate byte for byte; its K2 twins are documented
+// there.
+const uintptr_t kAddrCServerExoAppGetWorldTimer =
+    acc::addr::Pick(0x004aede0, 0x0051C370);
+const uintptr_t kAddrCWorldTimerGetWorldTime =
+    acc::addr::Pick(0x004ade40, 0x0051AD20);
+const size_t    kWorldTimerMinutesPerHourOffset     = acc::off::Same(0x38);  // byte
 
 typedef void* (__thiscall* PFN_GetWorldTimer)(void* server);
 typedef void  (__thiscall* PFN_GetWorldTime)(void* timer, uint32_t* outDay,
                                              uint32_t* outMs);
-typedef void* (__thiscall* PFN_GetGlobalVarTable)(void* server);
-typedef void  (__thiscall* PFN_GetValueNumber)(void* table, void* nameExoStr,
-                                               int* outValue);
-
-// Matches CExoString { char* c_string; ulong length; }. GetValueNumber only
-// reads it (hash + compare), never frees — a stack literal is safe.
-struct EngineExoString { const char* c_string; uint32_t length; };
-
-// One global NUMBER (engine stores it as a byte) by name. -1 on failure; the
-// engine writes 0 for an unknown name.
-int ReadGlobalNumber(void* server, const char* name) {
-    if (!server || !name) return -1;
-    __try {
-        auto getTable = reinterpret_cast<PFN_GetGlobalVarTable>(
-            kAddrCServerExoAppGetGlobalVarTable);
-        void* table = getTable(server);
-        if (!table) return -1;
-        EngineExoString nameStr{ name, static_cast<uint32_t>(std::strlen(name)) };
-        int value = 0;  // GetValueNumber writes only the low byte
-        auto getNum = reinterpret_cast<PFN_GetValueNumber>(
-            kAddrGlobalVarTableGetValueNumber);
-        getNum(table, &nameStr, &value);
-        return value & 0xff;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return -1;
-    }
-}
 
 // Current world-clock time-of-day in ms (the value GetTime* read) + the
 // calendar's minutes-per-hour. False on any null link / SEH fault.
@@ -435,10 +462,11 @@ void TickRaceTimer(void* miniGame) {
     if (!g_state.have_start_ms) {
         uint32_t nowMs = 0, mph = 2;
         if (!ReadWorldClockMs(server, nowMs, mph)) return;
-        const int sH = ReadGlobalNumber(server, "MIN_TIME_HOUR");
-        const int sM = ReadGlobalNumber(server, "MIN_TIME_MIN");
-        const int sS = ReadGlobalNumber(server, "MIN_TIME_SEC");
-        const int sC = ReadGlobalNumber(server, "MIN_TIME_MIL");  // centiseconds
+        using acc::engine::ReadGlobalNumber;
+        const int sH = ReadGlobalNumber("MIN_TIME_HOUR");
+        const int sM = ReadGlobalNumber("MIN_TIME_MIN");
+        const int sS = ReadGlobalNumber("MIN_TIME_SEC");
+        const int sC = ReadGlobalNumber("MIN_TIME_MIL");  // centiseconds
         if (sH < 0 || sM < 0 || sS < 0 || sC < 0) return;
         const uint32_t startMs = static_cast<uint32_t>(
             (((sH * static_cast<int>(mph) + sM) * 60 + sS) * 1000) + sC * 10);

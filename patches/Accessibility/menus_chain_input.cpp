@@ -230,7 +230,8 @@ void HandleEnterActivation(void* activePanel, int code, int val, bool& consumed)
         }
     }
 
-    // Pazaak wager popup less/more buttons (CSWGuiSpeedButton, gui ids 4/5).
+    // Pazaak wager popup less/more buttons (CSWGuiSpeedButton; .gui ids 4/5 on
+    // KOTOR 1, 6/7 on KOTOR 2 — see acc::pazaak::WagerLessButtonGuiId).
     // They act only on their push callback (OnMinus/OnPlusButtonPushed →
     // panel HandleInputEvent 0x2f/0x30); the generic vtable[15] activate
     // (0x27) they ignore — its switch case 0x27 is the popup's *commit*, and
@@ -245,10 +246,10 @@ void HandleEnterActivation(void* activePanel, int code, int val, bool& consumed)
         __try {
             int cid = *reinterpret_cast<int*>(
                 reinterpret_cast<unsigned char*>(e.control) + kControlIdOffset);
-            if (cid == 4) {
+            if (cid == acc::pazaak::WagerLessButtonGuiId()) {
                 isWagerStepButton = true;
                 wagerStepCode = acc::pazaak::kWagerLessCode;
-            } else if (cid == 5) {
+            } else if (cid == acc::pazaak::WagerMoreButtonGuiId()) {
                 isWagerStepButton = true;
                 wagerStepCode = acc::pazaak::kWagerMoreCode;
             }

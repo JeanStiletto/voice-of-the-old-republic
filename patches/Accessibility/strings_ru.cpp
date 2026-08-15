@@ -172,7 +172,10 @@ const char* Get(Id id) {
         case Id::FmtTransitionLoading: return "\xC7\xE0\xE3\xF0\xF3\xE7\xEA\xE0: %s";
 
         case Id::DoorOpen:             return "\xEE\xF2\xEA\xF0\xFB\xF2\xE0";
-        case Id::DoorLocked:           return "\xE7\xE0\xEF\xE5\xF0\xF2\xE0";
+        // "Р·Р°РїРµСЂС‚Рѕ" вЂ” impersonal neuter, not the feminine "Р·Р°РїРµСЂС‚Р°": the suffix
+        // is appended to whatever name the door object carries, and those are not
+        // all feminine ("Р›СЋРє", "РЎРёР»РѕРІРѕРµ РїРѕР»Рµ"). Native-speaker correction.
+        case Id::DoorLocked:           return "\xE7\xE0\xEF\xE5\xF0\xF2\xEE";
         // "РѕС‚РїРµСЂС‚Р°"
         case Id::DoorUnlocked:         return "\xEE\xF2\xEF\xE5\xF0\xF2\xE0";
         case Id::DoorCosmetic:         return "\xE4\xE5\xEA\xEE\xF0\xE0\xF2\xE8\xE2\xED\xE0\xFF";
@@ -387,8 +390,8 @@ const char* Get(Id id) {
         case Id::FmtStorePriceSell:         return "\xD6\xE5\xED\xE0 %d \xEA\xF0\xE5\xE4\xE8\xF2\xEE\xE2, \xF3 \xE2\xE0\xF1 %d";
         case Id::StoreModeBuy:              return "\xD0\xE5\xE6\xE8\xEC \xEF\xEE\xEA\xF3\xEF\xEA\xE8";
         case Id::StoreModeSell:             return "\xD0\xE5\xE6\xE8\xEC \xEF\xF0\xEE\xE4\xE0\xE6\xE8";
-        case Id::FmtCraftCost:              return "Стоимость %d";
-        case Id::FmtCraftYield:             return "Даёт %d";
+        case Id::FmtCraftCost:              return "пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ %d";
+        case Id::FmtCraftYield:             return "пїЅпїЅпїЅ %d";
         case Id::StoreCannotSell:           return "\xCD\xE5\xEB\xFC\xE7\xFF \xEF\xF0\xEE\xE4\xE0\xF2\xFC";
         case Id::StoreCannotBuy:            return "\xCD\xE5\xEB\xFC\xE7\xFF \xEA\xF3\xEF\xE8\xF2\xFC";
         case Id::FmtStoreSoldFor:           return "\xCF\xF0\xEE\xE4\xE0\xED\xEE \xE7\xE0 %d \xEA\xF0\xE5\xE4\xE8\xF2\xEE\xE2";
@@ -404,6 +407,17 @@ const char* Get(Id id) {
         case Id::PazaakFmtPlain:         return "%d";
         case Id::PazaakFmtFlipBoth:      return "\xEF\xEB\xFE\xF1 \xE8\xEB\xE8 \xEC\xE8\xED\xF3\xF1 %d";
         case Id::PazaakFmtFlipCurrently: return "%s, \xF1\xE5\xE9\xF7\xE0\xF1 %s";
+        // KOTOR 2 special cards. Cyrillic, CP1251 (see CodepageFor).
+        case Id::PazaakFmtCardTiebreaker:  // reshayushchaya karta
+            return "%s, \xF0\xE5\xF8\xE0\xFE\xF9\xE0\xFF \xEA\xE0\xF0\xF2\xE0";
+        case Id::PazaakCardDouble:         // karta udvoeniya
+            return "\xEA\xE0\xF0\xF2\xE0 \xF3\xE4\xE2\xEE\xE5\xED\xE8\xFF";
+        case Id::PazaakCardTwoFour:        // 2 ili 4
+            return "2 \xE8\xEB\xE8 4";
+        case Id::PazaakCardThreeSix:       // 3 ili 6
+            return "3 \xE8\xEB\xE8 6";
+        case Id::PazaakCardValue:          // karta znacheniya
+            return "\xEA\xE0\xF0\xF2\xE0 \xE7\xED\xE0\xF7\xE5\xED\xE8\xFF";
         case Id::PazaakFmtYouDrew:       return "\xC2\xFB \xE2\xE7\xFF\xEB\xE8 %s. \xC2\xE0\xF8\xE0 \xF1\xF3\xEC\xEC\xE0 %d.";
         case Id::PazaakOverTwenty:       return "\xC1\xEE\xEB\xFC\xF8\xE5 \xE4\xE2\xE0\xE4\xF6\xE0\xF2\xE8.";
         case Id::PazaakFmtYouPlayed:     return "\xD1\xFB\xE3\xF0\xE0\xED\xEE %s. \xC2\xE0\xF8\xE0 \xF1\xF3\xEC\xEC\xE0 %d.";
@@ -425,12 +439,15 @@ const char* Get(Id id) {
         case Id::PazaakNoPlayable:       return "\xCD\xE5\xF2 \xEA\xE0\xF0\xF2 \xE4\xEB\xFF \xE8\xE3\xF0\xFB.";
         case Id::PazaakNotYourTurn:      return "\xD1\xE5\xE9\xF7\xE0\xF1 \xED\xE5 \xE2\xE0\xF8 \xF5\xEE\xE4.";
         case Id::PazaakChooseSign:       return "\xC2\xFB\xE1\xE5\xF0\xE8\xF2\xE5 \xE7\xED\xE0\xEA. \xC2\xEB\xE5\xE2\xEE \xE8\xEB\xE8 \xE2\xEF\xF0\xE0\xE2\xEE \xE4\xEB\xFF \xF1\xEC\xE5\xED\xFB, Enter \xF7\xF2\xEE\xE1\xFB \xF1\xFB\xE3\xF0\xE0\xF2\xFC.";
+        case Id::PazaakChooseSignAndValue:
+            return "\xC2\xFB\xE1\xE5\xF0\xE8\xF2\xE5 \xE7\xED\xE0\xEA \xE8 \xE7\xED\xE0\xF7\xE5\xED\xE8\xE5. \xC2\xEB\xE5\xE2\xEE \xE8\xEB\xE8 \xE2\xEF\xF0\xE0\xE2\xEE: \xE7\xED\xE0\xEA, \xE2\xE2\xE5\xF0\xF5 \xE8\xEB\xE8 \xE2\xED\xE8\xE7: \xE7\xED\xE0\xF7\xE5\xED\xE8\xE5, Enter: \xE8\xE3\xF0\xE0\xF2\xFC.";
         case Id::PazaakCancelled:        return "\xCE\xF2\xEC\xE5\xED\xE5\xED\xEE.";
         case Id::PazaakDeckAvailable:    return "%s, \xE4\xEE\xF1\xF2\xF3\xEF\xED\xEE %d";
         case Id::PazaakDeckNoneLeft:     return "%s, \xED\xE5 \xEE\xF1\xF2\xE0\xEB\xEE\xF1\xFC";
         case Id::PazaakDeckSlotFilled:   return "\xDF\xF7\xE5\xE9\xEA\xE0 \xEA\xEE\xEB\xEE\xE4\xFB %d: %s";
         case Id::PazaakDeckSlotEmpty:    return "\xDF\xF7\xE5\xE9\xEA\xE0 \xEA\xEE\xEB\xEE\xE4\xFB %d: \xEF\xF3\xF1\xF2\xEE";
         case Id::PazaakDeckPlay:         return "\xC8\xE3\xF0\xE0\xF2\xFC, %d \xE8\xE7 10 \xE2 \xEA\xEE\xEB\xEE\xE4\xE5";
+        case Id::PazaakDeckCleared:      return "\xCA\xEE\xEB\xEE\xE4\xE0 \xEE\xF7\xE8\xF9\xE5\xED\xE0.";
         case Id::PazaakDeckAdded:        return "\xC4\xEE\xE1\xE0\xE2\xEB\xE5\xED\xEE %s. %d \xE8\xE7 10.";
         case Id::PazaakDeckRemoved:      return "\xD3\xE4\xE0\xEB\xE5\xED\xEE %s.";
         case Id::PazaakDeckFull:         return "\xCA\xEE\xEB\xEE\xE4\xE0 \xE7\xE0\xEF\xEE\xEB\xED\xE5\xED\xE0.";
@@ -759,7 +776,7 @@ const char* Get(Id id) {
         case Id::KbNameQueueClearAll:       return "\xCE\xF7\xE8\xF1\xF2\xE8\xF2\xFC \xEE\xF7\xE5\xF0\xE5\xE4\xFC";
         case Id::KbNameContainerGiveMode:   return "\xD0\xE5\xE6\xE8\xEC \xEF\xE5\xF0\xE5\xE4\xE0\xF7\xE8 \xE2 \xEA\xEE\xED\xF2\xE5\xE9\xED\xE5\xF0\xE5";
         case Id::KbNameStoreModeToggle:     return "\xCC\xE0\xE3\xE0\xE7\xE8\xED: \xEF\xEE\xEA\xF3\xEF\xEA\xE0 \xE8\xEB\xE8 \xEF\xF0\xEE\xE4\xE0\xE6\xE0";
-        case Id::KbNameCraftViewToggle:     return "Верстак: создание или разбор";
+        case Id::KbNameCraftViewToggle:     return "пїЅпїЅпїЅпїЅпїЅпїЅпїЅ: пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ";
         case Id::KbNameEditboxReReadUp:     return "\xCF\xEE\xEB\xE5 \xE2\xE2\xEE\xE4\xE0: \xEF\xE5\xF0\xE5\xF7\xE8\xF2\xE0\xF2\xFC \xE2\xE2\xE5\xF0\xF5";
         case Id::KbNameEditboxReReadDown:   return "\xCF\xEE\xEB\xE5 \xE2\xE2\xEE\xE4\xE0: \xEF\xE5\xF0\xE5\xF7\xE8\xF2\xE0\xF2\xFC \xE2\xED\xE8\xE7";
         case Id::KbNameEditboxSubmit:       return "\xCF\xEE\xE4\xF2\xE2\xE5\xF0\xE4\xE8\xF2\xFC \xE2\xE2\xEE\xE4";

@@ -1,5 +1,16 @@
 # Turret / swoop minigame — engine-defined model (CANONICAL)
 
+> **KOTOR 2 (added 2026-08-15).** This model holds there too: same classes,
+> same vtable slot counts, same `type` values, same object array. Two struct
+> deltas to apply when reading K2 addresses against this document —
+> `CSWTrackFollower` is 0x30 bigger (thirteen script CResRefs instead of ten,
+> for K2's OnAccelerate / OnBrake / OnHitWorld), so **every `CSWMiniPlayer`
+> offset quoted below is +0x30 on K2** (`offset` 0x1c4 -> 0x1f4, min/max speed
+> 0x1d8/0x1dc -> 0x208/0x20c); and `Gob`'s world position moved 0x78 -> 0xa4.
+> Everything at or below `CSWTrackFollower +0x98` is unmoved. K2 also HAS the
+> turret game (107PER, 421DXN, 505OND are Type==2 areas) — an earlier note
+> claiming otherwise was wrong. Ledger: `docs/kotor2-port.md`.
+
 This is the **engine-confirmed** model of the KOTOR minigame subsystem, read
 directly from Lane's Ghidra DB (decompile, 2026-06-05). It supersedes every
 runtime-measured theory in `archiev/turret-difficulty-investigation.md` and in the

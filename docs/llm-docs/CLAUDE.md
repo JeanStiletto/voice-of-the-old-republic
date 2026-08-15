@@ -72,16 +72,27 @@ quests or scripted moments and have no K2 counterpart:
 `floor_puzzle`, `spectator_scene`, `endar_softlock`, `tutorial_hints`,
 `map_shipped_hints`.
 
-**Minigames — per-game, not a family.** Do not assume the minigame family
-ports as a unit:
-- `minigame_turret` — **not present in KOTOR 2** (dev's determination,
-  2026-07-29). Treat the whole module as K1-only.
-- `minigame_swoop_race` / `minigame_swoop_audio` — swoop racing exists in
-  K2 but the tracks, pads and tuning differ; expect re-tuning, not a
-  straight port.
-- `minigame_pazaak` — exists in K2, rules and UI differ.
-- `minigame_aim` — the shared primitives. Engine-shaped
-  (CSWMiniPlayer.offset), so it ports as far as the struct layout does.
+**Minigames — the ENGINE is a family, the content is not.** Superseded
+2026-08-15 by the minigame port; the earlier per-module guesses here were
+mostly wrong. KOTOR 2 keeps the whole minigame architecture — every class,
+every vtable slot count, the 255-slot object array, the four downcast
+slots. What differs is data (K2's swoop tracks carry up to 151 obstacles
+where K1's carry 22) and two struct widenings (CSWTrackFollower +0x30 for
+three extra script slots; CPazaakCard 8 -> 12 bytes). Full ledger in
+`docs/kotor2-port.md` under WHERE TO RESUME.
+- `minigame_swoop_race` / `minigame_swoop_audio` — **ported 2026-08-15**,
+  both games. Untested in game at the time of writing.
+- `minigame_pazaak` / `menus_pazaakdeck` — **ported 2026-08-15**, both
+  games. K2 adds five side-deck cards at indices 18..22 and pushes its
+  main deck to 23..32; K1's `index >= 18` main-deck test does NOT
+  transfer.
+- `minigame_turret` — still K1-gated, but **KOTOR 2 does have the turret
+  minigame** (107PER / 421DXN / 505OND each carry a Type==2 mini-game
+  struct). The "not present in KOTOR 2" claim recorded here on 2026-07-29
+  was wrong. The gate is now about unported turret-specific constants and
+  untested aim-assist tuning; the shared engine surface is resolved.
+- `minigame_aim` — the shared primitives, fully ported. Its one Pick is
+  CSWMiniPlayer.offset (0x1c4 -> 0x1f4).
 
 **Ports for free — no engine dependency.** `strfmt.h`, `announce_degrees`,
 the `strings*` localisation tables, and the debounce/geometry/formatting

@@ -52,7 +52,10 @@ bool     SafeReadVector(void* base, size_t off, Vector& out);
 // CClientExoAppInternal holds the minigame object array (obstacles, accelerator
 // pads, track followers) at offset 0. Resolution walks
 // AppManager -> CClientExoApp -> internal -> array.
-const size_t kClientInternalMgoArrayOffset = acc::off::Todo(0x0);
+//
+// KOTOR 2: identical. Witnessed in its GetMGOArray twin @0x00740070, which is
+// literally `internal = [this+4]; return [internal+0]` — the same two hops.
+const size_t kClientInternalMgoArrayOffset = acc::off::Same(0x0);
 
 // Returns the minigame object array, or nullptr if any link of the chain is
 // null or faults (i.e. no minigame is live).
@@ -69,7 +72,15 @@ void* CallAsCast(void* obj, size_t vtableSlotOffset);
 // caller-supplied Vector. Reading the follower's own transform is not
 // equivalent — the model is what the engine actually renders and what the
 // spatial cues must track.
-const size_t kTrackFollowerModelsDataOffset = acc::off::Todo(0x68);
+//
+// KOTOR 2: both identical, and the identification is exact — its
+// CSWTrackFollower::GetPosition twin @0x00835f50 reads size at +0x6c, data at
+// +0x68, takes element [0], and calls the model's vtable[+0x64] to copy three
+// floats, instruction for instruction like KOTOR 1's @0x0066d5d0. (The list's
+// element STRIDE is 8 bytes in BOTH games — the engine's own PlayAnimation walk
+// indexes `data[i*8]` on each — so `data[0]` being the bare model pointer holds
+// either way. Only index 0 is ever read here.)
+const size_t kTrackFollowerModelsDataOffset = acc::off::Same(0x68);
 constexpr size_t kModelVtableSlotGetPosition    = 0x64;
 
 // World position of `follower`'s first model. False (out untouched) if the
@@ -78,7 +89,18 @@ bool ReadFollowerPosition(void* follower, Vector& out);
 
 // CSWMiniPlayer.offset — the per-tick-integrated aim/lane field. See the file
 // header for the per-game interpretation of its components.
-const size_t kMiniPlayerOffsetVectorOffset = acc::off::Todo(0x1c4);
+//
+// KOTOR 2 = +0x1f4, i.e. KOTOR 1 + 0x30. That delta is CSWTrackFollower's, not
+// CSWMiniPlayer's: K2's follower carries THIRTEEN per-object script CResRefs
+// instead of ten (its .are Scripts struct gained OnAccelerate / OnBrake /
+// OnHitWorld — the swoop jump), so the base class grew by 3 * 0x10 and every
+// CSWMiniPlayer field above it shifted by exactly that. Anchored at both ends:
+// the follower's own sphere_radius (+0x84) and speed (+0x98) are UNMOVED (they
+// sit below the script array), while min/max speed are +0x30 up, witnessed
+// directly in K2's SetMinSpeed/SetMaxSpeed (@0x00838240 / @0x00838290 write
+// +0x208 / +0x20c). `offset` is the first Vector its constructor zeroes, at
+// dword index 0x7d = +0x1f4.
+const size_t kMiniPlayerOffsetVectorOffset = acc::off::Pick(0x1c4, 0x1f4);
 
 // Read / write the whole offset Vector on a CSWMiniPlayer `player` pointer.
 // Read returns false (and leaves `out` untouched) on a null/faulting player;

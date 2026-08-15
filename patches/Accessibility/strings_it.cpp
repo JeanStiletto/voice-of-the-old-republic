@@ -386,6 +386,11 @@ const char* Get(Id id) {
         case Id::PazaakFmtPlain:         return "%d";
         case Id::PazaakFmtFlipBoth:      return "pi\xF9 o meno %d";
         case Id::PazaakFmtFlipCurrently: return "%s, attualmente %s";
+        case Id::PazaakFmtCardTiebreaker: return "%s, carta spareggio";
+        case Id::PazaakCardDouble:       return "carta doppia";
+        case Id::PazaakCardTwoFour:      return "2 o 4";
+        case Id::PazaakCardThreeSix:     return "3 o 6";
+        case Id::PazaakCardValue:        return "carta valore";
         case Id::PazaakFmtYouDrew:       return "Peschi %s. Il tuo totale %d.";
         case Id::PazaakOverTwenty:       return "Oltre venti.";
         case Id::PazaakFmtYouPlayed:     return "%s giocata. Il tuo totale %d.";
@@ -407,12 +412,15 @@ const char* Get(Id id) {
         case Id::PazaakNoPlayable:       return "Nessuna carta da giocare.";
         case Id::PazaakNotYourTurn:      return "Non \xE8 il tuo turno.";
         case Id::PazaakChooseSign:       return "Scegli il segno. Sinistra o destra per cambiare, Invio per giocare.";
+        case Id::PazaakChooseSignAndValue:
+            return "Scegli segno e valore. Sinistra o destra per il segno, su o gi\xF9 per il valore, Invio per giocare.";
         case Id::PazaakCancelled:        return "Annullato.";
         case Id::PazaakDeckAvailable:    return "%s, %d disponibili";
         case Id::PazaakDeckNoneLeft:     return "%s, nessuna rimasta";
         case Id::PazaakDeckSlotFilled:   return "Posto %d: %s";
         case Id::PazaakDeckSlotEmpty:    return "Posto %d: vuoto";
         case Id::PazaakDeckPlay:         return "Gioca, %d su 10 nel mazzo";
+        case Id::PazaakDeckCleared:      return "Mazzo svuotato.";
         case Id::PazaakDeckAdded:        return "Aggiunto %s. %d su 10.";
         case Id::PazaakDeckRemoved:      return "Rimosso %s.";
         case Id::PazaakDeckFull:         return "Mazzo pieno.";

@@ -391,6 +391,13 @@ const char* Get(Id id) {
         case Id::PazaakFmtPlain:         return "%d";
         case Id::PazaakFmtFlipBoth:      return "plus lub minus %d";
         case Id::PazaakFmtFlipCurrently: return "%s, obecnie %s";
+        // KOTOR 2 special cards. CP1250 (see CodepageFor): a-ogonek = 0xB9,
+        // s-acute = 0x9C.
+        case Id::PazaakFmtCardTiebreaker: return "%s, karta rozstrzygaj\xB9""ca";
+        case Id::PazaakCardDouble:       return "karta podwojenia";
+        case Id::PazaakCardTwoFour:      return "2 lub 4";
+        case Id::PazaakCardThreeSix:     return "3 lub 6";
+        case Id::PazaakCardValue:        return "karta warto\x9C""ci";
         case Id::PazaakFmtYouDrew:       return "Dobra\xB3""e\x9C %s. Twoja suma %d.";
         case Id::PazaakOverTwenty:       return "Ponad dwadzie\x9C""cia.";
         case Id::PazaakFmtYouPlayed:     return "Zagrano %s. Twoja suma %d.";
@@ -412,12 +419,15 @@ const char* Get(Id id) {
         case Id::PazaakNoPlayable:       return "Brak kart do zagrania.";
         case Id::PazaakNotYourTurn:      return "Nie twoja kolej.";
         case Id::PazaakChooseSign:       return "Wybierz znak. Lewo lub prawo zmienia, Enter zagrywa.";
+        case Id::PazaakChooseSignAndValue:
+            return "Wybierz znak i warto\x9C""\xE6. Lewo lub prawo: znak, g\xF3""ra lub d\xF3""\xB3: warto\x9C""\xE6, Enter: zagraj.";
         case Id::PazaakCancelled:        return "Anulowano.";
         case Id::PazaakDeckAvailable:    return "%s, dost\xEApne %d";
         case Id::PazaakDeckNoneLeft:     return "%s, brak";
         case Id::PazaakDeckSlotFilled:   return "Miejsce w talii %d: %s";
         case Id::PazaakDeckSlotEmpty:    return "Miejsce w talii %d: puste";
         case Id::PazaakDeckPlay:         return "Graj, %d z 10 w talii";
+        case Id::PazaakDeckCleared:      return "Tali\xEA wyczyszczono.";
         case Id::PazaakDeckAdded:        return "Dodano %s. %d z 10.";
         case Id::PazaakDeckRemoved:      return "Usuni\xEAto %s.";
         case Id::PazaakDeckFull:         return "Talia pe\xB3na.";

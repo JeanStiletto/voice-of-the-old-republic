@@ -388,6 +388,11 @@ const char* Get(Id id) {
         case Id::PazaakFmtPlain:         return "%d";
         case Id::PazaakFmtFlipBoth:      return "m\xE1s o menos %d";
         case Id::PazaakFmtFlipCurrently: return "%s, actualmente %s";
+        case Id::PazaakFmtCardTiebreaker: return "%s, carta de desempate";
+        case Id::PazaakCardDouble:       return "carta doble";
+        case Id::PazaakCardTwoFour:      return "2 o 4";
+        case Id::PazaakCardThreeSix:     return "3 o 6";
+        case Id::PazaakCardValue:        return "carta de valor";
         case Id::PazaakFmtYouDrew:       return "Robas %s. Tu total %d.";
         case Id::PazaakOverTwenty:       return "M\xE1s de veinte.";
         case Id::PazaakFmtYouPlayed:     return "Jugado %s. Tu total %d.";
@@ -409,12 +414,15 @@ const char* Get(Id id) {
         case Id::PazaakNoPlayable:       return "No hay cartas para jugar.";
         case Id::PazaakNotYourTurn:      return "No es tu turno.";
         case Id::PazaakChooseSign:       return "Elige el signo. Izquierda o derecha para cambiar, Enter para jugar.";
+        case Id::PazaakChooseSignAndValue:
+            return "Elige signo y valor. Izquierda o derecha para el signo, arriba o abajo para el valor, Intro para jugar.";
         case Id::PazaakCancelled:        return "Cancelado.";
         case Id::PazaakDeckAvailable:    return "%s, %d disponibles";
         case Id::PazaakDeckNoneLeft:     return "%s, no quedan";
         case Id::PazaakDeckSlotFilled:   return "Ranura %d: %s";
         case Id::PazaakDeckSlotEmpty:    return "Ranura %d: vac\xED""a";
         case Id::PazaakDeckPlay:         return "Jugar, %d de 10 en la baraja";
+        case Id::PazaakDeckCleared:      return "Mazo vaciado.";
         case Id::PazaakDeckAdded:        return "A\xF1""adido %s. %d de 10.";
         case Id::PazaakDeckRemoved:      return "Eliminado %s.";
         case Id::PazaakDeckFull:         return "Baraja completa.";

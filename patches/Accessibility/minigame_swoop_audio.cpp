@@ -20,6 +20,7 @@
                               //     and live race fire the same samples)
 #include "audio_loop.h"       // LoopSource — sustained warning per
                               //     obstacle / nearest-pad cue
+#include "engine_game.h"      // IsKotor2 — obstacle-density concurrency budget
 #include "engine_offsets.h"   // Vector
 #include "engine_player.h"    // GetCameraPosition (primary listener
                               //     anchor — engine swaps the player
@@ -51,8 +52,21 @@ using acc::minigame::ReadFollowerPosition;
 
 // CSWMGObstacle (line ~17456 in re/swkotor.exe.h) — AurObject pointer
 // at +0x60, then world position via the AurObject's Gob at +0x78.
-const size_t kObstacleAurObjectOffset       = acc::off::Todo(0x60);
-const size_t kAurObjectPositionOffset       = acc::off::Todo(0x78);
+//
+// KOTOR 2: the AurObject pointer is UNMOVED (its ctor twin @0x00838ad0 nulls
+// dword index 0x18 = +0x60 right after the CSWMiniGameObject base, and its
+// GetName twin @0x00838c80 reads [this+0x60] then that object's vtable[+0xc] —
+// the same two hops as KOTOR 1's, so kAurVtableSlotGetName is unchanged too).
+// CSWMiniGameObject itself is byte-identical in both games (size 0x60).
+//
+// The POSITION inside the Gob did move, 0x78 -> 0xa4. Witnessed on both sides
+// through the same door: Gob's vtable slot +0x64 is the position getter, and
+// its body is a bare "copy three floats from this+N". KOTOR 1's (0x00449980)
+// does `add ecx,0x78`; KOTOR 2's (0x00459710) does `add eax,0xa4`. That slot is
+// the one CSWTrackFollower::GetPosition calls on a model in both games, which is
+// what ties the two witnesses to the same field.
+const size_t kObstacleAurObjectOffset       = acc::off::Same(0x60);
+const size_t kAurObjectPositionOffset       = acc::off::Pick(0x78, 0xa4);
 
 // ----- Global minigame-object-array layout (Ghidra-confirmed 2026-05-24).
 //
@@ -81,7 +95,17 @@ const size_t kAurObjectPositionOffset       = acc::off::Todo(0x78);
 // non-null slot, keep the non-null returns. We make two such passes
 // per tick — one for obstacles (rocks/debris), one for enemies
 // (accelerator pads).
-const size_t kMgoArrayObjectsOffset         = acc::off::Todo(0x4);
+//
+// KOTOR 2: identical, and so is the 255. Three independent witnesses in its own
+// code — CSWMiniGameObject's ctor @0x00833000 registers itself with
+// `array[4 + mgo_index*4] = this`; the by-name lookup @0x00832eb0 walks
+// `[array + i*4 + 4]` under `cmp i, 0xff / jge`; and the AsEnemy-filtered getter
+// @0x00832e20 indexes the same way. The four downcast slots are unchanged too —
+// the vtable-slot map pairs all six minigame classes with EXACT slot counts, and
+// slots 5/6/7/8 (= +0x14/+0x18/+0x1c/+0x20) are self_return on precisely
+// CSWTrackFollower / CSWMiniPlayer / CSWMiniEnemy / CSWMGObstacle respectively,
+// return_zero everywhere else — the same fingerprint as KOTOR 1's.
+const size_t kMgoArrayObjectsOffset         = acc::off::Same(0x4);
 constexpr int    kMgoArraySlotCount             = 255;
 constexpr size_t kVtableSlotAsObstacle          = 0x20;
 constexpr size_t kVtableSlotAsEnemy             = 0x1c;
@@ -176,8 +200,12 @@ constexpr float       kAccelpadCueRangeM        = 300.0f;
 // at player.sphere_radius + pad.sphere_radius (swoop-accelpad-hit-model.md), so
 // we read BOTH live and sum them for the CROSS scoring rather than hard-coding a
 // per-track literal. speed gates the steering magnet off during the start hold.
-const size_t kFollowerSphereRadiusOffset    = acc::off::Todo(0x84);  // float
-const size_t kFollowerSpeedOffset           = acc::off::Todo(0x98);  // float
+// Both Same() on KOTOR 2 — they sit below the script-CResRef array that grew
+// there, so the +0x30 shift the CSWMiniPlayer fields take does not reach them.
+// sphere_radius has a direct witness: K2's SetSphereRadius @0x008352b0, reached
+// from CSWTrackFollower::Load's "Sphere_Radius" read, writes [this+0x84].
+const size_t kFollowerSphereRadiusOffset    = acc::off::Same(0x84);  // float
+const size_t kFollowerSpeedOffset           = acc::off::Same(0x98);  // float
 
 // ----- Lateral-pan diagnostic (added 2026-06-20) -----
 //
@@ -197,8 +225,11 @@ const size_t kFollowerSpeedOffset           = acc::off::Todo(0x98);  // float
 // Manaan 5.0) in world units; world-X tracks tunnel-X 1:1 (lane ±20).
 // CSWMiniGame.player at +0x24; CSWMiniPlayer.offset (tunnel lane coord,
 // x = lateral) at +0x1c4.
-const size_t kMiniGamePlayerOffset          = acc::off::Todo(0x24);
-const size_t kMiniPlayerOffsetVectorOffset  = acc::off::Todo(0x1c4);
+// Both mirror the declarations in minigame_swoop_race.cpp / minigame_aim.h —
+// see those for the KOTOR 2 witnesses (CSWMiniGame is unshifted; CSWMiniPlayer
+// carries the follower's +0x30).
+const size_t kMiniGamePlayerOffset          = acc::off::Same(0x24);
+const size_t kMiniPlayerOffsetVectorOffset  = acc::off::Pick(0x1c4, 0x1f4);
 constexpr float  kRadToDeg                       = 57.2957795f;
 
 // ============================================================================
@@ -405,6 +436,12 @@ enum {
     kSteerCmdNone    = 0,
     kSteerCmdRight   = 1,
     kSteerCmdAligned = 2,
+};
+// Track-axis probe verdict — see TrackAxisUsable.
+enum {
+    kAxisUndecided = 0,
+    kAxisAccepted  = 1,
+    kAxisRejected  = 2,
 };
 // Lead term, in ticks of current lateral velocity — predicts where the bike
 // drifts if you release the steer key now.
@@ -673,6 +710,12 @@ struct SpatialAudioState {
     // entry per race describing every obstacle / accelpad seen.
     bool obstacle_diag_emitted = false;
     bool accelpad_diag_emitted = false;
+
+    // Track-axis probe (see TrackAxisUsable). Decided once per race from the
+    // bike's own travel; until it is, the geometry cues stay silent.
+    int    axis_state       = kAxisUndecided;
+    bool   have_axis_origin = false;
+    Vector axis_origin      = {0.0f, 0.0f, 0.0f};
 };
 
 SpatialAudioState g_state;
@@ -731,6 +774,89 @@ const char* ReadAurObjectName(void* aurObject) {
 // Continuous obstacle-proximity cues.
 // ============================================================================
 
+// ============================================================================
+// Track-axis guard (added with the KOTOR 2 port, 2026-08-15).
+// ============================================================================
+//
+// Everything in this file assumes the track's FORWARD direction is world +Y and
+// its LANE axis is world X. That is a KOTOR 1 measurement, not an engine
+// guarantee: its three swoop tunnels run +Y and the listener's Y climbs to
+// ~4000 across a race, which is what the "obstacles behind us" filter, the
+// next-gate pick and the fixed-depth pan construction were all built on. The
+// three KOTOR 2 tracks (211TEL / 371NAR / 510OND) are different geometry and
+// nothing offline says which way they run — their obstacles are named scene
+// objects whose positions live in the room models, not in the area GFF.
+//
+// Firing this module on a track that runs some other way would not degrade
+// gracefully: "ahead" would select obstacles BEHIND the player and the pan
+// would point at the wrong lane — confidently wrong cues, the worst outcome for
+// a screen-reader user. So measure instead of assume. Sample the bike's world
+// position once the race is moving, and when it has travelled far enough for
+// the direction to be unambiguous, require +Y to dominate. A track that fails
+// leaves these cues silent and says so once in the log.
+//
+// Deliberately narrow: only the geometry-dependent cues gate on this. Race
+// entry/exit, the gear watch, the shift-ready cue and the race clock read no
+// world geometry at all and keep working on any track.
+//
+// KOTOR 1 is unaffected in practice — its tracks pass — but this runs there
+// too, so the probe itself is a K1 regression item.
+constexpr float kAxisProbeTravelU = 60.0f;  // travel needed before deciding
+constexpr float kAxisProbeDominance = 2.0f; // +Y must beat |X| and |Z| by this
+
+bool TrackAxisUsable(void* miniGame) {
+    if (g_state.axis_state == kAxisRejected) return false;
+    if (g_state.axis_state == kAxisAccepted) return true;
+
+    void* player = SafeReadPtr(miniGame, kMiniGamePlayerOffset);
+    Vector pos;
+    if (!ReadFollowerPosition(player, pos)) return false;  // undecided → silent
+
+    if (!g_state.have_axis_origin) {
+        g_state.axis_origin      = pos;
+        g_state.have_axis_origin = true;
+        return false;
+    }
+
+    const float dx = pos.x - g_state.axis_origin.x;
+    const float dy = pos.y - g_state.axis_origin.y;
+    const float dz = pos.z - g_state.axis_origin.z;
+    const float travel = std::sqrt(dx * dx + dy * dy + dz * dz);
+    if (travel < kAxisProbeTravelU) return false;  // still deciding
+
+    const bool forwardIsPlusY =
+        dy > 0.0f &&
+        dy > kAxisProbeDominance * std::fabs(dx) &&
+        dy > kAxisProbeDominance * std::fabs(dz);
+
+    g_state.axis_state = forwardIsPlusY ? kAxisAccepted : kAxisRejected;
+    acclog::Write("SwoopRace",
+                  "track axis probe: travel=(%.1f,%.1f,%.1f) len=%.1f -> %s",
+                  dx, dy, dz, travel,
+                  forwardIsPlusY ? "+Y forward, spatial cues ON"
+                                 : "NOT +Y forward, spatial cues OFF "
+                                   "(obstacle / accelpad geometry is +Y-only)");
+    return forwardIsPlusY;
+}
+
+// Cap on how many obstacle loops may sound at once, nearest first.
+//
+// KOTOR 1 never needed one: its swoop areas carry 22 obstacles over a whole
+// track, so the 300 m window holds a handful. KOTOR 2's carry 151 (211TEL), 62
+// (371NAR) and 65 (510OND) — counted from each area's own Obstacles list — and
+// an uncapped sweep there would start dozens of concurrent loops of the same
+// metallic sample, which is both a wall of noise and more 3D voices than the
+// mixer has. The cap is per-game rather than shared precisely because the
+// justification is a measured content difference; KOTOR 1's sweep stays
+// bit-identical.
+//
+// 6 is the working figure for the first K2 round: enough to hear a cluster as a
+// cluster, few enough to keep them separable. Re-tune from the round's
+// "inRange" counts, which the scan line already logs.
+int ObstacleLoopBudget() {
+    return acc::game::IsKotor2() ? 6 : kMgoArraySlotCount;
+}
+
 void TickObstacleCues(void* /*miniGame*/) {
     void* mgoArray = ResolveMgoArray();
     if (!mgoArray) {
@@ -754,8 +880,21 @@ void TickObstacleCues(void* /*miniGame*/) {
     int obstacles_found = 0;
     int obstacles_ahead = 0;
     int obstacles_in_range = 0;
+    int obstacles_dropped = 0;   // in range but over the concurrency budget
     int loops_started_this_tick = 0;
     int loops_stopped_this_tick = 0;
+
+    // In-range obstacles collected this tick, before the nearest-N cut. POD, so
+    // no destructors — this file is SEH-heavy by convention (see CLAUDE.md).
+    struct ObstacleCandidate {
+        int         slot;
+        float       dist;
+        Vector      pos;
+        const char* name;
+    };
+    ObstacleCandidate candidates[kMgoArraySlotCount];
+    int candidate_count = 0;
+
     // Per-tick "still in range" flag. Slots flipped true here are
     // either Started (loop wasn't active) or just UpdatePosition'd
     // (loop already running). At end of tick, any slot whose loop is
@@ -819,6 +958,35 @@ void TickObstacleCues(void* /*miniGame*/) {
         if (distSq > rangeSq) continue;
         ++obstacles_in_range;
 
+        // Candidate — the loop itself is decided after the sweep, because on a
+        // dense track only the nearest ObstacleLoopBudget() may sound at once.
+        candidates[candidate_count].slot = i;
+        candidates[candidate_count].dist = (distSq > 0.0f) ? std::sqrt(distSq) : 0.0f;
+        candidates[candidate_count].pos  = pos;
+        candidates[candidate_count].name = name;
+        ++candidate_count;
+    }
+
+    // Nearest-first selection. A straight partial selection sort: the budget is
+    // single digits on KOTOR 2 and the whole array on KOTOR 1 (where the loop
+    // exits immediately because there is nothing to reorder beyond the count).
+    const int budget = ObstacleLoopBudget();
+    const int sounding = (candidate_count < budget) ? candidate_count : budget;
+    for (int a = 0; a < sounding; ++a) {
+        int best = a;
+        for (int b = a + 1; b < candidate_count; ++b) {
+            if (candidates[b].dist < candidates[best].dist) best = b;
+        }
+        if (best != a) {
+            ObstacleCandidate tmp = candidates[a];
+            candidates[a] = candidates[best];
+            candidates[best] = tmp;
+        }
+    }
+    obstacles_dropped = candidate_count - sounding;
+
+    for (int c = 0; c < sounding; ++c) {
+        const int i = candidates[c].slot;
         // Single cue sample for all obstacles. Accelpads are no longer
         // routed through this sweep (they live in the enemies pool —
         // see TickAccelpadCues).
@@ -828,7 +996,8 @@ void TickObstacleCues(void* /*miniGame*/) {
         // pinned to a FIXED reference depth → pan encodes lane error only,
         // stable. Loudness comes from our manual curve on the REAL 3D
         // distance. See the design comment above.
-        const float dist = (distSq > 0.0f) ? std::sqrt(distSq) : 0.0f;
+        const Vector pos = candidates[c].pos;
+        const float dist = candidates[c].dist;
         Vector cue_pos = pos;
         cue_pos.y = listener_pos.y + kSwoopPanForwardRefM;
         const int vol_byte = SwoopVolumeByte(dist, kObstacleCueRangeM);
@@ -851,7 +1020,7 @@ void TickObstacleCues(void* /*miniGame*/) {
                               "loop start slot=%d name=[%s] "
                               "obstaclePos=(%.1f,%.1f,%.1f) "
                               "cuePos=(%.1f,%.1f,%.1f) dist=%.1f res=%s",
-                              i, name ? name : "(null)",
+                              i, candidates[c].name ? candidates[c].name : "(null)",
                               pos.x, pos.y, pos.z,
                               cue_pos.x, cue_pos.y, cue_pos.z,
                               dist, resref);
@@ -887,9 +1056,9 @@ void TickObstacleCues(void* /*miniGame*/) {
     // each tick — non-zero values mark transitions.
     acclog::Trace("SwoopRace",
                   "scan: slots=%d obstacles=%d ahead=%d inRange=%d (%.0fm) "
-                  "started=%d stopped=%d listenerY=%.1f",
+                  "overBudget=%d started=%d stopped=%d listenerY=%.1f",
                   slots_seen, obstacles_found, obstacles_ahead,
-                  obstacles_in_range, kObstacleCueRangeM,
+                  obstacles_in_range, kObstacleCueRangeM, obstacles_dropped,
                   loops_started_this_tick, loops_stopped_this_tick,
                   listener_pos.y);
 }
@@ -1278,6 +1447,7 @@ void TickAccelpadCues(void* miniGame) {
 // ============================================================================
 
 void TickSpatialAudio(void* miniGame) {
+    if (!TrackAxisUsable(miniGame)) return;
     TickObstacleCues(miniGame);
     TickAccelpadCues(miniGame);
 }
@@ -1298,6 +1468,8 @@ void ResetSpatialAudio() {
     g_state.prev_ahead_posY       = 0.0f;
     g_state.prev_ahead_padErr     = 0.0f;
     g_state.prev_ahead_fwdGap     = 0.0f;
+    g_state.axis_state            = kAxisUndecided;
+    g_state.have_axis_origin      = false;
     g_state.accelpad_line_loop.Stop();
     for (int i = 0; i < kMgoArraySlotCount; ++i) {
         g_state.obstacle_loops[i].Stop();

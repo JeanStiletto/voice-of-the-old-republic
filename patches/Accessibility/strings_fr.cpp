@@ -387,6 +387,11 @@ const char* Get(Id id) {
         case Id::PazaakFmtPlain:         return "%d";
         case Id::PazaakFmtFlipBoth:      return "plus ou moins %d";
         case Id::PazaakFmtFlipCurrently: return "%s, actuellement %s";
+        case Id::PazaakFmtCardTiebreaker: return "%s, carte de d\xE9""partage";
+        case Id::PazaakCardDouble:       return "carte double";
+        case Id::PazaakCardTwoFour:      return "2 ou 4";
+        case Id::PazaakCardThreeSix:     return "3 ou 6";
+        case Id::PazaakCardValue:        return "carte de valeur";
         case Id::PazaakFmtYouDrew:       return "Vous piochez %s. Votre total %d.";
         case Id::PazaakOverTwenty:       return "Plus de vingt.";
         case Id::PazaakFmtYouPlayed:     return "%s jou\xE9. Votre total %d.";
@@ -408,12 +413,15 @@ const char* Get(Id id) {
         case Id::PazaakNoPlayable:       return "Aucune carte \xE0 jouer.";
         case Id::PazaakNotYourTurn:      return "Ce n'est pas votre tour.";
         case Id::PazaakChooseSign:       return "Choisissez le signe. Gauche ou droite pour changer, Entr\xE9""e pour jouer.";
+        case Id::PazaakChooseSignAndValue:
+            return "Choisissez le signe et la valeur. Gauche ou droite pour le signe, haut ou bas pour la valeur, Entr\xE9""e pour jouer.";
         case Id::PazaakCancelled:        return "Annul\xE9.";
         case Id::PazaakDeckAvailable:    return "%s, %d disponibles";
         case Id::PazaakDeckNoneLeft:     return "%s, plus aucune";
         case Id::PazaakDeckSlotFilled:   return "Emplacement %d : %s";
         case Id::PazaakDeckSlotEmpty:    return "Emplacement %d : vide";
         case Id::PazaakDeckPlay:         return "Jouer, %d sur 10 dans le deck";
+        case Id::PazaakDeckCleared:      return "Deck vid\xE9.";
         case Id::PazaakDeckAdded:        return "Ajout\xE9 %s. %d sur 10.";
         case Id::PazaakDeckRemoved:      return "Retir\xE9 %s.";
         case Id::PazaakDeckFull:         return "Deck complet.";

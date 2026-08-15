@@ -36,6 +36,7 @@
                                 // interactive bit; see AppendDisabledSuffix
 #include "menus_equipstats.h"
 #include "menus_pazaakdeck.h"
+#include "minigame_pazaak.h"   // wager .gui ids (per game)
 #include "menus_internal.h"
 #include "menus_modsettings.h"
 #include "strings.h"
@@ -444,7 +445,8 @@ bool IsSoundOptionsMovieSlider(void* panel, void* control) {
 // wager-exit call, decrements it under `if (1 < value)`, and increments it under
 // `if (value < max)` where max is the next field along (0xe34, KOTOR 1 0xc98).
 const size_t kWagerCurrentValueOffset = acc::off::Pick(0xc94, 0xe30);
-constexpr int    kWagerMaxLabelGuiId      = 3;
+// LBL_MAXIMUM — .gui id 3 on KOTOR 1, 2 on KOTOR 2.
+inline int kWagerMaxLabelGuiIdFor() { return acc::pazaak::WagerMaxLabelGuiId(); }
 
 void* FindWagerMaxLabel(void* panel) {
     if (!panel) return nullptr;
@@ -458,7 +460,7 @@ void* FindWagerMaxLabel(void* panel) {
             if (!c) continue;
             int id = *reinterpret_cast<int*>(
                 reinterpret_cast<unsigned char*>(c) + kControlIdOffset);
-            if (id == kWagerMaxLabelGuiId) return c;
+            if (id == kWagerMaxLabelGuiIdFor()) return c;
         }
     } __except (EXCEPTION_EXECUTE_HANDLER) {}
     return nullptr;
@@ -637,13 +639,14 @@ const char* TryPazaakWager(void* control, void* owner,
         __try {
             int cid = *reinterpret_cast<int*>(
                 reinterpret_cast<unsigned char*>(control) + kControlIdOffset);
-            if (cid == 4 || cid == 5) {
+            const int lessId = acc::pazaak::WagerLessButtonGuiId();
+            if (cid == lessId || cid == acc::pazaak::WagerMoreButtonGuiId()) {
                 snprintf(outBuf, bufSize, "%s",
-                         acc::strings::Get(cid == 4
+                         acc::strings::Get(cid == lessId
                              ? acc::strings::Id::PazaakWagerLess
                              : acc::strings::Id::PazaakWagerMore));
                 if (outBuf[0] != '\0') source = "perkind-pazaakwager";
-            } else if (cid == kWagerMaxLabelGuiId &&
+            } else if (cid == kWagerMaxLabelGuiIdFor() &&
                        ExtractWagerRow(owner, control, outBuf, bufSize)) {
                 // Virtual top-of-chain row: live wager + max + credits.
                 source = "perkind-pazaakwager-row";

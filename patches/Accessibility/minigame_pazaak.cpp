@@ -52,54 +52,136 @@ typedef int  (__thiscall* PFN_GetTotal)(void* player);
 typedef void (__thiscall* PFN_HandleCtrl)(void* panel, void* control);
 typedef void (__thiscall* PFN_HandleInt)(void* panel, int index);
 
-const uintptr_t kAddrGetTotal = acc::addr::R(0x006e4360); // CPazaakPlayer::GetTotal
-const uintptr_t kAddrHandleContinue = acc::addr::R(0x0067ec20); // End Turn
-const uintptr_t kAddrHandleStand = acc::addr::R(0x0067ed00); // Stand
-const uintptr_t kAddrHandlePlayHandCard = acc::addr::R(0x0067ede0); // Play hand card (int slot)
+//
+// KOTOR 2 twins, all four reached from its CSWGuiPazaakGame constructor
+// @0x0088aac0 and its own ctor-registered handlers, then body-matched against
+// KOTOR 1's:
+//   * HandleContinue @0x0088F070 — registered on BTN_XTEXT (panel+0x7b10) for
+//     event 0x27. Same guard chain (`param_1 == 0 || param_1->is_active`, player
+//     not stood, state 3 or 4), same ShowHelp strrefs (0x96f1/0x7e4c/0x96e2),
+//     same tail (state = 5, timer = 0.4f, RefreshDisplay).
+//   * HandleStand @0x0088F180 — BTN_YTEXT (panel+0x7cf0). Distinguished from
+//     HandleContinue by the one line that matters: it WRITES player.stand = 1.
+//   * HandlePlayHandCard @0x0088F280 — not registered directly; the hand-card
+//     entry's own event-0x27 handler @0x0088EE30 calls it with the card
+//     control's custom_value (the slot) as its single int argument, exactly
+//     KOTOR 1's shape. Same guards (state == 3, slot 0..3, CanUse...).
+//   * GetTotal @0x008FE830 — witnessed at HandleContinue's call site, where the
+//     `this` is formed as `model + 8` (i.e. CSWPazaak.player); the body walks
+//     nine board slots at +0x30 with a 12-byte stride.
+const uintptr_t kAddrGetTotal = acc::addr::Pick(0x006e4360, 0x008FE830); // CPazaakPlayer::GetTotal
+const uintptr_t kAddrHandleContinue = acc::addr::Pick(0x0067ec20, 0x0088F070); // End Turn
+const uintptr_t kAddrHandleStand = acc::addr::Pick(0x0067ed00, 0x0088F180); // Stand
+const uintptr_t kAddrHandlePlayHandCard = acc::addr::Pick(0x0067ede0, 0x0088F280); // Play hand card (int slot)
 const uintptr_t kAddrWagerHandleInput = acc::addr::Pick(0x0067e150, 0x00887B10); // CSWGuiWagerPopup::HandleInputEvent
 typedef void (__thiscall* PFN_WagerHandleInput)(void* popup, int code, int state);
 
 // ---- Struct offsets ------------------------------------------------------
-const size_t kPanelModelOffset = acc::off::Todo(0x86d0); // CSWGuiPazaakGame->pazaak (CSWPazaak*)
-const size_t kPanelStateOffset = acc::off::Todo(0x86d4); // game_state
+// KOTOR 2's CSWGuiPazaakGame is the same shape with a bigger control block: the
+// per-card GUI stride grows 0x31C -> 0x334 and the board gains four BTN_CHANGE
+// buttons for its new dual-value cards, which pushes the whole model tail up by
+// a uniform 0xF7C. Both fields are witnessed in K2's HandleContinue @0x0088F070:
+// it dereferences [panel+0x964c] as the model (reading player.stand through it)
+// and tests [panel+0x9650] against 3 and 4 — the same two states KOTOR 1's tests
+// at +0x86d4. The 0.4f turn timer that follows lands at +0x9654, the same +4.
+const size_t kPanelModelOffset = acc::off::Pick(0x86d0, 0x964C); // CSWGuiPazaakGame->pazaak (CSWPazaak*)
+const size_t kPanelStateOffset = acc::off::Pick(0x86d4, 0x9650); // game_state
 
-// CSWGuiTutorial (CSWGuiPazaakGame.field20 @ +0x7d20) "tutorial active" flag at
-// +0x994. DoGameSequence is only pumped while the board is the topmost panel
-// (Draw's IsOnTop gate, see docs/pazaak-investigation.md §7); the tutorial game's
-// ShowHelp stacks an inaccessible help message-box ON TOP of the board (at the
-// first draw, the opponent's turn, etc.), which drops the board off-top and
-// freezes the turn engine until a sighted player dismisses it. ShowHelp and the
-// End-Turn/Stand nags all no-op when this flag is 0, so we clear it on acquire
-// to disable the visual tutorial outright — our narration replaces it.
-constexpr size_t kTutorialActiveOffset = 0x7d20 + 0x994; // 0x86b4
+// "Tutorial active" gate. DoGameSequence is only pumped while the board is the
+// topmost panel (Draw's IsOnTop gate, see docs/pazaak-investigation.md §7); the
+// tutorial game's ShowHelp stacks an inaccessible help message-box ON TOP of the
+// board (at the first draw, the opponent's turn, etc.), which drops the board
+// off-top and freezes the turn engine until a sighted player dismisses it.
+// ShowHelp and the End-Turn/Stand nags all no-op when this flag is 0, so we
+// clear it on acquire to disable the visual tutorial outright — our narration
+// replaces it.
+//
+// The two games spell the same gate differently, which is why this is a Pick of
+// a whole address rather than one struct's field:
+//   * KOTOR 1 reads it INSIDE the embedded CSWGuiTutorial — panel+0x7d20 is the
+//     sub-panel, +0x994 its own active flag.
+//   * KOTOR 2 hoists it to a plain panel field at +0x9630, set from the
+//     constructor's third argument (showTutorial). Its HandleContinue /
+//     HandleStand / HandlePlayHandCard each gate their ShowHelp on
+//     `[panel+0x9630] != 0` before calling it on the CSWGuiTutorial that now
+//     lives at panel+0x8c58. Clearing the field disables all three the same way.
+const size_t kTutorialActiveOffset = acc::off::Pick(0x7d20 + 0x994, 0x9630);
 
 // CSWGuiWagerPopup (the "Wie viel setzt du?" bet popup, a different panel from
 // the board): current wager at +0xc94, maximum at +0xc98. The chain labels the
 // less/more buttons but only re-reads on focus change, so we poll the amount
 // and announce it when it changes (pure observation).
-const size_t kWagerCurOffset = acc::off::Todo(0xc94);
-const size_t kWagerMaxOffset = acc::off::Todo(0xc98);
+//
+// KOTOR 2 = +0xE30 / +0xE34, and these are the least ambiguous constants in the
+// whole batch: its HandleInputEvent @0x00887B10 clamps the decrement branch with
+// `cmp [this+0xe30], 1` before `sub 1`, and the increment branch with
+// `cmp [this+0xe30], [this+0xe34]` before `add 1`. Floor against current,
+// current against ceiling — current is the low field in both games.
+const size_t kWagerCurOffset = acc::off::Pick(0xc94, 0xE30);
+const size_t kWagerMaxOffset = acc::off::Pick(0xc98, 0xE34);
 
 // CPazaakPlayer is 0x70 bytes (hand[4]=0x20 + board[9]=0x48 + stand + score).
 // CSWPazaak.player is at +0x08, so enemy follows at +0x78 (NOT +0x98), and the
 // per-player stand/score sit at +0x68/+0x6c — see swkotor.exe.h structs
 // CPazaakPlayer / CSWPazaak. (Earlier 0x98/0x88/0x8c read dead space + deck
 // cards, so every opponent read came back zero/garbage.)
-const size_t kModelPlayerOffset = acc::off::Todo(0x08);  // CSWPazaak.player (CPazaakPlayer)
-const size_t kModelEnemyOffset  = acc::off::Todo(0x78);  // CSWPazaak.enemy
-const size_t kModelRemainOffset = acc::off::Todo(0x228); // remaining_card_count
+//
+// KOTOR 2 keeps this model exactly, with ONE change that cascades through all of
+// it: CPazaakCard grew from 8 bytes to 12. The third dword is the resolved value
+// of K2's new dual/double cards (see FormatCardLabel), and it moves every array
+// stride and every field above one. CPazaakPlayer is therefore 0xa4 rather than
+// 0x70 (hand 4*0xc = 0x30, board 9*0xc = 0x6c, then stand and score), and the
+// deck 40*0xc.
+//
+// Witness for each, all in the K2 twins:
+//   * player Same(+0x8) — HandleContinue forms GetTotal's `this` as model + 8.
+//   * enemy +0xac — ClearGameBoard @0x008FEB00 clears the player's nine board
+//     slots at +0x38 (= 0x8 + 0x30) AND the enemy's at +0xdc (= 0xac + 0x30),
+//     then zeroes both stands at +0xa4 and +0x148 (= 0x8/0xac + 0x9c).
+//   * cards[40] +0x150 and remaining +0x330 — ShuffleDeck @0x008FEBB0 writes
+//     forty 12-byte cards from +0x150 and finishes with `[this+0x330] = 39`;
+//     DrawCard @0x008FEDA0 indexes `+0x150 + n*0xc` off that same counter.
+//   * hand +0x0 / board +0x30 — ChooseSidedeck @0x008FE8A0 fills four cards
+//     from `this + i*0xc`; GetTotal @0x008FE830 walks nine from `this + 0x30`.
+//   * stand +0x9c — read as model+0xa4 in HandleContinue and written there by
+//     HandleStand; score +0xa0 follows it, which the 0xa4 player size closes.
+const size_t kModelPlayerOffset = acc::off::Same(0x08);        // CSWPazaak.player (CPazaakPlayer)
+const size_t kModelEnemyOffset  = acc::off::Pick(0x78, 0xAC);  // CSWPazaak.enemy
+const size_t kModelRemainOffset = acc::off::Pick(0x228, 0x330); // remaining_card_count
 
-const size_t kPlayerHandOffset  = acc::off::Todo(0x00);  // CPazaakCard hand_cards[4]
-const size_t kPlayerBoardOffset = acc::off::Todo(0x20);  // CPazaakCard board_cards[9]
-const size_t kPlayerStandOffset = acc::off::Todo(0x68);  // int stand
-const size_t kPlayerScoreOffset = acc::off::Todo(0x6c);  // int score (sets won)
+const size_t kPlayerHandOffset  = acc::off::Same(0x00);        // CPazaakCard hand_cards[4]
+const size_t kPlayerBoardOffset = acc::off::Pick(0x20, 0x30);  // CPazaakCard board_cards[9]
+const size_t kPlayerStandOffset = acc::off::Pick(0x68, 0x9C);  // int stand
+const size_t kPlayerScoreOffset = acc::off::Pick(0x6c, 0xA0);  // int score (sets won)
 
-const size_t kCardIndexOffset = acc::off::Todo(0x00);
-const size_t kCardFlipOffset  = acc::off::Todo(0x04);
-const size_t kCardStride      = acc::off::Todo(0x08);
+const size_t kCardIndexOffset = acc::off::Same(0x00);
+const size_t kCardFlipOffset  = acc::off::Same(0x04);
+// The resolved face value of K2's Double / 2&4 / 3&6 / value cards. Read only
+// under IsKotor2() — on KOTOR 1 there is no such field and the offset poisons.
+const size_t kCardValueOffset = acc::off::Kotor2Only(0x08);
+const size_t kCardStride      = acc::off::Pick(0x08, 0x0C);
 
 constexpr int kHandSlots  = 4;
 constexpr int kBoardSlots = 9;
+
+// KOTOR 2's five extra side-deck card indices (see FormatCardLabel). Inert on
+// KOTOR 1, where 18 is already the first main-deck card — every consumer either
+// gates on IsKotor2() or is only reachable from a K2 model read.
+constexpr int kCardTiebreaker = 18;  // ±1 that also wins ties  ("+1T"/"-1T")
+constexpr int kCardDouble     = 19;  // doubles the previous card ("D")
+constexpr int kCardTwoFour    = 20;  // "2&4"
+constexpr int kCardThreeSix   = 21;  // "3&6"
+constexpr int kCardValue      = 22;  // value card, sign from is_flipped
+
+// True for the one card whose FACE the player picks as well as its sign.
+bool IsValueChoiceCard(int index) {
+    return acc::game::IsKotor2() && index == kCardValue;
+}
+
+// First main-deck index: 18 on KOTOR 1, 23 on KOTOR 2 (whose five special
+// side-deck cards take 18..22).
+int FirstMainDeckIndex() { return acc::game::IsKotor2() ? 23 : 18; }
+bool IsMainDeckCard(int index) { return index >= FirstMainDeckIndex(); }
 
 // game_state values (DoGameSequence) we branch on.
 constexpr int kStatePlayerInteractive = 3;  // can play a hand card + stand/end
@@ -141,13 +223,17 @@ void* EnemyOf(void* model) {
     return reinterpret_cast<unsigned char*>(model) + kModelEnemyOffset;
 }
 
-struct CardView { int index; int flip; };
+// `value` is CPazaakCard's third dword — KOTOR 2 only (its card is 12 bytes,
+// KOTOR 1's is 8). Left at 0 on KOTOR 1, which is exactly what FormatCardLabel
+// treats as "no resolved value".
+struct CardView { int index; int flip; int value; };
 
 CardView ReadCard(void* player, size_t baseOff, int slot) {
-    CardView c{ -1, 0 };
+    CardView c{ -1, 0, 0 };
     void* cardPtr = reinterpret_cast<unsigned char*>(player) + baseOff + (size_t)slot * kCardStride;
     ReadIntAt(cardPtr, kCardIndexOffset, &c.index);
     ReadIntAt(cardPtr, kCardFlipOffset, &c.flip);
+    if (acc::game::IsKotor2()) ReadIntAt(cardPtr, kCardValueOffset, &c.value);
     return c;
 }
 
@@ -169,12 +255,32 @@ CardView BoardLast(void* player, int count) {
     return ReadCard(player, kPlayerBoardOffset, count - 1);
 }
 
+// CSWGuiPazaakGame's own vtable. KOTOR 1's came out of Lane's symbol export;
+// KOTOR 2's out of its RTTI class map. The board is a heap-allocated modal with
+// no CGuiInGame slot, so vtable equality is the cleanest identifier there is —
+// this is the same shape as every other single-instance panel in engine_panels.
+// The structural probe below stays as the fallback: it is what found the board
+// before the vtable was known, it costs nothing while untracked, and it keeps
+// working if a build relocates the table.
+const uintptr_t kVtableCSWGuiPazaakGame = acc::addr::Pick(0x00753358, 0x009A6404);
+
+// Highest card index the engine can put in a hand slot. KOTOR 1 tops out at 27
+// (main deck 18..27); KOTOR 2 inserts five special cards at 18..22 and pushes
+// its main deck to 23..32 — see FormatCardLabel.
+constexpr int kMaxCardIndexK1 = 27;
+constexpr int kMaxCardIndexK2 = 32;
+
 // Structural identity probe — true iff `panel` looks like a CSWGuiPazaakGame.
 // All reads SEH-guarded: a smaller panel faults on the deep field reads and
 // returns false. The nested model-field range checks make a false positive
 // from adjacent heap effectively impossible.
 bool LooksLikePazaak(void* panel) {
+    const int maxCard =
+        acc::game::IsKotor2() ? kMaxCardIndexK2 : kMaxCardIndexK1;
     __try {
+        if (*reinterpret_cast<uintptr_t*>(panel) == kVtableCSWGuiPazaakGame) {
+            return true;
+        }
         auto* p = reinterpret_cast<unsigned char*>(panel);
         void* model = *reinterpret_cast<void**>(p + kPanelModelOffset);
         if (!model) return false;
@@ -188,7 +294,7 @@ bool LooksLikePazaak(void* panel) {
         if (pScore < 0 || pScore > 3) return false;
         if (eScore < 0 || eScore > 3) return false;
         if (remain < -1 || remain > 40) return false;
-        if (hand0 < -2 || hand0 > 27) return false;
+        if (hand0 < -2 || hand0 > maxCard) return false;
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
 }
@@ -197,9 +303,10 @@ bool LooksLikePazaak(void* panel) {
 // Thin wrapper over the shared synthesizer (acc::pazaak::FormatCardLabel,
 // defined below the anonymous namespace and declared in pazaak.h). inHand
 // selects the Hand context (both faces + current); board cards are Committed.
-void FormatCard(int index, int flip, bool inHand, char* out, size_t n) {
-    FormatCardLabel(index, flip,
-                    inHand ? CardContext::Hand : CardContext::Committed, out, n);
+void FormatCard(const CardView& c, bool inHand, char* out, size_t n) {
+    FormatCardLabel(c.index, c.flip,
+                    inHand ? CardContext::Hand : CardContext::Committed, out, n,
+                    c.value);
 }
 
 void Say(const char* s, bool interrupt = false) {
@@ -214,7 +321,7 @@ void BuildBoard(void* player, char* out, size_t n) {
     for (int i = 0; i < cnt; ++i) {
         CardView c = ReadCard(player, kPlayerBoardOffset, i);
         char card[96];
-        FormatCard(c.index, c.flip, false, card, sizeof(card));
+        FormatCard(c, false, card, sizeof(card));
         if (out[0]) strncat(out, ", ", n - strlen(out) - 1);
         strncat(out, card, n - strlen(out) - 1);
     }
@@ -229,7 +336,7 @@ void SpeakHand(void* player) {
         CardView c = ReadCard(player, kPlayerHandOffset, i);
         if (c.index < 0) continue;
         char card[96];
-        FormatCard(c.index, c.flip, true, card, sizeof(card));
+        FormatCard(c, true, card, sizeof(card));
         if (line[0]) strncat(line, ", ", sizeof(line) - strlen(line) - 1);
         strncat(line, card, sizeof(line) - strlen(line) - 1);
         ++count;
@@ -278,6 +385,33 @@ int  g_col  = 0;
 bool g_optMode   = false;
 int  g_optSlot   = -1;
 int  g_optSign   = 0;   // 0 = plus, 1 = minus
+// Chosen magnitude for KOTOR 2's value card (index 22), whose face the player
+// picks as well as its sign. The engine's own BTN_CHANGE handler @0x0088F5A0
+// toggles the card's third dword between 1 and 2 and repaints, so those are the
+// only two faces it has. Unused for every other card.
+int  g_optValue  = 1;
+
+// Magnitude of a ±-faced card, for the sign chooser's spoken preview.
+// 12..17 are ±1..±6; KOTOR 2's tiebreaker (18) is a ±1; its value card (22)
+// carries whatever face the player has dialled in. Only ever called for indices
+// IsSignChoiceCard() accepted.
+int SignCardMagnitude(int index) {
+    if (index >= 12 && index <= 17) return index - 11;
+    if (index == kCardValue) return g_optValue;
+    return 1;
+}
+
+// Speak the sign chooser's current face ("plus 3" / "minus 1" / "plus 2").
+// interrupt=false when it follows the chooser's own opening line, so the two
+// don't cut each other off.
+void SpeakSignOption(int index, bool interrupt) {
+    char opt[48];
+    snprintf(opt, sizeof(opt),
+             acc::strings::Get(g_optSign ? acc::strings::Id::PazaakFmtMinus
+                                         : acc::strings::Id::PazaakFmtPlus),
+             SignCardMagnitude(index));
+    Say(opt, interrupt);
+}
 
 Snap ReadSnap(void* panel) {
     Snap s;
@@ -307,30 +441,31 @@ void AnnounceDeltas(void* panel, const Snap& cur) {
     void* e = EnemyOf(model);
     char card[96], msg[200];
 
-    // Player auto-drew a main-deck card (board grew with an index >= 18).
-    // Side cards (0..17) reach the board via our Play handler, which speaks
-    // its own confirmation — so gate the draw line to main-deck indices.
+    // Player auto-drew a main-deck card. Side cards reach the board via our
+    // Play handler, which speaks its own confirmation — so gate the draw line
+    // to main-deck indices (18+ on KOTOR 1, 23+ on KOTOR 2, whose five extra
+    // side-deck cards occupy 18..22 — see IsMainDeckCard).
     if (cur.pBoard > g_prev.pBoard) {
         CardView lc = BoardLast(p, cur.pBoard);
-        if (lc.index >= 18) {
-            FormatCard(lc.index, lc.flip, false, card, sizeof(card));
+        if (IsMainDeckCard(lc.index)) {
+            FormatCard(lc, false, card, sizeof(card));
             snprintf(msg, sizeof(msg), Get(Id::PazaakFmtYouDrew), card, cur.pTotal);
             Say(msg);
             if (cur.pTotal > 20) Say(Get(Id::PazaakOverTwenty));
         }
     }
 
-    // Opponent board grew: drew (>= 18) or played a side card (0..17).
+    // Opponent board grew: drew a main-deck card, or played a side card.
     if (cur.eBoard > g_prev.eBoard) {
         CardView lc = BoardLast(e, cur.eBoard);
-        if (lc.index >= 18) {
+        if (IsMainDeckCard(lc.index)) {
             // Main-deck draws are face-up/public, so name the card like the
             // player's draw line (not just the running total).
-            FormatCard(lc.index, lc.flip, false, card, sizeof(card));
+            FormatCard(lc, false, card, sizeof(card));
             snprintf(msg, sizeof(msg), Get(Id::PazaakFmtOppDrew), card, cur.eTotal);
             Say(msg);
         } else if (lc.index >= 0) {
-            FormatCard(lc.index, lc.flip, false, card, sizeof(card));
+            FormatCard(lc, false, card, sizeof(card));
             snprintf(msg, sizeof(msg), Get(Id::PazaakFmtOppPlayed), card, cur.eTotal);
             Say(msg);
         }
@@ -398,7 +533,7 @@ void PlayAndAnnounce(void* panel, void* player, int slot) {
     using namespace acc::strings;
     CardView c = ReadCard(player, kPlayerHandOffset, slot);
     char card[96];
-    FormatCard(c.index, c.flip, false, card, sizeof(card)); // committed sign
+    FormatCard(c, false, card, sizeof(card)); // committed sign
     DoPlay(panel, slot);
     char msg[200];
     snprintf(msg, sizeof(msg), Get(Id::PazaakFmtYouPlayed), card, CallGetTotal(player));
@@ -460,7 +595,7 @@ void AnnounceZoneElement(void* model, int zone, int col) {
     char card[96];
     if (zone == 0) {
         CardView c = ReadCard(PlayerOf(model), kPlayerHandOffset, col);
-        FormatCard(c.index, c.flip, true, card, sizeof(card));
+        FormatCard(c, true, card, sizeof(card));
         Say(card, true);
     } else if (zone == 1 || zone == 2) {
         void* pl = (zone == 1) ? PlayerOf(model) : EnemyOf(model);
@@ -468,7 +603,7 @@ void AnnounceZoneElement(void* model, int zone, int col) {
         if (cnt == 0) { Say(Get(Id::PazaakBoardEmpty), true); return; }
         if (col >= cnt) col = cnt - 1;
         CardView c = ReadCard(pl, kPlayerBoardOffset, col);
-        FormatCard(c.index, c.flip, false, card, sizeof(card));
+        FormatCard(c, false, card, sizeof(card));
         Say(card, true);
     } else {
         Say(Get(col == 0 ? Id::PazaakStandLabel : Id::PazaakEndTurnLabel), true);
@@ -546,13 +681,16 @@ void HandleEnter(void* panel, void* model, int state) {
         void* player = PlayerOf(model);
         CardView c = ReadCard(player, kPlayerHandOffset, g_col);
         if (c.index < 0) { Say(Get(Id::PazaakNoPlayable), true); return; }
-        if (c.index >= 12 && c.index <= 17) {
-            // +/- card → sign sub-zone, default to the plus face.
+        if (IsSignChoiceCard(c.index)) {
+            // +/- card → sign sub-zone, default to the plus face. KOTOR 2's
+            // value card also carries a magnitude the player picks; adopt
+            // whatever face it currently shows so the first Up/Down is a real
+            // change rather than a no-op re-announcement.
             g_optMode = true; g_optSlot = g_col; g_optSign = 0;
-            char opt[48];
-            snprintf(opt, sizeof(opt), Get(Id::PazaakFmtPlus), c.index - 11);
-            Say(Get(Id::PazaakChooseSign), true);
-            Say(opt);
+            g_optValue = (c.value == 2) ? 2 : 1;
+            Say(Get(IsValueChoiceCard(c.index) ? Id::PazaakChooseSignAndValue
+                                               : Id::PazaakChooseSign), true);
+            SpeakSignOption(c.index, /*interrupt=*/false);
         } else {
             PlayAndAnnounce(panel, player, g_col);
         }
@@ -672,6 +810,7 @@ void ResetState() {
     g_optMode = false;
     g_optSlot = -1;
     g_optSign = 0;
+    g_optValue = 1;
     g_started = false;
     g_resultAnnounced = false;
     g_boardForeground = false;
@@ -679,9 +818,51 @@ void ResetState() {
 
 }  // namespace
 
+int WagerLessButtonGuiId() { return acc::game::IsKotor2() ? 6 : 4; }
+int WagerMoreButtonGuiId() { return acc::game::IsKotor2() ? 7 : 5; }
+int WagerMaxLabelGuiId()   { return acc::game::IsKotor2() ? 2 : 3; }
+
+bool IsSignChoiceCard(int index) {
+    if (index >= 12 && index <= 17) return true;                 // ±1..±6, both games
+    return acc::game::IsKotor2() && index == kCardTiebreaker;    // ±1 T, KOTOR 2 only
+}
+
+// Render one of the six classic ±N flip faces into `out`.
+void FormatFlipFaces(int mag, int flip, CardContext ctx, char* out, size_t n) {
+    using namespace acc::strings;
+    if (ctx == CardContext::Hand) {
+        char face[48], both[48];
+        snprintf(face, sizeof(face), Get(flip ? Id::PazaakFmtMinus : Id::PazaakFmtPlus), mag);
+        snprintf(both, sizeof(both), Get(Id::PazaakFmtFlipBoth), mag);
+        snprintf(out, n, Get(Id::PazaakFmtFlipCurrently), both, face);
+    } else if (ctx == CardContext::Collection) {
+        // Deck builder: a flip card's sign isn't decided until it's played.
+        snprintf(out, n, Get(Id::PazaakFmtFlipBoth), mag);
+    } else {  // Committed
+        snprintf(out, n, Get(flip ? Id::PazaakFmtMinus : Id::PazaakFmtPlus), mag);
+    }
+}
+
 // Shared card-label synthesizer — see pazaak.h. Used by the board game (via
 // the FormatCard wrapper above) and the side-deck builder (menus_pazaakdeck).
-void FormatCardLabel(int index, int flip, CardContext ctx, char* out, size_t n) {
+//
+// The two games number their cards identically up to 17 and diverge after:
+//
+//   0..5    +1..+6                     both
+//   6..11   -1..-6                     both
+//   12..17  ±1..±6 (sign at play time)  both
+//   18..22  ±1 T / D / 2&4 / 3&6 / value   KOTOR 2 ONLY
+//   18..27  main deck 1..10            KOTOR 1
+//   23..32  main deck 1..10            KOTOR 2
+//
+// That is not a guess: KOTOR 2's CSWGuiPazaakCard::SetCard @0x00885FE0 switches
+// on the index to choose the card art — PCARDS_POS_P for 0..5, PCARDS_NEG_P for
+// 6..11, PCARDS_DBLPOS_P / DBLNEG_P for 12..17, PCARDS_GOLD_P for 0x12..0x16 and
+// PCARDS_GENERIC_P for 0x17..0x20 — and prints the glyphs "+1T"/"-1T", "D",
+// "2&4", "3&6" for the gold five. The deck shuffler @0x008FEBB0 independently
+// fills all forty main-deck cards with `i % 10 + 0x17`.
+void FormatCardLabel(int index, int flip, CardContext ctx, char* out, size_t n,
+                     int value) {
     using namespace acc::strings;
     if (!out || n == 0) return;
     out[0] = '\0';
@@ -691,22 +872,49 @@ void FormatCardLabel(int index, int flip, CardContext ctx, char* out, size_t n) 
     }
     if (index <= 5)  { snprintf(out, n, Get(Id::PazaakFmtPlus),  index + 1); return; }
     if (index <= 11) { snprintf(out, n, Get(Id::PazaakFmtMinus), index - 5); return; }
-    if (index <= 17) {
-        int mag = index - 11;
-        if (ctx == CardContext::Hand) {
-            char face[48], both[48];
-            snprintf(face, sizeof(face), Get(flip ? Id::PazaakFmtMinus : Id::PazaakFmtPlus), mag);
-            snprintf(both, sizeof(both), Get(Id::PazaakFmtFlipBoth), mag);
-            snprintf(out, n, Get(Id::PazaakFmtFlipCurrently), both, face);
-        } else if (ctx == CardContext::Collection) {
-            // Deck builder: a flip card's sign isn't decided until it's played.
-            snprintf(out, n, Get(Id::PazaakFmtFlipBoth), mag);
-        } else {  // Committed
-            snprintf(out, n, Get(flip ? Id::PazaakFmtMinus : Id::PazaakFmtPlus), mag);
-        }
+    if (index <= 17) { FormatFlipFaces(index - 11, flip, ctx, out, n); return; }
+
+    if (!acc::game::IsKotor2()) {
+        // 18..27 main deck, printed as its face value 1..10.
+        snprintf(out, n, Get(Id::PazaakFmtPlain), index - FirstMainDeckIndex() + 1);
         return;
     }
-    snprintf(out, n, Get(Id::PazaakFmtPlain), index - 17);  // 18..27 main-deck card
+
+    // ---- KOTOR 2 special cards (18..22) ----
+    switch (index) {
+        case kCardTiebreaker: {
+            // A ±1 that also wins ties. Say it as a ±1 first — that is the part
+            // that changes the arithmetic — then name what makes it special.
+            char base[96];
+            FormatFlipFaces(1, flip, ctx, base, sizeof(base));
+            snprintf(out, n, Get(Id::PazaakFmtCardTiebreaker), base);
+            return;
+        }
+        case kCardDouble:
+        case kCardTwoFour:
+        case kCardThreeSix:
+        case kCardValue: {
+            const Id nameId = (index == kCardDouble)  ? Id::PazaakCardDouble
+                            : (index == kCardTwoFour) ? Id::PazaakCardTwoFour
+                            : (index == kCardThreeSix) ? Id::PazaakCardThreeSix
+                                                       : Id::PazaakCardValue;
+            // Undecided (in hand or in the collection) — just the card's name.
+            // Once the engine has resolved a value into the card's third dword,
+            // append it, signed for the value card the same way a played flip
+            // card reads.
+            if (value == 0) { snprintf(out, n, "%s", Get(nameId)); return; }
+            char face[48];
+            const bool negative = (index == kCardValue) && flip;
+            snprintf(face, sizeof(face),
+                     Get(negative ? Id::PazaakFmtMinus : Id::PazaakFmtPlus), value);
+            snprintf(out, n, Get(Id::PazaakFmtFlipCurrently), Get(nameId), face);
+            return;
+        }
+        default:
+            break;
+    }
+    // 23..32 main deck, printed as its face value 1..10.
+    snprintf(out, n, Get(Id::PazaakFmtPlain), index - FirstMainDeckIndex() + 1);
 }
 
 // Arrow + Enter navigator, driven from the manager input hook so the generic
@@ -714,10 +922,9 @@ void FormatCardLabel(int index, int flip, CardContext ctx, char* out, size_t n) 
 // consumes the key. Letters fall through to PollShortcuts; Esc (outside the
 // sub-zone) falls through to the engine's quit-confirm.
 bool TryHandleInput(void* /*activePanel*/, int param_1, int param_2, int& rv) {
-    // KOTOR 2 (Batch 1): the pazaak board model offsets are unresolved there
-    // (and KOTOR 2's pazaak differs anyway — minigame triage is Batch 6).
-    // Tick() is gated in core_tick.cpp, so g_boardForeground also never arms.
-    if (acc::game::IsKotor2()) return false;
+    // Both games since the minigame port (2026-08-15). g_boardForeground is set
+    // by Tick(), which only arms once it has acquired a real board panel, so
+    // this stays inert everywhere else on its own.
     if (!g_boardForeground || !g_panel) return false;
     void* panel = g_panel;
 
@@ -726,7 +933,9 @@ bool TryHandleInput(void* /*activePanel*/, int param_1, int param_2, int& rv) {
     const bool isEnter = (param_1 == kInputEnter1  || param_1 == kInputEnter2);
     const bool isEsc   = (param_1 == kInputEsc1    || param_1 == kInputEsc2);
 
-    // Card-options sub-zone (a +/- card mid-play) owns Left/Right/Enter/Esc.
+    // Card-options sub-zone (a +/- card mid-play) owns the arrows, Enter, Esc.
+    // Left/Right pick the sign; on KOTOR 2's value card Up/Down also pick the
+    // face (1 or 2), mirroring what its BTN_CHANGE does.
     if (g_optMode) {
         if (!isNav && !isEnter && !isEsc) return false;
         rv = 1;
@@ -736,19 +945,29 @@ bool TryHandleInput(void* /*activePanel*/, int param_1, int param_2, int& rv) {
         if (param_1 == kInputNavLeft || param_1 == kInputNavRight) {
             g_optSign ^= 1;
             if (player) {
+                SpeakSignOption(ReadCard(player, kPlayerHandOffset, g_optSlot).index,
+                                /*interrupt=*/true);
+            }
+        } else if (param_1 == kInputNavUp || param_1 == kInputNavDown) {
+            if (player) {
                 CardView c = ReadCard(player, kPlayerHandOffset, g_optSlot);
-                char opt[48];
-                snprintf(opt, sizeof(opt),
-                         acc::strings::Get(g_optSign ? acc::strings::Id::PazaakFmtMinus
-                                                     : acc::strings::Id::PazaakFmtPlus),
-                         c.index - 11);
-                Say(opt, true);
+                // Only the value card has a second face; on every other card
+                // this is a deliberate no-op that still re-reads the current
+                // one, so Up/Down never lands on silence.
+                if (IsValueChoiceCard(c.index)) g_optValue = (g_optValue == 1) ? 2 : 1;
+                SpeakSignOption(c.index, /*interrupt=*/true);
             }
         } else if (isEnter) {
             if (player) {
-                WriteIntAt(reinterpret_cast<unsigned char*>(player) +
-                               kPlayerHandOffset + (size_t)g_optSlot * kCardStride,
-                           kCardFlipOffset, g_optSign);
+                auto* card = reinterpret_cast<unsigned char*>(player) +
+                             kPlayerHandOffset + (size_t)g_optSlot * kCardStride;
+                CardView c = ReadCard(player, kPlayerHandOffset, g_optSlot);
+                WriteIntAt(card, kCardFlipOffset, g_optSign);
+                // The value card's face lives in the third dword — the same
+                // field the engine's own BTN_CHANGE writes.
+                if (IsValueChoiceCard(c.index)) {
+                    WriteIntAt(card, kCardValueOffset, g_optValue);
+                }
                 int slot = g_optSlot;
                 g_optMode = false; g_optSlot = -1;
                 PlayAndAnnounce(panel, player, slot);
