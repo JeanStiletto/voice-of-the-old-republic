@@ -531,6 +531,7 @@ const char* Get(Id id) {
         case Id::ModSettingUrgentVolumePreview: return "Beispielansage";
         case Id::ModSettingSupportModder:           return "Modder unterst\xFCtzen";
         case Id::ModSettingLatestChanges:           return "Neueste \xC4nderungen";
+        case Id::ModSettingOpenReadme:              return "Anleitung \xF6" "ffnen";
         case Id::ModSettingLinkOpened:              return "Wird im Browser ge\xF6" "ffnet.";
         case Id::ModSettingLinkFailed:              return "Der Link konnte nicht ge\xF6" "ffnet werden.";
 

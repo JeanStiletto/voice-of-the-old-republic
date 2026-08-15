@@ -40,9 +40,9 @@ namespace acc::menus::modsettings {
 // ExtendedCycling / RoomShapes / WallSounds are boolean toggles (Enter
 // flips, current state spoken as "Name: an/aus"). AudioGlossary is a
 // submenu pivot (Enter opens a nested glossary view) and has no toggle
-// state; GetToggle() returns false for it. SupportModder / LatestChanges
-// are link rows — Enter hands a URL to the default browser and minimises
-// the game; they hold no state either.
+// state; GetToggle() returns false for it. SupportModder / LatestChanges /
+// OpenReadme are link rows — Enter hands a URL to the default browser and
+// minimises the game; they hold no state either.
 enum class Option {
     ExtendedCycling = 0,
     RoomShapes,
@@ -56,6 +56,7 @@ enum class Option {
     AudioGlossary,
     SupportModder,     // link row — opens the Ko-fi page in the default browser
     LatestChanges,     // link row — opens the latest release page
+    OpenReadme,        // link row — opens the readme in the mod's active language
     Count
 };
 

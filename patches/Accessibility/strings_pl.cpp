@@ -515,6 +515,7 @@ const char* Get(Id id) {
         case Id::ModSettingUrgentVolumePreview: return "Przyk\xB3""adowy komunikat";
         case Id::ModSettingSupportModder:           return "Wesprzyj tw\xF3rc\xEA moda";
         case Id::ModSettingLatestChanges:           return "Najnowsze zmiany";
+        case Id::ModSettingOpenReadme:              return "Otw\xF3rz poradnik";
         case Id::ModSettingLinkOpened:              return "Otwieram w przegl\xB9" "darce.";
         case Id::ModSettingLinkFailed:              return "Nie uda\xB3o si\xEA otworzy\xE6 odno\x9Cnika.";
 
@@ -741,7 +742,7 @@ const char* Get(Id id) {
         case Id::KbNameQueueClearAll:       return "Wyczy\x9C\xE6 kolejk\xEA";
         case Id::KbNameContainerGiveMode:   return "Tryb oddawania do pojemnika";
         case Id::KbNameStoreModeToggle:     return "Sklep: kupno lub sprzeda\xBF";
-        case Id::KbNameCraftViewToggle:     return "Warsztat: tworzenie lub rozk³""ad";
+        case Id::KbNameCraftViewToggle:     return "Warsztat: tworzenie lub rozkï¿½""ad";
         case Id::KbNameEditboxReReadUp:     return "Pole edycji: czytaj w g\xF3r\xEA";
         case Id::KbNameEditboxReReadDown:   return "Pole edycji: czytaj w d\xF3\xB3";
         case Id::KbNameEditboxSubmit:       return "Zatwierd\x9F wpis";

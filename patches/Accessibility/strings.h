@@ -1605,6 +1605,9 @@ enum class Id : int {
     // LinkOpened / LinkFailed are the spoken outcome of that press.
     ModSettingSupportModder,              // row label — opens the Ko-fi page
     ModSettingLatestChanges,              // row label — opens the latest release page
+    ModSettingOpenReadme,                 // row label — opens the readme for the
+                                          // active mod language (same URL scheme
+                                          // as the installer's end screen)
     ModSettingLinkOpened,
     ModSettingLinkFailed,
 

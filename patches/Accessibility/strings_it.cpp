@@ -515,6 +515,7 @@ const char* Get(Id id) {
         case Id::ModSettingUrgentVolumePreview: return "Annuncio di esempio";
         case Id::ModSettingSupportModder:           return "Sostieni il modder";
         case Id::ModSettingLatestChanges:           return "Ultime modifiche";
+        case Id::ModSettingOpenReadme:              return "Apri la guida";
         case Id::ModSettingLinkOpened:              return "Apertura nel browser.";
         case Id::ModSettingLinkFailed:              return "Impossibile aprire il link.";
 

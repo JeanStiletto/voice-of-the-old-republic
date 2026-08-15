@@ -35,6 +35,12 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h2>v0.7.6</h2>
 
+<h3>Mod settings:</h3>
+
+- New last entry in the mod settings menu, "Open the guide", opens the mod's
+  readme in your browser. It picks the readme matching the language the mod is
+  speaking, the same way the installer's final screen does.
+
 <h3>Bug fixes:</h3>
 
 - Playing without a mouse no longer costs you the keyboard. The engine creates
