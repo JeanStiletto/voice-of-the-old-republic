@@ -639,3 +639,67 @@ beta testers — no debug verbosity flag; reduce spam by dedup, never by droppin
 
 ---
 
+
+## directinput_device_lifecycle
+_A failed mouse device takes the keyboard with it: every failure branch of InitializeDirectInputMouse calls ShutDownDirectInput, which releases keyboard + joysticks + interface_
+
+`CExoRawInputInternal` owns the engine's DirectInput objects. Field layout (KOTOR 1
+from Lane's struct, size 0x34; KOTOR 2 disassembled 2026-08-15 — the three device
+fields sit 4 bytes higher, `active` does not move):
+
+- `active` — +0x04 both games
+- `direct_input_interface` (IDirectInput8*) — K1 +0x1c, K2 +0x20
+- `di_keyboard_device_interface` — K1 +0x20, K2 +0x24
+- `di_mouse_device_interface` — K1 +0x24, K2 +0x28
+- joystick count +0x18, joystick array K1 +0x28 / K2 +0x2c
+
+Reached from the ExoInput global via `CExoInput::internal` (+0x04) then
+`CExoInputInternal::raw_input` (K1 +0x140, K2 +0x1a0).
+
+**Bring-up order.** The engine's DirectInput init creates the DI8 interface and the
+KEYBOARD device. It does NOT create the mouse. The mouse device is created lazily by
+`CExoRawInputInternal::GetMouseState` (K1 @0x5e4050, K2 @0x00732e00), which on every
+frame tests `mouse_device == NULL` and calls `InitializeDirectInputMouse`
+(K1 @0x5e3fa0, K2 @0x00731070) when it is. So the mouse comes up on the first frame
+that polls it, seconds after the keyboard.
+
+**The defect.** `InitializeDirectInputMouse` runs CreateDevice → SetDataFormat →
+SetCooperativeLevel → SetProperty → Acquire, and EVERY failure branch answers with
+`ShutDownDirectInput` (K1 @0x5e3dc0, K2 @0x00733200). That function is not
+mouse-scoped: it Unacquires + Releases + NULLs the keyboard device, then the mouse,
+then every joystick, frees the joystick arrays, Releases the interface and NULLs it.
+One un-creatable mouse therefore costs the session every input device the engine has.
+K1's compiler folds the first four failures into one shared exit (2 call sites,
+0x5e401a + 0x5e4035); K2 emits all five (0x7310a7, 0x7310de, 0x731118, 0x731173,
+0x7311a2).
+
+**Why nothing recovers it.** `CExoRawInputInternal::SetActive` (K1 @0x5df540 chain,
+K2 @0x0072fb20 → 0x0072df60 → 0x00733090) starts each device with a NULL test, so
+a released keyboard is silently skipped. Every reacquire path in this patch —
+focus-gain, cold-start retry, dead-keyboard watchdog — drives SetActive edges, so
+against a NULL device they all no-op while logging success. Nothing in the engine
+re-runs the bring-up either; only the MOUSE has a lazy retry path.
+
+**What that looks like in a log** (kenny, KOTOR 2 0.7.5, patch-20260815-004346):
+speech and menus alive, cursor events flowing (hardware cursor is a Win32 path,
+unaffected), zero keyboard events for 29 minutes, cold-start reacquire giving up
+after 50 attempts. Same machine on 0.7.4 crashed at K2 0x731093 — the lazy re-init
+dereferencing the NULLed interface, which is the crash the v0.4.x/v0.7.5 mouse guard
+was written for. The guard converts that crash into the silent dead keyboard; only
+blocking the teardown fixes it.
+
+**What we do:** `acc::engine::InstallMouseTeardownBlock` (engine_input.cpp) rewrites
+the rel32 of every ShutDownDirectInput CALL inside InitializeDirectInputMouse to our
+own handler, which records the failing step and returns. Self-verifying — a site is
+only rewritten when its rel32 really resolves to ShutDownDirectInput. The engine's
+public shutdown wrapper (K2 @0x00731051) sits below the function and is left alone.
+A latch in the mouse-guard trampoline then answers the per-frame lazy re-init
+immediately, so a doomed CreateDevice does not run 60×/s for the session.
+`LogDirectInputStateIfChanged` reports the three device pointers on change.
+
+**Install timing differs per game.** KOTOR 2 patches from DllMain (its image is not
+packed). KOTOR 1 cannot: DllMain runs from a static import before the entry point,
+while the Steam build's .text is still encrypted, so the scan would match nothing —
+it installs from `EnsureSessionBringup` (rules-init) instead.
+
+---

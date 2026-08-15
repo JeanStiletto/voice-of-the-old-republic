@@ -669,6 +669,9 @@ const char* Get(Id id) {
             return "The game can't receive your key presses because Steam "
                    "Big Picture Mode is in front.";
 
+        case Id::InputKeyboardLost:
+            return "The game has lost its keyboard. Please restart the game.";
+
         // ---- Tastenbelegung (mod keybind configurator) ----
         case Id::KeybindsRootLabel:       return "Key bindings";
         case Id::KeybindsOpened:          return "Key bindings opened";

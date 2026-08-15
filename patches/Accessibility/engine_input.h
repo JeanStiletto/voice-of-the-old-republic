@@ -104,6 +104,60 @@ void DrainPendingReacquire();
 // which has no rules-init hook to install from.
 void InstallDirectInputMouseGuard();
 
+// Stop a failed mouse device from taking the keyboard with it.
+//
+// The guard above keeps the engine from CRASHING once DirectInput is already
+// torn down. This keeps it from tearing DirectInput down in the first place,
+// which is the reason a player without a mouse ends up with a dead keyboard
+// rather than a dead mouse.
+//
+// The engine's own bring-up creates the DI8 interface and the KEYBOARD device;
+// the mouse device is created lazily, on the first frame that polls the mouse.
+// Every failure branch of InitializeDirectInputMouse — CreateDevice,
+// SetDataFormat, SetCooperativeLevel, SetProperty, Acquire — answers with
+// ShutDownDirectInput, and that function Unacquires, Releases and NULLs the
+// keyboard device, the joysticks and the interface. So one absent mouse costs
+// the player every input device the engine has, permanently:
+// CExoRawInputInternal::SetActive skips a NULL keyboard device, which is why
+// no reacquire path in this patch can bring it back (kenny, KOTOR 2, 0.7.5 —
+// 29 minutes of a live main menu with speech and cursor but not one keystroke
+// reaching the engine, and the 0.7.4 dump from the same machine faulting in
+// the lazy re-init on the NULL interface).
+//
+// This rewrites the target of every ShutDownDirectInput CALL inside
+// InitializeDirectInputMouse to a handler of ours that records the failure and
+// returns. Nothing else changes: the engine's failure branches still return
+// what they always returned, and the caller already handles them. The one call
+// site outside that function — the public ShutDownDirectInput wrapper the
+// engine uses at real shutdown — is deliberately left alone.
+//
+// Idempotent, loader-lock safe (VirtualProtect + a 4-byte write per site), and
+// self-verifying: a site is only rewritten when its rel32 really does resolve
+// to ShutDownDirectInput, so a wrong address patches nothing and says so.
+void InstallMouseTeardownBlock();
+
+// True once a mouse-device bring-up has failed this session. Set by the
+// handler above; read by the mouse guard's trampoline (as a byte in memory) to
+// answer the engine's per-frame lazy re-init immediately, so a machine with no
+// mouse does not run a doomed CreateDevice on every frame for the whole
+// session.
+bool MouseDeviceUnavailable();
+
+// ---- DirectInput state probe --------------------------------------------
+//
+// Walks CExoInput -> CExoInputInternal -> CExoRawInputInternal and logs the
+// active flag plus the interface / keyboard / mouse device pointers whenever
+// the tuple changes. Called from the tick.
+//
+// This is the channel that turns "the keyboard is dead" into a statement about
+// WHICH device the engine lost and WHEN, which no existing log line can say:
+// the guard's failure path is silent by construction, and the input hooks can
+// only report events that arrive. On the non-NULL -> NULL keyboard transition
+// it also speaks a one-shot warning, because that state is invisible and
+// unrecoverable and the player would otherwise just find a menu that ignores
+// them.
+void LogDirectInputStateIfChanged();
+
 // ---- Engine keyboard liveness -------------------------------------------
 //
 // Called from both input hooks (the in-world CClientExoAppInternal route and

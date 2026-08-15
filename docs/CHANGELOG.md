@@ -35,6 +35,31 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h2>v0.7.6</h2>
 
+<h3>Bug fixes:</h3>
+
+- Playing without a mouse no longer costs you the keyboard. The engine creates
+  its keyboard when it starts and its mouse later, on the first frame that reads
+  one — and if that mouse cannot be created, it responds by shutting DirectInput
+  down completely, releasing the keyboard it had already built. Nothing in the
+  engine ever rebuilds it, and the keyboard-recovery paths this mod has carried
+  since v0.5.1 cannot help, because there is no device left to re-acquire. The
+  mouse failure is now contained: it costs the mouse, which a no-mouse player
+  did not have, and the keyboard keeps working. On KOTOR 2 this was the state
+  behind "the crash is fixed but nothing responds" — v0.7.5 stopped the crash
+  that this teardown caused, which left the silent dead keyboard underneath it
+  visible for the first time.
+- A machine that cannot create a mouse device no longer retries it on every
+  frame for the rest of the session.
+
+<h3>Support logs:</h3>
+
+- Logs now report the engine's DirectInput devices — the interface, the keyboard
+  and the mouse — whenever they change, and say so explicitly when the engine
+  releases one. A dead keyboard previously looked identical in a log to a
+  recovery that kept not working: both are silence.
+- The mod speaks a one-off warning if the engine does lose its keyboard, since
+  no key press can reach the game after that and only a restart brings it back.
+
 <h3>Translations:</h3>
 
 - Russian translation fixes.

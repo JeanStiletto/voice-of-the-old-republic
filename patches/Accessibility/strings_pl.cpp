@@ -671,6 +671,9 @@ const char* Get(Id id) {
             return "Gra nie odbiera naci\x9Cni\xEA\xE6 klawiszy, poniewa\xBF na wierzchu "
                    "jest tryb Steam Big Picture.";
 
+        case Id::InputKeyboardLost:
+            return "Gra straci\xB3""a klawiatur\xEA. Uruchom gr\xEA ponownie.";
+
         // ---- Key bindings (mod keybind configurator) ----
         case Id::KeybindsRootLabel:       return "Przypisania klawiszy";
         case Id::KeybindsOpened:          return "Otwarto przypisania klawiszy";

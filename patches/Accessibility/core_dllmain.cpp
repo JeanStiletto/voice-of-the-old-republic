@@ -226,6 +226,14 @@ void EnsureSessionBringup() {
     // engine's first successful mouse init, the timing the shipped fix was
     // validated against.
     acc::engine::InstallDirectInputMouseGuard();
+    // Keep a failed mouse device from taking the keyboard with it. KOTOR 1
+    // installs it HERE rather than from DllMain (where KOTOR 2 does) for the
+    // same reason nothing else patches KOTOR 1's .text that early: the Steam
+    // build is packed, and at DllMain — which runs from a static import, before
+    // the entry point — the bytes we scan for are still encrypted, so the scan
+    // would match nothing. Idempotent, so the KOTOR 2 call below is not undone
+    // by this one.
+    acc::engine::InstallMouseTeardownBlock();
     // Save-thumbnail divide-by-zero guard. Declines on KOTOR 2 by design —
     // see the note at its install site.
     acc::save_guard::InstallSaveScreenshotGuard();
@@ -334,6 +342,13 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD reason, LPVOID) {
         // straight through to the original code.
         if (acc::game::IsKotor2()) {
             acc::engine::InstallDirectInputMouseGuard();
+            // Same reasoning, one step upstream: the guard keeps a torn-down
+            // DirectInput from crashing us, this keeps the mouse from tearing
+            // it down at all. It has to be as early as the guard, because the
+            // teardown it blocks happens on the same first mouse-polling frame
+            // the crash used to. KOTOR 2's image is not packed, so the
+            // verification scan reads real bytes here.
+            acc::engine::InstallMouseTeardownBlock();
         }
         // Prism init deferred — loader lock.
     }

@@ -670,6 +670,9 @@ const char* Get(Id id) {
             return "Il gioco non pu\xF2 ricevere i tuoi tasti perch\xE9 la "
                    "modalit\xE0 Steam Big Picture \xE8 in primo piano.";
 
+        case Id::InputKeyboardLost:
+            return "Il gioco ha perso la tastiera. Riavvia il gioco.";
+
         // ---- Tastenbelegung (mod keybind configurator) ----
         case Id::KeybindsRootLabel:       return "Combinazioni di tasti";
         case Id::KeybindsOpened:          return "Combinazioni di tasti aperte";

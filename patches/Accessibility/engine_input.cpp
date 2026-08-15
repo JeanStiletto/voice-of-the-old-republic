@@ -1,6 +1,7 @@
 #include "engine_input.h"
 
 #include <windows.h>
+#include <intrin.h>   // _ReturnAddress — names the failing mouse-init step
 #include <atomic>
 #include <cstdint>
 #include <cstdio>
@@ -8,8 +9,12 @@
 
 #include "log.h"
 #include "engine_game.h"
+#include "engine_offsets_select.h"  // acc::off — the CExoRawInputInternal
+                                    // device fields moved by 4 bytes in K2
 #include "engine_rebase.h"
 #include "pad_input.h"   // CodeHint — the KOTOR 2 pad shares this numbering
+#include "prism.h"       // SpeakUrgent — the keyboard-lost warning
+#include "strings.h"
 
 namespace acc::engine {
 
@@ -101,6 +106,48 @@ const uintptr_t kAddrInitMouse =
 const uintptr_t kAddrInitMouseContinue =
     acc::addr::Pick(0x005e3faa, 0x00731076);
 
+// One past the last byte of InitializeDirectInputMouse — the scan bound for
+// the teardown block below. KOTOR 1: Ghidra gives the function as
+// 0x005e3fa0..0x005e4044 inclusive, with CExoRawInputInternal::GetMouseState
+// (the per-frame update that lazily re-invokes the init) starting at
+// 0x005e4050. KOTOR 2: the function's shared epilogue is reached by the
+// JMP at the end of the CreateDevice-failed branch and lands at 0x007311b2,
+// with the next function at 0x007311d0 — 0x007311c0 sits in the padding
+// between them.
+//
+// Only the bound matters, not the exact last instruction: the scan rewrites a
+// site only when its rel32 resolves to ShutDownDirectInput, and the nearest
+// other caller of that function in either binary is the engine's own public
+// shutdown wrapper, which sits BELOW the init's entry (KOTOR 2 0x00731051) and
+// so is outside this range in both directions.
+const uintptr_t kAddrInitMouseEnd =
+    acc::addr::Pick(0x005e4045, 0x007311c0);
+
+// CExoRawInputInternal::ShutDownDirectInput. The engine's real teardown: it
+// Unacquires + Releases the keyboard device, then the mouse, then every
+// joystick, frees the joystick arrays, Releases the DI8 interface and NULLs
+// every one of those fields (KOTOR 1 decompile 2026-08-15; KOTOR 2 same shape,
+// disassembled the same day).
+const uintptr_t kAddrShutDownDirectInput =
+    acc::addr::Pick(0x005e3dc0, 0x00733200);
+
+// CExoRawInputInternal fields. KOTOR 1 values are Lane's struct
+// (/KotOR Types/Exo Types/CExoRawInputInternal, size 0x34); KOTOR 2 values are
+// from the disassembly of its InitializeDirectInputMouse / SetActive /
+// ShutDownDirectInput, which agree with each other — the three device fields
+// each sit 4 bytes higher than in KOTOR 1, while `active` does not move.
+const size_t kOffRawActive   = acc::off::Same(0x04);
+const size_t kOffRawInterface = acc::off::Pick(0x1c, 0x20);
+const size_t kOffRawKeyboard  = acc::off::Pick(0x20, 0x24);
+const size_t kOffRawMouse     = acc::off::Pick(0x24, 0x28);
+
+// CExoInput::internal, then CExoInputInternal::raw_input — the walk from the
+// ExoInput global to the object that owns the DirectInput devices. KOTOR 2's
+// raw_input offset is read off CExoInputInternal::SetActive, which tests that
+// field for NULL before forwarding.
+const size_t kOffInputInternal = acc::off::Same(0x04);
+const size_t kOffInternalRaw   = acc::off::Pick(0x140, 0x1a0);
+
 // KOTOR 1's failure exit (POP EDI; XOR EAX,EAX; ...). KOTOR 1 needs it because
 // its prologue has already pushed ESI/EDI by the time we test, so the fail path
 // has a frame to unwind. KOTOR 2's function takes no stack arguments and ends
@@ -124,6 +171,45 @@ const uint8_t kInitMousePrologueK2[] = {
     0x8b, 0xec,        // MOV EBP, ESP
     0x83, 0xec, 0x30,  // SUB ESP, 0x30
 };
+
+// Set once a mouse device has proven un-creatable this session. A plain byte
+// rather than a bool or an atomic because the mouse guard's trampoline tests it
+// with a hand-written CMP against its absolute address, and because the only
+// writer is the engine thread that owns DirectInput.
+//
+// Not a function-local static anywhere: the handler below runs under __try, and
+// a function-local static's thread-safe-init guard is exactly the kind of
+// unwinding MSVC refuses to mix with SEH (C2712).
+volatile uint8_t g_mouseUnavailable = 0;
+
+// One-shot log latches, for the same reason.
+bool g_teardownLogged = false;
+
+// Return addresses of the teardown call sites we rewrote, in address order,
+// so the handler can say WHICH step of the mouse bring-up failed rather than
+// just that one did. The order is the order of the steps in the function —
+// CreateDevice, SetDataFormat, SetCooperativeLevel, SetProperty, Acquire —
+// which the KOTOR 1 decompile spells out and KOTOR 2 recompiles unchanged.
+// KOTOR 1's compiler folds the first four failures into one shared exit, so it
+// has two sites where KOTOR 2 has five; the names below are indexed per game.
+uintptr_t g_teardownSites[8] = {};
+int       g_teardownSiteCount = 0;
+
+const char* TeardownSiteName(int index, int total) {
+    static const char* const k5[] = {
+        "CreateDevice", "SetDataFormat", "SetCooperativeLevel", "SetProperty",
+        "Acquire",
+    };
+    static const char* const k2sites[] = {
+        "CreateDevice/SetDataFormat/SetCooperativeLevel/SetProperty (shared "
+        "failure exit)",
+        "Acquire",
+    };
+    if (index < 0) return "unknown step";
+    if (total == 5 && index < 5) return k5[index];
+    if (total == 2 && index < 2) return k2sites[index];
+    return "unknown step";
+}
 
 // JMP rel32. Twin of save_crash_guard.cpp's WriteRel32Jmp — the other place in
 // this patch that hand-writes a trampoline. Kept file-local in both rather than
@@ -286,7 +372,7 @@ void InstallDirectInputMouseGuard() {
         return;
     }
 
-    constexpr size_t kTrampolineSize = 32;
+    constexpr size_t kTrampolineSize = 64;
     auto* tramp = static_cast<uint8_t*>(VirtualAlloc(
         nullptr, kTrampolineSize, MEM_COMMIT | MEM_RESERVE,
         PAGE_EXECUTE_READWRITE));
@@ -297,6 +383,31 @@ void InstallDirectInputMouseGuard() {
     }
 
     uint8_t* p = tramp;
+
+    // Mouse-absent latch, ahead of everything else.
+    //
+    // The engine's per-frame mouse update re-enters this function on EVERY
+    // frame for as long as the mouse device pointer is NULL, so on a machine
+    // where the device cannot be created the engine would otherwise run a
+    // doomed CreateDevice (a COM call into DirectInput, device enumeration and
+    // all) sixty times a second for the whole session. Once
+    // InstallMouseTeardownBlock's handler has seen a failure there is nothing
+    // left to try, so answer the engine's own failure value immediately.
+    //
+    // Placed before the interface test because it is the cheaper answer to the
+    // same question and because it is valid in both games' register state: at
+    // the entry nothing has been pushed, so XOR EAX,EAX / RET returns 0 with
+    // the stack untouched (neither game's InitializeDirectInputMouse takes a
+    // stack argument). The JNE's displacement is back-patched once the failure
+    // stub's position is known.
+    *p++ = 0x80; *p++ = 0x3d;                   // CMP byte ptr [g_mouseUnavailable], 0
+    const uintptr_t flagAddr =
+        reinterpret_cast<uintptr_t>(&g_mouseUnavailable);
+    memcpy(p, &flagAddr, 4); p += 4;
+    *p++ = 0x00;
+    *p++ = 0x75;                                // JNE -> latch stub
+    uint8_t* latchRel8 = p++;                   // back-patched below
+
     if (k2) {
         // Test first, before any frame exists: at the entry ECX is still `this`
         // and nothing has been pushed, so the failure path is a bare
@@ -309,6 +420,9 @@ void InstallDirectInputMouseGuard() {
         memcpy(p, kInitMousePrologueK2, sizeof(kInitMousePrologueK2));
         p += sizeof(kInitMousePrologueK2);
         WriteJmpRel32(p, kAddrInitMouseContinue); p += 5;
+        // Failure stub. Shared with the latch above: both arrive with the
+        // entry's register state intact, so both want this exact answer.
+        *latchRel8 = static_cast<uint8_t>(p - (latchRel8 + 1));
         *p++ = 0x33; *p++ = 0xc0;               // XOR EAX, EAX
         *p++ = 0xc3;                            // RET
     } else {
@@ -323,6 +437,12 @@ void InstallDirectInputMouseGuard() {
         *p++ = 0x74; *p++ = 0x05;               // JZ +5 -> the fail JMP
         WriteJmpRel32(p, kAddrInitMouseContinue); p += 5;
         WriteJmpRel32(p, kAddrInitMouseFailEpilogue); p += 5;
+        // The latch cannot share KOTOR 1's failure exit: that epilogue pops the
+        // ESI/EDI the displaced prologue pushed, and the latch answers before
+        // the prologue has run. Its own stub returns from the entry state.
+        *latchRel8 = static_cast<uint8_t>(p - (latchRel8 + 1));
+        *p++ = 0x33; *p++ = 0xc0;               // XOR EAX, EAX
+        *p++ = 0xc3;                            // RET
     }
 
     DWORD oldProtect = 0;
@@ -341,6 +461,225 @@ void InstallDirectInputMouseGuard() {
     acclog::Write("EngineInput",
         "DirectInput mouse guard installed (%s, InitializeDirectInputMouse "
         "@%p, trampoline @%p)", acc::game::TitleName(), entry, tramp);
+}
+
+namespace {
+
+// Stand-in for CExoRawInputInternal::ShutDownDirectInput, reached only from the
+// failure branches of InitializeDirectInputMouse (the engine's own shutdown
+// path still calls the real thing). __fastcall with an unused second parameter
+// is the exact stack contract of the __thiscall(void) it replaces: `this` in
+// ECX, nothing pushed, nothing to clean.
+//
+// Doing nothing IS the fix. The branch that called us goes on to return the
+// same value it always returned, and its caller — the per-frame mouse update —
+// already treats that as "no mouse this frame". What no longer happens is the
+// collateral: the keyboard device stays created and acquired.
+void __fastcall MouseInitFailedInsteadOfTeardown(void* rawInput,
+                                                 void* /*edx*/) {
+    g_mouseUnavailable = 1;
+    if (g_teardownLogged) return;
+    g_teardownLogged = true;
+
+    // Which failure branch called us. _ReturnAddress is the instruction after
+    // the CALL we rewrote, which is exactly what the install loop recorded.
+    const uintptr_t ret = reinterpret_cast<uintptr_t>(_ReturnAddress());
+    int site = -1;
+    for (int i = 0; i < g_teardownSiteCount; ++i) {
+        if (g_teardownSites[i] == ret) { site = i; break; }
+    }
+
+    void* iface = nullptr;
+    void* keyboard = nullptr;
+    void* mouse = nullptr;
+    __try {
+        auto* base = static_cast<uint8_t*>(rawInput);
+        iface    = *reinterpret_cast<void**>(base + kOffRawInterface);
+        keyboard = *reinterpret_cast<void**>(base + kOffRawKeyboard);
+        mouse    = *reinterpret_cast<void**>(base + kOffRawMouse);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+    }
+
+    acclog::Write("EngineInput",
+        "MouseTeardownBlock: mouse bring-up failed at %s (site %d/%d, "
+        "return=0x%08x); blocked the engine's ShutDownDirectInput "
+        "(raw=%p interface=%p keyboard=%p mouse=%p). Vanilla would have "
+        "released the KEYBOARD here and left it unrecoverable for the "
+        "session; the mouse stays unavailable and the per-frame retry is now "
+        "latched off",
+        TeardownSiteName(site, g_teardownSiteCount), site + 1,
+        g_teardownSiteCount, static_cast<unsigned>(ret),
+        rawInput, iface, keyboard, mouse);
+}
+
+}  // namespace
+
+void InstallMouseTeardownBlock() {
+    static bool installed = false;
+    if (installed) return;
+    installed = true;
+
+    if (!acc::addr::Ok(kAddrInitMouse) ||
+        !acc::addr::Ok(kAddrInitMouseEnd) ||
+        !acc::addr::Ok(kAddrShutDownDirectInput)) {
+        acclog::Write("EngineInput",
+            "MouseTeardownBlock: no address for this build (%s); skipped",
+            acc::game::BuildName());
+        return;
+    }
+
+    auto* lo = reinterpret_cast<uint8_t*>(kAddrInitMouse);
+    auto* hi = reinterpret_cast<uint8_t*>(kAddrInitMouseEnd);
+    if (hi <= lo) return;
+    const size_t span = static_cast<size_t>(hi - lo);
+
+    DWORD oldProtect = 0;
+    if (!VirtualProtect(lo, span, PAGE_EXECUTE_READWRITE, &oldProtect)) {
+        acclog::Write("EngineInput",
+            "MouseTeardownBlock: VirtualProtect over "
+            "InitializeDirectInputMouse failed; skipped");
+        return;
+    }
+
+    const uintptr_t replacement =
+        reinterpret_cast<uintptr_t>(&MouseInitFailedInsteadOfTeardown);
+    int patched = 0;
+    for (size_t i = 0; i + 5 <= span; ++i) {
+        if (lo[i] != 0xe8) continue;  // CALL rel32
+        int32_t rel = 0;
+        memcpy(&rel, lo + i + 1, 4);
+        const uintptr_t after = reinterpret_cast<uintptr_t>(lo + i + 5);
+        if (after + static_cast<uintptr_t>(static_cast<intptr_t>(rel)) !=
+            kAddrShutDownDirectInput) {
+            continue;
+        }
+        // Range check for form's sake: a rel32 spans +-2 GB, the image sits at
+        // 0x00400000 and no user-mode module base reaches 0x80000000, so the
+        // displacement from engine code to our DLL cannot overflow. Checked
+        // anyway, because the failure mode if it ever did would be a call into
+        // nowhere on the one path nobody exercises.
+        const intptr_t delta =
+            static_cast<intptr_t>(replacement) - static_cast<intptr_t>(after);
+        if (delta > 0x7ffffff0 || delta < -0x7ffffff0) {
+            acclog::Write("EngineInput",
+                "MouseTeardownBlock: handler is out of rel32 range of %p; "
+                "site left alone", lo + i);
+            continue;
+        }
+        const int32_t newRel = static_cast<int32_t>(delta);
+        memcpy(lo + i + 1, &newRel, 4);
+        if (patched < static_cast<int>(sizeof(g_teardownSites) /
+                                       sizeof(g_teardownSites[0]))) {
+            g_teardownSites[patched] = after;  // the handler's return address
+        }
+        ++patched;
+        i += 4;  // skip the displacement we just wrote
+    }
+
+    DWORD ignored = 0;
+    VirtualProtect(lo, span, oldProtect, &ignored);
+    FlushInstructionCache(GetCurrentProcess(), lo, span);
+
+    g_teardownSiteCount = patched;
+
+    if (patched == 0) {
+        acclog::Write("EngineInput",
+            "MouseTeardownBlock: found no ShutDownDirectInput call inside "
+            "InitializeDirectInputMouse (%p..%p) — nothing patched. Either the "
+            "addresses are wrong for this build or the engine changed shape; "
+            "a mouse failure can still cost this session its keyboard",
+            lo, hi);
+        return;
+    }
+    acclog::Write("EngineInput",
+        "MouseTeardownBlock: installed (%s) — %d teardown call site(s) inside "
+        "InitializeDirectInputMouse now answer us instead of releasing the "
+        "keyboard",
+        acc::game::TitleName(), patched);
+}
+
+bool MouseDeviceUnavailable() {
+    return g_mouseUnavailable != 0;
+}
+
+namespace {
+
+// Everything the probe reports, in one POD so the SEH reader can fill it and
+// the (SEH-free) caller can act on it. Split for C2712: the caller speaks and
+// formats, both of which want objects.
+struct DiSnapshot {
+    void*        raw;
+    unsigned int active;
+    void*        iface;
+    void*        keyboard;
+    void*        mouse;
+};
+
+bool ReadDiSnapshot(DiSnapshot* out) {
+    __try {
+        if (!acc::addr::Ok(kAddrExoInputGlobal)) return false;
+        void* exoInput = *reinterpret_cast<void**>(kAddrExoInputGlobal);
+        if (!exoInput) return false;
+        void* internal = *reinterpret_cast<void**>(
+            static_cast<uint8_t*>(exoInput) + kOffInputInternal);
+        if (!internal) return false;
+        void* raw = *reinterpret_cast<void**>(
+            static_cast<uint8_t*>(internal) + kOffInternalRaw);
+        if (!raw) return false;
+
+        auto* base = static_cast<uint8_t*>(raw);
+        out->raw      = raw;
+        out->active   = *reinterpret_cast<unsigned int*>(base + kOffRawActive);
+        out->iface    = *reinterpret_cast<void**>(base + kOffRawInterface);
+        out->keyboard = *reinterpret_cast<void**>(base + kOffRawKeyboard);
+        out->mouse    = *reinterpret_cast<void**>(base + kOffRawMouse);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+DiSnapshot g_lastDi{};
+bool       g_haveDi = false;
+bool       g_keyboardLostWarned = false;
+
+}  // namespace
+
+void LogDirectInputStateIfChanged() {
+    DiSnapshot now{};
+    if (!ReadDiSnapshot(&now)) return;
+
+    if (g_haveDi && now.raw == g_lastDi.raw && now.active == g_lastDi.active &&
+        now.iface == g_lastDi.iface && now.keyboard == g_lastDi.keyboard &&
+        now.mouse == g_lastDi.mouse) {
+        return;
+    }
+
+    // A keyboard device that goes from present to NULL is the failure this
+    // whole file is about. NULL-from-the-start is a different (and normal)
+    // state — the engine has simply not built its devices yet — so it is
+    // logged but never spoken.
+    const bool keyboardLost =
+        g_haveDi && g_lastDi.keyboard != nullptr && now.keyboard == nullptr;
+
+    g_lastDi = now;
+    g_haveDi = true;
+
+    acclog::Write("EngineInput",
+        "DirectInput state: raw=%p active=%u interface=%p keyboard=%p "
+        "mouse=%p%s",
+        now.raw, now.active, now.iface, now.keyboard, now.mouse,
+        keyboardLost ? " [KEYBOARD DEVICE RELEASED]" : "");
+
+    if (keyboardLost && !g_keyboardLostWarned) {
+        g_keyboardLostWarned = true;
+        acclog::Write("EngineInput",
+            "DirectInput: the engine released its keyboard device — no key "
+            "press can reach the game from here, and SetActive cannot "
+            "re-acquire a device that no longer exists; warning the player");
+        prism::SpeakUrgent(
+            acc::strings::Get(acc::strings::Id::InputKeyboardLost));
+    }
 }
 
 bool EnsureInputAcquired() {

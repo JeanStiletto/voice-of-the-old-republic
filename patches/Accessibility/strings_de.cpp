@@ -689,6 +689,10 @@ const char* Get(Id id) {
             return "Das Spiel kann deine Tasteneingaben nicht empfangen, "
                    "weil der Steam-Big-Picture-Modus im Vordergrund ist.";
 
+        case Id::InputKeyboardLost:
+            return "Das Spiel hat die Tastatur verloren. Bitte starte das "
+                   "Spiel neu.";
+
         // ---- Tastenbelegung (mod keybind configurator) ----
         case Id::KeybindsRootLabel:       return "Tastenbelegung";
         case Id::KeybindsOpened:          return "Tastenbelegung ge\xF6""ffnet";

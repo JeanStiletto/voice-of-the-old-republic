@@ -673,6 +673,9 @@ const char* Get(Id id) {
             return "El juego no puede recibir tus teclas porque el modo "
                    "Steam Big Picture est\xE1 en primer plano.";
 
+        case Id::InputKeyboardLost:
+            return "El juego ha perdido el teclado. Reinicia el juego.";
+
         // ---- Tastenbelegung (mod keybind configurator) ----
         case Id::KeybindsRootLabel:       return "Asignaci\xF3n de teclas";
         case Id::KeybindsOpened:          return "Asignaci\xF3n de teclas abierta";

@@ -1874,6 +1874,14 @@ enum class Id : int {
     // focus-probe poll thread; see diag_focus.cpp DrainInputBlockedWarning.
     InputBlockedBigPicture,
 
+    // Spoken once when the engine RELEASES its DirectInput keyboard device
+    // mid-session (engine_input.cpp, LogDirectInputStateIfChanged). Unlike the
+    // Big Picture case above, nothing the player does in this session brings
+    // the keyboard back — the device object is gone and the engine has no path
+    // that rebuilds it — so this one does carry the how-to, because restarting
+    // is the entire remedy.
+    InputKeyboardLost,
+
     // ---- Mod-settings → Tastenbelegung (mod keybind configurator,
     //      menus_keybinds.cpp). Reached via the "Tastenbelegung" row in Mod
     //      settings. Two-level: a category list, then the actions in a

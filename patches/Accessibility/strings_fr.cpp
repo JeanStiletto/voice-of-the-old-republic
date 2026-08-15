@@ -671,6 +671,9 @@ const char* Get(Id id) {
             return "Le jeu ne peut pas recevoir vos touches, car le mode "
                    "Steam Big Picture est au premier plan.";
 
+        case Id::InputKeyboardLost:
+            return "Le jeu a perdu le clavier. Veuillez red\xE9marrer le jeu.";
+
         // ---- Tastenbelegung (mod keybind configurator) ----
         case Id::KeybindsRootLabel:       return "Raccourcis clavier";
         case Id::KeybindsOpened:          return "Raccourcis clavier ouverts";

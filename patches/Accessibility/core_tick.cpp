@@ -607,6 +607,14 @@ void Dispatch() {
     // focus regain. Fires only on the dead-keyboard fingerprint — see above.
     WatchDeadKeyboard();
 
+    // What neither of the two above can see: whether the engine still HAS a
+    // keyboard device to acquire. Both drive SetActive edges, and SetActive
+    // skips a NULL device silently, so a released keyboard looks exactly like a
+    // recovery that keeps not working. Reports the device pointers on change,
+    // and speaks once if the keyboard is the one that went. Cheap: three
+    // pointer hops and a compare, and it logs nothing while the state holds.
+    acc::engine::LogDirectInputStateIfChanged();
+
     // The Endar Spire opening holds the global fade at alpha=1.0 (engine
     // re-asserts it every frame) after the fade finishes, while the player still
     // has world control. That gates MainLoop's DoPassiveSelection off, freezing

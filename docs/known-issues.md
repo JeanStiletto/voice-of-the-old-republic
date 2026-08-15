@@ -16,7 +16,27 @@ _None currently._
 
 ## Unreproduced
 
-_None currently._
+### Dead keyboard on a machine with no mouse — fix built, awaiting a no-mouse session
+
+kenny's KOTOR 2 0.7.5 session (`userlogs/kenny075keyboarddeath.7z`) reached the main
+menu with speech and cursor working and never delivered one keystroke to the engine.
+Root cause is the engine's own DirectInput teardown: any failure creating the mouse
+device releases the keyboard device too, and nothing rebuilds it — see
+`docs/llm-docs/gui-and-input-internals.md` → `directinput_device_lifecycle`.
+
+The fix (mouse-teardown block + per-frame retry latch + a DirectInput state line in
+the log) is in and verified on the HEALTHY path in both games: the block installs
+(5 call sites on KOTOR 2, 2 on KOTOR 1) and the state probe reports the interface,
+keyboard and mouse correctly through startup and focus loss.
+
+What is NOT verified is the failure path itself, because this dev machine has a
+mouse and DirectInput creates the device normally. Unplugging a USB mouse may not
+reproduce it either — the failing step could be any of CreateDevice, SetDataFormat,
+SetCooperativeLevel, SetProperty or Acquire, and the handler now names which one in
+the log. Confirmation has to come from kenny's next session: expect either a
+`MouseTeardownBlock: mouse bring-up failed at <step>` line with a working keyboard,
+or no such line at all (in which case the teardown comes from somewhere else and the
+`DirectInput state` lines will show where).
 
 ## Planned
 
