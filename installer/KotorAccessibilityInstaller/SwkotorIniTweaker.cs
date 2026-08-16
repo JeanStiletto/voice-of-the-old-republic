@@ -21,6 +21,9 @@ namespace KotorAccessibilityInstaller
     ///   <item><c>V-Sync=1</c> — fixes "character stuck after combat" engine bug on 60 Hz monitors</item>
     ///   <item><c>Frame Buffer=0</c> — fixes "crash after character creation" + occasional loadscreen crashes (KOTOR 1 only; see <see cref="GameTarget.Kotor1"/>)</item>
     ///   <item>vertex-buffer objects disabled — stability tweak for some GPU/driver combinations</item>
+    ///   <item><c>Grass=0</c> — avoids the engine's grass renderer, which faults inside the
+    ///     graphics driver in grassy areas such as the Taris Undercity
+    ///     (see <c>docs/grass-crash-analysis.md</c>)</item>
     ///   <item><c>FullScreen=0</c> — screen-reader compatibility (exclusive fullscreen breaks NVDA/JAWS)</item>
     ///   <item><c>AllowWindowedMode=1</c> — required by Lane's BorderlessFullscreen patch (KOTOR 2)</item>
     /// </list>

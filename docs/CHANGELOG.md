@@ -33,6 +33,20 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>v0.7.7</h2>
+
+<h3>Bug fixes:</h3>
+
+- The Taris Undercity no longer crashes to desktop. The installer now switches
+  the game's own "Grass" graphics option off on both games. A crash bundle from
+  a beta tester put the fault inside the graphics driver, called from the
+  engine's grass renderer — a long-standing KOTOR bug the community has been
+  chasing for years, and one this mod cannot fix from the outside. Grass is
+  purely decorative, so switching it off costs this mod's players nothing and
+  removes the faulting code path entirely. If you had already installed the mod,
+  re-run the installer to pick the setting up, or set `Grass=0` under
+  `[Graphics Options]` in `swkotor.ini` yourself.
+
 <h2>v0.7.6</h2>
 
 <h3>Mod settings:</h3>

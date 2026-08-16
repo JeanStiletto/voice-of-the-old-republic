@@ -112,6 +112,19 @@ namespace KotorAccessibilityInstaller
         /// faulting. That guard is a KOTOR 1 hook whose address resolves to
         /// zero on KOTOR 2, so KOTOR 2 keeps its shipped <c>Frame Buffer=1</c>
         /// rather than being handed the divide-by-zero with no net under it.
+        ///
+        /// <para>Grass note (set on BOTH games, unlike Frame Buffer): a tester's
+        /// crash bundle put an access violation inside the Intel OpenGL driver,
+        /// called from <c>GLRender::DrawLightmappedGrass</c> — the Taris Undercity
+        /// is the area it is reported in. Grass geometry is always submitted as
+        /// client-side vertex arrays, so the driver reads game heap directly at
+        /// draw time. Evidence, the confirmed defect in the draw call sequence, and
+        /// the parts still unexplained are in <c>docs/grass-crash-analysis.md</c>.
+        /// Grass is purely decorative and this mod's players are blind or visually
+        /// impaired, so switching it off costs them nothing and removes the
+        /// faulting code path. KOTOR 2 gets the same value on the same reasoning —
+        /// shared renderer lineage, identical key spelling, same zero cost — not
+        /// because a KOTOR 2 crash has been observed.</para>
         /// </summary>
         public static readonly GameTarget Kotor1 = new GameTarget
         {
@@ -141,6 +154,7 @@ namespace KotorAccessibilityInstaller
                 ("[Graphics Options]", "Frame Buffer", "0"),
                 ("[Graphics Options]", "Disable Vertex Buffer Objects", "1"),
                 ("[Graphics Options]", "FullScreen", "0"),
+                ("[Graphics Options]", "Grass", "0"),
             },
 
             KeymapExtras = Array.Empty<(string, string)>(),
@@ -200,6 +214,7 @@ namespace KotorAccessibilityInstaller
                 ("[Graphics Options]", "FullScreen", "0"),
                 ("[Graphics Options]", "AllowWindowedMode", "1"),
                 ("[Display Options]", "FullScreen", "0"),
+                ("[Graphics Options]", "Grass", "0"),
             },
 
             // KOTOR 2 binds every letter key (its keymap.2da rows leave only N
