@@ -68,6 +68,14 @@ struct ApproachArm {
     bool          inputDisabled = false;    // caller disabled input → force-restore on block
     bool          isDialog      = false;    // clear global dialog state on block
     bool          speakBlocked  = true;     // announce "way blocked" on stall-out-of-range
+    // Object handle of a use-verb dispatch (AddUseObjectAction), or 0. Only the
+    // coordinate-walk retry consumes it: that retry clears the failed plan to
+    // free the pathfinder, so the use it replaced is gone by the time the PC
+    // arrives. Handing the handle over lets the tracker re-fire the use on
+    // arrival instead of leaving the player standing at the object needing a
+    // second press. Leave 0 for arms with nothing to re-fire (talk, coord walk
+    // to a transition, engine-picker verbs).
+    uint32_t      useHandle     = 0;
 };
 
 // Arm / replace the single in-flight approach observation. A fresh arm

@@ -39,8 +39,12 @@ namespace {
 // and force-restores input on a blocked use-verb. Replaces the old per-file
 // g_approach watchdog. `target` is the dispatch object — the live way-blocked
 // reference, consistent with what we just acted on.
+// `useHandle` is the AddUseObjectAction target, and only the two UseObject
+// dispatch sites pass it: it lets the tracker's coordinate-walk retry re-fire
+// the use on arrival instead of stranding the player at the object (see
+// ApproachArm::useHandle). Verbs with nothing to re-fire leave it 0.
 void ArmInteractApproach(const char* name, void* target, bool inputDisabled,
-                         bool isDialog) {
+                         bool isDialog, uint32_t useHandle = 0) {
     acc::guidance::ApproachArm arm;
     arm.owner        = acc::guidance::ApproachOwner::Interact;
     std::snprintf(arm.name, sizeof(arm.name), "%s", (name && name[0]) ? name : "?");
@@ -50,6 +54,7 @@ void ArmInteractApproach(const char* name, void* target, bool inputDisabled,
     arm.inputDisabled = inputDisabled;
     arm.isDialog      = isDialog;
     arm.speakBlocked  = true;
+    arm.useHandle     = useHandle;
     acc::guidance::ArmApproach(arm);
 }
 
@@ -456,7 +461,7 @@ void DispatchInteractImpl(void* target, uint32_t handle, bool forceRadial) {
                     "(action_id=0x%x input_disabled=%d) target=0x%08x",
                     snap.action_id, inputDisabled ? 1 : 0, dispatchHandle);
                 ArmInteractApproach(name, target, /*inputDisabled=*/true,
-                                    /*isDialog=*/false);
+                                    /*isDialog=*/false, dispatchHandle);
                 return;
             }
             // UseObject refused — undo the input-disable and fall through to the
@@ -519,7 +524,7 @@ void DispatchInteractImpl(void* target, uint32_t handle, bool forceRadial) {
                 inputDisabled ? 1 : 0, dispatchHandle, snap.valid ? 1 : 0,
                 snap.count);
             ArmInteractApproach(name, target, /*inputDisabled=*/true,
-                                /*isDialog=*/false);
+                                /*isDialog=*/false, dispatchHandle);
             return;
         }
         if (inputDisabled) acc::engine::SetPlayerInputEnabled(true);

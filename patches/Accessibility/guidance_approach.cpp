@@ -33,6 +33,12 @@ constexpr float kStoodStillMSq  = 6.25f;   // (2.5m)^2 — but when the PC never
                                            // a step, 6m is far too generous. See
                                            // the reach-tolerance note in
                                            // TickApproach.
+constexpr float kReissueUseMSq  = 16.0f;   // (4m)^2 — a retried walk that settles
+                                           // this close is at the object; re-fire
+                                           // the use it displaced. Generous
+                                           // because the walk targets the object
+                                           // centre while the walkmesh can stop
+                                           // the PC a metre or two short of it.
 constexpr DWORD kCancelGraceMs  = 300;     // movement-key cancel ignores the
                                            // first 300ms after a dispatch — covers
                                            // a key still held from before the walk
@@ -62,6 +68,11 @@ struct ApproachState {
     // The coordinate-walk retry is one-shot per arm; without this a target the
     // A* also can't reach would re-dispatch every stall window forever.
     bool          coordRetried  = false;
+
+    // Use-verb handle to re-fire once the retried walk lands (see the header
+    // note on ApproachArm::useHandle), and its one-shot latch.
+    uint32_t      useHandle     = 0;
+    bool          useReissued   = false;
 };
 ApproachState g_st;
 
@@ -126,6 +137,49 @@ bool TryCoordinateWalkRetry(const Vector& tgt) {
     return true;
 }
 
+// The coordinate-walk retry only walks. It has to clear the failed plan to free
+// the pathfinder, so the use action it replaced is gone by the time the PC
+// arrives — leaving the player standing at the object needing a second press
+// (patch-20260816-105520.log: the retry lands at 1.19m, and Enter from there
+// opens the console instantly). Re-fire the use once on arrival so the rescue
+// completes in one press.
+//
+// Scoped to the retry path. A settle that never needed a retry already ran its
+// action — a door bashed at arm's length — and re-firing there would act twice.
+//
+// Returns true when a use is in flight; the caller must not disarm. Success 1/2
+// (conversation / panel) takes it from here, and if nothing surfaces the next
+// stall lands back on the quiet disarm with the latch already set.
+bool TryReissueUse(float gap) {
+    if (!g_st.coordRetried || g_st.useReissued || g_st.useHandle == 0) return false;
+    if (gap * gap > kReissueUseMSq) return false;
+
+    g_st.useReissued = true;
+
+    // Mirror interact_dispatch's 0x3f7 contract exactly: input off around the
+    // use, tracker owns the force-restore if this ends up blocked. At this range
+    // the engine resolves the use-node without a walk, so the freeze is
+    // momentary and engine_player's queue-watched restore returns control when
+    // the queue drains.
+    bool disabled = acc::engine::SetPlayerInputEnabled(false);
+    if (!acc::guidance::UseObject(g_st.useHandle)) {
+        if (disabled) acc::engine::SetPlayerInputEnabled(true);
+        acclog::Write("Approach", "arrived after retry but UseObject refused "
+            "handle=0x%08x name=[%s] — falling through to quiet disarm",
+            g_st.useHandle, g_st.name);
+        return false;
+    }
+    g_st.inputDisabled = disabled;
+
+    // Give the re-fired use a full stall window to open its panel before any
+    // further verdict.
+    g_st.haveProgress = false;
+    g_st.progressAt   = GetTickCount();
+    acclog::Write("Approach", "arrived after coordinate-walk retry (gap %.2fm) — "
+        "re-firing use handle=0x%08x name=[%s]", gap, g_st.useHandle, g_st.name);
+    return true;
+}
+
 // Break a blocked approach: cancel the bouncing walk, restore input if the
 // caller disabled it (explicit, so engine_player's queue-watched restore and
 // this tracker never fight), clear dialog-pending limbo (talk only), and
@@ -186,6 +240,7 @@ void ArmApproach(const ApproachArm& arm) {
     g_st.inputDisabled = arm.inputDisabled;
     g_st.isDialog      = arm.isDialog;
     g_st.speakBlocked  = arm.speakBlocked;
+    g_st.useHandle     = arm.useHandle;
     // Snapshot any bark already showing so a lingering ambient bubble can't
     // instantly disarm a fresh walk; only a bark that *surfaces* after arm
     // counts as this interaction's output.
@@ -206,10 +261,10 @@ void ArmApproach(const ApproachArm& arm) {
     }
 
     acclog::Write("Approach", "armed — owner=%d isDialog=%d inputDisabled=%d "
-        "speakBlocked=%d targetObj=%p name=[%s]",
+        "speakBlocked=%d targetObj=%p useHandle=0x%08x name=[%s]",
         static_cast<int>(arm.owner), arm.isDialog ? 1 : 0,
         arm.inputDisabled ? 1 : 0, arm.speakBlocked ? 1 : 0,
-        arm.targetObj, g_st.name);
+        arm.targetObj, arm.useHandle, g_st.name);
 }
 
 void TickApproach() {
@@ -323,6 +378,9 @@ void TickApproach() {
     const float gap     = GapTo(tgt, pos);
     const float reachSq = g_st.movedSinceArm ? kReachedMSq : kStoodStillMSq;
     if (gap * gap <= reachSq) {
+        // Arrived after a coordinate-walk retry — the use it displaced still
+        // owes the player its result. Fire it before calling this settled.
+        if (TryReissueUse(gap)) return;
         acclog::Write("Approach", "settled within reach (stalled %lums, gap %.2fm, "
             "moved=%d) — disarm, no nag",
             static_cast<unsigned long>(now - g_st.progressAt), gap,

@@ -40,8 +40,9 @@ and add the German in parentheses if it genuinely aids clarity.
 - Pressing Enter on an object a few metres away no longer does nothing at all.
   When the engine accepts the interaction but then cannot find a route to it —
   a companion standing in the gap is enough — the mod now notices that the
-  character never took a single step and walks there by coordinate instead,
-  falling back to "way blocked" if even that fails. Previously any target within
+  character never took a single step, walks there by coordinate instead, and
+  completes the interaction on arrival — all from the one press. If even the
+  coordinate route fails you now hear "way blocked". Previously any target within
   six metres counted as "close enough, you must have arrived", so the failure was
   swallowed without a word: on a communications console it took ten presses to
   get one interaction, with silence in between. Six metres of slack still applies
