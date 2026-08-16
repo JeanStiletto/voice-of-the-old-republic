@@ -23,11 +23,16 @@ namespace {
 constexpr DWORD kStallMs        = 1800;    // sustained no-movement = settled/blocked
 constexpr DWORD kCeilingMs      = 12000;   // hard backstop (unreadable state)
 constexpr float kProgressEpsSq  = 0.25f;   // (0.5m)^2 — moved threshold
-constexpr float kReachedMSq     = 36.0f;   // (6m)^2 — stalled within this of the
-                                           // target = effectively arrived / a
-                                           // difficult-terrain near-miss; disarm
-                                           // quietly rather than nag. Only a stall
-                                           // beyond this counts as truly blocked.
+constexpr float kReachedMSq     = 36.0f;   // (6m)^2 — a walk that RAN and then
+                                           // stalled within this of the target =
+                                           // effectively arrived / a difficult-
+                                           // terrain near-miss; disarm quietly
+                                           // rather than nag. Only a stall beyond
+                                           // this counts as truly blocked.
+constexpr float kStoodStillMSq  = 6.25f;   // (2.5m)^2 — but when the PC never took
+                                           // a step, 6m is far too generous. See
+                                           // the reach-tolerance note in
+                                           // TickApproach.
 constexpr DWORD kCancelGraceMs  = 300;     // movement-key cancel ignores the
                                            // first 300ms after a dispatch — covers
                                            // a key still held from before the walk
@@ -74,17 +79,11 @@ bool ResolveTargetPos(Vector& out) {
     return false;
 }
 
-// Once the PC stops moving, a gap below kReachedMSq means it effectively
-// arrived (or a difficult-terrain near-miss left it close) — disarm without
-// nagging. Only a stall beyond that is a true "can't reach".
-bool WithinReach() {
-    Vector tgt;
-    if (!ResolveTargetPos(tgt)) return false;
-    Vector pos;
-    if (!acc::engine::GetPlayerPosition(pos)) return false;
+// Planar player→target gap, in metres.
+float GapTo(const Vector& tgt, const Vector& pos) {
     float dx = tgt.x - pos.x;
     float dy = tgt.y - pos.y;
-    return (dx * dx + dy * dy) <= kReachedMSq;
+    return std::sqrt(dx * dx + dy * dy);
 }
 
 // The walk never physically started (see the header note): re-issue it as a
@@ -304,9 +303,30 @@ void TickApproach() {
         g_st.active = false;
         return;
     }
-    if (WithinReach()) {
-        acclog::Write("Approach", "settled within reach (stalled %lums) — disarm, "
-            "no nag", static_cast<unsigned long>(now - g_st.progressAt));
+    // Reach tolerance depends on whether the walk ever physically ran — two very
+    // different stalls otherwise wear the same distance.
+    //
+    // Walk RAN, then stalled: the engine got the PC moving and parked it wherever
+    // the walkmesh allowed. Six metres of slack is right — the act very likely
+    // fired (door/bash/mine open no panel) and nagging is worse than silence.
+    //
+    // Walk NEVER RAN (not one step since the arm): six metres is a lie. Observed
+    // on the Telos comm console (patch-20260816-095834.log): nine Enter presses
+    // from 4.5–5.5m out, every dispatch accepted, every one driving the engine's
+    // 5↔6 re-plan churn with the PC rooted — and every one silently absorbed here
+    // as "within reach" because it sat inside the 6m radius. The retry below
+    // never got a turn and the player got no cue at all. At a standstill the only
+    // honest reading of a small gap is "we were already at it and the act fired in
+    // place", which is a use-range distance, not six metres. Keeping this branch
+    // tight also protects those in-place acts: bashing a door at arm's length must
+    // stay a quiet disarm and never be torn down by the retry's CancelMovement.
+    const float gap     = GapTo(tgt, pos);
+    const float reachSq = g_st.movedSinceArm ? kReachedMSq : kStoodStillMSq;
+    if (gap * gap <= reachSq) {
+        acclog::Write("Approach", "settled within reach (stalled %lums, gap %.2fm, "
+            "moved=%d) — disarm, no nag",
+            static_cast<unsigned long>(now - g_st.progressAt), gap,
+            g_st.movedSinceArm ? 1 : 0);
         g_st.active = false;
         return;
     }
@@ -326,6 +346,10 @@ bool IsApproachInFlight() {
 
 void CancelApproach() {
     g_st.active = false;
+}
+
+void* ApproachTarget() {
+    return g_st.active ? g_st.targetObj : nullptr;
 }
 
 bool IsAnyModApproachInFlight() {

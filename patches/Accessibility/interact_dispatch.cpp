@@ -218,6 +218,26 @@ void DispatchInteractImpl(void* target, uint32_t handle, bool forceRadial) {
     // ever speak when the door genuinely refused to open — and never replaces
     // the attempt. Put new door hints there, not here.
 
+    // Re-press against the target we are already walking to. The in-flight
+    // attempt is by definition not progressing — a progressing one disarms on
+    // success — so stacking a second action onto its queue only deepens the
+    // churn: patch-20260816-095834.log has the Enter at 10:06:18 landing on the
+    // still-armed 10:06:15 approach and driving the pending-action count from 6
+    // to 8 with the PC rooted throughout. Tear the stale attempt down, queue
+    // included, so this press starts from a clean slate.
+    //
+    // Same-target only. A press aimed elsewhere is a change of intent, and the
+    // fresh ArmApproach already supersedes the old arm. Input is deliberately
+    // left as-is: the dispatch below re-disables it anyway, and if this press
+    // ends up opening the radial instead, engine_player's queue-watched restore
+    // sees the queue we just cleared and hands control back on its own.
+    if (acc::guidance::ApproachTarget() == target) {
+        acclog::Write("Interact", "re-press on in-flight approach target=%p — "
+            "clearing the stale attempt before re-dispatch", target);
+        acc::guidance::CancelMovement();
+        acc::guidance::CancelApproach();
+    }
+
     char name[128] = "";
     if (!acc::engine::GetObjectName(target, name, sizeof(name)) ||
         name[0] == '\0') {

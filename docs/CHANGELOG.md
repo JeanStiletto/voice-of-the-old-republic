@@ -33,6 +33,24 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>Unreleased</h2>
+
+<h3>Bug fixes:</h3>
+
+- Pressing Enter on an object a few metres away no longer does nothing at all.
+  When the engine accepts the interaction but then cannot find a route to it —
+  a companion standing in the gap is enough — the mod now notices that the
+  character never took a single step and walks there by coordinate instead,
+  falling back to "way blocked" if even that fails. Previously any target within
+  six metres counted as "close enough, you must have arrived", so the failure was
+  swallowed without a word: on a communications console it took ten presses to
+  get one interaction, with silence in between. Six metres of slack still applies
+  to a walk that actually ran and then stalled, which is the case it was meant
+  for.
+- Pressing Enter again while still walking to the same target now restarts that
+  attempt instead of stacking a second one on top of it, which only deepened a
+  queue of actions the engine was already failing to drain.
+
 <h2>v0.7.7</h2>
 
 <h3>Bug fixes:</h3>

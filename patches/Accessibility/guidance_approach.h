@@ -22,6 +22,13 @@
 // queue to 0 transiently between walkmesh waypoints and UseObject's composite
 // queue never drains, so a depth read mistakes live walks for finished ones.
 //
+// That same movement signal also sets how much distance "settled within reach"
+// forgives. A walk that ran and wedged gets six metres of slack; a walk that
+// never took a step gets only use range, because at a standstill a small gap can
+// only mean "we were already at it". Six metres there swallowed nine consecutive
+// failed console interactions whole (patch-20260816-095834.log) — each one was
+// inside the radius, so it disarmed silently and the retry below never ran.
+//
 // That same movement signal separates the two verdicts a stall can carry. A
 // walk that started and then wedged has moved at least once; a walk that never
 // started has not moved at all, and for that case "way blocked" is a lie — the
@@ -92,6 +99,13 @@ bool CancelByMovement();
 // Clear tracker state without announcing — for the explicit Shift+- / panic
 // cancel paths, where the caller already runs CancelMovement + input restore.
 void CancelApproach();
+
+// The object an in-flight approach is walking to, or nullptr when nothing is
+// armed. For identity comparison only — never dereference it; the tracker holds
+// the pointer across the whole walk and does not revalidate it. Lets a dispatch
+// site recognise "this press is a re-press against the target we are already
+// trying to reach" and tear the stale attempt down instead of stacking onto it.
+void* ApproachTarget();
 
 // Announce "way blocked" for a target with the given name + LIVE distance and
 // compass direction (player→target), falling back to the plain phrase when the
