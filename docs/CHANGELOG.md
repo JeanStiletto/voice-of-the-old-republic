@@ -51,6 +51,16 @@ and add the German in parentheses if it genuinely aids clarity.
 - Pressing Enter again while still walking to the same target now restarts that
   attempt instead of stacking a second one on top of it, which only deepened a
   queue of actions the engine was already failing to drain.
+- Dialogue replies are read out at every step of a conversation, not just the
+  ones you arrow onto. A whole conversation runs on a single reply list, and the
+  mod was watching only the highlighted row number — but each new line of
+  dialogue re-highlights the first reply, which is usually the row that was
+  already highlighted, so nothing was announced. Nodes offering a single reply
+  never announced at all, since one row can never change the highlight: the only
+  clue a choice was waiting was that the conversation had stopped, and pressing
+  Enter picked an unheard line. The mod now tracks the replies themselves, and
+  announces the first one whenever the set changes — including "1 of 1", so a
+  sole reply is recognisable as such.
 
 <h2>v0.7.7</h2>
 

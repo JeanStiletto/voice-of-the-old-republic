@@ -811,10 +811,36 @@ void MonitorPanelContents() {
 // ============================================================================
 
 struct DialogReplyState {
-    void* listBox;
-    short lastSelection;
+    void*    listBox;
+    short    lastSelection;
+    // Fingerprint of the reply SET we last saw. A dialogue keeps one panel and
+    // one listbox for its whole run, so the selection index alone cannot tell
+    // "player moved the cursor" from "the engine swapped in the next node's
+    // replies" — see ComputeReplySetSignature.
+    unsigned lastSetSignature;
 };
-DialogReplyState s_dialogReplyState = { nullptr, -1 };
+DialogReplyState s_dialogReplyState = { nullptr, -1, 0 };
+
+// FNV-1a over every active reply's text plus the count. Changes whenever the
+// engine swaps the reply set, and is stable while the player navigates within
+// one set. Returns 0 ("unknown") when the reply store is empty or disagrees
+// with the listbox row count — that mismatch is exactly the window where the
+// store still holds the PREVIOUS node's replies (or none yet) while the rows
+// are already up, so a signature taken there would fingerprint stale text.
+unsigned ComputeReplySetSignature(int replyCount, int rowCount) {
+    if (replyCount <= 0 || replyCount != rowCount) return 0;
+    unsigned h = 2166136261u;
+    for (int i = 0; i < replyCount; ++i) {
+        char text[256];
+        if (!acc::engine::ReadDialogReplyText(i, text, sizeof(text))) return 0;
+        for (const char* p = text; *p; ++p) {
+            h = (h ^ static_cast<unsigned char>(*p)) * 16777619u;
+        }
+        h = (h ^ 0xffu) * 16777619u;  // row separator
+    }
+    h ^= static_cast<unsigned>(replyCount);
+    return h ? h : 1u;  // never collide with the "unknown" sentinel
+}
 
 // One-shot "park the cursor off the reply list" latch, armed when a dialog
 // reply panel first appears and cleared once the park is issued (or on disarm).
@@ -866,6 +892,7 @@ void MonitorDialogReplies() {
             acclog::Write("Menus.DialogReply", "monitor disarmed: no dialog panel in stack");
             s_dialogReplyState.listBox = nullptr;
             s_dialogReplyState.lastSelection = -1;
+            s_dialogReplyState.lastSetSignature = 0;
             s_dialogReplyParkPending = false;
         }
         return;
@@ -900,6 +927,7 @@ void MonitorDialogReplies() {
     if (s_dialogReplyState.listBox != lb) {
         s_dialogReplyState.listBox = lb;
         s_dialogReplyState.lastSelection = selIdx;
+        s_dialogReplyState.lastSetSignature = 0;
         s_dialogReplyParkPending = true;
         // Diagnostic: log what the OLD first-listbox scan WOULD have returned and
         // its offset within the panel. If scanOff != 0x19c4 the reporter is on a
@@ -938,7 +966,26 @@ void MonitorDialogReplies() {
         }
     }
 
-    if (selIdx == s_dialogReplyState.lastSelection) return;
+    // A dialogue runs its whole length on ONE panel and ONE reply listbox, so
+    // the selection index alone is not enough to notice the next node's replies:
+    // the engine selects row 0 for each new node, and lastSelection is usually
+    // already 0 from the node before — the change detector sees nothing and the
+    // player is left in silence with a reply prompt waiting. Worst case is a
+    // node with a SINGLE reply, which can never move off row 0, so it was never
+    // announced at all (the player only learns a choice is pending by pressing
+    // Enter). Treat a change of the reply SET as an announce event too.
+    int replyCount = acc::engine::ReadDialogReplyCount();
+    unsigned setSig = ComputeReplySetSignature(
+        replyCount, (lbList ? lbList->size : 0));
+    bool newSet = setSig != 0 && setSig != s_dialogReplyState.lastSetSignature;
+    if (setSig != 0) {
+        // Consume the event immediately: whatever the announce path below does
+        // with it (speak, defer to a tutorial popup, bail on a stale index), the
+        // set has been seen and must not re-fire on every following tick.
+        s_dialogReplyState.lastSetSignature = setSig;
+    }
+
+    if (selIdx == s_dialogReplyState.lastSelection && !newSet) return;
     short prev = s_dialogReplyState.lastSelection;
     s_dialogReplyState.lastSelection = selIdx;
 
@@ -975,10 +1022,13 @@ void MonitorDialogReplies() {
         // src=row-label (not dialog-state) means ReadDialogReplyText missed and
         // we fell back to the on-page row label — the paging-drop failure mode.
         // size vs replyCount exposes a listbox/reply-array count mismatch.
+        // newSet=1 means the announcement was triggered by the reply set
+        // changing (a new dialogue node) rather than by the player navigating.
         acclog::Write("Menus.DialogReply", "selected: panel=%p kind=%s listbox=%p "
-                      "sel=%d (was %d) src=%s size=%d replyCount=%d text=\"%s\"",
+                      "sel=%d (was %d) src=%s size=%d replyCount=%d newSet=%d "
+                      "text=\"%s\"",
                       fg, PanelKindName(k), lb, selIdx, prev, src, lbList->size,
-                      acc::engine::ReadDialogReplyCount(), text);
+                      replyCount, newSet ? 1 : 0, text);
         // A reply is now readable/navigable — the entry's VO has ended and the
         // player can choose. This is the moment to pop the pending tutorial
         // hint (not at VO start: that talked over Trask and stole Enter-as-skip).
