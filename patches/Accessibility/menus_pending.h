@@ -75,6 +75,19 @@ bool QueueEquipSelect(void* panel, void* slot);
 // (closes the description popup).
 bool QueueEquipCommit(void* panel, void* row, void* btn);
 
+// Queue a cancel/back-out of the equip-screen item picker — the equip twin of
+// QueueWorkbenchPickerCancel below, and the reason Escape now reverts instead
+// of silently keeping whatever the last arrow key previewed.
+//
+// Dispatches the panel's own vtable[15].HandleInputEvent with the engine code
+// Escape translates to. CSWGuiInGameEquip::HandleInputEvent implements the
+// entire cancel for us when the picker-open bit is set: restore the item that
+// was equipped before browsing started, release the remembered copies, then
+// CloseDescription (which re-enables the nine slot buttons + labels and clears
+// the bit). With the bit CLEAR the same code closes the equipment screen
+// outright, so only queue this while the picker is actually up.
+bool QueueEquipPickerCancel(void* panel);
+
 // Queue a workbench slot-button activation. On drain raises slot.is_active = 1
 // then calls CSWGuiUpgrade::OnEnterSlot(panel, slot) +
 // CSWGuiUpgrade::OnSlotSelected(panel, slot). Bypasses click-sim because

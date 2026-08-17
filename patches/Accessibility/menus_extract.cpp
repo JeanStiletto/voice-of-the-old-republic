@@ -2312,13 +2312,22 @@ void AppendDisabledSuffix(void* control, void* ownerPanel,
     // latter. Every item swap therefore re-announced the slot as unavailable
     // the instant its text changed: "Body, Echani Fiber Armor, unavailable",
     // sixteen distinct lines in the beta log and present as far back as the
-    // 0.5.7 logs. The slot reads cleanly again the moment the picker closes,
-    // which is exactly what the log shows once the user backs out — so the
-    // flag is right and the timing is what makes it meaningless.
+    // 0.5.7 logs.
     //
-    // Not gated on ownerPanel: an armed picker owns its panel exclusively (it
-    // disarms when that panel leaves the manager's panels[]), and several
-    // announce paths reach here with no owner resolved.
+    // This suppression is exact rather than approximate, because both IsArmed
+    // queries now READ the engine's own picker-open bit (see
+    // menus_listbox_picker.cpp). On the equip screen the very call that raises
+    // that bit, ShowDescription(1), is what cleared these interactive bits, and
+    // the call that clears it puts them back — so "armed" and "the slots are
+    // disabled by the picker" are the same fact, not two facts that have to be
+    // kept in step. While they WERE two facts, this early-out could only paper
+    // over the mismatch: an Escape cleared our flag and never told the engine,
+    // so the suffix came back on for slots the engine had left disabled for
+    // good, and every slot read "unavailable" until the screen was reopened.
+    //
+    // Not gated on ownerPanel: an armed picker owns its panel exclusively (the
+    // bit lives on that panel and dies with it), and several announce paths
+    // reach here with no owner resolved.
     if (acc::menus::listbox::IsEquipPickerArmed() ||
         acc::menus::listbox::IsWorkbenchUpgradePickerArmed()) {
         return;

@@ -401,15 +401,11 @@ bool EquipPickerMatchesPanel(void* p) {
 
 bool EquipPickerArmed() { return IsEquipPickerArmed(); }
 
-// Stale-reset: if armed against an older panel pointer (re-open), disarm.
-// Picker state is per-panel.
-void EquipPickerResetStale(void* activePanel) {
-    if (IsEquipPickerArmed() && EquipPickerPanel() != activePanel) {
-        acclog::Write("EquipPicker", "disarm - panel changed (%p -> %p)",
-                      EquipPickerPanel(), activePanel);
-        DisarmEquipPicker();
-    }
-}
+// No stale-reset callback: armed-ness is read off the engine's picker-open bit
+// on whichever InGameEquip panel is in the stack, so a re-open (fresh panel
+// allocation) answers correctly by construction. The old callback existed to
+// catch a mirrored flag drifting against a dead panel pointer, and there is no
+// longer a mirror to drift.
 
 void* EquipPickerFindLb(void* p) {
     return FindControlById(p, kEquipLbItemsId);
@@ -443,7 +439,7 @@ void EquipPickerLogExtra(char* out, size_t outN, const ListBoxNavResult& r) {
 bool EquipPickerOnEnter(void* panel) {
     if (acc::menus::pending::IsPending()) {
         acclog::Write("EquipPicker", "Enter — op already pending; ignoring");
-        DisarmEquipPicker();
+        ClearEquipPickerArmLatch();
         return true;
     }
     void* lb  = FindControlById(panel, kEquipLbItemsId);
@@ -504,15 +500,37 @@ bool EquipPickerOnEnter(void* panel) {
                       "(lb=%p row=%p btn=%p sel=%d rows=%d) panel=%p",
                       lb, row, btn, selIdx, rowCount, panel);
     }
-    DisarmEquipPicker();
+    ClearEquipPickerArmLatch();
     return true;
 }
 
-// Custom Esc: just disarm. Chain focus is unchanged so the next arrow
-// press resumes slot navigation.
+// Custom Esc: run the ENGINE's cancel, then drop our latch.
+//
+// Dropping the latch alone is not backing out. Arrowing the list equips as it
+// goes (OnItemSelected is the row's select handler and calls EquipItem
+// directly), and the engine's picker-open bit stays raised until something
+// reaches CloseDescription. So a latch-only Esc left the previewed item
+// permanently worn AND left ShowDescription(1)'s work in place — the interactive
+// bit cleared on all nine slot buttons and labels — which is why every slot read
+// "unavailable" from the first picker use until the screen was closed and
+// reopened (K2 patch-20260817-065149.log lines 3110 onwards).
+//
+// QueueEquipPickerCancel dispatches the panel's own HandleInputEvent with the
+// engine code Escape maps to, which restores the pre-browse item (and the
+// off-hand a two-hander displaced), releases the remembered copies and calls
+// CloseDescription. Same shape as WorkbenchUpgradeOnEsc below, which already
+// had to learn this lesson on the mod picker.
+//
+// The engine clears its own bit inside that call, so the latch is all we clear
+// here; IsEquipPickerArmed keeps answering true until the queued op drains,
+// which is correct — the slots are still disabled for that tick.
 bool EquipPickerOnEsc(void* panel) {
-    acclog::Write("EquipPicker", "Esc -> disarm (panel=%p)", panel);
-    DisarmEquipPicker();
+    if (!acc::menus::pending::IsPending()) {
+        acc::menus::pending::QueueEquipPickerCancel(panel);
+    }
+    acclog::Write("EquipPicker", "Esc -> engine cancel + clear latch (panel=%p)",
+                  panel);
+    ClearEquipPickerArmLatch();
     return true;
 }
 
@@ -520,7 +538,7 @@ constexpr ListBoxPanelSpec kEquipPickerSpec = {
     /*logTag*/                  "EquipPicker",
     /*matches*/                 EquipPickerMatchesPanel,
     /*armed*/                   EquipPickerArmed,
-    /*resetStale*/              EquipPickerResetStale,
+    /*resetStale*/              nullptr,  // engine bit can't go stale
     /*findListBox*/             EquipPickerFindLb,
     /*minSel*/                  1,  // skip protoitem template at row 0
     /*announce*/                EquipPickerAnnounce,
@@ -1035,17 +1053,10 @@ bool WorkbenchUpgradeMatches(void* p) {
 
 bool WorkbenchUpgradeArmed() { return IsWorkbenchUpgradePickerArmed(); }
 
-// Stale-reset: if armed against an older panel pointer (re-open of the
-// workbench panel allocates a new instance), disarm. Picker state is
-// per-panel-pointer.
-void WorkbenchUpgradeResetStale(void* activePanel) {
-    if (IsWorkbenchUpgradePickerArmed() &&
-        WorkbenchUpgradePickerPanel() != activePanel) {
-        acclog::Write("WorkbenchUpgrade", "disarm - panel changed (%p -> %p)",
-                      WorkbenchUpgradePickerPanel(), activePanel);
-        DisarmWorkbenchUpgradePicker();
-    }
-}
+// No stale-reset callback, for the same reason the equip spec has none: armed-
+// ness is the engine's picker-open bit on whichever WorkbenchUpgrade panel is
+// in the stack, so a re-open (fresh panel allocation) answers correctly on its
+// own. There is no mirrored pointer left to go stale against.
 
 void* WorkbenchUpgradeFindLb(void* p) {
     return FindControlById(p, kWorkbenchUpgradeLbItemsId);
@@ -1150,7 +1161,7 @@ int WorkbenchUpgradeMinSel(void* panel) {
 bool WorkbenchUpgradeOnEnter(void* panel) {
     if (acc::menus::pending::IsPending()) {
         acclog::Write("WorkbenchUpgrade", "Enter — op already pending; ignoring");
-        DisarmWorkbenchUpgradePicker();
+        ClearWorkbenchUpgradeArmLatch();
         return true;
     }
     void* lb  = FindControlById(panel, kWorkbenchUpgradeLbItemsId);
@@ -1191,7 +1202,7 @@ bool WorkbenchUpgradeOnEnter(void* panel) {
             acclog::Write("WorkbenchUpgrade", "K2 Enter -- no row (lb=%p sel=%d "
                           "rows=%d) panel=%p", lb, selIdx, rowCount, panel);
         }
-        DisarmWorkbenchUpgradePicker();
+        ClearWorkbenchUpgradeArmLatch();
         return true;
     }
 
@@ -1216,7 +1227,7 @@ bool WorkbenchUpgradeOnEnter(void* panel) {
                       "(lb=%p row=%p btn=%p sel=%d rows=%d) panel=%p",
                       lb, row, btn, selIdx, rowCount, panel);
     }
-    DisarmWorkbenchUpgradePicker();
+    ClearWorkbenchUpgradeArmLatch();
     return true;
 }
 
@@ -1233,7 +1244,7 @@ bool WorkbenchUpgradeOnEsc(void* panel) {
         acc::menus::pending::QueueWorkbenchPickerCancel(panel);
     }
     acclog::Write("WorkbenchUpgrade", "Esc -> cancel picker + disarm (panel=%p)", panel);
-    DisarmWorkbenchUpgradePicker();
+    ClearWorkbenchUpgradeArmLatch();
     return true;
 }
 
@@ -1258,7 +1269,7 @@ constexpr ListBoxPanelSpec kWorkbenchUpgradeSpec = {
     /*logTag*/                  "WorkbenchUpgrade",
     /*matches*/                 WorkbenchUpgradeMatches,
     /*armed*/                   WorkbenchUpgradeArmed,
-    /*resetStale*/              WorkbenchUpgradeResetStale,
+    /*resetStale*/              nullptr,  // engine bit can't go stale
     /*findListBox*/             WorkbenchUpgradeFindLb,
     /*minSel*/                  0,
     /*announce*/                WorkbenchUpgradeAnnounce,

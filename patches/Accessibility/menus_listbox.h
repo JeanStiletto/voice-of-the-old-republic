@@ -66,31 +66,36 @@ const char* GetTitleOverride(void* panel);
 // including the spec callbacks in menus_listbox.cpp.
 // ---------------------------------------------------------------------------
 
-// EquipPicker zone state. The picker arms when chain Enter activates an
-// equip slot button (BTN_INV_*); it stays armed until Enter commits a row,
-// Esc disarms, or the panel disappears from CSWGuiManager.panels[].
+// EquipPicker zone state. "Armed" is the ENGINE's picker-open bit
+// (kEquipPickerOpenFlagOff), not a flag of ours — the same engine call that
+// raises it disables the nine slot buttons underneath, so anything we kept
+// beside it could disagree with what the screen actually does. IsArmed is pure
+// and safe to call several times a frame.
 //
-// menus.cpp's slot-Enter handler calls Arm; the equip spec's stale-reset and
-// the per-tick picker monitor call IsArmed + Disarm.
+// Arm sets only a one-tick LATCH covering the window between queueing the
+// engine's open call and the engine raising its own bit; the picker monitor
+// retires that latch. ClearArmLatch means "we are done driving this picker" and
+// deliberately leaves the engine's bit alone — the engine clears it when the
+// commit or cancel we queued reaches CloseDescription, and until then the slots
+// really are still disabled.
 bool  IsEquipPickerArmed();
 void* EquipPickerPanel();
 void  ArmEquipPicker(void* panel);
-void  DisarmEquipPicker();
+void  ClearEquipPickerArmLatch();
 
 // Workbench upgrade picker — arms when the chain Enter handler activates
-// a BTN_UPGRADE3X/4X slot button (via click-sim, populating LB_ITEMS with
-// the slot's compatible inventory mods). Disarms on Enter-commit, Esc, or
-// when the panel disappears from CSWGuiManager.panels[] (caught by
-// MonitorWorkbenchUpgradePicker in TickPickerMonitors).
+// a BTN_UPGRADE3X/4X slot button (populating LB_ITEMS with the slot's
+// compatible inventory mods). Same engine-owned model as the equip picker
+// above, reading kUpgradePickerOpenFlagOff.
 //
-// WorkbenchUpgradePickerPanel() is the panel the arming was bound to; the
-// spec's announce callback needs it to ask GetWorkbenchPickerInfo which slot
-// layout is on screen (the row-0 remove entry exists on power slots but not
-// on the colour slot).
+// WorkbenchUpgradePickerPanel() is the upgrade panel while the picker is up
+// (null otherwise); the spec's announce callback needs it to ask
+// GetWorkbenchPickerInfo which slot layout is on screen (the row-0 remove entry
+// exists on power slots but not on the colour slot).
 bool  IsWorkbenchUpgradePickerArmed();
 void* WorkbenchUpgradePickerPanel();
 void  ArmWorkbenchUpgradePicker(void* panel);
-void  DisarmWorkbenchUpgradePicker();
+void  ClearWorkbenchUpgradeArmLatch();
 
 // Per-tick fan-out for the listbox-paired monitors that live in this TU:
 // MonitorContainerSelection (per-row navigation announces) and
@@ -104,5 +109,11 @@ void TickListboxMonitors();
 // menus_listbox_picker.cpp. Fanned out from TickListboxMonitors so menus.cpp
 // keeps a single listbox-side tick entry point.
 void TickPickerMonitors();
+
+// Registers the picker-owned message-buffer rules. Called from
+// msg_router.cpp's EnsureRulesRegistered, FIRST — the rule it adds claims the
+// engine's inventory feedback while the equip picker previews items, and rules
+// are first-match-wins, so it has to sit ahead of the combat rules.
+void RegisterPickerMsgRules();
 
 }  // namespace acc::menus::listbox

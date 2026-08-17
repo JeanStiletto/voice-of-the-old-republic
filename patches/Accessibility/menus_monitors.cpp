@@ -24,6 +24,7 @@
 #include "menus_extract.h"
 #include "menus_internal.h"
 #include "menus_journal.h"   // LogEntryCounts — entry-count completeness diagnostic
+#include "menus_listbox.h"   // IsEquipPickerArmed — mute the slot re-read during preview
 #include "strings.h"
 #include "prism.h"
 #include "tutorial_hints.h"  // TutorialBox keyboard-hint substitution (Surface 1)
@@ -295,13 +296,31 @@ void MonitorFocusedControl() {
                     chainPanel, focused) ||
                 acc::menus::chargen_skills::AnnounceValueChange(
                     chainPanel, focused);
-            if (!handled) {
+            // While the equip picker is open, the focused control is the slot
+            // button UNDERNEATH it, and its text changes on every arrow press —
+            // the engine equips each row as you land on it (its live preview;
+            // OnItemSelected is the row's select handler and calls EquipItem
+            // directly). So arrowing down one row produced two lines: the
+            // picker's own "Kampfstab, 2 von 48" and then this monitor's
+            // "Rechte Waffe, Kampfstab", sometimes three when the swap flashed
+            // through an empty slot first (patch-20260817-074321.log). The
+            // second line repeats an item name the user has just been told and
+            // describes a state that is not committed yet.
+            //
+            // Suppress the speech but keep updating the snapshot, so the diff
+            // that matters still fires the moment the picker closes: Escape
+            // reverts to the item you started with and this announces exactly
+            // that, which is the user's confirmation that the cancel took.
+            bool equipPreview = acc::menus::listbox::IsEquipPickerArmed();
+            if (!handled && !equipPreview) {
                 prism::Speak(text, /*interrupt=*/false);
             }
             strncpy_s(s_focusMonitorText, text, _TRUNCATE);
             acclog::Write("Monitor", "focused=%p text changed -> \"%s\"%s",
                           focused, text,
-                          handled ? " (chargen override)" : "");
+                          handled ? " (chargen override)"
+                                  : (equipPreview ? " (equip preview, silent)"
+                                                  : ""));
         }
     } else {
         s_focusMonitorControl = focused;

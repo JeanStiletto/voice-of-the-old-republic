@@ -1191,6 +1191,22 @@ const size_t    kEquipPanelBeltIdOffset            = acc::off::Pick(0x429c, 0x50
 const size_t    kEquipPanelLeftWeapon2IdOffset     = acc::off::Kotor2Only(0x50c0);
 const size_t    kEquipPanelRightWeapon2IdOffset    = acc::off::Kotor2Only(0x50c4);
 
+// CSWGuiInGameEquip.field33_0x4270 — bit 0 is the "item picker open" state,
+// the equip screen's twin of kUpgradePickerOpenFlagOff. OnSelectSlot raises
+// it; the engine's own cancel (HandleInputEvent 0x28 with the bit set) and
+// OnOKPressed both clear it via CloseDescription. It is the ONLY authoritative
+// answer to "is the picker zone up", because the same call that raises it,
+// ShowDescription(1), is what clears the interactive bit on all nine slot
+// buttons and labels — so any state we mirror alongside it can disagree with
+// what the screen actually does. Read it, never copy it.
+//
+// KOTOR 2 0x5094 is a direct witness, not arithmetic: its OnOKPressed opens
+// `gate on btn->is_active AND panel+0x5094 & 1` (recorded with that function
+// in engine_offsets_addresses.h). Do NOT "correct" it to 0x5090 by applying
+// the +0xE20 shift the item-id band above uses — the two bands do not share a
+// shift, which is the same lesson that band's own comment records.
+const size_t    kEquipPickerOpenFlagOff = acc::off::Pick(0x4270, 0x5094);  // panel.field33
+
 // Stat-value labels inline in the panel struct. Each is a CSWGuiLabel
 // (SIZE=0x140). UpdateInventory @0x006b9970 writes the rendered value
 // into gui_string at populate-time; the .gui-time placeholder text is

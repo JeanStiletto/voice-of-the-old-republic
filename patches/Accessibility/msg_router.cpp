@@ -8,6 +8,7 @@
 #include "engine_area.h"      // IsLoadingSaveGame — engine save-load flag
 #include "engine_player.h"    // GetPlayerPosition — world-live replay gate
 #include "log.h"
+#include "menus_listbox.h"    // RegisterPickerMsgRules — equip-preview suppression
 #include "prism.h"
 #include "engine_game.h"
 
@@ -179,6 +180,11 @@ void EnsureRulesRegistered() {
     if (s_done) return;
     s_done = true;
     acc::msg::Router::Instance().SetLogTag("Combat.MsgBuf");
+    // FIRST — first-match-wins. While the equip picker is open the engine
+    // equips each row as you arrow onto it (its live preview) and reports the
+    // inventory change here; that chatter must be claimed before any combat
+    // rule or the raw-speech fallback sees it. See menus_listbox_picker.cpp.
+    acc::menus::listbox::RegisterPickerMsgRules();
     acc::combat::RegisterCombatMsgRules();
     // Story-locked-object bark recall — notes the "This object is locked"
     // feedback (strref 1437), never consumes it. See locked_recall.h.

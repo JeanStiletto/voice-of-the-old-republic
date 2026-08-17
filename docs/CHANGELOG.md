@@ -66,6 +66,27 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h3>Bug fixes:</h3>
 
+- Escape in the equipment screen's item list now puts back what you were
+  wearing. Browsing that list equips as you go — that is the game's own live
+  preview, and it is why the stat readouts update as you move — but the mod was
+  only closing its own view of the picker, never telling the game to back out.
+  Whatever the last arrow key had landed on stayed on, so a browse you thought
+  you had abandoned quietly changed your gear.
+- Equipment slots no longer all read "unavailable" once you have opened the item
+  list. The game disables the nine slot buttons for as long as the picker is up
+  and only re-enables them when the picker is properly closed, which the mod's
+  Escape never did — so every slot kept announcing itself as unavailable until
+  the screen was closed and reopened.
+- Arrowing through the equipment list no longer announces "Item Removed." on
+  every press. That is the game's ordinary inventory feedback for the preview
+  above, and it described a removal the player never asked for; it now stays
+  quiet while the picker is open.
+- Arrowing through the equipment list no longer says each item's name twice.
+  The slot button beneath the list takes on the previewed item, and the mod read
+  that change out as well, so one press gave "Combat Staff, 2 of 48" followed by
+  "Right Weapon, Combat Staff" — occasionally with a "Right Weapon, empty" in
+  between, where the swap passed through an empty slot. The slot is still
+  announced when the picker closes, which is what confirms an Escape took.
 - The Taris Undercity no longer crashes to desktop. The installer now switches
   the game's own "Grass" graphics option off on both games. A crash bundle from
   a beta tester put the fault inside the graphics driver, called from the

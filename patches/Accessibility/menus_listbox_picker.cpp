@@ -21,6 +21,35 @@
 // this state through the accessors in menus_listbox.h instead, which is what
 // menus.cpp already did from the outside.
 //
+// The armed flag is the ENGINE's, not ours
+// ----------------------------------------
+// Both panels already carry a "picker open" bit that the engine raises when it
+// opens the item zone and clears when it closes it — kEquipPickerOpenFlagOff
+// and kUpgradePickerOpenFlagOff. Crucially, on the equip screen the same call
+// that raises the bit (ShowDescription(1)) is what clears the interactive bit
+// on all nine slot buttons and labels, and the same call that clears it
+// (CloseDescription → ShowDescription(0)) is what puts them back. So the bit is
+// not merely a good proxy for "the picker is up" — it is the exact predicate
+// that decides whether the slots underneath are usable.
+//
+// This file used to keep its own bool alongside it, raised at keypress time and
+// cleared at keypress time, while the engine's moved a tick later when the
+// queued op drained. Every gap between the two produced a wrong answer, and one
+// of them was permanent: Escape cleared OUR flag and never told the engine, so
+// the engine's bit stayed set, the slot buttons stayed disabled, and every slot
+// announced "unavailable" for the rest of the panel's life (K2
+// patch-20260817-065149.log, K1 patch-20260813-204335.log). The commit path had
+// the same bug in miniature — one tick of "unavailable" between our disarm and
+// OnOKPressed draining.
+//
+// So: read the bit, never copy it. The only local state left is an ARM LATCH
+// per picker, covering the one tick between queueing the engine's open call and
+// the engine raising its own bit; it is self-limiting (the monitor drops it as
+// soon as the bit appears, or as soon as the queued op has drained without one,
+// which is also what happens when the slot had no items and the engine popped a
+// message box instead). Plus the one-shot cursor park, which is an action to
+// perform rather than a state to agree about.
+//
 // The cursor-park mechanism
 // -------------------------
 // Both pickers set useEngineSelect, i.e. arrows drive the engine's own
@@ -43,6 +72,8 @@
 #include "log.h"
 #include "menus_extract.h"
 #include "menus_internal.h"
+#include "menus_pending.h"   // IsPending — bounds the arm latch to the queued open
+#include "msg_router.h"      // preview-feedback suppression rule
 #include "prism.h"
 #include "strings.h"
 
@@ -54,50 +85,85 @@ using acc::menus::detail::GetControlCenter;
 namespace acc::menus::listbox {
 
 // ============================================================================
-// Picker state. Both pickers follow the same shape: an armed flag, the panel
-// pointer the arming was bound to (re-opening a panel allocates a fresh
-// instance, so a pointer mismatch means "stale, disarm"), and a park-pending
-// latch consumed once by the monitor.
+// Picker state. Both pickers follow the same shape: the engine's own
+// "picker open" bit answers IsArmed, and the only thing we keep is the arm
+// latch that covers the queued-open window plus the one-shot cursor park.
+// See the "The armed flag is the ENGINE's" note in the file header.
 // ============================================================================
 
 namespace {
-bool  s_equipPickerActive = false;
-void* s_equipPickerPanel  = nullptr;
-bool  s_equipParkPending  = false;
+void* s_equipArmPending  = nullptr;  // panel we asked to open, until its bit shows
+bool  s_equipParkPending = false;
 
-bool  s_workbenchUpgradePickerActive = false;
-void* s_workbenchUpgradePickerPanel  = nullptr;
-bool  s_workbenchUpgradeParkPending  = false;
+void* s_workbenchUpgradeArmPending  = nullptr;
+bool  s_workbenchUpgradeParkPending = false;
+
+// Bit 0 of a panel's picker-open field. Under SEH like every engine read here:
+// an unported offset on the other game would otherwise fault on a live panel
+// pointer rather than simply answering "not armed".
+bool ReadPickerOpenBit(void* panel, size_t fieldOff) {
+    if (!panel) return false;
+    __try {
+        uint32_t flag = *reinterpret_cast<uint32_t*>(
+            reinterpret_cast<unsigned char*>(panel) + fieldOff);
+        return (flag & 1u) != 0;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
 }  // namespace
 
-bool  IsEquipPickerArmed() { return s_equipPickerActive; }
-void* EquipPickerPanel()   { return s_equipPickerPanel; }
+// Both IsArmed queries are PURE — they are called from the input dispatcher,
+// the extractor's disabled-suffix path and the msg-router rule, several times
+// per frame, and a query that mutated the latch would make the answer depend on
+// who asked first. The monitors below own every latch transition.
+bool IsEquipPickerArmed() {
+    void* panel = FindPanelByKind(PanelKind::InGameEquip);
+    if (!panel) return false;
+    if (ReadPickerOpenBit(panel, kEquipPickerOpenFlagOff)) return true;
+    return s_equipArmPending == panel;
+}
+
+void* EquipPickerPanel() {
+    return IsEquipPickerArmed() ? FindPanelByKind(PanelKind::InGameEquip)
+                                : nullptr;
+}
 
 void ArmEquipPicker(void* panel) {
-    s_equipPickerActive = true;
-    s_equipPickerPanel  = panel;
-    s_equipParkPending  = true;
+    s_equipArmPending  = panel;
+    s_equipParkPending = true;
 }
 
-void DisarmEquipPicker() {
-    s_equipPickerActive = false;
-    s_equipPickerPanel  = nullptr;
-    s_equipParkPending  = false;
+// "We are done driving this picker." Deliberately does NOT clear the engine's
+// bit — the engine clears it itself when the commit or cancel we queued reaches
+// CloseDescription, and the slots are genuinely still disabled until then, so
+// the suffix suppression and the input routing must both stay on for that tick.
+void ClearEquipPickerArmLatch() {
+    s_equipArmPending  = nullptr;
+    s_equipParkPending = false;
 }
 
-bool  IsWorkbenchUpgradePickerArmed() { return s_workbenchUpgradePickerActive; }
-void* WorkbenchUpgradePickerPanel()   { return s_workbenchUpgradePickerPanel; }
+bool IsWorkbenchUpgradePickerArmed() {
+    void* panel = FindPanelByKind(PanelKind::WorkbenchUpgrade);
+    if (!panel) return false;
+    if (ReadPickerOpenBit(panel, kUpgradePickerOpenFlagOff)) return true;
+    return s_workbenchUpgradeArmPending == panel;
+}
+
+void* WorkbenchUpgradePickerPanel() {
+    return IsWorkbenchUpgradePickerArmed()
+               ? FindPanelByKind(PanelKind::WorkbenchUpgrade)
+               : nullptr;
+}
 
 void ArmWorkbenchUpgradePicker(void* panel) {
-    s_workbenchUpgradePickerActive = true;
-    s_workbenchUpgradePickerPanel  = panel;
-    s_workbenchUpgradeParkPending  = true;
+    s_workbenchUpgradeArmPending  = panel;
+    s_workbenchUpgradeParkPending = true;
 }
 
-void DisarmWorkbenchUpgradePicker() {
-    s_workbenchUpgradePickerActive = false;
-    s_workbenchUpgradePickerPanel  = nullptr;
-    s_workbenchUpgradeParkPending  = false;
+void ClearWorkbenchUpgradeArmLatch() {
+    s_workbenchUpgradeArmPending  = nullptr;
+    s_workbenchUpgradeParkPending = false;
 }
 
 // ============================================================================
@@ -136,12 +202,27 @@ bool ParkPickerCursorOffList(void* panel, int backBtnId, const char* tag) {
     return true;
 }
 
-// Equip picker: disarm when the panel leaves panels[], run the one-shot
-// cursor park, and speak row changes. The announce lives here rather than in
-// the spec's `announce` callback because the engine also moves the selection
-// on its own (scroll, hover, the commit itself) — watching the selection
-// index per tick catches every move, where the callback would only catch the
-// ones we drove.
+// Raw read of the equip panel's picker-open field for the diagnostic trace.
+// Split out of the monitor so that function stays free of SEH (MSVC C2712 — see
+// the CLAUDE.md note on __try and unwinding).
+void TraceEquipPickerOpenField(void* panel, bool armed) {
+    __try {
+        uint32_t raw = *reinterpret_cast<uint32_t*>(
+            reinterpret_cast<unsigned char*>(panel) + kEquipPickerOpenFlagOff);
+        acclog::Trace("EquipPickerBit",
+                      "panel=%p raw=0x%08x open=%d latch=%p armed=%d",
+                      panel, raw, (raw & 1u) ? 1 : 0, s_equipArmPending,
+                      armed ? 1 : 0);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Trace("EquipPickerBit", "panel=%p read faulted", panel);
+    }
+}
+
+// Equip picker: retire the arm latch, run the one-shot cursor park, and speak
+// row changes. The announce lives here rather than in the spec's `announce`
+// callback because the engine also moves the selection on its own (scroll,
+// hover, the commit itself) — watching the selection index per tick catches
+// every move, where the callback would only catch the ones we drove.
 void MonitorEquipPickerSelection() {
     void* equipPanel = FindPanelByKind(PanelKind::InGameEquip);
 
@@ -152,12 +233,41 @@ void MonitorEquipPickerSelection() {
             s_equipSelState.listBox       = nullptr;
             s_equipSelState.lastSelection = -1;
         }
-        if (s_equipPickerActive) {
-            acclog::Write("EquipPicker", "disarm - panel gone from panels[]");
-            DisarmEquipPicker();
+        if (s_equipArmPending) {
+            acclog::Write("EquipPicker", "arm latch dropped - panel gone from "
+                          "panels[]");
+            ClearEquipPickerArmLatch();
         }
         return;
     }
+
+    // Retire the arm latch. Either the engine has taken over (its bit is up and
+    // the latch is redundant), or our queued OnSelectSlot has already drained
+    // without raising it — which is the "slot had no fitting items, engine
+    // popped a message box instead" path. Bounding the latch on the queue is
+    // what stops a refused open from leaving the arrows hijacked forever.
+    if (s_equipArmPending) {
+        bool engineOpen = ReadPickerOpenBit(equipPanel,
+                                            kEquipPickerOpenFlagOff);
+        if (engineOpen || !acc::menus::pending::IsPending()) {
+            acclog::Write("EquipPicker", "arm latch retired (engineOpen=%d)",
+                          engineOpen ? 1 : 0);
+            s_equipArmPending = nullptr;
+        }
+    }
+
+    bool armed = IsEquipPickerArmed();
+
+    // The whole subsystem now hangs off kEquipPickerOpenFlagOff, and its KOTOR 2
+    // column is second-hand (read out of that game's OnOKPressed during the port,
+    // not decompiled here). A wrong offset fails LOUDLY in one direction and
+    // silently in the other: bit 0 stuck high would leave the arrows hijacked and
+    // the "unavailable" suffix suppressed forever on the equipment screen. Trace
+    // folds a steady value to one line, so this costs nothing while the state is
+    // still, and the first test round shows the field flipping 0 -> 1 on slot
+    // Enter and 1 -> 0 on Escape/commit if the offset is right. Drop it once a
+    // KOTOR 2 log has confirmed both edges.
+    TraceEquipPickerOpenField(equipPanel, armed);
 
     void* lb = FindControlById(equipPanel, kEquipLbItemsId);
     if (!lb) return;
@@ -169,7 +279,7 @@ void MonitorEquipPickerSelection() {
     // One-shot cursor park: once the picker is armed and its LB_ITEMS has been
     // populated (rowCount > 0), warp the cursor off the list so the engine's
     // per-frame hover-select stops fighting our SetSelectedControl writes.
-    if (s_equipPickerActive && s_equipParkPending && rowCount > 0) {
+    if (armed && s_equipParkPending && rowCount > 0) {
         if (ParkPickerCursorOffList(equipPanel, kEquipBtnBackId, "EquipPicker")) {
             s_equipParkPending = false;
         }
@@ -191,14 +301,26 @@ void MonitorEquipPickerSelection() {
     short prev = s_equipSelState.lastSelection;
     s_equipSelState.lastSelection = selIdx;
 
+    // Track the move either way, but only SPEAK it while the picker is up. The
+    // engine moves this selection when it isn't: the cancel path's
+    // CloseDescription re-runs OnEnterSlot, which rebuilds LB_ITEMS from
+    // scratch, and announcing that rebuild would read an item row out at the
+    // exact moment the user backed out to the slot buttons.
+    if (!armed) {
+        acclog::Write("Menus.EquipPicker",
+                      "selection moved while picker closed: lb=%p %d -> %d "
+                      "(not announced)", lb, prev, selIdx);
+        return;
+    }
+
     if (selIdx < 0) {
         acclog::Write("Menus.EquipPicker", "selection cleared: lb=%p prev=%d",
                       lb, prev);
         return;
     }
     if (selIdx == 0) {
-        acclog::Write("Menus.EquipPicker", "selection on protoitem (sel=0) lb=%p",
-                      lb);
+        acclog::Write("Menus.EquipPicker", "selection on unequip entry (sel=0) "
+                      "lb=%p", lb);
         return;
     }
     if (!lbList || !lbList->data || selIdx >= lbList->size) {
@@ -219,8 +341,12 @@ void MonitorEquipPickerSelection() {
         return;
     }
 
-    // Row 0 is the protoitem template, hidden from nav (minSel=1), so the
-    // user-visible position is selIdx as-is and the total is rowCount-1.
+    // Row 0 is the engine's "empty" entry (OnEnterSlot builds it first, with
+    // item id 0x7f000000 and SetCanUse(0) — the unequip target, NOT a protoitem
+    // template as this comment used to claim). It stays hidden from nav
+    // (minSel=1) on purpose: unequipping is Enter on the row that is already
+    // worn, which EquipPickerOnEnter routes to this row. So the user-visible
+    // position is selIdx as-is and the total is rowCount-1.
     int userPos   = selIdx;
     int userTotal = rowCount - 1;
     char msg[320];
@@ -232,19 +358,36 @@ void MonitorEquipPickerSelection() {
                   lb, selIdx, prev, rowText);
 }
 
-// Disarms the workbench upgrade picker if the upgrade.gui panel is gone
-// from CSWGuiManager.panels[]. Mirror of the EquipPicker disarm-on-panel-
-// gone branch - resetStale only fires when the spec matches (i.e. the
-// panel is still foreground), so a panel-pop between ticks would leave
-// the picker stuck armed on the next reopen otherwise.
+// Workbench upgrade picker: retire the arm latch and run the one-shot cursor
+// park. Mirror of the equip monitor above. The panel-gone branch matters
+// because the spec's callbacks only run while the panel is foreground, so a
+// panel-pop between ticks has no other place to drop the latch.
 void MonitorWorkbenchUpgradePicker() {
-    if (!s_workbenchUpgradePickerActive) return;
-
-    if (!FindPanelByKind(PanelKind::WorkbenchUpgrade)) {
-        acclog::Write("WorkbenchUpgrade", "disarm - panel gone from panels[]");
-        DisarmWorkbenchUpgradePicker();
+    void* upgradePanel = FindPanelByKind(PanelKind::WorkbenchUpgrade);
+    if (!upgradePanel) {
+        if (s_workbenchUpgradeArmPending) {
+            acclog::Write("WorkbenchUpgrade", "arm latch dropped - panel gone "
+                          "from panels[]");
+            ClearWorkbenchUpgradeArmLatch();
+        }
         return;
     }
+
+    // Same latch retirement as the equip monitor above: hand over to the
+    // engine's bit as soon as it appears, and give up on the latch once the
+    // queued OnSlotSelected has drained without one.
+    if (s_workbenchUpgradeArmPending) {
+        bool engineOpen = ReadPickerOpenBit(upgradePanel,
+                                            kUpgradePickerOpenFlagOff);
+        if (engineOpen || !acc::menus::pending::IsPending()) {
+            acclog::Write("WorkbenchUpgrade",
+                          "arm latch retired (engineOpen=%d)",
+                          engineOpen ? 1 : 0);
+            s_workbenchUpgradeArmPending = nullptr;
+        }
+    }
+
+    if (!IsWorkbenchUpgradePickerArmed()) return;
 
     // TEMPORARY DIAGNOSTIC (lightsabercrystalcrash investigation): trace the
     // LB_ITEMS selection state every frame while the picker is armed, to find
@@ -262,8 +405,7 @@ void MonitorWorkbenchUpgradePicker() {
     // rows/top/ipp included so a per-frame listbox REPOPULATION (rowCount or
     // row pointers churning) is visible too — that would reset selection as a
     // side effect. Remove once the mechanism is identified.
-    void* lb = FindControlById(s_workbenchUpgradePickerPanel,
-                               kWorkbenchUpgradeLbItemsId);
+    void* lb = FindControlById(upgradePanel, kWorkbenchUpgradeLbItemsId);
     if (lb) {
         auto* lbBase = reinterpret_cast<unsigned char*>(lb);
         auto* lbList = reinterpret_cast<CExoArrayList*>(
@@ -286,7 +428,7 @@ void MonitorWorkbenchUpgradePicker() {
         // (rowCount > 0), warp the cursor off LB_ITEMS so the engine's
         // hover-select stops reverting our SetSelectedControl writes.
         if (s_workbenchUpgradeParkPending && rowCount > 0) {
-            if (ParkPickerCursorOffList(s_workbenchUpgradePickerPanel,
+            if (ParkPickerCursorOffList(upgradePanel,
                                         kWorkbenchUpgradeBtnBackId,
                                         "WorkbenchUpgrade")) {
                 s_workbenchUpgradeParkPending = false;
@@ -295,7 +437,40 @@ void MonitorWorkbenchUpgradePicker() {
     }
 }
 
+// ----------------------------------------------------------------------------
+// Message-buffer rule: mute the engine's feedback while the equip picker is up.
+//
+// Browsing the equip list EQUIPS as it goes. CSWGuiInGameEquip::OnItemSelected
+// is the row's SELECT handler, not a commit button — it writes the description
+// AND calls EquipItem/UnequipItem straight away, remembering the displaced item
+// so OnOKPressed can keep it or the cancel path can put it back. That is the
+// engine's live preview, and it is exactly what mouse users get; our arrow keys
+// reach it through the same CSWGuiListBox::SetSelectedControl.
+//
+// The side effect is that each arrow press makes the engine append its ordinary
+// inventory feedback ("Gegenstand entfernt." / "Item Removed.") to the in-game
+// message buffer, where the router's raw-speech fallback reads it out. Stepping
+// through five items narrated five removals of things the player never removed
+// (K2 patch-20260817-065149.log, K1 patch-20260813-204335.log).
+//
+// So claim those lines for as long as the picker owns the screen. The picker
+// already announces the focused row, and the preview is not a completed action
+// — the user hears the real outcome when Enter commits or Escape reverts.
+// Deliberately equip-only: the workbench picker previews nothing, so its
+// feedback lines always describe a real install and must stay audible.
+bool RuleSuppressEquipPreviewFeedback(const char* text) {
+    if (!IsEquipPickerArmed()) return false;
+    acclog::Write("Menus.EquipPicker", "preview feedback suppressed: [%.200s]",
+                  text ? text : "");
+    return true;  // claimed — no raw speech
+}
+
 }  // namespace
+
+void RegisterPickerMsgRules() {
+    acc::msg::Router::Instance().AddRule("EquipPickerPreview",
+                                         RuleSuppressEquipPreviewFeedback);
+}
 
 void TickPickerMonitors() {
     MonitorEquipPickerSelection();
