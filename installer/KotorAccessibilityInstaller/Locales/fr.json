@@ -7,7 +7,7 @@
     "Program_UninstallError_Text": "Impossible de déterminer le chemin d'installation de KOTOR.\n\nVeuillez lancer l'installateur normalement pour réinstaller.",
 
     "Welcome_Title": "Voice of the Old Republic",
-    "Welcome_Description": "Ceci installe Voice of the Old Republic, un mod d'accessibilité avec lecteur d'écran pour Star Wars: Knights of the Old Republic (Steam).\n\nLe mod permet aux joueurs aveugles et malvoyants de jouer à KOTOR avec n'importe quel lecteur d'écran moderne.",
+    "Welcome_Description": "Ceci installe Voice of the Old Republic, un mod d'accessibilité avec lecteur d'écran pour Star Wars: Knights of the Old Republic (Steam ou GoG).\n\nLe mod permet aux joueurs aveugles et malvoyants de jouer à KOTOR avec n'importe quel lecteur d'écran moderne.",
     "Welcome_VersionInfo_Format": "Version à installer : v{0}",
     "Welcome_VersionInfo_Unknown": "Version à installer : la plus récente",
     "Welcome_LanguageLabel": "Langue de l'installateur :",
@@ -22,6 +22,9 @@
     "GameLinks_NotFound_Format": "{0} est introuvable sur ce PC :",
     "GameLinks_SteamButton_Format": "{0} sur Steam",
     "GameLinks_GogButton_Format": "{0} sur GoG",
+    "GameNotFound_BrowsePrompt_Format": "{0} n'a pas été trouvé automatiquement sur ce PC.\n\nS'il est tout de même installé — par exemple une copie GoG ou déplacée dans un dossier personnalisé — vous pouvez indiquer son dossier à l'installateur maintenant.\n\nVoulez-vous sélectionner vous-même le dossier de {0} ?",
+    "GameNotFound_BrowseDialog_Format": "Sélectionnez le dossier d'installation de {0} (contient {1})",
+    "GameNotFound_InvalidFolder_Format": "{1} n'a pas été trouvé dans :\n{0}\n\nVeuillez sélectionner le dossier du jeu qui contient {1}.",
     "Welcome_BackButton": "Retour",
 
     "ModdingInfo_Title": "Composants de base",
@@ -62,7 +65,7 @@
 
     "K2Prep_Title": "KOTOR 2",
     "K2Prep_Detected_Format": "Installation de KOTOR 2 trouvée à :\n{0}",
-    "K2Prep_NotDetected": "Aucune installation de KOTOR 2 (Steam) n'a été trouvée sur ce PC.",
+    "K2Prep_NotDetected": "Aucune installation de KOTOR 2 n'a été trouvée sur ce PC.",
     "K2Workshop_Warning_Format": "Du contenu Steam Workshop a été trouvé pour KOTOR 2 :\n\n{0}\n\nLes mods du Workshop prennent le pas sur les fichiers installés dans le dossier du jeu : ils cassent donc TSLRCM et le Community Patch que cet installateur s'apprête à installer. Veuillez vous désabonner de tous les éléments Workshop de KOTOR 2 dans Steam, puis supprimer ce dossier.\n\nContinuer quand même ?",
     "K2Mods_Title": "Mods KOTOR 2",
     "K2Mods_Description_Format": "{0}\n\nCes mods communautaires sont installés dans KOTOR 2 AVANT le mod d'accessibilité, car ils sont la base sur laquelle tout le reste repose. Les trois premiers sont vivement recommandés et présélectionnés ; l'extra optionnel en bas n'est pas coché. Important : n'utilisez PAS de mods du Steam Workshop ; désabonnez-vous de tous avant de continuer.",
@@ -80,6 +83,11 @@
     "K2Lang_Offer_Text": "TSLRCM existe dans votre langue sous forme d'édition officielle Steam Workshop, et c'est celle qu'il vous faut : l'édition anglaise remplacerait le texte de votre jeu par de l'anglais.\n\nInstaller l'édition {0} maintenant ?\n\nSteam va ouvrir la page Workshop — appuyez-y sur S'abonner. L'installateur attend le téléchargement (environ 335 Mo), copie les fichiers dans votre jeu et vous dira quand vous désabonner. {1}",
     "K2Lang_Offer_KeepsText": "Le texte propre à votre jeu reste inchangé.",
     "K2Lang_Offer_BringsText": "Cette édition apporte aussi la table de texte russe, car le jeu lui-même n'en a jamais fourni de russe.",
+    "K2Lang_NoSteam_Format": "TSLRCM existe dans votre langue ({0}), mais uniquement sous forme d'édition Steam Workshop — et cette installation de KOTOR 2 n'est pas gérée par Steam (par exemple une copie GoG), l'installateur ne peut donc pas récupérer les fichiers du Workshop pour elle.\n\nLa seule édition installable ici est l'édition anglaise, et elle remplace tout le texte du jeu par de l'anglais.\n\nInstaller quand même le TSLRCM anglais ?\n\nSi vous répondez Non, TSLRCM est ignoré — ainsi que K2CP et le Tweak Pack, qui reposent sur lui.",
+    "K2Lang_NoSteamPreserve_Format": "TSLRCM n'existe dans votre langue ({0}) que sur le Steam Workshop, et cette copie de KOTOR 2 ne peut pas utiliser le Workshop car ce n'est pas une installation Steam.\n\nL'installateur peut quand même installer TSLRCM en gardant votre langue : seules environ 25 courtes lignes d'état dans les dialogues des compagnons seront en anglais.\n\nOui : installer TSLRCM et garder votre langue (recommandé).\nNon : installer TSLRCM entièrement en anglais. TOUT le texte du jeu devient anglais.\nAnnuler : pas de TSLRCM. K2CP et le Tweak Pack seront alors ignorés aussi.",
+    "K2Lang_PreserveDone": "Le texte de votre langue a été conservé ; environ 25 courtes lignes d'état dans les dialogues des compagnons sont en anglais. La table anglaise de TSLRCM a été sauvegardée sous dialog.tlk.english.bak.",
+    "K2Lang_PreserveBackupFailed": "La table de texte de votre jeu n'a pas pu être sauvegardée, l'installation préservant le texte n'est donc pas possible. TSLRCM a été ignoré — vous pouvez relancer cet installateur pour réessayer.",
+    "K2Lang_PreserveRestoreFailed": "TSLRCM a été installé, mais votre table de texte d'origine n'a pas pu être restaurée automatiquement. Elle se trouve dans votre dossier de jeu sous dialog.tlk.localized.bak — copiez-la à la main par-dessus dialog.tlk pour retrouver votre langue, ou relancez cet installateur.",
     "K2Lang_Waiting": "En attente du téléchargement Steam Workshop.\n\nSteam devrait avoir ouvert la page Workshop du texte TSLRCM traduit. Appuyez sur son bouton S'abonner : c'est lui qui lance le téléchargement. Si aucune page ne s'est ouverte, ou si Steam a affiché autre chose, appuyez ci-dessous sur « Rouvrir la page Workshop ».",
     "K2Lang_ReopenPageButton": "Rouvrir la page Workshop",
     "K2Lang_PageOpenFailed_Format": "Steam n'a pas pu être ouvert. Ouvrez cette adresse manuellement : {0}",
@@ -135,7 +143,7 @@
 
     "Main_TitleInstaller": "Voice of the Old Republic - Installateur",
     "Main_TitleUpdater": "Voice of the Old Republic - Mise à jour",
-    "Main_StatusInstall": "Ceci installe Voice of the Old Republic dans votre copie Steam de Knights of the Old Republic.\nLe mod permet aux joueurs aveugles de jouer en utilisant n'importe quel lecteur d'écran moderne.",
+    "Main_StatusInstall": "Ceci installe Voice of the Old Republic dans votre copie de Knights of the Old Republic.\nLe mod permet aux joueurs aveugles de jouer en utilisant n'importe quel lecteur d'écran moderne.",
     "Main_StatusUpdate": "Ceci met à jour Voice of the Old Republic vers la dernière version.",
     "Main_PathLabel": "Chemin d'installation de KOTOR :",
     "Main_BrowseButton": "Parcourir...",

@@ -96,6 +96,12 @@ namespace KotorAccessibilityInstaller
                 else if (arg == "/quiet" || arg == "-quiet" || arg == "--quiet" || arg == "/q" || arg == "-q") quietMode = true;
                 else if (arg == "/auto-update" || arg == "-auto-update" || arg == "--auto-update") autoUpdateMode = true;
                 else if (arg == "--local-kpatch" && i + 1 < args.Length) localKpatchPath = args[++i];
+                else if (arg == "--dev-gog-only")
+                {
+                    GamePathDetector.SimulateGogOnly = true;
+                    Logger.Info("DEV: --dev-gog-only active — game detection ignores the registered " +
+                                "install and all Steam sources, leaving only GOG's registry key");
+                }
                 else if ((arg == "--game" || arg == "-game" || arg == "/game") && i + 1 < args.Length)
                 {
                     string id = args[++i];

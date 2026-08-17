@@ -486,6 +486,67 @@ audio stack is unverified. Open research item, not a gap.
   gets its own `MainForm` pass, sequentially, with the game name in the title —
   a screen-reader user needs the two runs separated, not interleaved. Cost is
   one extra `.kpatch` download when both are selected.
+- **Game-path resolution (Steam + GOG, 2026-08-17)** — `GamePathDetector.Detect`
+  tries, in order: our own registered install, Steam's per-app uninstall key,
+  GOG's per-product key (`HKLM\SOFTWARE\GOG.com\Games\<productId>`, value
+  `path`, written by Galaxy and the offline installers; ids on `GameTarget`,
+  verified via gogdb.org), then the default Steam library folder. Both registry
+  views are always checked. When a selected game still isn't found, the full
+  install flow offers a folder picker (`InstallFlow.PromptForGamePath`,
+  validated against the game exe) BEFORE concluding the game is absent — an
+  unregistered or moved copy is only findable by its owner. Only then does the
+  store-links screen list it as missing, and what was missing is re-detected
+  after that screen (it invites installing the game before Continue). This
+  replaced the flow that told a GOG KOTOR 2 owner "no (Steam) installation
+  found" and exited without ever reaching MainForm's browse box.
+- **Localized TSLRCM needs a Steam-managed install** — the per-language TSLRCM
+  editions exist only as Workshop items, and subscribing needs Steam with the
+  game in the library. `RunKotor2ModFlow` gates the localized route on
+  `GamePathDetector.IsSteamPath`. What a non-Steam (GOG) non-English user is
+  offered instead depends on the GAME's text table, not the installer language:
+  - Game text is FIGS (`GameLocaleDetector`): three-way offer
+    (`K2Lang_NoSteamPreserve_Format`, Yes/No/Cancel) — **preserve-tlk English
+    install (recommended)**, fully English, or skip.
+  - Anything else (already English, unknown, Russian community table): the
+    two-way `K2Lang_NoSteam_Format` — English or skip. Russian gets nothing
+    better because its text exists ONLY inside the Workshop item's tlk.
+  Previously that user would have been routed into a Workshop wait that can
+  never complete.
+- **Preserve-tlk English install (2026-08-17)** — reconstructs the FIGS
+  Workshop editions from the DeadlyStream English installer, exploiting what
+  the 2026-08-04 measurements established: the FIGS items ship NO tlk (they
+  defer to the vanilla localized table, which already holds the cut content's
+  text), differ from the English content set only in ~28 strings embedded in
+  10 companion .dlg files, and deliberately omit the 7 `g_i_trapkit*.uti`
+  whose description StrRefs exist only in TSLRCM's appended English entries.
+  Mechanism (`InstallFlow.BackupLocalizedTlk` / `RestoreLocalizedTlk`): copy
+  `dialog.tlk` to `dialog.tlk.localized.bak` before the normal English install
+  path (silent → wizard → manual, all inside `RunTslrcmInstall`), then — if
+  the table actually changed (length+SHA-256 compare) — keep TSLRCM's table as
+  `dialog.tlk.english.bak`, copy the localized one back, and delete
+  `Override\g_i_trapkit*.uti` (reverts to vanilla BIF items, the exact state
+  the Workshop editions ship). Restore runs BEFORE K2CP/Tweak Pack so their
+  tlk appends land on the localized table, same as the Workshop flow. Restore
+  failure is loud (`K2Lang_PreserveRestoreFailed` names the backup file);
+  backup failure skips TSLRCM entirely rather than break the promise. Known
+  accepted gap, told to the user up front and in the summary: the ~28
+  companion status lines appear in ENGLISH — verified 2026-08-17: the English
+  edition's `atton.dlg` carries the text inline (byte-searchable
+  "unconscious"), not as appended StrRefs, so no blank lines.
+  TESTED 2026-08-17 via the fake-GOG rehearsal (`--dev-gog-only` +
+  a Steam-install copy at a neutral path; see below): full pass — table
+  byte-identical after restore, `dialog.tlk.english.bak` language ID 0,
+  exactly 7 trap-kit files removed, no TSLRCM uninstall registry entry left
+  behind by the silent install. Still pending: one real GOG-binary run
+  (reporter) to confirm Galaxy's registry key and the vanilla GOG exe hash.
+- **Fake-GOG rehearsal harness** — `--dev-gog-only` (dev-only arg) makes
+  `GamePathDetector.Detect` ignore the registered install and all Steam
+  sources, leaving only GOG's registry key, so a dev box with Steam installs
+  can exercise the browse fallback, GOG-key detection, and the non-Steam
+  TSLRCM offers against a copied install. `tools/gog-rehearsal-verify.ps1`
+  snapshots the tlk before a run and checks the preserve promises after. Note: `IsSteamPath` is deliberately NOT blinded by the
+  flag — browsing to the real Steam folder still routes to the Workshop
+  edition, which the 2026-08-17 rehearsal confirmed as a bonus.
 - **KOTOR 2 mod-selection flow (`Kotor2ModSelectionForm`)** — the K2
   counterpart of the K1 optional-mods screen, and it runs BEFORE our own
   install: TSLRCM is a third-party Inno installer that writes freely into the

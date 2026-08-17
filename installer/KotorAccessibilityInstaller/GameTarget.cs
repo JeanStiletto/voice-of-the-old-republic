@@ -40,6 +40,14 @@ namespace KotorAccessibilityInstaller
         /// <summary>Steam application id, used for the post-install launch URL.</summary>
         public string SteamAppId { get; private init; }
 
+        /// <summary>
+        /// GOG product id, used to find GOG installs via the registry key both
+        /// GOG Galaxy and GOG's offline installers write
+        /// (<c>HKLM\SOFTWARE\GOG.com\Games\&lt;id&gt;</c>, value <c>path</c>).
+        /// Ids verified against gogdb.org.
+        /// </summary>
+        public string GogProductId { get; private init; }
+
         /// <summary>Human-facing name for dialogs and summaries.</summary>
         public string DisplayName { get; private init; }
 
@@ -133,6 +141,7 @@ namespace KotorAccessibilityInstaller
             ProcessName = "swkotor",
             IniFileName = "swkotor.ini",
             SteamAppId = "32370",
+            GogProductId = "1207666283",
             DisplayName = "KOTOR 1",
             StorePageSteam = "https://store.steampowered.com/app/32370/",
             StorePageGog = "https://www.gog.com/game/star_wars_knights_of_the_old_republic",
@@ -190,6 +199,7 @@ namespace KotorAccessibilityInstaller
             ProcessName = "swkotor2",
             IniFileName = "swkotor2.ini",
             SteamAppId = "208580",
+            GogProductId = "1421404581",
             DisplayName = "KOTOR 2",
             StorePageSteam = "https://store.steampowered.com/app/208580/",
             StorePageGog = "https://www.gog.com/game/star_wars_knights_of_the_old_republic_ii_the_sith_lords",

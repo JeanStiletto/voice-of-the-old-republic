@@ -20,8 +20,17 @@ namespace KotorAccessibilityInstaller
     {
         public const string GameExeName = "swkotor.exe";
 
-        // Steam install — the only supported distribution. GoG/Aspyr are out of scope
-        // for the first installer pass; users can run kdev manually if needed.
+        /// <summary>
+        /// Dev-only, set by <c>--dev-gog-only</c>: <see cref="Detect"/> ignores
+        /// every source except GOG's registry key, simulating a machine that
+        /// owns only GOG copies — the only way to rehearse the GOG flows on a
+        /// dev box whose Steam installs would otherwise always be found first.
+        /// </summary>
+        internal static bool SimulateGogOnly;
+
+        // Historical last-resort default for KOTOR 1 only. Steam and GOG are both
+        // supported; GOG installs are found via their registry key or the user's
+        // own folder selection, not via this constant.
         public static readonly string DefaultGamePath =
             @"C:\Program Files (x86)\Steam\steamapps\common\swkotor";
 
@@ -57,39 +66,37 @@ namespace KotorAccessibilityInstaller
         }
 
         /// <summary>
-        /// Attempts to detect KOTOR's install path. Order:
-        /// 1. Registry (previously registered by us)
-        /// 2. Steam's per-app registry key (HKLM ...\Steam App 32370)
-        /// 3. Common Steam location under Program Files (x86)
-        /// 4. CommonObjectives — Default Steam library path
-        /// </summary>
-        public static string DetectGamePath() => Detect(GameTarget.Kotor1);
-
-        public static string DetectKotor2GamePath() => Detect(GameTarget.Kotor2);
-
-        /// <summary>
         /// Locate <paramref name="target"/>'s install. Order: an install we
-        /// registered ourselves, then Steam's own per-app uninstall key, then the
-        /// default Steam library folder.
+        /// registered ourselves, then Steam's own per-app uninstall key, then
+        /// GOG's per-product key, then the default Steam library folder.
         /// </summary>
         public static string Detect(GameTarget target)
         {
-            string registered = RegistryManager.GetRegisteredInstallLocation(target);
-            if (IsValidGamePath(target, registered)) return registered;
-
-            string steamReg = TryReadSteamAppInstallPath(target);
-            if (IsValidGamePath(target, steamReg)) return steamReg;
-
-            foreach (var root in new[]
+            if (!SimulateGogOnly)
             {
-                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
-                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles)
-            })
+                string registered = RegistryManager.GetRegisteredInstallLocation(target);
+                if (IsValidGamePath(target, registered)) return registered;
+
+                string steamReg = TryReadSteamAppInstallPath(target);
+                if (IsValidGamePath(target, steamReg)) return steamReg;
+            }
+
+            string gogReg = TryReadGogInstallPath(target);
+            if (IsValidGamePath(target, gogReg)) return gogReg;
+
+            if (!SimulateGogOnly)
             {
-                if (string.IsNullOrEmpty(root)) continue;
-                string candidate = Path.Combine(root, "Steam", "steamapps", "common",
-                                                SteamLibraryFolderName(target));
-                if (IsValidGamePath(target, candidate)) return candidate;
+                foreach (var root in new[]
+                {
+                    Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+                    Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles)
+                })
+                {
+                    if (string.IsNullOrEmpty(root)) continue;
+                    string candidate = Path.Combine(root, "Steam", "steamapps", "common",
+                                                    SteamLibraryFolderName(target));
+                    if (IsValidGamePath(target, candidate)) return candidate;
+                }
             }
 
             return null;
@@ -127,6 +134,31 @@ namespace KotorAccessibilityInstaller
                     using var baseKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, view);
                     using var key = baseKey.OpenSubKey(subKey);
                     if (key?.GetValue("InstallLocation") is string location && location.Length > 0)
+                        return location;
+                }
+                catch { /* view unavailable — try the other */ }
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// GOG's per-product key, written by both GOG Galaxy and the offline
+        /// installers. Same both-views discipline as the Steam lookup: Galaxy is
+        /// a 32-bit application (its key lands in WOW6432Node, i.e. the 32-bit
+        /// view), but which view a given installer wrote is not worth guessing
+        /// when checking both costs nothing.
+        /// </summary>
+        private static string TryReadGogInstallPath(GameTarget target)
+        {
+            string subKey = @"SOFTWARE\GOG.com\Games\" + target.GogProductId;
+
+            foreach (var view in new[] { RegistryView.Registry32, RegistryView.Registry64 })
+            {
+                try
+                {
+                    using var baseKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, view);
+                    using var key = baseKey.OpenSubKey(subKey);
+                    if (key?.GetValue("path") is string location && location.Length > 0)
                         return location;
                 }
                 catch { /* view unavailable — try the other */ }

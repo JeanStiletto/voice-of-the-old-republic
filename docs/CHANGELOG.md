@@ -35,6 +35,30 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h2>Unreleased</h2>
 
+<h3>Installer:</h3>
+
+- GOG copies of both games are now found and installed into. The installer
+  previously only knew Steam's registry entries and library folder, so a GOG
+  KOTOR 2 owner was told no installation was found and the installer simply
+  ended — even though the mod itself has supported the GOG executables all
+  along. It now also reads GOG's own registry entries (written by GOG Galaxy
+  and the offline installers), and when a selected game still isn't found it
+  offers a folder picker before concluding the game is absent, so moved or
+  unregistered copies can be pointed at by hand.
+- Non-English KOTOR 2 players on a GOG copy are now told up front that the
+  localized TSLRCM editions only exist on the Steam Workshop, and get a real
+  alternative instead of a Workshop subscription wait that can never finish
+  without Steam. When the game's text is German, French, Italian or Spanish,
+  the recommended option installs the English TSLRCM but puts the player's own
+  language table back afterwards — nearly all restored content text already
+  exists localized in the game's own table, which is the same mechanism the
+  official localized Workshop editions rely on (they ship no text table
+  either). Only about 25 short companion status lines appear in English, and
+  the seven trap-kit override items whose descriptions only exist in TSLRCM's
+  English table are removed, matching the localized editions. The other
+  options remain the fully English edition or skipping TSLRCM.
+- Installer texts no longer claim the mod is for the Steam version only.
+
 <h3>Bug fixes:</h3>
 
 - Pressing Enter on an object a few metres away no longer does nothing at all.
