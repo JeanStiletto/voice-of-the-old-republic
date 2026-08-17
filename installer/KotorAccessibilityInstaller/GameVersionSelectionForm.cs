@@ -7,8 +7,9 @@ namespace KotorAccessibilityInstaller
     /// <summary>
     /// Screen between the welcome dialog and the base-components info screen.
     /// Asks which game(s) the installer should target: KOTOR 1, KOTOR 2, or
-    /// both. KOTOR 1 defaults to checked (the fully supported path); KOTOR 2
-    /// defaults to unchecked while its support is in preparation.
+    /// both. Both default to checked — the two games are equally supported,
+    /// and a game that is not on the PC surfaces naturally later (store-links
+    /// screen, browse prompt) rather than by being pre-unchecked here.
     ///
     /// Next requires at least one box checked; pressing it with neither
     /// selected shows a plain MessageBox (screen-reader announced) instead of
@@ -103,7 +104,7 @@ namespace KotorAccessibilityInstaller
                 Location = new Point(20, 210),
                 Size = new Size(600, 25),
                 Font = new Font(Font.FontFamily, 9, FontStyle.Bold),
-                Checked = false
+                Checked = true
             };
             _kotor2Description = new Label
             {

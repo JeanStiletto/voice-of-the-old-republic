@@ -90,7 +90,9 @@ namespace KotorAccessibilityInstaller
 
             _statusLabel = new Label
             {
-                Text = InstallerLocale.Get(_updateOnly ? "Main_StatusUpdate" : "Main_StatusInstall"),
+                Text = _updateOnly
+                    ? InstallerLocale.Get("Main_StatusUpdate")
+                    : InstallerLocale.Format("Main_StatusInstall_Format", _target.DisplayName),
                 Location = new Point(20, 60),
                 Size = new Size(470, 60),
                 TextAlign = ContentAlignment.TopLeft
@@ -98,7 +100,7 @@ namespace KotorAccessibilityInstaller
 
             _pathLabel = new Label
             {
-                Text = InstallerLocale.Get("Main_PathLabel"),
+                Text = InstallerLocale.Format("Main_PathLabel_Format", _target.DisplayName),
                 Location = new Point(20, 130),
                 Size = new Size(200, 20)
             };
@@ -206,7 +208,8 @@ namespace KotorAccessibilityInstaller
         {
             using var dialog = new FolderBrowserDialog
             {
-                Description = InstallerLocale.Get("Main_BrowseDialogDescription"),
+                Description = InstallerLocale.Format("GameNotFound_BrowseDialog_Format",
+                                                     _target.DisplayName, _target.ExeName),
                 ShowNewFolderButton = false
             };
 
@@ -230,8 +233,10 @@ namespace KotorAccessibilityInstaller
 
             bool notFound = !isValid && !string.IsNullOrEmpty(_pathTextBox.Text);
             string message = notFound
-                ? InstallerLocale.Get("Main_PathNotFound")
-                : InstallerLocale.Get(_updateOnly ? "Main_StatusUpdate" : "Main_StatusInstall");
+                ? InstallerLocale.Format("Main_PathNotFound_Format", _target.ExeName, _target.DisplayName)
+                : _updateOnly
+                    ? InstallerLocale.Get("Main_StatusUpdate")
+                    : InstallerLocale.Format("Main_StatusInstall_Format", _target.DisplayName);
 
             // Route through UpdateStatus rather than writing _statusLabel.Text
             // directly. A raw Text write is invisible to NVDA / JAWS: the user

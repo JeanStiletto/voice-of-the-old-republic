@@ -72,8 +72,8 @@ namespace KotorAccessibilityInstaller
             {
                 Logger.Warning($"{running.DisplayName} is currently running");
                 MessageBox.Show(
-                    InstallerLocale.Get("Program_GameRunning_Text"),
-                    InstallerLocale.Get("Program_GameRunning_Title"),
+                    InstallerLocale.Format("Program_GameRunning_Text_Format", running.DisplayName),
+                    InstallerLocale.Format("Program_GameRunning_Title_Format", running.DisplayName),
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Warning);
                 return;

@@ -33,7 +33,7 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
-<h2>Unreleased</h2>
+<h2>v0.7.7</h2>
 
 <h3>Installer:</h3>
 
@@ -58,6 +58,13 @@ and add the German in parentheses if it genuinely aids clarity.
   English table are removed, matching the localized editions. The other
   options remain the fully English edition or skipping TSLRCM.
 - Installer texts no longer claim the mod is for the Steam version only.
+- KOTOR 2 is now preselected on the game-choice screen, same as KOTOR 1 — its
+  support is no longer "in preparation". The remaining KOTOR-1-flavoured texts
+  now name the right game: the welcome page describes both games, the install
+  form's status, path label and wrong-folder message name the game being
+  installed (and its actual exe — the KOTOR 2 pass used to ask for
+  swkotor.exe), and the "game is running" warning names the game that is
+  actually running instead of always KOTOR 1.
 
 <h3>Bug fixes:</h3>
 
@@ -85,11 +92,6 @@ and add the German in parentheses if it genuinely aids clarity.
   Enter picked an unheard line. The mod now tracks the replies themselves, and
   announces the first one whenever the set changes — including "1 of 1", so a
   sole reply is recognisable as such.
-
-<h2>v0.7.7</h2>
-
-<h3>Bug fixes:</h3>
-
 - Escape in the equipment screen's item list now puts back what you were
   wearing. Browsing that list equips as you go — that is the game's own live
   preview, and it is why the stat readouts update as you move — but the mod was
