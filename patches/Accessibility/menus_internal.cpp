@@ -390,6 +390,30 @@ void* acc::menus::detail::PowersPanelBackButton(void* panel) {
                                    "Powers.BACK_BTN");
 }
 
+// CSWGuiContainer resolvers (see menus_internal.h). container.gui and
+// container_p.gui number these identically, so one tripwire id per
+// control covers both games.
+void* acc::menus::detail::ContainerPanelItemsListBox(void* panel) {
+    return PanelMemberWithTripwire(panel, kContainerPanelItemsListBoxOffset,
+                                   /*LB_ITEMS=*/2, "Container.LB_ITEMS");
+}
+
+void* acc::menus::detail::ContainerPanelOkButton(void* panel) {
+    return PanelMemberWithTripwire(panel, kContainerPanelOkButtonOffset,
+                                   /*BTN_OK=*/3, "Container.BTN_OK");
+}
+
+void* acc::menus::detail::ContainerPanelCancelButton(void* panel) {
+    return PanelMemberWithTripwire(panel, kContainerPanelCancelButtonOffset,
+                                   /*BTN_CANCEL=*/5, "Container.BTN_CANCEL");
+}
+
+void* acc::menus::detail::ContainerPanelGiveItemsButton(void* panel) {
+    return PanelMemberWithTripwire(panel, kContainerPanelGiveItemsButtonOffset,
+                                   /*BTN_GIVEITEMS=*/4,
+                                   "Container.BTN_GIVEITEMS");
+}
+
 // Workbench-upgrade slot membership via the panel's embedded button run
 // (one contiguous array in both games — see the kUpgradePanelSlotButtons
 // note in engine_offsets_fields.h). Returns the ARRAY index (identity /

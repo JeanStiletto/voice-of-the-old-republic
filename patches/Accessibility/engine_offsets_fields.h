@@ -718,8 +718,43 @@ const size_t    kPowersPanelRecommendedButtonOffset    = acc::off::Pick(0x12ac, 
 const size_t    kPowersPanelAcceptButtonOffset         = acc::off::Pick(0x1634, 0x1578);
 const size_t    kPowersPanelBackButtonOffset           = acc::off::Pick(0x17f8, 0x1748);
 
-// Container offsets verified against Lane's SARIF (DATATYPE entries for
-// CSWGuiPanel and CSWGuiListBox). CExoArrayList layout:
+// CSWGuiContainer — the loot panel ("Plündern"). Ctor-bound embedded
+// members, mined 2026-08-18 for the gui-id audit (docs/gui-id-audit.md).
+// K1 ctor CSWGuiContainer::CSWGuiContainer @0x006b6dc0 (named symbol; raw
+// offsets read off the listing's `LEA reg,[ESI+0xNNNN]` + `PUSH <tag>`
+// pairs feeding InitControl). K2 ctor FUN_008b1ea0 — decompiles WITH tag
+// strings, offsets are dword indices ×4 off in_ECX. Same member order and
+// the same six labels ahead of the listbox in both games.
+//
+// Every member carries two independent witnesses:
+//   LB_ITEMS      tagged InitControl, plus the ctor's own listbox setup
+//                 immediately after StopLoadFromLayout — `bit_flags |=
+//                 0x200` lands exactly on member+kListBoxBitFlagsOffset
+//                 (K1 +0x2bc / K2 +0x2cc) and SetEnabled(0) goes through
+//                 the member's vtable slot 0x88.
+//   BTN_OK        tagged InitControl, plus `bit_flags &= ~4` at member+0x44
+//                 (K2 +0x48) and the AddEvent(0x27) registration of
+//                 AcceptButtonCallback (K1 0x624ba0 / K2 0x762e80).
+//   BTN_GIVEITEMS tagged InitControl, plus the same flag clear and the
+//                 OnXButtonPressed registration (K1 0x624bc0 / K2 0x7fcf80).
+//   BTN_CANCEL    tagged InitControl, plus the flag clear, the
+//                 OnBButtonPressed registration (K1 0x624bb0 / K2 0x762e90),
+//                 and on K2 the gamepad 'b' bind (0x62) — the same
+//                 back-button corroboration the SaveLoad panel gave.
+// Third cross-check: the six labels ahead of the listbox sit at the known
+// label strides (K1 0x140 / K2 0x148) with no gap, and the K1/K2 listbox
+// offsets reproduce the values peek_description.cpp had from Lane's DB.
+//
+// The .gui ids (LB_ITEMS 2, BTN_OK 3, BTN_GIVEITEMS 4, BTN_CANCEL 5 —
+// identical in container.gui and container_p.gui) survive only as the
+// GuiIdMismatch tripwires inside the ContainerPanel* resolvers.
+const size_t    kContainerPanelItemsListBoxOffset      = acc::off::Pick(0x7f0,  0x824);
+const size_t    kContainerPanelOkButtonOffset          = acc::off::Pick(0xad0,  0xb14);
+const size_t    kContainerPanelCancelButtonOffset      = acc::off::Pick(0xc94,  0xce4);
+const size_t    kContainerPanelGiveItemsButtonOffset   = acc::off::Pick(0xe58,  0xeb4);
+
+// Generic CSWGuiPanel / CSWGuiListBox layout, verified against Lane's SARIF
+// (DATATYPE entries for CSWGuiPanel and CSWGuiListBox). CExoArrayList layout:
 //   +0x00  T**      data         (heap array of element pointers)
 //   +0x04  int      size
 //   +0x08  int      capacity

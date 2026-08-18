@@ -248,25 +248,24 @@ const PanelPeekInfo* LookupPanel(acc::engine::PanelKind k) {
 // minSel=1 skips the Equip-picker's protoitem template row;
 // Container uses 0.
 //
-// findLb: stable inline offset for type-known panels, FindControlById
-// for the heap-allocated workbench listboxes.
+// findLb: the panel's ctor-bound member resolver where one exists,
+// FindControlById for the heap-allocated workbench listboxes.
 struct ItemTooltipPanelInfo {
     acc::engine::PanelKind kind;
     void*                (*findLb)(void* panel);
     int                    minSel;
 };
 
-// CSWGuiContainer.items_listbox: K1 +0x7f0 (Lane's DB), K2 +0x824 — the
-// only listbox its ctor 0x008B1EA0 builds, after the same six labels.
-const std::size_t kContainerItemsListBoxOffset = acc::off::Pick(0x07f0, 0x0824);
-
+// Container / equip / workbench-upgrade listboxes all resolve through the
+// shared engine-member resolvers (menus_internal.cpp) — the same
+// ctor-mined offsets this file used to duplicate locally
+// (docs/gui-id-audit.md). The Container one carried its own copy of the
+// K1 +0x7f0 / K2 +0x824 offset until the container batch confirmed both
+// values straight out of the two ctors.
 void* ContainerFindLb(void* panel) {
-    return reinterpret_cast<unsigned char*>(panel) + kContainerItemsListBoxOffset;
+    return acc::menus::detail::ContainerPanelItemsListBox(panel);
 }
 
-// Equip / workbench-upgrade listboxes resolve through the shared
-// engine-member resolvers (menus_internal.cpp) — the same ctor-mined
-// offsets this file used to duplicate locally (docs/gui-id-audit.md).
 void* InGameEquipFindLb(void* panel) {
     return acc::menus::detail::EquipPanelItemsListBox(panel);
 }

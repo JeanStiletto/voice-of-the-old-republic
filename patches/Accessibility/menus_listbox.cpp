@@ -44,7 +44,6 @@
 using namespace acc::engine;  // IdentifyPanel, PanelKind, kInput*, etc.
 
 using acc::menus::detail::FindControlById;
-using acc::menus::detail::FindListBoxChild;
 using acc::menus::detail::IsSaveLoadPanel;
 using acc::menus::detail::ReadSaveLoadEntryString;
 using acc::menus::detail::DriveListBoxSelection;
@@ -52,18 +51,16 @@ using acc::menus::detail::DriveListBoxSelectionEngine;
 using acc::menus::detail::ListBoxNavOp;
 using acc::menus::detail::ListBoxNavResult;
 using acc::menus::detail::QueueButtonByIdActivate;
+using acc::menus::detail::QueueControlActivate;
+using acc::menus::detail::ContainerPanelItemsListBox;
+using acc::menus::detail::ContainerPanelOkButton;
+using acc::menus::detail::ContainerPanelCancelButton;
+using acc::menus::detail::ContainerPanelGiveItemsButton;
 
-// .gui-time IDs (Container loot panel) — see menus.cpp for the full
-// table. Duplicated locally because the spec entries need them at file
-// scope and menus.cpp's copies are static. The IDs are .gui-resource-
-// baked, stable across localizations. (SaveLoad's controls resolve via
-// the ctor-bound member resolvers in menus_internal.cpp since the gui-id
-// audit — no ids needed here any more.)
-namespace {
-constexpr int kContainerBtnOkId      = 3;
-constexpr int kContainerBtnGiveId    = 4;
-constexpr int kContainerBtnCancelId  = 5;
-}
+// Container's controls resolve through the ctor-bound member resolvers in
+// menus_internal.cpp (ContainerPanel*), like SaveLoad's and the two
+// pickers' — no .gui ids are needed in this file any more. The historical
+// ids live on only inside those resolvers, as GuiIdMismatch tripwires.
 
 namespace acc::menus::listbox {
 
@@ -93,8 +90,9 @@ struct ListBoxPanelSpec {
     // older panel pointer. nullptr = no-op.
     void (*resetStale)(void* panel);
 
-    // Locate the listbox we drive. Container uses FindListBoxChild,
-    // SaveLoad/EquipPicker use FindControlById with a known +0x50 ID.
+    // Locate the listbox we drive. Container / SaveLoad / EquipPicker
+    // resolve their ctor-bound member (menus_internal.cpp); the panels
+    // whose listbox the engine heap-allocates still use FindControlById.
     void* (*findListBox)(void* panel);
 
     // First valid selection index. 0 normally; 1 for EquipPicker (skips
@@ -198,7 +196,7 @@ bool ContainerMatches(void* p) {
 }
 
 void* ContainerFindLb(void* p) {
-    return FindListBoxChild(p);
+    return ContainerPanelItemsListBox(p);
 }
 
 // Inline announce only on a no-op clamp (boundary). Normal moves are
@@ -250,15 +248,15 @@ bool ContainerOnEnter(void* panel) {
     // "take-all" gesture. Per-item take = lost feature, deferred. See
     // docs/equip-flow-investigation.md for the parallel investigation
     // that landed the same shape on equip.
-    QueueButtonByIdActivate(panel, kContainerBtnOkId,
-                            "Container: Enter -> BTN_OK (take-all; "
-                            "per-item take deferred)");
+    QueueControlActivate(ContainerPanelOkButton(panel),
+                         "Container: Enter -> BTN_OK (take-all; "
+                         "per-item take deferred)");
     return true;
 }
 
 bool ContainerOnEsc(void* panel) {
-    QueueButtonByIdActivate(panel, kContainerBtnCancelId,
-                            "Container: Esc -> BTN_CANCEL");
+    QueueControlActivate(ContainerPanelCancelButton(panel),
+                         "Container: Esc -> BTN_CANCEL");
     return true;
 }
 
@@ -1680,7 +1678,7 @@ void MonitorContainerSelection() {
         return;
     }
 
-    void* lb = FindListBoxChild(containerPanel);
+    void* lb = ContainerPanelItemsListBox(containerPanel);
     if (!lb) return;
 
     auto* lbList = reinterpret_cast<CExoArrayList*>(
@@ -1775,7 +1773,7 @@ void PollContainerGiveModeKey() {
         acclog::Write("Container", "G (give-mode) -- op already pending; ignoring");
         return;
     }
-    void* btn = FindControlById(fgPanel, kContainerBtnGiveId);
+    void* btn = ContainerPanelGiveItemsButton(fgPanel);
     if (!btn) {
         acclog::Write("Container", "G (give-mode) -- BTN_GIVEITEMS not found on panel=%p",
                       fgPanel);

@@ -382,6 +382,18 @@ void* PowersPanelRecommendedButton(void* panel);  // RECOMMENDED_BTN
 void* PowersPanelAcceptButton(void* panel);       // ACCEPT_BTN
 void* PowersPanelBackButton(void* panel);         // BACK_BTN
 
+// CSWGuiContainer (container / container_p) engine-truth resolvers —
+// ctor-bound embedded members, kContainerPanel*Offset in
+// engine_offsets_fields.h. Panel identity is already engine-truth (the
+// gui manager's own panel slot, IdentifyPanel == PanelKind::Container),
+// so these only move control resolution off the .gui ids; both games'
+// files agree on those ids, which survive as the GuiIdMismatch tripwire.
+// Defined in menus_internal.cpp.
+void* ContainerPanelItemsListBox(void* panel);    // LB_ITEMS (loot rows)
+void* ContainerPanelOkButton(void* panel);        // BTN_OK (take all)
+void* ContainerPanelCancelButton(void* panel);    // BTN_CANCEL
+void* ContainerPanelGiveItemsButton(void* panel); // BTN_GIVEITEMS (give mode)
+
 }  // namespace acc::menus::detail
 
 // partyselection.gui BTN_NPC ("Hinzuf." / "Add") — the mouse flow's

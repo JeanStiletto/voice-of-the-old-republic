@@ -30,7 +30,18 @@ has no Force step), so K1 carries decompile witnesses only (double, from
 the named ctor listing); the shared code path is proven via K2. Same
 precedent as the crafting chemical panel: if a K1 log ever shows
 GuiIdMismatch/Powers.*, look here first.
-NEXT: container, pazaak, keymap, chargen feats. NEW FINDING (see
+DONE + tested (2026-08-18): container — test round on BOTH games, logs
+patch-20260818-213834 (K1) / patch-20260818-214027 (K2): no
+GuiIdMismatch, row nav + take-all + give-mode + Shift-arrow peek all
+clean, and the logged pointer arithmetic confirms three of the four
+mined offsets at runtime in each game (K1 lb − panel = 0x7f0, BTN_OK
+0xad0, BTN_GIVEITEMS 0xe58; K2 0x824 / 0xb14 / 0xeb4). CAVEAT: every
+close in both rounds went through Enter/BTN_OK, so BTN_CANCEL has no
+runtime witness — it keeps its two decompile witnesses (tagged
+InitControl + the OnBButtonPressed registration, plus K2's gamepad 'b'
+bind). Same precedent as the crafting chemical panel: if a log ever
+shows GuiIdMismatch/Container.BTN_CANCEL, look there first.
+NEXT: pazaak, keymap, chargen feats. NEW FINDING (see
 inventory): the loose WorkbenchSelect structural fallback misidentifies
 level-up sub-screens in BOTH games.
 
@@ -82,6 +93,11 @@ SaveLoadPanelBackButton if native Esc ever misbehaves.
    fresh logs**: `GuiIdMismatch` must be absent on vanilla installs, and
    the converted flows must show their normal lines. Only then commit
    (one tested batch per surface; changelog bullet if user-facing).
+   Powers level-up and container shipped WITHOUT a changelog bullet —
+   pure hardening, nothing a vanilla player notices. When the Unreleased
+   section is cut into a release, fold them into the existing
+   equipment/workbench/save-load/crafting hardening story rather than
+   leaving the screen list looking arbitrary.
 
 Lesson that rode along (not id-related but found by these rounds): a
 picker's cursor park must use `ParkCursorToCorner`, not a button's
@@ -260,6 +276,28 @@ indices ×4 off in_ECX; same member order both games):
 - SELECT_BTN deliberately has no constant: Enter on a chart cell
   dispatches OnPowerPicked directly (the same engine action), as before.
 
+CSWGuiContainer (mined 2026-08-18; K1 ctor CSWGuiContainer::CSWGuiContainer
+@0x006b6dc0 — named symbol, raw offsets from the listing's tagged-InitControl
+LEA pairs; K2 ctor FUN_008b1ea0 — decompiles WITH tag strings, offsets are
+dword indices ×4 off in_ECX. Same member order in both games: six labels,
+then the listbox, then ok / cancel / giveitems):
+- Panel identity was ALREADY engine-truth — Container is a gui-manager panel
+  slot (Same(0x54)), so this round converted control resolution only.
+- Member table (K1 / K2): LB_ITEMS +0x7f0/+0x824, BTN_OK +0xad0/+0xb14,
+  BTN_CANCEL +0xc94/+0xce4, BTN_GIVEITEMS +0xe58/+0xeb4.
+- Second witnesses both games: the ctor's post-layout listbox setup lands on
+  LB_ITEMS + kListBoxBitFlagsOffset exactly (K1 +0x2bc / K2 +0x2cc) and calls
+  SetEnabled through the member's own vtable; each button gets the
+  `bit_flags &= ~4` clear at member+0x44 (K2 +0x48) plus its AddEvent(0x27)
+  handler registration (AcceptButtonCallback / OnXButtonPressed /
+  OnBButtonPressed), and on K2 BTN_CANCEL also takes the gamepad 'b' bind
+  (0x62) — the same corroboration SaveLoad's back button gave.
+- Third cross-check: the two mined listbox offsets reproduce the values
+  peek_description.cpp carried from Lane's DB, independently, from the ctors.
+- Both .gui files number these identically (LB_ITEMS 2, BTN_OK 3,
+  BTN_GIVEITEMS 4, BTN_CANCEL 5), so one tripwire id per control covers both
+  games.
+
 ## Inventory (audit of all id-trusting sites)
 
 Tier 1 — drives input/state; convert to member offsets:
@@ -350,7 +388,18 @@ Tier 1 — drives input/state; convert to member offsets:
   exactly the id-trusting pattern this audit deletes). STATUS: to mine
   (fold into the workbench-family follow-up).
 - Container: kContainerBtnOkId/GiveId/CancelId (menus_listbox.cpp).
-  STATUS: to mine.
+  STATUS: DONE — tested in-game both games 2026-08-18 (Esc/BTN_CANCEL
+  untested, every close used take-all; see status caveat). All four controls resolve
+  via ContainerPanel* (menus_internal.cpp): the spec's findListBox, the
+  Enter -> BTN_OK take-all and Esc -> BTN_CANCEL commits (now
+  QueueControlActivate), MonitorContainerSelection's per-row monitor, and
+  the G give-mode hotkey. The id constants are deleted from menus.cpp
+  (they were already dead there) and menus_listbox.cpp. Side win: the
+  monitor and the spec used the FindListBoxChild heuristic ("first listbox
+  in controls[]") rather than an id — a variant .gui that added a second
+  listbox would have taken the wrong one; both now name the engine's own
+  member. peek_description.cpp's duplicated copy of the container listbox
+  offset is gone too — it calls the shared resolver.
 - Pazaak deck builder: kControlPlayId/kControlClearId + side arithmetic
   (menus_pazaakdeck.cpp private FindControlById). STATUS: to mine.
 - Pazaak wager: WagerLess/More/MaxLabel gui ids (minigame_pazaak.cpp,

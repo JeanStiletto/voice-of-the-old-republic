@@ -320,25 +320,11 @@ bool s_synthesizedNav = false;
 // menus_chain.cpp in Step 5. Brought back into unqualified scope via the
 // using-declarations at the top of this file.
 
-// Container loot panel control IDs from container.gui (extracted via
-// xoreos-tools from data/gui.bif). Stable per panel kind across patch versions.
-// Used by the Container input handler in OnHandleInputEvent and the per-row
-// monitor MonitorContainerSelection further down. (Equipment IDs live near
-// the top of the file because ExtractAnnounceableText needs them; container
-// IDs aren't referenced until the input handler ~800 lines below so they
-// stay co-located here with the Container helpers.)
-constexpr int kContainerLbItemsId   = 2;
-constexpr int kContainerBtnOkId     = 3;
-constexpr int kContainerBtnGiveId   = 4;
-constexpr int kContainerBtnCancelId = 5;
-
-// Forward declaration — body lives next to MonitorDialogReplies (which is
-// the long-standing first-and-only caller). Container input handler in
-// OnHandleInputEvent now also uses it for arrow-key selection_index drive.
-//
-// Step 4: now in acc::menus::detail (cross-TU seam — menus_listbox.cpp's
-// Container spec entry calls it via FindListBoxChild forwarded by
-// menus_internal.h). Definition is further down in this TU.
+// The Container loot panel's control IDs used to live here. Since the
+// gui-id audit its listbox and buttons resolve through the ctor-bound
+// member resolvers (ContainerPanel* in menus_internal.cpp) and the
+// Container flow itself lives in menus_listbox.cpp's spec entry, so
+// nothing in this TU needs them any more.
 
 
 // FindCloseButton / FindCancelButton moved to menus_chain.cpp in Step 5.
