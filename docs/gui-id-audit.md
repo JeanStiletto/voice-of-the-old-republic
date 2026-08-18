@@ -19,7 +19,20 @@ path — no lab station in the test save. Its offsets carry the same
 double decompile witnesses; the shared code path is proven via the
 component twin. If a tester log ever shows GuiIdMismatch/Craft.* on a
 lab station, that's the place to look).
-NEXT: powers level-up, then container, pazaak, keymap, chargen feats.
+DONE + tested (2026-08-18): powers level-up — K2 test round log
+patch-20260818-204814: panel identified by vtable, 25-row chart rebuild,
+cell focus/pick (OnPowerPicked, status 0->4), all three button rows
+announce + commit, zero Powers.* GuiIdMismatch — and the logged Enter
+targets confirm the mined offsets at runtime (accept = panel + 0x1578,
+recommended = panel + 0x11d8). CAVEAT: the K1 side ran no runtime path —
+the K1 test save has no Jedi and "Kraefte" stayed unavailable (K1 chargen
+has no Force step), so K1 carries decompile witnesses only (double, from
+the named ctor listing); the shared code path is proven via K2. Same
+precedent as the crafting chemical panel: if a K1 log ever shows
+GuiIdMismatch/Powers.*, look here first.
+NEXT: container, pazaak, keymap, chargen feats. NEW FINDING (see
+inventory): the loose WorkbenchSelect structural fallback misidentifies
+level-up sub-screens in BOTH games.
 
 Noted during the SaveLoad round (not a regression, optional follow-up):
 K2 Esc on the save/load screen logs "Menus.Esc: ... no cancel/close
@@ -222,6 +235,31 @@ on K2, so every member has a direct tagged-InitControl witness.
   mined panels converted (Tier-2 for free); upgradeitems_p / upgrade_p
   titles stay id-based announce-only.
 
+CSWGuiPowersLevelUp (mined 2026-08-18; K1 ctor @0x006f2180 — named
+symbol, raw offsets from the listing's tagged-InitControl LEA pairs; K2
+ctor FUN_009074E0 — decompiles WITH tag strings, offsets are dword
+indices ×4 off in_ECX; same member order both games):
+- Panel identity was ALREADY vtable-based (kVtableCSWGuiPowersLevelUp);
+  this round deleted the id-based structural fallback ({lb 6, lb 7,
+  buttons 11/12} — K1 ids that never matched on K2) from
+  IsPowersLevelUpStructural, which is now one HasVtable call like
+  SaveLoad.
+- Member table (K1 / K2): SUB_TITLE_LBL +0x1ac/+0x1b8, LBL_POWER
+  +0xbac/+0xab0, LB_POWERS +0xcec/+0xbf8, LB_DESC +0xfcc/+0xee8,
+  RECOMMENDED_BTN +0x12ac/+0x11d8, ACCEPT_BTN +0x1634/+0x1578,
+  BACK_BTN +0x17f8/+0x1748.
+- Second witnesses both games: each button gets the ctor's
+  `bit_flags &= ~4` clear + a gamepad-callback registration on the
+  member (K1 OnYButtonPressed/OnXButtonPressed/AcceptButtonCallback/
+  OnBButtonPressed; K2 'y'/'a'/'b' binds); LB_POWERS additionally gets
+  the selection-changed + double-click callback registrations (K1
+  0x6f1940/0x6f2110, K2 0x909D00/0x909D70) and is the ctor's final
+  SetActiveControl target. K2 cross-check: SELECT_BTN lands at +0x13a8 —
+  the exact value the earlier OnEnterPower RE had recorded as
+  "ctor-witnessed"; LBL_BAR1/2 follow BACK_BTN at label stride 0x148.
+- SELECT_BTN deliberately has no constant: Enter on a chart cell
+  dispatches OnPowerPicked directly (the same engine action), as before.
+
 ## Inventory (audit of all id-trusting sites)
 
 Tier 1 — drives input/state; convert to member offsets:
@@ -275,7 +313,18 @@ Tier 1 — drives input/state; convert to member offsets:
   Remaining id-based in that TU (Tier 2, announce-only): upgradeitems_p
   LBL_TITLE (3) and upgrade_p LBL_TITLE (12).
 - Powers level-up: IdPowersListbox/IdDescriptionLb/BtnRecommended/
-  BtnAccept/BtnBack (menus_powers_levelup.cpp). STATUS: to mine.
+  BtnAccept/BtnBack (menus_powers_levelup.cpp). STATUS: DONE — tested
+  in-game K2 2026-08-18 (K1 runtime pending, no Jedi in test save — see
+  the status caveat above). All per-game id fns deleted;
+  consumers resolve via PowersPanel* (menus_internal.cpp): chart binding
+  (LB_POWERS), power-name label, description listbox, sub-title override,
+  button rows (announce + Enter via QueueControlActivate), Esc → BACK_BTN.
+  The menus_pending chargen-sub-close probe now does pointer-equality
+  against PowersPanelAccept/BackButton for this panel (fixes K2, where
+  the id-11/12 probe missed — K2 numbers Accept=10/Back=9 and 11 is
+  RECOMMENDED_BTN); the id probe remains for attr/skills/feats until
+  their batches. Tier-2 labels (LBL_POWER, SUB_TITLE_LBL, LB_DESC) came
+  along free with ctor witnesses.
 - SaveLoad: SaveLoadLbGamesId/BtnSaveLoad/BtnBack/BtnDelete
   (menus_internal.cpp, menus_listbox.cpp; also used as the panel
   IDENTIFIER via IsSaveLoadPanel/IsSaveLoadStructural — double
@@ -287,6 +336,19 @@ Tier 1 — drives input/state; convert to member offsets:
   info-label announce converted too. BTN_DELETE id deleted (was only
   consumed by the shape probe). Tier-2 K2 detail labels converted
   along the way (direct witnesses were free).
+- WorkbenchSelect loose structural fallback (engine_panels.cpp):
+  misidentifies level-up sub-screens as WorkbenchSelect in BOTH games —
+  witnessed 2026-08-18 by the audit's own tripwires: K1 attributes screen
+  (patch-20260818-204614, also present pre-audit in patch-20260818-142801,
+  so NOT a regression) and K2 skills screen (patch-20260818-204814, where
+  the crafting UpgradeSel resolvers then probed the wrong panel and their
+  LBL_TITLE/LB_UPGRADELIST tripwires fired — those two GuiIdMismatch
+  lines mean "wrong panel", not "variant .gui"). Benign so far: the
+  level-up sub-screen handlers identify their panels independently, and
+  the mis-probed paths are announce-only. Fix = tighten or vtable the
+  WorkbenchSelect probe (its "id 0 + id 9 button + id 10 button" shape is
+  exactly the id-trusting pattern this audit deletes). STATUS: to mine
+  (fold into the workbench-family follow-up).
 - Container: kContainerBtnOkId/GiveId/CancelId (menus_listbox.cpp).
   STATUS: to mine.
 - Pazaak deck builder: kControlPlayId/kControlClearId + side arithmetic

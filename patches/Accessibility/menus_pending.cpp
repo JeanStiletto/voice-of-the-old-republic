@@ -30,6 +30,7 @@
 #include "menus_crafting.h"  // DispatchRowCommit for CraftRowCommit
 #include "menus_galaxymap.h"        // DispatchInput for GalaxyInput
 #include "minigame_pazaak.h"                 // DispatchWagerInput for WagerInput
+#include "menus_internal.h"  // PowersPanelAccept/BackButton — chargen sub-screen close
 #include "menus_inventory.h"  // filter list-rebuild repair + item-row selection sync
 #include "menus_journal.h"   // Sort/Swap post-activate list-rebuild repair
 #include "menus_listbox.h"   // ClearWorkbenchUpgradeArmLatch (post-slot-select cleanup)
@@ -481,16 +482,28 @@ void Drain(void* gm) {
             bool chargenSubClosing = false;
             if (panelKindAtDispatch != acc::engine::PanelKind::InGameLevelUp) {
                 void* chainPanel = acc::menus::chain::g_chainPanel;
-                bool isChargenSub =
-                    acc::menus::chargen_attr::IsChargenAttributesPanel(
-                        chainPanel) ||
-                    acc::menus::chargen_skills::IsChargenSkillsPanel(
-                        chainPanel) ||
-                    acc::menus::chargen_feats::IsChargenFeatsPanel(
-                        chainPanel) ||
-                    acc::menus::powers_levelup::IsPowersLevelUpPanel(
-                        chainPanel);
-                if (isChargenSub) {
+                if (acc::menus::powers_levelup::IsPowersLevelUpPanel(
+                        chainPanel)) {
+                    // Engine-member compare (gui-id audit): the powers
+                    // panel's Accept/Back are ctor-bound embedded members,
+                    // so pointer equality is exact — no id convention, no
+                    // text disambiguation. This also fixes KOTOR 2, where
+                    // the old id 11/12 probe missed entirely (K2 numbers
+                    // Accept=10/Back=9; 11 is RECOMMENDED_BTN).
+                    chargenSubClosing =
+                        op.a == acc::menus::detail::PowersPanelAcceptButton(
+                                    chainPanel) ||
+                        op.a == acc::menus::detail::PowersPanelBackButton(
+                                    chainPanel);
+                } else if (acc::menus::chargen_attr::IsChargenAttributesPanel(
+                               chainPanel) ||
+                           acc::menus::chargen_skills::IsChargenSkillsPanel(
+                               chainPanel) ||
+                           acc::menus::chargen_feats::IsChargenFeatsPanel(
+                               chainPanel)) {
+                    // Still id-based (11/12 = Annehmen/Abbrechen by the
+                    // InGameLevelUp sub-screen convention) until those
+                    // surfaces get their audit batch.
                     int btnId = *reinterpret_cast<int*>(
                         reinterpret_cast<unsigned char*>(op.a) + kControlIdOffset);
                     if (btnId == 11 || btnId == 12) {

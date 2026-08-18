@@ -8,13 +8,12 @@
 
 #include "menus_powers_levelup.h"
 
-#include "engine_game.h"
 #include "engine_input.h"
 #include "engine_offsets.h"
 #include "engine_panels.h"
 #include "engine_reads.h"
 #include "log.h"
-#include "menus_internal.h"   // FindControlById, QueueButtonByIdActivate
+#include "menus_internal.h"   // PowersPanel* resolvers, QueueControlActivate
 #include "menus_pending.h"
 #include "menus_skillflow_nav.h"
 #include "strings.h"
@@ -22,30 +21,27 @@
 
 using namespace acc::engine;  // kInput*, IdentifyPanel, PanelKind, ReadGuiString, ExtractTextOrStrRefIndirect
 
-using acc::menus::detail::FindControlById;
-using acc::menus::detail::QueueButtonByIdActivate;
+using acc::menus::detail::PowersPanelAcceptButton;
+using acc::menus::detail::PowersPanelBackButton;
+using acc::menus::detail::PowersPanelDescListBox;
+using acc::menus::detail::PowersPanelPowerLabel;
+using acc::menus::detail::PowersPanelPowersListBox;
+using acc::menus::detail::PowersPanelRecommendedButton;
+using acc::menus::detail::PowersPanelSubTitleLabel;
+using acc::menus::detail::QueueControlActivate;
 
 namespace acc::menus::powers_levelup {
 
 namespace {
 
-// pwrlvlup control IDs — baked into each game's OWN .gui resource at build
-// time, stable across localisations. UNLIKE most panels, the two games
-// RE-NUMBER these controls and the ids collide (K1 id 6 is LB_POWERS while
-// K2 id 6 is a label; K1 id 12 is BTN_BACK while K2 id 12 is LB_POWERS), so
-// this panel resolves ids per game rather than sharing one table. K2 ids
-// mined from its own gui.bif (gff2xml over pwrlvlup_p.gui — the resource the
-// K2 ctor 0x009074E0 loads): MAIN_TITLE_LBL 0, SUB_TITLE_LBL 1,
-// SELECTIONS_REMAINING_LBL 2, LB_DESC 3, LBL_POWER 4, SELECT_BTN 5,
-// REMAINING_SELECTIONS_LBL 6, LBL_BAR1 7, LBL_BAR2 8, BACK_BTN 9,
-// ACCEPT_BTN 10, RECOMMENDED_BTN 11, LB_POWERS 12.
-inline int IdSubTitleLabel()  { return 1; }  // "Kr�fte" — same id both games
-inline int IdPowersListbox()  { return acc::game::IsKotor2() ? 12 : 6; }
-inline int IdDescriptionLb()  { return acc::game::IsKotor2() ? 3 : 7; }
-inline int IdPowerLabel()     { return acc::game::IsKotor2() ? 4 : 8; }
-inline int BtnRecommendedId() { return acc::game::IsKotor2() ? 11 : 9; }
-inline int BtnAcceptId()      { return acc::game::IsKotor2() ? 10 : 11; }
-inline int BtnBackId()        { return acc::game::IsKotor2() ? 9 : 12; }
+// Control resolution is engine-truth (ctor-bound member offsets,
+// kPowersPanel*Offset via the PowersPanel* resolvers in
+// menus_internal.cpp) — this panel was the audit's poster child for why
+// .gui ids can't be trusted: the two games re-number pwrlvlup's controls
+// AND the numbers collide across games (K1 id 6 is LB_POWERS while K2
+// id 6 is a label; K1 id 12 is BTN_BACK while K2 id 12 is LB_POWERS).
+// The historical per-game ids live on only as the resolvers'
+// GuiIdMismatch tripwires.
 
 struct ChartRow {
     void*           row;            // CSWGuiSkillFlow*
@@ -54,19 +50,19 @@ struct ChartRow {
 };
 
 struct ButtonRow {
-    int         (*buttonId)();      // per-game .gui id (see the table above)
+    void*       (*resolve)(void*);  // PowersPanel* engine-member resolver
     const char* logTag;
 };
 
-// Button virtual entries after the chart cells. BTN_SELECT (id 10,
-// "Hinzuf. Macht") is intentionally omitted — Enter on a focused cell
-// dispatches OnPowerPicked directly, which is the same engine action
-// BTN_SELECT click would fire. Mirrors the chargen_feats button list
+// Button virtual entries after the chart cells. SELECT_BTN ("Hinzuf.
+// Macht") is intentionally omitted — Enter on a focused cell dispatches
+// OnPowerPicked directly, which is the same engine action SELECT_BTN's
+// click would fire. Mirrors the chargen_feats button list
 // (recommended / accept / back).
 constexpr ButtonRow kButtonRows[] = {
-    { &BtnRecommendedId, "BTN_RECOMMENDED" },
-    { &BtnAcceptId,      "BTN_ACCEPT" },
-    { &BtnBackId,        "BTN_BACK" },
+    { &PowersPanelRecommendedButton, "RECOMMENDED_BTN" },
+    { &PowersPanelAcceptButton,      "ACCEPT_BTN" },
+    { &PowersPanelBackButton,        "BACK_BTN" },
 };
 constexpr int kButtonRowCount = sizeof(kButtonRows) / sizeof(kButtonRows[0]);
 
@@ -113,7 +109,7 @@ bool ReadChartBinding(void* panel, void*& outRows, int& outCount) {
     outRows  = nullptr;
     outCount = 0;
     if (!panel) return false;
-    void* lb = FindControlById(panel, IdPowersListbox());
+    void* lb = PowersPanelPowersListBox(panel);
     if (!lb) return false;
     auto* list = reinterpret_cast<CExoArrayList*>(
         reinterpret_cast<unsigned char*>(lb) + kListBoxControlsOffset);
@@ -240,14 +236,14 @@ const char* StatusWord(unsigned char status) {
 }
 
 bool ReadPowerName(void* panel, char* out, size_t outN) {
-    void* lab = FindControlById(panel, IdPowerLabel());
+    void* lab = PowersPanelPowerLabel(panel);
     return ReadLabelText(lab, out, outN);
 }
 
 bool ReadDescription(void* panel, char* out, size_t outN) {
     if (!panel || !out || outN == 0) return false;
     out[0] = '\0';
-    void* descLb = FindControlById(panel, IdDescriptionLb());
+    void* descLb = PowersPanelDescListBox(panel);
     if (!descLb) return false;
     auto* descList = reinterpret_cast<CExoArrayList*>(
         reinterpret_cast<unsigned char*>(descLb) + kListBoxControlsOffset);
@@ -299,7 +295,7 @@ void AnnounceFocused(void* panel) {
 
     if (IsButtonRow(s_curRow)) {
         const ButtonRow& br = kButtonRows[s_curRow - s_chartRowCount];
-        void* btn = FindControlById(panel, br.buttonId());
+        void* btn = br.resolve(panel);
         char btnText[64];
         bool got = btn && ReadButtonText(btn, btnText, sizeof(btnText)) &&
                    btnText[0] != '\0';
@@ -309,8 +305,8 @@ void AnnounceFocused(void* panel) {
         }
         prism::Speak(btnText, /*interrupt=*/false);
         acclog::Write("PowersLevelUp",
-                      "focus button id=%d text=\"%s\"",
-                      br.buttonId(), btnText);
+                      "focus button %s text=\"%s\"",
+                      br.logTag, btnText);
         return;
     }
 
@@ -431,7 +427,7 @@ bool IsPowersLevelUpPanel(void* panel) {
 
 const char* GetTitleOverride(void* panel) {
     if (!IsPowersLevelUpPanel(panel)) return nullptr;
-    void* lab = FindControlById(panel, IdSubTitleLabel());
+    void* lab = PowersPanelSubTitleLabel(panel);
     if (!lab) return nullptr;
     static thread_local char s_titleBuf[128];
     if (!ReadLabelText(lab, s_titleBuf, sizeof(s_titleBuf))) return nullptr;
@@ -470,8 +466,8 @@ bool HandleInput(int n, void* thisPtr, void* panel,
     if (param_1 == kInputEnter1 || param_1 == kInputEnter2) {
         if (IsButtonRow(s_curRow)) {
             const ButtonRow& br = kButtonRows[s_curRow - s_chartRowCount];
-            QueueButtonByIdActivate(panel, br.buttonId(),
-                                    "PowersLevelUp: Enter -> button");
+            QueueControlActivate(br.resolve(panel),
+                                 "PowersLevelUp: Enter -> button");
         } else if (s_curRow >= 0 && s_curRow < s_chartRowCount &&
                    s_curCol >= 0 && s_curCol < kSkillFlowColumnsPerRow &&
                    ColFilled(s_curRow, s_curCol)) {
@@ -502,8 +498,8 @@ bool HandleInput(int n, void* thisPtr, void* panel,
     }
 
     if (param_1 == kInputEsc1 || param_1 == kInputEsc2) {
-        QueueButtonByIdActivate(
-            panel, BtnBackId(), "PowersLevelUp: Esc -> BTN_BACK");
+        QueueControlActivate(PowersPanelBackButton(panel),
+                             "PowersLevelUp: Esc -> BACK_BTN");
         outRv = 1;
         return true;
     }

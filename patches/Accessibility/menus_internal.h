@@ -367,6 +367,21 @@ void* CraftPanelAcceptButton(void* panel);        // BTN_Accept
 void* CraftPanelExamineButton(void* panel);       // BTN_Examine (view flip)
 void* CraftPanelTitleLabel(void* panel);          // LBL_TITLE
 
+// CSWGuiPowersLevelUp (pwrlvlup / pwrlvlup_p) engine-truth resolvers —
+// ctor-bound embedded members, kPowersPanel*Offset in
+// engine_offsets_fields.h. Both games re-number this .gui's ids and
+// disagree with each other, so the per-game historical ids survive only
+// as the GuiIdMismatch tripwire inside these resolvers. Panel identity
+// is the CSWGuiPowersLevelUp vtable (IsPowersLevelUpStructural); callers
+// vet the panel first. Defined in menus_internal.cpp.
+void* PowersPanelPowersListBox(void* panel);      // LB_POWERS (skill-flow rows)
+void* PowersPanelDescListBox(void* panel);        // LB_DESC
+void* PowersPanelPowerLabel(void* panel);         // LBL_POWER (selected name)
+void* PowersPanelSubTitleLabel(void* panel);      // SUB_TITLE_LBL (title)
+void* PowersPanelRecommendedButton(void* panel);  // RECOMMENDED_BTN
+void* PowersPanelAcceptButton(void* panel);       // ACCEPT_BTN
+void* PowersPanelBackButton(void* panel);         // BACK_BTN
+
 }  // namespace acc::menus::detail
 
 // partyselection.gui BTN_NPC ("Hinzuf." / "Add") — the mouse flow's

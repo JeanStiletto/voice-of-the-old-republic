@@ -343,6 +343,53 @@ void* acc::menus::detail::CraftPanelTitleLabel(void* panel) {
                                    "Craft.LBL_TITLE");
 }
 
+// CSWGuiPowersLevelUp resolvers (see menus_internal.h). The tripwire ids
+// are the per-game historical ones mined from each game's own gui.bif —
+// the two games re-number pwrlvlup's controls AND collide (K1 id 6 is
+// LB_POWERS while K2 id 6 is a label; K1 id 12 is BTN_BACK while K2 id 12
+// is LB_POWERS), which is exactly the fragility this audit removes.
+void* acc::menus::detail::PowersPanelPowersListBox(void* panel) {
+    return PanelMemberWithTripwire(panel, kPowersPanelPowersListBoxOffset,
+                                   acc::game::IsKotor2() ? 12 : 6,
+                                   "Powers.LB_POWERS");
+}
+
+void* acc::menus::detail::PowersPanelDescListBox(void* panel) {
+    return PanelMemberWithTripwire(panel, kPowersPanelDescListBoxOffset,
+                                   acc::game::IsKotor2() ? 3 : 7,
+                                   "Powers.LB_DESC");
+}
+
+void* acc::menus::detail::PowersPanelPowerLabel(void* panel) {
+    return PanelMemberWithTripwire(panel, kPowersPanelPowerLabelOffset,
+                                   acc::game::IsKotor2() ? 4 : 8,
+                                   "Powers.LBL_POWER");
+}
+
+void* acc::menus::detail::PowersPanelSubTitleLabel(void* panel) {
+    return PanelMemberWithTripwire(panel, kPowersPanelSubTitleLabelOffset,
+                                   /*SUB_TITLE_LBL, both games*/ 1,
+                                   "Powers.SUB_TITLE_LBL");
+}
+
+void* acc::menus::detail::PowersPanelRecommendedButton(void* panel) {
+    return PanelMemberWithTripwire(panel, kPowersPanelRecommendedButtonOffset,
+                                   acc::game::IsKotor2() ? 11 : 9,
+                                   "Powers.RECOMMENDED_BTN");
+}
+
+void* acc::menus::detail::PowersPanelAcceptButton(void* panel) {
+    return PanelMemberWithTripwire(panel, kPowersPanelAcceptButtonOffset,
+                                   acc::game::IsKotor2() ? 10 : 11,
+                                   "Powers.ACCEPT_BTN");
+}
+
+void* acc::menus::detail::PowersPanelBackButton(void* panel) {
+    return PanelMemberWithTripwire(panel, kPowersPanelBackButtonOffset,
+                                   acc::game::IsKotor2() ? 9 : 12,
+                                   "Powers.BACK_BTN");
+}
+
 // Workbench-upgrade slot membership via the panel's embedded button run
 // (one contiguous array in both games — see the kUpgradePanelSlotButtons
 // note in engine_offsets_fields.h). Returns the ARRAY index (identity /

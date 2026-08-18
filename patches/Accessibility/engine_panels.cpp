@@ -298,16 +298,6 @@ bool IsScriptSelectStructural(void* panel) {
     return HasVtable(panel, kVtableCSWGuiScriptSelect);
 }
 
-// CSWGuiPowersLevelUp picker (pwrlvlup.gui). The same class backs both the
-// chargen Force-selection screen and the InGameLevelUp "Kr�fte" sub-screen;
-// the SARIF documents the struct (swkotor.exe.h:16603) but doesn't name the
-// vtable, so we identify structurally. Signature taken from the panel walk
-// in patch-20260526-071446.log frame 12715: two ListBox children at .gui
-// IDs 6 (powers_listbox) and 7 (description_listbox), with the four
-// Button children at IDs 9..12 (recommended/select/accept/back). No other
-// heap-allocated panel we've seen puts a listbox at ID 6 or 7, which keeps
-// this distinct from SaveLoad (listbox at 0) and the Workbench shapes
-// (listbox at 0).
 // KOTOR 2 gamepad Quick Menu — vtable equality, nothing structural. The class
 // exists only in KOTOR 2, so the constant poisons to 0 on KOTOR 1 and the
 // guard below declines there without a read.
@@ -322,32 +312,18 @@ bool IsGamepadQuickMenuStructural(void* panel) {
     }
 }
 
+// CSWGuiPowersLevelUp picker (pwrlvlup.gui). The same class backs both the
+// chargen Force-selection screen and the InGameLevelUp Force sub-screen.
+// Vtable equality only — the ctor-written identity of this single-instance
+// heap panel, same as feats / level-up / main menu / SaveLoad. The old
+// id-based structural fallback ({listbox 6, listbox 7, buttons 11/12})
+// was deleted in the gui-id audit: it trusted .gui-authored ids (this
+// panel's are re-numbered per GAME, let alone per mod — the K1 quartet
+// never matched on K2 at all), and the vtable constant sits behind the
+// installer's SHA-256 gate, so "a build relocates the vtable" can't
+// happen without new constants anyway.
 bool IsPowersLevelUpStructural(void* panel) {
-    if (!panel) return false;
-    __try {
-        // Primary: vtable equality — the clean, collision-proof identifier
-        // used by every other single-instance heap panel (feats, level-up,
-        // main menu, options sub-screens). This is what makes the powers
-        // screen robust against loose structural signatures elsewhere in
-        // the ladder, not merely its probe position.
-        void** vt = *reinterpret_cast<void***>(panel);
-        if (reinterpret_cast<uintptr_t>(vt) == kVtableCSWGuiPowersLevelUp) {
-            return true;
-        }
-        // Fallback structural signature (kept in case a build relocates the
-        // vtable): powers_listbox (id 6) and description_listbox (id 7) are
-        // ListBoxes; BTN_ACCEPT (id 11) and BTN_BACK (id 12) are buttons.
-        void* lbPowers = FindControlByGuiId(panel, /*powers_listbox=*/6);
-        if (!HasVtable(lbPowers, kVtableListBox)) return false;
-        void* lbDesc   = FindControlByGuiId(panel, /*description_listbox=*/7);
-        if (!HasVtable(lbDesc, kVtableListBox)) return false;
-        void* btnAccept = FindControlByGuiId(panel, /*BTN_ACCEPT=*/11);
-        void* btnBack   = FindControlByGuiId(panel, /*BTN_BACK=*/12);
-        return HasVtable(btnAccept, kVtableCSWGuiButton) &&
-               HasVtable(btnBack,   kVtableCSWGuiButton);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
+    return HasVtable(panel, kVtableCSWGuiPowersLevelUp);
 }
 
 // Title-screen Options sub-screens. Each is a single-instance heap-allocated

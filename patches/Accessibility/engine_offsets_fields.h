@@ -673,6 +673,51 @@ const size_t    kFeatDescriptionStrRefOffset  = acc::off::Same(0x0c);
 // powers-button callback 0x00904420).
 const size_t    kPowersLevelUpChartOffset              = acc::off::Pick(0x19fc, 0x1bf8);
 
+// CSWGuiPowersLevelUp ctor-bound control members (gui-id audit batch,
+// 2026-08-18). The Force-power picker — pwrlvlup / pwrlvlup_p — shared by
+// chargen Force selection and the InGameLevelUp Force sub-screen. Both
+// games re-number this .gui's control ids AND disagree with each other
+// (K1 LB_POWERS=6 is a K2 label; K1 BTN_BACK=12 is K2's LB_POWERS), so
+// this panel had per-game id tables before the audit — now the ids only
+// feed the GuiIdMismatch tripwires in the PowersPanel* resolvers
+// (menus_internal.cpp).
+//
+// K1 ctor @0x006f2180 (named symbol; tagged-InitControl LEA operands
+// dumped from the listing). K2 ctor FUN_009074E0 (decompiles WITH tag
+// strings; offsets are the dword indices ×4 off in_ECX). Same member
+// order both games:
+//
+//   member          tag              K1        K2
+//   sub-title       SUB_TITLE_LBL    +0x1ac    +0x1b8
+//   power name      LBL_POWER        +0xbac    +0xab0
+//   powers listbox  LB_POWERS        +0xcec    +0xbf8
+//   description lb  LB_DESC          +0xfcc    +0xee8
+//   recommended     RECOMMENDED_BTN  +0x12ac   +0x11d8
+//   accept          ACCEPT_BTN       +0x1634   +0x1578
+//   back            BACK_BTN         +0x17f8   +0x1748
+//
+// Second witnesses, both games: each button gets the ctor's
+// `bit_flags &= ~4` clear plus a gamepad-callback registration on the
+// member (K1 OnYButtonPressed / OnXButtonPressed / AcceptButtonCallback /
+// OnBButtonPressed; K2 binds 'y'/'a'/'b' via FUN_00760ea0). The powers
+// listbox member additionally receives the selection-changed and
+// double-click callback registrations (K1 OnPowerSelectionChanged
+// @0x006f1940 / OnDoubleClick @0x006f2110; K2 0x00909D00/0x00909D70 —
+// the addresses already recorded on kAddrCSWGuiPowersLevelUpOnEnterPower)
+// and is the ctor's final SetActiveControl target. K2 layout cross-check:
+// SELECT_BTN lands at +0x13a8, the value OnEnterPower's repaint witness
+// had recorded before this batch; LBL_BAR1/2 follow BACK_BTN at the
+// label-vector stride 0x148 exactly as the SaveLoad panel's bars do.
+// (SELECT_BTN itself is deliberately not a constant: Enter on a chart
+// cell dispatches OnPowerPicked directly — see menus_powers_levelup.cpp.)
+const size_t    kPowersPanelSubTitleLabelOffset        = acc::off::Pick(0x1ac,  0x1b8);
+const size_t    kPowersPanelPowerLabelOffset           = acc::off::Pick(0xbac,  0xab0);
+const size_t    kPowersPanelPowersListBoxOffset        = acc::off::Pick(0xcec,  0xbf8);
+const size_t    kPowersPanelDescListBoxOffset          = acc::off::Pick(0xfcc,  0xee8);
+const size_t    kPowersPanelRecommendedButtonOffset    = acc::off::Pick(0x12ac, 0x11d8);
+const size_t    kPowersPanelAcceptButtonOffset         = acc::off::Pick(0x1634, 0x1578);
+const size_t    kPowersPanelBackButtonOffset           = acc::off::Pick(0x17f8, 0x1748);
+
 // Container offsets verified against Lane's SARIF (DATATYPE entries for
 // CSWGuiPanel and CSWGuiListBox). CExoArrayList layout:
 //   +0x00  T**      data         (heap array of element pointers)
