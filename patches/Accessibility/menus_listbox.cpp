@@ -408,7 +408,9 @@ bool EquipPickerArmed() { return IsEquipPickerArmed(); }
 // longer a mirror to drift.
 
 void* EquipPickerFindLb(void* p) {
-    return FindControlById(p, kEquipLbItemsId);
+    // Engine member, not .gui id — variant equip_p.gui files renumber
+    // LB_ITEMS (userlogs/077noequipment; docs/gui-id-audit.md).
+    return acc::menus::detail::EquipPanelItemsListBox(p);
 }
 
 // Inline announce only on no-op clamp; normal moves are caught by
@@ -442,8 +444,8 @@ bool EquipPickerOnEnter(void* panel) {
         ClearEquipPickerArmLatch();
         return true;
     }
-    void* lb  = FindControlById(panel, kEquipLbItemsId);
-    void* btn = FindControlById(panel, kEquipBtnEquipId);
+    void* lb  = acc::menus::detail::EquipPanelItemsListBox(panel);
+    void* btn = acc::menus::detail::EquipPanelEquipButton(panel);
     void* row       = nullptr;  // the user-selected row (an equippable item)
     void* unequipRow = nullptr; // row 0 — the always-present 0x7f000000 entry
     short selIdx = -1;

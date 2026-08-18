@@ -54,6 +54,15 @@ const char* FromControl(void* control,
 void ResetCycleCategoryCache();
 void CaptureCycleCategory(void* control, const char* category);
 
+// Resolve the equipped item's display name for one equip-screen slot
+// button (matched by its .gui id against the slot table the per-kind
+// announce uses). Reads the panel-cached slot handle and resolves it via
+// the engine's universal name accessor. Returns false — with outBuf
+// empty — when the slot is empty, the control is no known slot button,
+// or a read faults. Used by the picker monitor's refusal follow-up.
+bool ReadEquipSlotItemName(void* panel, void* slotBtn,
+                           char* outBuf, size_t bufSize);
+
 // Pazaak wager popup: register a single virtual top-of-chain "row" (live
 // wager + maximum + credits) anchored on the maximum_label. No-op for any
 // non-PazaakWager panel. Mirrors menus_credits::ForEachCreditsRowAnchor;

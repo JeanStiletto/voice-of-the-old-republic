@@ -106,13 +106,16 @@ void HandleEnterActivation(void* activePanel, int code, int val, bool& consumed)
     // modal instead of populating the picker. Same gate-mismatch shape as
     // Options tab buttons: the mouse path is the only one that triggers the
     // populate.
+    // Matched by position in the engine's embedded slot-button array, not
+    // by .gui id — variant equip_p.gui files renumber the ids
+    // (userlogs/077noequipment; docs/gui-id-audit.md).
     bool isEquipSlot = false;
-    int  equipSlotCid = 0;
+    int  equipSlotIdx = -1;
     if (acc::engine::IdentifyPanel(g_chainPanel) ==
             acc::engine::PanelKind::InGameEquip) {
-        equipSlotCid = *reinterpret_cast<int*>(
-            reinterpret_cast<unsigned char*>(e.control) + kControlIdOffset);
-        isEquipSlot = IsEquipSlotButtonId(equipSlotCid);
+        equipSlotIdx = acc::menus::detail::EquipSlotIndexFromButton(
+            g_chainPanel, e.control);
+        isEquipSlot = equipSlotIdx >= 0;
     }
 
     // Workbench upgrade slot buttons (per-game .gui ids — see
@@ -319,11 +322,11 @@ void HandleEnterActivation(void* activePanel, int code, int val, bool& consumed)
         // Arm the picker zone now: OnSelectSlot raises field33_0x4270 |= 1
         // and the user proceeds to LB_ITEMS browsing. Self-clears on panel
         // close, picker Esc, or BTN_EQUIP dispatch.
-        acc::menus::listbox::ArmEquipPicker(g_chainPanel);
+        acc::menus::listbox::ArmEquipPicker(g_chainPanel, e.control);
         acclog::Write("EquipPicker",
                       "armed via direct OnEnterSlot+OnSelectSlot "
-                      "(Enter on slot id=%d btn=%p panel=%p)",
-                      equipSlotCid, e.control, g_chainPanel);
+                      "(Enter on slot index=%d btn=%p panel=%p)",
+                      equipSlotIdx, e.control, g_chainPanel);
         consumed = true;
     } else if (isWorkbenchUpgradeSlot) {
         // Click-sim landed on a label (z-order trap); vtable[15] is the

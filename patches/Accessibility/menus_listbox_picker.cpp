@@ -93,6 +93,7 @@ namespace acc::menus::listbox {
 
 namespace {
 void* s_equipArmPending  = nullptr;  // panel we asked to open, until its bit shows
+void* s_equipArmSlotBtn  = nullptr;  // the slot button that Enter activated
 bool  s_equipParkPending = false;
 
 void* s_workbenchUpgradeArmPending  = nullptr;
@@ -129,8 +130,9 @@ void* EquipPickerPanel() {
                                 : nullptr;
 }
 
-void ArmEquipPicker(void* panel) {
+void ArmEquipPicker(void* panel, void* slotBtn) {
     s_equipArmPending  = panel;
+    s_equipArmSlotBtn  = slotBtn;
     s_equipParkPending = true;
 }
 
@@ -140,6 +142,7 @@ void ArmEquipPicker(void* panel) {
 // the suffix suppression and the input routing must both stay on for that tick.
 void ClearEquipPickerArmLatch() {
     s_equipArmPending  = nullptr;
+    s_equipArmSlotBtn  = nullptr;
     s_equipParkPending = false;
 }
 
@@ -178,27 +181,30 @@ struct EquipSelState {
 };
 EquipSelState s_equipSelState = { nullptr, -1 };
 
-// Warp the OS cursor onto `panel`'s BTN_BACK so it sits OFF the LB_ITEMS list
-// while a picker is armed — see the cursor-park note in the file header.
-// BTN_BACK is a plain button (safe for MoveMouseToPosition's hover->active
-// promotion, unlike a label) and a harmless parking spot: we never synthesise
-// a click, and Enter/Esc are dispatched explicitly by the picker handlers
-// regardless of hover.
+// Warp the OS cursor onto the panel's BTN_BACK so it sits OFF the LB_ITEMS
+// list while a picker is armed — see the cursor-park note in the file
+// header. BTN_BACK is a plain button (safe for MoveMouseToPosition's
+// hover->active promotion, unlike a label) and a harmless parking spot: we
+// never synthesise a click, and Enter/Esc are dispatched explicitly by the
+// picker handlers regardless of hover.
+//
+// The caller resolves `backBtn` — the equip picker passes the engine's
+// ctor-bound member (a variant .gui renumbers the id and the old id-based
+// resolve here parked on a LABEL instead, userlogs/077noequipment); the
+// workbench picker still resolves by id until its ctor round lands.
 //
 // Returns true once the warp is issued (caller clears its park-pending latch).
-bool ParkPickerCursorOffList(void* panel, int backBtnId, const char* tag) {
-    if (!panel) return false;
+bool ParkPickerCursorOffList(void* panel, void* backBtn, const char* tag) {
+    if (!panel || !backBtn) return false;
     void* gm = *reinterpret_cast<void**>(kAddrGuiManagerPtr);
     if (!gm) return false;
-    void* backBtn = FindControlById(panel, backBtnId);
-    if (!backBtn) return false;
     int cx = 0, cy = 0;
     if (!GetControlCenter(backBtn, cx, cy)) return false;
     auto move = reinterpret_cast<PFN_MoveMouseToPosition>(
         kAddrMoveMouseToPosition);
     move(gm, cx, cy);
-    acclog::Write(tag, "park cursor off LB_ITEMS -> BTN_BACK id=%d at (%d,%d) "
-                  "(neutralises hover-select)", backBtnId, cx, cy);
+    acclog::Write(tag, "park cursor off LB_ITEMS -> BTN_BACK %p at (%d,%d) "
+                  "(neutralises hover-select)", backBtn, cx, cy);
     return true;
 }
 
@@ -216,6 +222,37 @@ void TraceEquipPickerOpenField(void* panel, bool armed) {
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         acclog::Trace("EquipPickerBit", "panel=%p read faulted", panel);
     }
+}
+
+// The engine refused to open the picker — its "no items for this slot"
+// modal is what the user just heard (the ContentChange monitor speaks it).
+// When the refused slot in fact HOLDS an item, follow up by naming it:
+// KOTOR 2's OnSelectSlot refuses whenever inventory has no OTHER fitting
+// item — the equipped one doesn't count (a per-slot no-candidates flag,
+// checked before it ever looks at the item list) — and without this line
+// the modal sounds like the equipped item vanished or the mod broke
+// (userlogs 077noequipment: pistol equipped, "no items that can be
+// equipped in this slot"). Silent when the slot is genuinely empty; the
+// engine modal alone is accurate there. KOTOR 1 never reaches this with
+// an occupied slot (its OnSelectSlot counts the equipped row), so the
+// item-name gate also keeps it K1-inert.
+void SpeakStillEquippedAfterRefusal(void* panel, void* slotBtn) {
+    if (!panel || !slotBtn) return;
+    char itemName[128];
+    if (!acc::menus::extract::ReadEquipSlotItemName(panel, slotBtn,
+                                                    itemName,
+                                                    sizeof(itemName)) ||
+        itemName[0] == '\0') {
+        return;
+    }
+    char msg[192];
+    snprintf(msg, sizeof(msg),
+             acc::strings::Get(acc::strings::Id::FmtEquipStillEquipped),
+             itemName);
+    prism::Speak(msg, /*interrupt=*/false);
+    acclog::Write("EquipPicker",
+                  "refused open follow-up: slot item=\"%s\" still equipped "
+                  "(panel=%p slot=%p)", itemName, panel, slotBtn);
 }
 
 // Equip picker: retire the arm latch, run the one-shot cursor park, and speak
@@ -252,7 +289,11 @@ void MonitorEquipPickerSelection() {
         if (engineOpen || !acc::menus::pending::IsPending()) {
             acclog::Write("EquipPicker", "arm latch retired (engineOpen=%d)",
                           engineOpen ? 1 : 0);
+            if (!engineOpen) {
+                SpeakStillEquippedAfterRefusal(equipPanel, s_equipArmSlotBtn);
+            }
             s_equipArmPending = nullptr;
+            s_equipArmSlotBtn = nullptr;
         }
     }
 
@@ -269,7 +310,7 @@ void MonitorEquipPickerSelection() {
     // KOTOR 2 log has confirmed both edges.
     TraceEquipPickerOpenField(equipPanel, armed);
 
-    void* lb = FindControlById(equipPanel, kEquipLbItemsId);
+    void* lb = acc::menus::detail::EquipPanelItemsListBox(equipPanel);
     if (!lb) return;
 
     auto* lbList = reinterpret_cast<CExoArrayList*>(
@@ -280,7 +321,10 @@ void MonitorEquipPickerSelection() {
     // populated (rowCount > 0), warp the cursor off the list so the engine's
     // per-frame hover-select stops fighting our SetSelectedControl writes.
     if (armed && s_equipParkPending && rowCount > 0) {
-        if (ParkPickerCursorOffList(equipPanel, kEquipBtnBackId, "EquipPicker")) {
+        if (ParkPickerCursorOffList(
+                equipPanel,
+                acc::menus::detail::EquipPanelBackButton(equipPanel),
+                "EquipPicker")) {
             s_equipParkPending = false;
         }
     }
@@ -429,7 +473,9 @@ void MonitorWorkbenchUpgradePicker() {
         // hover-select stops reverting our SetSelectedControl writes.
         if (s_workbenchUpgradeParkPending && rowCount > 0) {
             if (ParkPickerCursorOffList(upgradePanel,
-                                        kWorkbenchUpgradeBtnBackId,
+                                        FindControlById(
+                                            upgradePanel,
+                                            kWorkbenchUpgradeBtnBackId),
                                         "WorkbenchUpgrade")) {
                 s_workbenchUpgradeParkPending = false;
             }

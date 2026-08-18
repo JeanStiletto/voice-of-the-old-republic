@@ -244,11 +244,17 @@ extern void* s_pendingAnnounceControl;
 // whole panel: the slot buttons moved from K1's odd 7..23 spread to a
 // 15..25 block (implant parked at 48), LB_ITEMS 5 → 41, BTN_BACK/BTN_EQUIP
 // 36/37 → 39/40, and two K2-only second-weapon-set slots appeared
-// (BTN_INV_WEAP_L2/R2). Both menus.cpp and menus_extract.cpp need these —
-// the former for input handling (slot detection, picker zone, equip
-// dispatch), the latter for per-kind label resolution (slot button →
-// "Kopf" / "Implantat" / etc.). Runtime-resolved consts in the
-// engine_offsets Pick style — constexpr can't branch on the running game.
+// (BTN_INV_WEAP_L2/R2).
+//
+// SINCE 2026-08-18 these ids are NOT how equip controls are resolved or
+// matched any more: a beta install shipped a variant equip_p.gui with the
+// tail ids shifted by one (userlogs/077noequipment), so every consumer
+// moved to the engine's own ctor-bound members — EquipPanelItemsListBox /
+// EquipPanelEquipButton / EquipPanelBackButton and the
+// EquipSlotIndexFrom* pointer arithmetic below. The three ids the member
+// resolvers take stay ONLY as the GuiIdMismatch tripwire input (a variant
+// .gui then shows up as one loud log line instead of a broken picker);
+// the slot-button ids stay as documentation of the mined files.
 const int kEquipBtnHeadId    = acc::game::IsKotor2() ? 15 :  7;  // BTN_INV_HEAD     (TLK 31375)
 const int kEquipBtnImplantId = acc::game::IsKotor2() ? 48 :  9;  // BTN_INV_IMPLANT  (literal — no TLK)
 const int kEquipBtnBodyId    = acc::game::IsKotor2() ? 17 : 11;  // BTN_INV_BODY     (TLK 31380)
@@ -259,10 +265,8 @@ const int kEquipBtnWeapRId   = acc::game::IsKotor2() ? 23 : 19;  // BTN_INV_WEAP
 const int kEquipBtnArmRId    = acc::game::IsKotor2() ? 24 : 21;  // BTN_INV_ARM_R    (TLK 31377)
 const int kEquipBtnHandsId   = acc::game::IsKotor2() ? 25 : 23;  // BTN_INV_HANDS    (TLK 31383)
 // KOTOR 2 only: the second weapon-set slot buttons. -1 on K1 (matches no
-// control). Their panel item-id member offsets are NOT mined yet, so they
-// navigate + activate (picker populates) but announce without a slot name
-// or equipped-item name — expect "control 20/21" until a K2 ctor round
-// extends the kEquipPanel*IdOffset band.
+// control). Slot indices 9/10 in the engine's arrays; their item-id
+// offsets are kEquipPanelSlotItemIdsOffset + 0x24/0x28.
 const int kEquipBtnWeapL2Id  = acc::game::IsKotor2() ? 20 : -1;  // BTN_INV_WEAP_L2
 const int kEquipBtnWeapR2Id  = acc::game::IsKotor2() ? 21 : -1;  // BTN_INV_WEAP_R2
 const int kEquipLbItemsId    = acc::game::IsKotor2() ? 41 :  5;  // LB_ITEMS
@@ -281,10 +285,39 @@ const int kWorkbenchUpgradeBtnBackId = acc::game::IsKotor2() ? 13 : 28;  // BTN_
 const int kEquipBtnBackId    = acc::game::IsKotor2() ? 39 : 36;  // BTN_BACK         (TLK 1582 = Schliess.)
 const int kEquipBtnEquipId   = acc::game::IsKotor2() ? 40 : 37;  // BTN_EQUIP        (TLK 1580 = OK)
 
-// True iff cid is one of the equip screen's slot buttons (both weapon sets
-// on K2). Shared by the chain click-pitch capture (menus_chain.cpp) and the
-// slot activation path (menus_chain_input.cpp); defined in menus_chain.cpp.
-bool IsEquipSlotButtonId(int cid);
+namespace acc::menus::detail {
+
+// Equip-panel slot identity from the engine's embedded control arrays
+// (ctor-mined bases/strides — kEquipPanelSlotButtons/LabelsOffset). Pure
+// pointer arithmetic against the panel, no control deref, so no SEH
+// needed. Replaces the old .gui-id matching (IsEquipSlotButtonId), which
+// broke on installs with a renumbered equip_p.gui (userlogs/
+// 077noequipment — see docs/gui-id-audit.md).
+//
+// Returns the 0-based slot index shared by BOTH games' engine order:
+//   0 weapL, 1 weapR, 2 head, 3 armL, 4 armR, 5 body, 6 hands,
+//   7 implant, 8 belt; KOTOR 2 appends 9 weapL2, 10 weapR2.
+// -1 when the control is not one of this panel's slot buttons (/labels).
+// The matching per-slot equipped-item handle lives at
+// panel + kEquipPanelSlotItemIdsOffset + 4*index.
+int EquipSlotIndexFromButton(void* panel, void* control);
+int EquipSlotIndexFromControl(void* panel, void* control);  // button OR label
+
+// Slots in the engine's arrays for the running game (9 on K1, 11 on K2).
+inline int EquipSlotCount() { return acc::game::IsKotor2() ? 11 : 9; }
+
+// Engine-truth resolvers for the equip panel's picker members — the
+// EMBEDDED items_listbox ("LB_ITEMS"), equip button ("BTN_EQUIP") and
+// back button ("BTN_BACK") the constructors bind by tag. Primary path
+// for everything that used to FindControlById those three ids; each
+// resolver keeps the id lookup only as a TRIPWIRE, logging
+// "GuiIdMismatch" once per session when a variant .gui file would have
+// sent the id path to a different control. Defined in menus_internal.cpp.
+void* EquipPanelItemsListBox(void* panel);
+void* EquipPanelEquipButton(void* panel);
+void* EquipPanelBackButton(void* panel);
+
+}  // namespace acc::menus::detail
 
 // partyselection.gui BTN_NPC ("Hinzuf." / "Add") — the mouse flow's
 // commit button: click a portrait to highlight it, then click this to

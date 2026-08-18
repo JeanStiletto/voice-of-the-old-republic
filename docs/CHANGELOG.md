@@ -33,6 +33,27 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>Unreleased</h2>
+
+<h3>Equipment screen:</h3>
+
+- The equipment screen now works on installs whose mods replace the K2
+  equipment layout file. A beta install shipped an `equip_p.gui` variant with
+  renumbered control ids, which left the item picker unusable there — arrows
+  read an empty list, Enter could not equip, and picker rows leaked into the
+  slot navigation as phantom buttons. All equipment-screen lookups now resolve
+  through the engine's own constructor-bound members (immune to layout-file
+  renumbering, on both games); if an install's layout file still disagrees, one
+  `GuiIdMismatch` line lands in the patch log so we see it in log bundles.
+- KOTOR 2: pressing Enter on an equipped slot with nothing else to swap in now
+  follows the game's "You have no items that can be equipped in this slot"
+  popup with "Item still equipped: <name>". The refusal is the game's own rule
+  (unlike KOTOR 1 it only opens the list when another fitting item exists), and
+  without the extra line it sounded as if the equipped item had vanished.
+- KOTOR 2: the two secondary weapon-configuration slots now announce their slot
+  name and equipped item and support the Shift+arrow item description, like
+  every other slot.
+
 <h2>v0.7.7</h2>
 
 <h3>Installer:</h3>

@@ -78,9 +78,13 @@ const char* GetTitleOverride(void* panel);
 // deliberately leaves the engine's bit alone — the engine clears it when the
 // commit or cancel we queued reaches CloseDescription, and until then the slots
 // really are still disabled.
+// `slotBtn` is the slot button whose Enter queued the open; the monitor
+// keeps it for the latch's lifetime so a refused open (engine bit never
+// rises — KOTOR 2 pops its "no items for this slot" modal instead) can
+// still name the item that stays equipped in that slot.
 bool  IsEquipPickerArmed();
 void* EquipPickerPanel();
-void  ArmEquipPicker(void* panel);
+void  ArmEquipPicker(void* panel, void* slotBtn);
 void  ClearEquipPickerArmLatch();
 
 // Workbench upgrade picker — arms when the chain Enter handler activates

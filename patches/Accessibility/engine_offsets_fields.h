@@ -1273,6 +1273,44 @@ const size_t    kEquipPanelChangeParty2ButtonOffset   = acc::off::Kotor1Only(0x3
 const size_t    kEquipPanelCharacterLeftButtonOffset  = acc::off::Pick(0x3DA8, 0x50f0);
 const size_t    kEquipPanelCharacterRightButtonOffset = acc::off::Pick(0x3F6C, 0x52c0);
 
+// CSWGuiInGameEquip picker members + slot-button/label arrays, mined from
+// both constructors (K1 @0x006ba980, K2 @0x008a92d0 — full derivation in
+// docs/gui-id-audit.md, 2026-08-18). These are the engine's own by-tag
+// bindings, established at panel construction, so they are immune to the
+// .gui id renumbering that broke the tester install in userlogs/
+// 077noequipment (variant equip_p.gui: LB_ITEMS 41→42, BTN_EQUIP 40→41,
+// BTN_BACK 39→40). Everything here is EMBEDDED (address-of, never deref
+// the offset itself):
+//   items_listbox  — "LB_ITEMS", the picker list OnSelectSlot activates.
+//     K1 from OnSelectSlot @0x006b8eb0 (`LEA EDI,[ESI+0x30d8]` into
+//     SetActiveControl); K2 from OnSelectSlot @0x008abe70 (dword 0xdcb)
+//     AND the ctor's "LB_ITEMS" InitControl — two witnesses each.
+//   equip_button   — "BTN_EQUIP" (OnOKPressed's owner). K1 derived from
+//     the contiguous button run (back 0x385C − 0x1c4; the run's other
+//     four members match the recorded party-cycle constants exactly);
+//     K2 from the ctor's "BTN_EQUIP" InitControl (dword 0xf43).
+//   slot buttons   — BTN_INV_* as one embedded array, ctor-constructed
+//     via _eh_vector_constructor_iterator_ (K1: 9 × 0x1c4 at +0x68,
+//     K2: 11 × 0x1d0 at +0x6c). Slot ORDER is identical in both games
+//     (weapL, weapR, head, armL, armR, body, hands, implant, belt; K2
+//     appends weapL2, weapR2) — it is the slotInfo table order, and the
+//     ctor loop stores the index into each button's custom_value and
+//     seeds the parallel slot-item-id array in the same order (the
+//     kEquipPanel*IdOffset constants above are exactly base + 4*index).
+//   slot labels    — LBL_INV_* array from the same ctor loop (K1:
+//     9 × 0x140 at +0x104c, K2: 11 × 0x148 at +0x145c).
+const size_t    kEquipPanelItemsListBoxOffset = acc::off::Pick(0x30d8, 0x372c);
+const size_t    kEquipPanelEquipButtonOffset  = acc::off::Pick(0x3698, 0x3d0c);
+const size_t    kEquipPanelSlotButtonsOffset  = acc::off::Pick(0x0068, 0x006c);
+const size_t    kEquipPanelSlotButtonStride   = acc::off::Pick(0x01c4, 0x01d0);
+const size_t    kEquipPanelSlotLabelsOffset   = acc::off::Pick(0x104c, 0x145c);
+const size_t    kEquipPanelSlotLabelStride    = acc::off::Pick(0x0140, 0x0148);
+// Base of the parallel per-slot equipped-item client-handle array
+// (uint32[9/11]); entry i belongs to slot-array index i. The named
+// kEquipPanel*IdOffset constants above remain as documentation of the
+// order; new code should index from this base.
+const size_t    kEquipPanelSlotItemIdsOffset  = acc::off::Pick(0x427c, 0x509c);
+
 // CSWGuiLevelUpPanel "Zurück" (button_back) and "Abbrechen"
 // (button_cancel) — the two trailing CSWGuiButton members before
 // field9_0x1ccc in the struct. Both are dead ends for keyboard nav and

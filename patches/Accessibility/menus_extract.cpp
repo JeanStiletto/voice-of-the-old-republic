@@ -1450,69 +1450,59 @@ const char* TryInGameMenuIcon(void* control, void* owner,
 }
 
 // 9b. Per-kind hardcoded label fallback for the equipment screen. The
-//     9 BTN_INV_* slot buttons (and the matching LBL_INV_* labels) have
+//     BTN_INV_* slot buttons (and the matching LBL_INV_* labels) have
 //     no inline text and no strref in equip.gui — same situation as the
-//     InGameMenu strip icons. Use the control's stable .gui ID (read at
-//     +0x50) to pick a slot name, prefer a dialog.tlk lookup so a non-
-//     German install reads the engine's own translations, fall back to
-//     a strings.h literal (which adapts to active language).
+//     InGameMenu strip icons. Prefer a dialog.tlk lookup so a non-German
+//     install reads the engine's own translations, fall back to a
+//     strings.h literal (which adapts to active language).
 //
-//     IDs come from equip.gui / K2 equip_p.gui via xoreos-tools gff2xml.
-//     K1 maps button ID → matching label ID as n+1; K2 re-numbers both
-//     sets independently (labels sit in a 1..16 block, buttons in 15..48),
-//     so the label ids are explicit per game. The TLK strrefs are the same
-//     in both games' dialog.tlk (verified against the K2 TLK 2026-08-02).
+//     Slots are identified by INDEX in the engine's embedded
+//     slot-button/label arrays (EquipSlotIndexFromControl — pointer
+//     arithmetic against ctor-mined bases), NOT by .gui id: variant
+//     equip_p.gui files renumber the ids per install
+//     (userlogs/077noequipment; docs/gui-id-audit.md). The index order is
+//     the slotInfo order both games' constructors share — weapL, weapR,
+//     head, armL, armR, body, hands, implant, belt, and on KOTOR 2 the
+//     appended weapL2, weapR2 — and the per-slot equipped-item handle is
+//     the parallel array entry at kEquipPanelSlotItemIdsOffset + 4*index.
+//     The TLK strrefs are the same in both games' dialog.tlk (verified
+//     against the K2 TLK 2026-08-02).
 //
-//     KOTOR 2 adds a SECOND WEAPON SET — the pair the player swaps to with
-//     BTN_SWAPWEAPONS. Its two buttons (BTN_INV_WEAP_L2 id 20 /
-//     BTN_INV_WEAP_R2 id 21, labels LBL_INV_WEAP_L2 id 2 / LBL_INV_WEAP_R2
-//     id 1, all read out of the game's own gui.bif) used to fall through to
-//     the generic fallback and speak as "control 20" / "control 21"; their
-//     panel item-id offsets are now known (see kEquipPanelLeftWeapon2Id-
-//     Offset) so they name themselves like every other slot.
-//
-//     Both sets carry a set qualifier on KOTOR 2, not just the second one:
-//     the two rows are otherwise identical ("Linke Waffe" twice), and the
-//     panel itself labels the columns. The qualifier words are the mod's
-//     own "aktiv" / "sekund\xE4r" (EquipSetActive / EquipSetSecondary), NOT
-//     the engine's on-screen "Konfig 1" / "Konfig 2" (dialog.tlk
-//     49038/49039): the engine keeps no active-set state — SwitchWeaps
-//     physically moves the items between the slot pairs — so the first
-//     pair is by construction what the character holds and the second
-//     pair the stored one. Numbered configs would wrongly suggest a
-//     persistent "which set am I on".
+//     Both weapon sets carry a set qualifier on KOTOR 2, not just the
+//     second one: the two rows are otherwise identical ("Linke Waffe"
+//     twice), and the panel itself labels the columns. The qualifier words
+//     are the mod's own "aktiv" / "sekund\xE4r" (EquipSetActive /
+//     EquipSetSecondary), NOT the engine's on-screen "Konfig 1" /
+//     "Konfig 2" (dialog.tlk 49038/49039): the engine keeps no active-set
+//     state — SwitchWeaps physically moves the items between the slot
+//     pairs — so the first pair is by construction what the character
+//     holds and the second pair the stored one. Numbered configs would
+//     wrongly suggest a persistent "which set am I on".
 struct EquipSlotName {
-    int           btnId;
-    int           lblId;
     uint32_t      strref;     // 0xFFFFFFFF = no TLK, use literal
     acc::strings::Id literalId;
-    size_t        itemIdOffset;  // CSWGuiInGameEquip-relative
-    // Weapon-set qualifier, KOTOR 2 only. 0 = no qualifier (every slot on
-    // KOTOR 1, and the non-weapon slots on KOTOR 2, which are shared
-    // between the two sets); 1 = active pair, 2 = secondary pair.
+    // Weapon-set qualifier, applied on KOTOR 2 only. 0 = no qualifier
+    // (the non-weapon slots, shared between the two sets); 1 = active
+    // pair, 2 = secondary pair.
     int           setQualifier;
-    bool          k2Only;     // entry does not exist on KOTOR 1
 };
-// Namespace scope, not function-local static: the initializers are runtime
-// consts (per-game ids + Pick'd offsets), and a dynamically-initialized
-// static local inside SEH-using TryEquipSlot trips MSVC C2712 (the init
-// guard needs unwinding). Same workaround as the rest of the patch.
+// Indexed by engine slot index (see 9b note above). Entries 9/10 exist
+// only on KOTOR 2; EquipSlotIndexFromControl never answers >= 9 on K1
+// (EquipSlotCount bounds it).
 namespace {
 const bool kEquipTableIsK2 = acc::game::IsKotor2();
-const EquipSlotName k_equipSlots[] = {
-    { kEquipBtnHeadId,     kEquipTableIsK2 ? 10 : kEquipBtnHeadId    + 1, 31375u,      acc::strings::Id::EquipSlotHead,    kEquipPanelHeadIdOffset,         0, false },
-    { kEquipBtnImplantId,  kEquipTableIsK2 ? 16 : kEquipBtnImplantId + 1, 0xFFFFFFFFu, acc::strings::Id::EquipSlotImplant, kEquipPanelImplantIdOffset,      0, false },
-    { kEquipBtnBodyId,     kEquipTableIsK2 ?  7 : kEquipBtnBodyId    + 1, 31380u,      acc::strings::Id::EquipSlotBody,    kEquipPanelArmorIdOffset,        0, false },
-    { kEquipBtnArmLId,     kEquipTableIsK2 ?  8 : kEquipBtnArmLId    + 1, 31376u,      acc::strings::Id::EquipSlotArmL,    kEquipPanelLeftArmbandIdOffset,  0, false },
-    { kEquipBtnArmRId,     kEquipTableIsK2 ?  6 : kEquipBtnArmRId    + 1, 31377u,      acc::strings::Id::EquipSlotArmR,    kEquipPanelRightArmbandIdOffset, 0, false },
-    { kEquipBtnWeapLId,    kEquipTableIsK2 ?  4 : kEquipBtnWeapLId   + 1, 31378u,      acc::strings::Id::EquipSlotWeapL,   kEquipPanelLeftWeaponIdOffset,   1, false },
-    { kEquipBtnWeapRId,    kEquipTableIsK2 ?  3 : kEquipBtnWeapRId   + 1, 31379u,      acc::strings::Id::EquipSlotWeapR,   kEquipPanelRightWeaponIdOffset,  1, false },
-    { kEquipBtnBeltId,     kEquipTableIsK2 ?  5 : kEquipBtnBeltId    + 1, 31382u,      acc::strings::Id::EquipSlotBelt,    kEquipPanelBeltIdOffset,         0, false },
-    { kEquipBtnHandsId,    kEquipTableIsK2 ?  9 : kEquipBtnHandsId   + 1, 31383u,      acc::strings::Id::EquipSlotHands,   kEquipPanelGlovesIdOffset,       0, false },
-    // KOTOR 2 only — the secondary weapon pair (inventory slots 18/19).
-    // Same slot names as the active pair, separated by the qualifier.
-    { 20,                  2,                                             31378u,      acc::strings::Id::EquipSlotWeapL,   kEquipPanelLeftWeapon2IdOffset,  2, true  },
-    { 21,                  1,                                             31379u,      acc::strings::Id::EquipSlotWeapR,   kEquipPanelRightWeapon2IdOffset, 2, true  },
+const EquipSlotName k_equipSlotsByIndex[11] = {
+    /* 0 weapL  */ { 31378u,      acc::strings::Id::EquipSlotWeapL,   1 },
+    /* 1 weapR  */ { 31379u,      acc::strings::Id::EquipSlotWeapR,   1 },
+    /* 2 head   */ { 31375u,      acc::strings::Id::EquipSlotHead,    0 },
+    /* 3 armL   */ { 31376u,      acc::strings::Id::EquipSlotArmL,    0 },
+    /* 4 armR   */ { 31377u,      acc::strings::Id::EquipSlotArmR,    0 },
+    /* 5 body   */ { 31380u,      acc::strings::Id::EquipSlotBody,    0 },
+    /* 6 hands  */ { 31383u,      acc::strings::Id::EquipSlotHands,   0 },
+    /* 7 implant*/ { 0xFFFFFFFFu, acc::strings::Id::EquipSlotImplant, 0 },
+    /* 8 belt   */ { 31382u,      acc::strings::Id::EquipSlotBelt,    0 },
+    /* 9 weapL2 */ { 31378u,      acc::strings::Id::EquipSlotWeapL,   2 },
+    /*10 weapR2 */ { 31379u,      acc::strings::Id::EquipSlotWeapR,   2 },
 };
 }  // namespace
 
@@ -1521,11 +1511,10 @@ const char* TryEquipSlot(void* control, void* owner,
     const char* source = nullptr;
     if (owner &&
         IdentifyPanel(owner) == PanelKind::InGameEquip) {
-        int cid = *reinterpret_cast<int*>(
-            reinterpret_cast<unsigned char*>(control) + kControlIdOffset);
-        for (const auto& s : k_equipSlots) {
-            if (s.k2Only && !kEquipTableIsK2) continue;
-            if (s.btnId != cid && s.lblId != cid) continue;
+        int idx = acc::menus::detail::EquipSlotIndexFromControl(owner,
+                                                                control);
+        if (idx >= 0) {
+            const EquipSlotName& s = k_equipSlotsByIndex[idx];
             // Resolve the slot's localised label first into a small local
             // buffer; the equipped item name is then appended via the
             // FmtEquipSlot* templates so caller hears e.g. "Body, Combat
@@ -1548,7 +1537,7 @@ const char* TryEquipSlot(void* control, void* owner,
                     memcpy(slotLabel, lit, llen + 1);
                 }
             }
-            if (slotLabel[0] == '\0') break;
+            if (slotLabel[0] == '\0') return nullptr;
 
             // Weapon-set qualifier (KOTOR 2's two weapon rows). Appended to
             // the slot name so the pair reads "Linke Waffe aktiv" /
@@ -1566,18 +1555,21 @@ const char* TryEquipSlot(void* control, void* owner,
                 }
             }
 
-            // Read the panel-cached slot handle and resolve to display
-            // name. Panel offsets are populated by Equip's populate code
-            // from the displayed character's CSWInventory (the same
-            // character cycling updates via BTN_CHANGE1/2), so reading
-            // here always matches what's on screen.
+            // Read the panel-cached slot handle (parallel array entry for
+            // this slot index) and resolve to display name. The array is
+            // populated by Equip's populate code from the displayed
+            // character's CSWInventory (character cycling rewrites it),
+            // so reading here always matches what's on screen.
             uint32_t handle = 0;
-            __try {
-                handle = *reinterpret_cast<uint32_t*>(
-                    reinterpret_cast<unsigned char*>(owner) +
-                    s.itemIdOffset);
-            } __except (EXCEPTION_EXECUTE_HANDLER) {
-                handle = 0;
+            if (acc::off::Ok(kEquipPanelSlotItemIdsOffset)) {
+                __try {
+                    handle = *reinterpret_cast<uint32_t*>(
+                        reinterpret_cast<unsigned char*>(owner) +
+                        kEquipPanelSlotItemIdsOffset +
+                        4u * static_cast<size_t>(idx));
+                } __except (EXCEPTION_EXECUTE_HANDLER) {
+                    handle = 0;
+                }
             }
 
             char itemName[128];
@@ -1600,10 +1592,9 @@ const char* TryEquipSlot(void* control, void* owner,
             }
             source = "perkind-equip-slot";
             acclog::Write("Menus.PerKind",
-                          "InGameEquip control=%p id=%d slot=\"%s\" "
+                          "InGameEquip control=%p slot_index=%d slot=\"%s\" "
                           "handle=0x%x item=\"%s\" -> \"%s\"",
-                          control, cid, slotLabel, handle, itemName, outBuf);
-            break;
+                          control, idx, slotLabel, handle, itemName, outBuf);
         }
     }
     return source;
@@ -2447,6 +2438,28 @@ const char* FromControl(void* control,
     }
 
     return source;
+}
+
+bool ReadEquipSlotItemName(void* panel, void* slotBtn,
+                           char* outBuf, size_t bufSize) {
+    if (!panel || !slotBtn || !outBuf || bufSize == 0) return false;
+    outBuf[0] = '\0';
+    int idx = acc::menus::detail::EquipSlotIndexFromButton(panel, slotBtn);
+    if (idx < 0) return false;
+    if (!acc::off::Ok(kEquipPanelSlotItemIdsOffset)) return false;
+    uint32_t handle = 0;
+    __try {
+        handle = *reinterpret_cast<uint32_t*>(
+            reinterpret_cast<unsigned char*>(panel) +
+            kEquipPanelSlotItemIdsOffset + 4u * static_cast<size_t>(idx));
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    // 0x7f000000 = kInvalidObjectId, the engine's "slot empty" sentinel.
+    if (handle == 0 || handle == 0xffffffff || handle == 0x7f000000)
+        return false;
+    return acc::engine::GetObjectDisplayNameByHandle(handle, outBuf,
+                                                     bufSize);
 }
 
 void ForEachWagerRowAnchor(void* panel,

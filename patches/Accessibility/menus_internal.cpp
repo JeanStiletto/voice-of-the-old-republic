@@ -159,6 +159,76 @@ void* acc::menus::detail::FindControlById(void* panel, int id) {
     return nullptr;
 }
 
+// Equip-panel slot identity via the engine's embedded control arrays —
+// see the menus_internal.h comment and docs/gui-id-audit.md. Pure
+// pointer arithmetic; the control pointer is never dereferenced, so an
+// unrelated control simply lands outside the array (or off-stride) and
+// answers -1.
+namespace {
+int SlotIndexInEmbeddedArray(void* panel, void* control,
+                             size_t baseOff, size_t stride) {
+    if (!panel || !control) return -1;
+    if (!acc::off::Ok(baseOff) || !acc::off::Ok(stride) || stride == 0)
+        return -1;
+    uintptr_t base = reinterpret_cast<uintptr_t>(panel) + baseOff;
+    uintptr_t c    = reinterpret_cast<uintptr_t>(control);
+    if (c < base) return -1;
+    uintptr_t delta = c - base;
+    if (delta % stride != 0) return -1;
+    int idx = static_cast<int>(delta / stride);
+    return idx < acc::menus::detail::EquipSlotCount() ? idx : -1;
+}
+}  // namespace
+
+int acc::menus::detail::EquipSlotIndexFromButton(void* panel, void* control) {
+    return SlotIndexInEmbeddedArray(panel, control,
+                                    kEquipPanelSlotButtonsOffset,
+                                    kEquipPanelSlotButtonStride);
+}
+
+int acc::menus::detail::EquipSlotIndexFromControl(void* panel, void* control) {
+    int idx = EquipSlotIndexFromButton(panel, control);
+    if (idx >= 0) return idx;
+    return SlotIndexInEmbeddedArray(panel, control,
+                                    kEquipPanelSlotLabelsOffset,
+                                    kEquipPanelSlotLabelStride);
+}
+
+// Engine-truth resolvers for the equip picker members. The member address
+// is the answer; the old .gui-id lookup stays only as a tripwire so a
+// variant equip_p.gui shows up in tester logs instead of silently
+// resolving wrong (userlogs/077noequipment is exactly that log line's
+// audience). acclog::Once caps it at one line per tag per session.
+namespace {
+void* EquipMemberWithTripwire(void* panel, size_t memberOff, int guiId,
+                              const char* tag) {
+    void* member = acc::off::Ptr(panel, memberOff);
+    if (!member) return nullptr;
+    void* byId = acc::menus::detail::FindControlById(panel, guiId);
+    if (byId && byId != member) {
+        acclog::Once(tag, "GuiIdMismatch: %s member=%p but .gui id %d "
+                     "resolves to %p — variant .gui file on this install",
+                     tag, member, guiId, byId);
+    }
+    return member;
+}
+}  // namespace
+
+void* acc::menus::detail::EquipPanelItemsListBox(void* panel) {
+    return EquipMemberWithTripwire(panel, kEquipPanelItemsListBoxOffset,
+                                   kEquipLbItemsId, "Equip.LB_ITEMS");
+}
+
+void* acc::menus::detail::EquipPanelEquipButton(void* panel) {
+    return EquipMemberWithTripwire(panel, kEquipPanelEquipButtonOffset,
+                                   kEquipBtnEquipId, "Equip.BTN_EQUIP");
+}
+
+void* acc::menus::detail::EquipPanelBackButton(void* panel) {
+    return EquipMemberWithTripwire(panel, kEquipPanelBackButtonOffset,
+                                   kEquipBtnBackId, "Equip.BTN_BACK");
+}
+
 // Detect the CSWGuiSaveLoad panel (the "Spiel laden" / "Spiel speichern"
 // dialog). The panel is allocated dynamically when the user activates the
 // load/save action, has no slot in CGuiInGame, and so doesn't show up via

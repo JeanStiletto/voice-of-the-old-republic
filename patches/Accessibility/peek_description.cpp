@@ -301,61 +301,37 @@ constexpr ItemTooltipPanelInfo kItemTooltipPanels[] = {
     { acc::engine::PanelKind::WorkbenchUpgrade, WorkbenchUpgradeFindLb, 0 },
 };
 
-// Per-slot peek for the 9 equip buttons. itemIdOffset is the panel-
-// cached client handle that the engine rewrites on every party-cycle, so
-// the description always matches the displayed character.
-struct EquipSlotPeekInfo {
-    int    cid;            // .gui control id, locale-stable
-    size_t itemIdOffset;
-};
-
-const EquipSlotPeekInfo kEquipSlotPeek[] = {
-    { kEquipBtnHeadId,    kEquipPanelHeadIdOffset         },
-    { kEquipBtnImplantId, kEquipPanelImplantIdOffset      },
-    { kEquipBtnBodyId,    kEquipPanelArmorIdOffset        },
-    { kEquipBtnArmLId,    kEquipPanelLeftArmbandIdOffset  },
-    { kEquipBtnArmRId,    kEquipPanelRightArmbandIdOffset },
-    { kEquipBtnWeapLId,   kEquipPanelLeftWeaponIdOffset   },
-    { kEquipBtnWeapRId,   kEquipPanelRightWeaponIdOffset  },
-    { kEquipBtnBeltId,    kEquipPanelBeltIdOffset         },
-    { kEquipBtnHandsId,   kEquipPanelGlovesIdOffset       },
-};
-
-const EquipSlotPeekInfo* FindEquipSlotByControl(void* control) {
-    if (!control) return nullptr;
-    int cid = 0;
-    __try {
-        cid = *reinterpret_cast<int*>(
-            reinterpret_cast<unsigned char*>(control) + kControlIdOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-    for (const auto& s : kEquipSlotPeek) {
-        if (s.cid == cid) return &s;
-    }
-    return nullptr;
-}
-
+// Per-slot peek for the equip slot buttons (all 9, plus KOTOR 2's two
+// second-weapon-set slots for free). The slot is identified by index in
+// the engine's embedded slot-button array (EquipSlotIndexFromButton —
+// pointer arithmetic, immune to variant .gui id renumbering; see
+// docs/gui-id-audit.md), and the item handle is the parallel array entry
+// at kEquipPanelSlotItemIdsOffset + 4*index — the panel-cached client
+// handle the engine rewrites on every party-cycle, so the description
+// always matches the displayed character.
+//
 // True on a non-empty description spoken; false on empty slot / unresolved
 // item. Caller still consumes the key (predictable-behaviour rule).
-bool HandleEquipSlotTooltip(void* panel, const EquipSlotPeekInfo& info,
-                            bool down) {
-    if (!panel) return false;
+bool HandleEquipSlotTooltip(void* panel, int slotIdx, bool down) {
+    if (!panel || slotIdx < 0) return false;
+    if (!acc::off::Ok(kEquipPanelSlotItemIdsOffset)) return false;
     uint32_t handle = 0;
     __try {
         handle = *reinterpret_cast<uint32_t*>(
-            reinterpret_cast<unsigned char*>(panel) + info.itemIdOffset);
+            reinterpret_cast<unsigned char*>(panel) +
+            kEquipPanelSlotItemIdsOffset +
+            4u * static_cast<size_t>(slotIdx));
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         acclog::Write("Peek.EquipSlot",
-                      "panel=%p offset=0x%x SEH reading slot id",
-                      panel, (unsigned)info.itemIdOffset);
+                      "panel=%p slot_index=%d SEH reading slot id",
+                      panel, slotIdx);
         return false;
     }
     // 0x7f000000 = kInvalidObjectId (engine's "slot empty" sentinel).
     if (handle == 0 || handle == 0xffffffff || handle == 0x7f000000) {
         acclog::Write("Peek.EquipSlot",
-                      "panel=%p cid=%d slot empty (handle=0x%x); silent",
-                      panel, info.cid, handle);
+                      "panel=%p slot_index=%d slot empty (handle=0x%x); silent",
+                      panel, slotIdx, handle);
         return false;
     }
 
@@ -363,14 +339,14 @@ bool HandleEquipSlotTooltip(void* panel, const EquipSlotPeekInfo& info,
     void* item = acc::engine::ResolveItemFromClientHandle(handle);
     if (!item) {
         acclog::Write("Peek.EquipSlot",
-                      "panel=%p cid=%d handle=0x%x; item not resolvable",
-                      panel, info.cid, handle);
+                      "panel=%p slot_index=%d handle=0x%x; item not resolvable",
+                      panel, slotIdx, handle);
         return false;
     }
 
     acclog::Write("Peek.EquipSlot",
-                  "panel=%p cid=%d handle=0x%x item=%p -> block nav",
-                  panel, info.cid, handle, item);
+                  "panel=%p slot_index=%d handle=0x%x item=%p -> block nav",
+                  panel, slotIdx, handle, item);
     return SpeakItemBlocks(item, down);
 }
 
@@ -700,15 +676,16 @@ bool HandleShiftArrow(int param_1, int param_2, void* activePanel,
     //
     // Skip the slot path while the picker is armed — chain focus stays
     // on the originating slot button while picker rows are driven by
-    // DriveListBoxSelection, so without this gate FindEquipSlotByControl
-    // would match the slot, find the handle at 0x7f000000 (engine moves
+    // DriveListBoxSelection, so without this gate the slot-index match
+    // would hit the slot, find the handle at 0x7f000000 (engine moves
     // the item out for the swap), and silently early-out instead of
     // letting the item-tooltip path read the row the user is sitting on.
     if (kind == acc::engine::PanelKind::InGameEquip && focusedControl &&
         !acc::menus::listbox::IsEquipPickerArmed()) {
-        if (const EquipSlotPeekInfo* slotInfo =
-                FindEquipSlotByControl(focusedControl)) {
-            HandleEquipSlotTooltip(activePanel, *slotInfo, down);
+        int slotIdx = acc::menus::detail::EquipSlotIndexFromButton(
+            activePanel, focusedControl);
+        if (slotIdx >= 0) {
+            HandleEquipSlotTooltip(activePanel, slotIdx, down);
             return true;
         }
     }

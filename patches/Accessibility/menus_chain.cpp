@@ -478,8 +478,10 @@ if (acc::menus::store::IsStorePanel(panel)) {
 void* ResolveEquipPickerListBox(void* panel) {
 void* equipPickerLb = nullptr;
 if (IdentifyPanel(panel) == PanelKind::InGameEquip) {
-    equipPickerLb = acc::menus::detail::FindControlById(
-        panel, kEquipLbItemsId);
+    // Engine member, not .gui id: a variant equip_p.gui renumbers
+    // LB_ITEMS and the id lookup then excludes the WRONG control,
+    // leaking every picker row into the chain (userlogs/077noequipment).
+    equipPickerLb = acc::menus::detail::EquipPanelItemsListBox(panel);
 }
     return equipPickerLb;
 }
@@ -572,23 +574,24 @@ bool IsDecorativeControl(void* panel, void* c,
             return true;
         }
     }
-    // InGameEquip BTN_EQUIP (id=37, "OK"): the OK button is the
-    // engine's picker-commit button. The accessibility picker
-    // dispatcher (menus_listbox.cpp EquipPickerOnEnter) commits
-    // the selected item directly via QueueEquipCommit, so OK has
-    // no role in chain nav. When the picker isn't armed the
-    // engine renders it as "OK, nicht verfügbar" — landing on
-    // that announces a dead-end. Drop it.
+    // InGameEquip BTN_EQUIP ("OK"): the OK button is the engine's
+    // picker-commit button. The accessibility picker dispatcher
+    // (menus_listbox.cpp EquipPickerOnEnter) commits the selected item
+    // directly via QueueEquipCommit, so OK has no role in chain nav.
+    // When the picker isn't armed the engine renders it as "OK, nicht
+    // verfügbar" — landing on that announces a dead-end. Drop it.
     //
-    // InGameEquip BTN_BACK (id=36, "Schliess."): Esc closes the
-    // panel via the engine's universal modal-close path, so the
-    // close button is functionally redundant for keyboard nav.
-    // Same reasoning as Store's Schliess./Verkaufsliste/Kaufen
-    // filter above — dedicated hotkey replaces chain landing.
-    if (pk == PanelKind::InGameEquip &&
-        (cid == kEquipBtnEquipId || cid == kEquipBtnBackId)) {
-        return true;
-    }
+    // InGameEquip BTN_BACK ("Schliess."): Esc closes the panel via the
+    // engine's universal modal-close path, so the close button is
+    // functionally redundant for keyboard nav. Same reasoning as
+    // Store's Schliess./Verkaufsliste/Kaufen filter above — dedicated
+    // hotkey replaces chain landing.
+    //
+    // Matched by embedded-member offset like the party-cycle strip
+    // below, NOT by .gui id: a variant equip_p.gui renumbers these
+    // (userlogs/077noequipment) and an id match would then drop a
+    // different, live control from the chain.
+    //
     // InGameEquip bottom-row party-cycle buttons. Tab cycles the
     // active leader engine-side; the panel re-binds and
     // party_leader_announce speaks the new name. The portrait slots
@@ -596,7 +599,9 @@ bool IsDecorativeControl(void* panel, void* c,
     // are therefore redundant — drop them from the chain.
     if (pk == PanelKind::InGameEquip) {
         auto* p = reinterpret_cast<unsigned char*>(panel);
-        if (c == p + kEquipPanelChangeParty1ButtonOffset ||
+        if (c == p + kEquipPanelEquipButtonOffset ||
+            c == p + kEquipPanelBackButtonOffset ||
+            c == p + kEquipPanelChangeParty1ButtonOffset ||
             c == p + kEquipPanelChangeParty2ButtonOffset ||
             c == p + kEquipPanelCharacterLeftButtonOffset ||
             c == p + kEquipPanelCharacterRightButtonOffset) {
@@ -1160,9 +1165,8 @@ if (IdentifyPanel(panel) == PanelKind::InGameEquip) {
     int firstSlotIdx = -1;
     int firstSlotY   = 0;
     for (int i = 0; i < g_chainCount; ++i) {
-        int cid = *reinterpret_cast<int*>(
-            reinterpret_cast<unsigned char*>(g_chain[i].control) + kControlIdOffset);
-        if (!IsEquipSlotButtonId(cid)) continue;
+        if (acc::menus::detail::EquipSlotIndexFromButton(
+                panel, g_chain[i].control) < 0) continue;
         if (firstSlotIdx < 0) {
             firstSlotIdx = i;
             firstSlotY   = g_chain[i].cy;
@@ -1391,16 +1395,3 @@ void RebindChain(void* panel) {
 }
 
 }  // namespace acc::menus::chain
-
-// True iff cid is one of the equip screen's slot buttons. Declared in
-// menus_internal.h at global scope (like the id constants themselves); the
-// ids resolve per game, and the K2-only second-weapon-set pair is -1 on K1
-// so the extra compares are inert there.
-bool IsEquipSlotButtonId(int cid) {
-    return cid == kEquipBtnHeadId    || cid == kEquipBtnImplantId ||
-           cid == kEquipBtnBodyId    || cid == kEquipBtnArmLId    ||
-           cid == kEquipBtnArmRId    || cid == kEquipBtnWeapLId   ||
-           cid == kEquipBtnWeapRId   || cid == kEquipBtnBeltId    ||
-           cid == kEquipBtnHandsId   || cid == kEquipBtnWeapL2Id  ||
-           cid == kEquipBtnWeapR2Id;
-}

@@ -152,6 +152,7 @@ const char* Get(Id id) {
         case Id::FmtEquipSlotItem:     return "%s, %s";
         case Id::FmtEquipSlotEmpty:    return "%s, puste";
         case Id::EquipUnequipped:      return "Zdj\xEAto wyposa\xBF""enie";
+        case Id::FmtEquipStillEquipped: return "Przedmiot nadal za\xB3o\xBFony: %s";
         case Id::FmtWeaponSwitchedOne: return "Zmieniono bro\xF1: %s";
         case Id::FmtWeaponSwitchedTwo: return "Zmieniono bro\xF1: %s i %s";
         case Id::WeaponSwitchedBare:   return "Zmieniono bro\xF1";

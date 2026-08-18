@@ -471,6 +471,19 @@ enum class Id : int {
     //      No args. Ex: "Ausr\xFCstung abgelegt".
     EquipUnequipped,
 
+    //      Follow-up after the engine's "no items for this slot" modal
+    //      when the refused slot still HOLDS an item. KOTOR 2's
+    //      OnSelectSlot refuses to open the picker whenever inventory has
+    //      no OTHER fitting item — the equipped one doesn't count (per-slot
+    //      no-candidates flag, checked before the item list) — so the
+    //      modal alone sounds like the equipped item vanished (userlogs
+    //      077noequipment: pistol equipped, "no items that can be
+    //      equipped"). Phrased noun-first so the item name needs no
+    //      gender agreement in any language.
+    //   FmtEquipStillEquipped — 1 `%s` (item name). Ex: "Gegenstand
+    //                           weiterhin angelegt: Blaster".
+    FmtEquipStillEquipped,
+
     //      In-world announcement when the weapon sets swap (KOTOR 2 only
     //      — SwitchWeaps, the action the installer moves from H to the
     //      physical \xD6/semicolon key; also the equip screen's swap
