@@ -188,10 +188,9 @@ EquipSelState s_equipSelState = { nullptr, -1 };
 // never synthesise a click, and Enter/Esc are dispatched explicitly by the
 // picker handlers regardless of hover.
 //
-// The caller resolves `backBtn` — the equip picker passes the engine's
+// The caller resolves `backBtn` — both pickers pass the engine's
 // ctor-bound member (a variant .gui renumbers the id and the old id-based
-// resolve here parked on a LABEL instead, userlogs/077noequipment); the
-// workbench picker still resolves by id until its ctor round lands.
+// resolve here parked on a LABEL instead, userlogs/077noequipment).
 //
 // Returns true once the warp is issued (caller clears its park-pending latch).
 bool ParkPickerCursorOffList(void* panel, void* backBtn, const char* tag) {
@@ -449,7 +448,7 @@ void MonitorWorkbenchUpgradePicker() {
     // rows/top/ipp included so a per-frame listbox REPOPULATION (rowCount or
     // row pointers churning) is visible too — that would reset selection as a
     // side effect. Remove once the mechanism is identified.
-    void* lb = FindControlById(upgradePanel, kWorkbenchUpgradeLbItemsId);
+    void* lb = acc::menus::detail::UpgradePanelItemsListBox(upgradePanel);
     if (lb) {
         auto* lbBase = reinterpret_cast<unsigned char*>(lb);
         auto* lbList = reinterpret_cast<CExoArrayList*>(
@@ -471,12 +470,16 @@ void MonitorWorkbenchUpgradePicker() {
         // One-shot cursor park: once the compatible-mods list is populated
         // (rowCount > 0), warp the cursor off LB_ITEMS so the engine's
         // hover-select stops reverting our SetSelectedControl writes.
+        // Corner park, NOT the BTN_BACK center: on this panel the K1
+        // hit-test resolves warped coordinates offset from the extents
+        // (patch-20260818-103126.log: every slot warp's mouseOver landed on
+        // a different control, and a BTN_BACK park left the engine
+        // hovering crystal ROW 2 — each keypress was hover-reverted there,
+        // so of 8 crystals only the two rows adjacent to it were ever
+        // reachable). The top-left corner is empty on every panel at any
+        // resolution — same fix the dialogue-reply picker ships.
         if (s_workbenchUpgradeParkPending && rowCount > 0) {
-            if (ParkPickerCursorOffList(upgradePanel,
-                                        FindControlById(
-                                            upgradePanel,
-                                            kWorkbenchUpgradeBtnBackId),
-                                        "WorkbenchUpgrade")) {
+            if (acc::menus::detail::ParkCursorToCorner("WorkbenchUpgrade")) {
                 s_workbenchUpgradeParkPending = false;
             }
         }

@@ -118,8 +118,9 @@ void HandleEnterActivation(void* activePanel, int code, int val, bool& consumed)
         isEquipSlot = equipSlotIdx >= 0;
     }
 
-    // Workbench upgrade slot buttons (per-game .gui ids — see
-    // IsWorkbenchUpgradeSlotButtonId). Same shape as equip-screen slot
+    // Workbench upgrade slot buttons (matched by position in the panel's
+    // embedded button run — UpgradeSlotIndexFromButton; variant .gui files
+    // renumber ids, docs/gui-id-audit.md). Same shape as equip-screen slot
     // buttons: direct vtable[15] activate doesn't populate LB_ITEMS with the
     // mods compatible with this slot — only the mouse-driven hover+click
     // pipeline does. We don't have an RE'd equivalent of
@@ -127,13 +128,13 @@ void HandleEnterActivation(void* activePanel, int code, int val, bool& consumed)
     // full click-sim at the chain entry's extent center (mirrors the
     // tab-button activation pattern).
     bool isWorkbenchUpgradeSlot = false;
-    int  workbenchUpgradeSlotCid = 0;
+    int  workbenchUpgradeSlotIdx = -1;
     if (acc::engine::IdentifyPanel(g_chainPanel) ==
             acc::engine::PanelKind::WorkbenchUpgrade) {
-        workbenchUpgradeSlotCid = *reinterpret_cast<int*>(
-            reinterpret_cast<unsigned char*>(e.control) + kControlIdOffset);
-        isWorkbenchUpgradeSlot =
-            acc::engine::IsWorkbenchUpgradeSlotButtonId(workbenchUpgradeSlotCid);
+        workbenchUpgradeSlotIdx =
+            acc::menus::detail::UpgradeSlotIndexFromButton(g_chainPanel,
+                                                           e.control);
+        isWorkbenchUpgradeSlot = workbenchUpgradeSlotIdx >= 0;
     }
 
     // Store item row Enter — route to the engine's trade-action handler
@@ -340,8 +341,8 @@ void HandleEnterActivation(void* activePanel, int code, int val, bool& consumed)
         acc::menus::listbox::ArmWorkbenchUpgradePicker(g_chainPanel);
         acclog::Write("WorkbenchUpgrade",
                       "armed via direct OnEnterSlot+OnSlotSelected "
-                      "(Enter on slot id=%d btn=%p panel=%p)",
-                      workbenchUpgradeSlotCid, e.control, g_chainPanel);
+                      "(Enter on slot index=%d btn=%p panel=%p)",
+                      workbenchUpgradeSlotIdx, e.control, g_chainPanel);
         consumed = true;
     } else if (isWagerStepButton) {
         acc::menus::pending::QueueWagerInput(g_chainPanel, wagerStepCode);
@@ -703,9 +704,8 @@ void HandleEsc(void* activePanel, int code, int val, bool& consumed) {
             acclog::Write("Esc", "WorkbenchUpgrade — op already pending; ignoring");
             consumed = true;
         } else {
-            const int kWorkbenchUpgradeBtnBack = acc::game::IsKotor2() ? 13 : 28;
-            void* back = acc::menus::detail::FindControlById(
-                activePanel, kWorkbenchUpgradeBtnBack);
+            void* back =
+                acc::menus::detail::UpgradePanelBackButton(activePanel);
             if (back) {
                 acc::menus::pending::QueueActivate(back);
                 acclog::Write("Esc",

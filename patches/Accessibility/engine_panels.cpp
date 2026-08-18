@@ -437,20 +437,6 @@ PanelKind IdentifyOptionsSubScreen(void* panel) {
 
 }  // namespace
 
-bool IsWorkbenchUpgradeSlotButtonId(int cid) {
-    // See the header comment: K1 packs the slot buttons at 12..18; K2
-    // scatters them and reuses 13 for BTN_BACK.
-    if (!acc::game::IsKotor2()) return cid >= 12 && cid <= 18;
-    switch (cid) {
-        case 6: case 7: case 8:                    // BTN_UPGRADE33/31/32
-        case 17: case 18: case 19:                 // BTN_UPGRADE31/32/33_LS
-        case 23: case 24: case 25:                 // BTN_UPGRADE34/35/36_LS
-            return true;
-        default:
-            return false;
-    }
-}
-
 // See the header for why the index lives here rather than at the call sites.
 //
 // The upper bounds are the entry counts each game's table actually carries.

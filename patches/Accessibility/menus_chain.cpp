@@ -499,8 +499,9 @@ if (IdentifyPanel(panel) == PanelKind::InGameEquip) {
 void* ResolveWorkbenchUpgradeListBox(void* panel) {
 void* workbenchUpgradeLb = nullptr;
 if (IdentifyPanel(panel) == PanelKind::WorkbenchUpgrade) {
-    workbenchUpgradeLb = acc::menus::detail::FindControlById(
-        panel, kWorkbenchUpgradeLbItemsId);
+    // Engine member, not .gui id — same variant-file hazard as the equip
+    // picker exclusion above (docs/gui-id-audit.md).
+    workbenchUpgradeLb = acc::menus::detail::UpgradePanelItemsListBox(panel);
 }
     return workbenchUpgradeLb;
 }
@@ -707,9 +708,9 @@ bool IsDecorativeControl(void* panel, void* c,
             if (!inActiveParty && !available) return true;
         }
     }
-    // WorkbenchUpgrade slot buttons (per-game ids — see
-    // IsWorkbenchUpgradeSlotButtonId) that the engine has marked
-    // non-interactive (bit_flags & 0x2 == 0). For a 3-slot
+    // WorkbenchUpgrade slot buttons (matched by position in the panel's
+    // embedded button run — UpgradeSlotIndexFromButton) that the engine
+    // has marked non-interactive (bit_flags & 0x2 == 0). For a 3-slot
     // ranged weapon (saber=3) these are the 4 Kristall positions;
     // for a 4-slot saber/double-shaft (saber=2) they are the 3
     // Aufwertungs positions. Sighted players see them greyed; a
@@ -718,7 +719,7 @@ bool IsDecorativeControl(void* panel, void* c,
     // Dropping them from the chain lets arrow-down go straight from
     // the last applicable slot to BTN_ASSEMBLE.
     if (pk == PanelKind::WorkbenchUpgrade &&
-        acc::engine::IsWorkbenchUpgradeSlotButtonId(cid)) {
+        acc::menus::detail::UpgradeSlotIndexFromButton(panel, c) >= 0) {
         uint32_t bf = 0;
         __try {
             bf = *reinterpret_cast<uint32_t*>(

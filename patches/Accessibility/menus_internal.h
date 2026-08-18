@@ -317,6 +317,22 @@ void* EquipPanelItemsListBox(void* panel);
 void* EquipPanelEquipButton(void* panel);
 void* EquipPanelBackButton(void* panel);
 
+// Workbench upgrade panel (CSWGuiUpgrade) — same engine-truth resolvers.
+// The historical assemble id (24) doubles as a K2 slot-button id, so its
+// resolver skips the tripwire on K2.
+void* UpgradePanelItemsListBox(void* panel);
+void* UpgradePanelAssembleButton(void* panel);
+void* UpgradePanelBackButton(void* panel);
+
+// Slot-button membership on the upgrade panel via the embedded button
+// run (K1: 7 from +0x64, K2: 9 from +0x7a8). Returns the array index or
+// -1; identity/membership ONLY — slot semantics stay in the button's
+// custom_value (per-bank), which LookupUpgradeSlotType and
+// GetWorkbenchSlotInstalledItem already read. Replaces the id-based
+// IsWorkbenchUpgradeSlotButtonId.
+int UpgradeSlotIndexFromButton(void* panel, void* control);
+inline int UpgradeSlotButtonCount() { return acc::game::IsKotor2() ? 9 : 7; }
+
 }  // namespace acc::menus::detail
 
 // partyselection.gui BTN_NPC ("Hinzuf." / "Add") — the mouse flow's

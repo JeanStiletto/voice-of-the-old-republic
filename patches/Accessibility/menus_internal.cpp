@@ -194,39 +194,84 @@ int acc::menus::detail::EquipSlotIndexFromControl(void* panel, void* control) {
                                     kEquipPanelSlotLabelStride);
 }
 
-// Engine-truth resolvers for the equip picker members. The member address
-// is the answer; the old .gui-id lookup stays only as a tripwire so a
-// variant equip_p.gui shows up in tester logs instead of silently
-// resolving wrong (userlogs/077noequipment is exactly that log line's
-// audience). acclog::Once caps it at one line per tag per session.
+// Engine-truth resolvers for the equip / workbench-upgrade picker
+// members. The member address is the answer; the old .gui-id lookup stays
+// only as a tripwire so a variant .gui file shows up in tester logs
+// instead of silently resolving wrong (userlogs/077noequipment is exactly
+// that log line's audience). acclog::Once caps it at one line per tag per
+// session. guiId < 0 skips the tripwire — used where the historical id is
+// known to be ambiguous on one game (K2 reuses the workbench assemble id
+// inside its slot-button id set).
 namespace {
-void* EquipMemberWithTripwire(void* panel, size_t memberOff, int guiId,
+void* PanelMemberWithTripwire(void* panel, size_t memberOff, int guiId,
                               const char* tag) {
     void* member = acc::off::Ptr(panel, memberOff);
     if (!member) return nullptr;
-    void* byId = acc::menus::detail::FindControlById(panel, guiId);
-    if (byId && byId != member) {
-        acclog::Once(tag, "GuiIdMismatch: %s member=%p but .gui id %d "
-                     "resolves to %p — variant .gui file on this install",
-                     tag, member, guiId, byId);
+    if (guiId >= 0) {
+        void* byId = acc::menus::detail::FindControlById(panel, guiId);
+        if (byId && byId != member) {
+            acclog::Once(tag, "GuiIdMismatch: %s member=%p but .gui id %d "
+                         "resolves to %p — variant .gui file on this install",
+                         tag, member, guiId, byId);
+        }
     }
     return member;
 }
 }  // namespace
 
 void* acc::menus::detail::EquipPanelItemsListBox(void* panel) {
-    return EquipMemberWithTripwire(panel, kEquipPanelItemsListBoxOffset,
+    return PanelMemberWithTripwire(panel, kEquipPanelItemsListBoxOffset,
                                    kEquipLbItemsId, "Equip.LB_ITEMS");
 }
 
 void* acc::menus::detail::EquipPanelEquipButton(void* panel) {
-    return EquipMemberWithTripwire(panel, kEquipPanelEquipButtonOffset,
+    return PanelMemberWithTripwire(panel, kEquipPanelEquipButtonOffset,
                                    kEquipBtnEquipId, "Equip.BTN_EQUIP");
 }
 
 void* acc::menus::detail::EquipPanelBackButton(void* panel) {
-    return EquipMemberWithTripwire(panel, kEquipPanelBackButtonOffset,
+    return PanelMemberWithTripwire(panel, kEquipPanelBackButtonOffset,
                                    kEquipBtnBackId, "Equip.BTN_BACK");
+}
+
+void* acc::menus::detail::UpgradePanelItemsListBox(void* panel) {
+    return PanelMemberWithTripwire(panel, kUpgradePanelItemsListBoxOffset,
+                                   kWorkbenchUpgradeLbItemsId,
+                                   "Upgrade.LB_ITEMS");
+}
+
+void* acc::menus::detail::UpgradePanelAssembleButton(void* panel) {
+    // No id tripwire: the historical id 24 is a K2 slot-button id too, so
+    // an id lookup is ambiguous there by construction.
+    return PanelMemberWithTripwire(panel, kUpgradePanelAssembleButtonOffset,
+                                   acc::game::IsKotor2() ? -1 : 24,
+                                   "Upgrade.BTN_ASSEMBLE");
+}
+
+void* acc::menus::detail::UpgradePanelBackButton(void* panel) {
+    return PanelMemberWithTripwire(panel, kUpgradePanelBackButtonOffset,
+                                   kWorkbenchUpgradeBtnBackId,
+                                   "Upgrade.BTN_BACK");
+}
+
+// Workbench-upgrade slot membership via the panel's embedded button run
+// (one contiguous array in both games — see the kUpgradePanelSlotButtons
+// note in engine_offsets_fields.h). Returns the ARRAY index (identity /
+// membership only): the engine's slot semantics live in the button's
+// custom_value, which is per-bank, so callers keep reading that.
+int acc::menus::detail::UpgradeSlotIndexFromButton(void* panel,
+                                                   void* control) {
+    if (!panel || !control) return -1;
+    if (!acc::off::Ok(kUpgradePanelSlotButtonsOffset) ||
+        !acc::off::Ok(kUpgradePanelSlotButtonStride)) return -1;
+    uintptr_t base = reinterpret_cast<uintptr_t>(panel) +
+                     kUpgradePanelSlotButtonsOffset;
+    uintptr_t c = reinterpret_cast<uintptr_t>(control);
+    if (c < base) return -1;
+    uintptr_t delta = c - base;
+    if (delta % kUpgradePanelSlotButtonStride != 0) return -1;
+    int idx = static_cast<int>(delta / kUpgradePanelSlotButtonStride);
+    return idx < UpgradeSlotButtonCount() ? idx : -1;
 }
 
 // Detect the CSWGuiSaveLoad panel (the "Spiel laden" / "Spiel speichern"

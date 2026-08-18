@@ -804,6 +804,44 @@ const size_t    kUpgradeDescLabelOffset            = acc::off::Pick(0x1f60, 0x2e
 // bit, in the same order as the sequence this constant serves.
 const size_t    kUpgradePickerOpenFlagOff = acc::off::Pick(0x2f48, 0x3d28);  // panel.field24
 
+// CSWGuiUpgrade picker members + slot-button array, mined from both
+// constructors (K1 @0x006c6b60 named decompile + listing, K2 @0x008c9e10
+// listing) and cross-checked against the K2 OnSlotSelected @0x008ceb00
+// decompile — same engine-truth conversion as the equip panel
+// (docs/gui-id-audit.md). All EMBEDDED (address-of, never deref the
+// offset):
+//   items_listbox — "LB_ITEMS". K1 from the ctor's InitControl sequence;
+//     K2 from OnSlotSelected's SetActiveControl(&this[dword 0x8e0]) after
+//     the list build AND the ctor's listbox setup on the same member.
+//   assemble_button — "BTN_ASSEMBLE" (OnAssemble's owner). K1: the ctor
+//     registers OnAssemble on the button it initialises through EDI =
+//     this+0x2aa0 and follows with `byte [this+0x2af4] = 0x10` +
+//     `bit_flags &= ~4`; K2 mirrors the exact triple on +0x3694
+//     (byte +0x36e8 = +0x54, flags +0x36d8 = +0x44).
+//   back_button — "BTN_BACK". K1 from the ctor's tagged InitControl
+//     (+0x2d84; the picker-open flag right after it at +0x2f48 is a
+//     layout cross-check). K2 sits one button stride after assemble
+//     (+0x3694 + 0x1d0 = +0x3864, the ctor's second bit_flags &= ~4).
+//   slot buttons — ONE contiguous embedded run in both games despite the
+//     ctor building it as banks: K1 4 + 3 buttons from +0x64 (banks abut:
+//     0x64 + 4*0x1c4 = 0x774), K2 6 + 3 from +0x7a8 (0x7a8 + 6*0x1d0 =
+//     0x1288). Each button's custom_value is its index WITHIN ITS BANK,
+//     so unlike the equip screen the array index is NOT the engine's
+//     slot value — use it only for membership/identity, and keep reading
+//     custom_value for slot semantics (LookupUpgradeSlotType,
+//     GetWorkbenchSlotInstalledItem already do).
+const size_t    kUpgradePanelItemsListBoxOffset   = acc::off::Pick(0x1580, 0x2380);
+const size_t    kUpgradePanelAssembleButtonOffset = acc::off::Pick(0x2aa0, 0x3694);
+// K2 0x3b58 is RUNTIME-WITNESSED, replacing a wrong inferred 0x3864: the
+// GuiIdMismatch tripwire fired on the very first K2 test
+// (patch-20260818-113825.log: member 0x3864 vs the id-13 BTN_BACK at
+// panel+0x3b58), and Esc's activate on the 0x3864 non-button crashed the
+// game. 0x3864 was guessed as "one stride after assemble"; K2 evidently
+// has another member between them.
+const size_t    kUpgradePanelBackButtonOffset     = acc::off::Pick(0x2d84, 0x3b58);
+const size_t    kUpgradePanelSlotButtonsOffset    = acc::off::Pick(0x0064, 0x07a8);
+const size_t    kUpgradePanelSlotButtonStride     = acc::off::Pick(0x01c4, 0x01d0);
+
 // CSWGuiUpgrade slot-type table geometry, plus the two panel/button fields that
 // index it. The table base is kAddrUpgradeSlotTypeTable in
 // engine_offsets_addresses.h, where the per-entry layout is documented.

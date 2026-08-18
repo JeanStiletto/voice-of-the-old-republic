@@ -1664,19 +1664,43 @@ const char* TryInGameMapArrow(void* control, void* owner,
 //     Sentinel entries (UpgradeType = -1) mark positions the
 //     category doesn't use; fall back to the position-only name for
 //     those so the user still gets *some* orientation.
+// Position-only slot names, keyed by the embedded slot-button array index
+// (crystal bank first, then weapon bank — construction order in both
+// games' ctors). Namespace scope because TryWorkbenchSlot is SEH-heavy
+// (MSVC C2712 bars function-local statics there).
+namespace {
+const acc::strings::Id k_workbenchSlotNameByIndexK1[7] = {
+    acc::strings::Id::WorkbenchSlotSaberCrystal1,
+    acc::strings::Id::WorkbenchSlotSaberCrystal2,
+    acc::strings::Id::WorkbenchSlotSaberCrystal3,
+    acc::strings::Id::WorkbenchSlotSaberCrystal4,
+    acc::strings::Id::WorkbenchSlotWeapon1,
+    acc::strings::Id::WorkbenchSlotWeapon2,
+    acc::strings::Id::WorkbenchSlotWeapon3,
+};
+const acc::strings::Id k_workbenchSlotNameByIndexK2[9] = {
+    acc::strings::Id::WorkbenchSlotSaberCrystal1,
+    acc::strings::Id::WorkbenchSlotSaberCrystal2,
+    acc::strings::Id::WorkbenchSlotSaberCrystal3,
+    acc::strings::Id::WorkbenchSlotSaberCrystal4,
+    acc::strings::Id::WorkbenchSlotSaberCrystal5,
+    acc::strings::Id::WorkbenchSlotSaberCrystal6,
+    acc::strings::Id::WorkbenchSlotWeapon1,
+    acc::strings::Id::WorkbenchSlotWeapon2,
+    acc::strings::Id::WorkbenchSlotWeapon3,
+};
+}  // namespace
+
 const char* TryWorkbenchSlot(void* control, void* owner,
                              char* outBuf, size_t bufSize) {
     const char* source = nullptr;
     if (owner &&
         IdentifyPanel(owner) == PanelKind::WorkbenchUpgrade) {
-        int cid = -1;
-        __try {
-            cid = *reinterpret_cast<int*>(
-                reinterpret_cast<unsigned char*>(control) + kControlIdOffset);
-        } __except (EXCEPTION_EXECUTE_HANDLER) {
-            cid = -1;
-        }
-        if (acc::engine::IsWorkbenchUpgradeSlotButtonId(cid)) {
+        // Matched by position in the panel's embedded slot-button run —
+        // variant .gui files renumber the ids (docs/gui-id-audit.md).
+        int slotArrayIdx =
+            acc::menus::detail::UpgradeSlotIndexFromButton(owner, control);
+        if (slotArrayIdx >= 0) {
             // The two diagnostic lines below (slot-type classification +
             // occupancy state) are re-emitted every frame by the focused-
             // control monitor while the user dwells on a slot. They share the
@@ -1716,53 +1740,41 @@ const char* TryWorkbenchSlot(void* control, void* owner,
             }
             if (resolved) {
                 acclog::Trace("Menus.PerKind",
-                              "WorkbenchUpgrade control=%p id=%d cat=%d cval=%d "
-                              "type=%d strref=%u -> \"%s\"",
-                              control, cid, (int)category, customValue,
-                              upgradeType, strref, outBuf);
+                              "WorkbenchUpgrade control=%p slot_index=%d "
+                              "cat=%d cval=%d type=%d strref=%u -> \"%s\"",
+                              control, slotArrayIdx, (int)category,
+                              customValue, upgradeType, strref, outBuf);
             } else {
                 // Fallback: position-only name. Used when the table
                 // entry is a sentinel (slot doesn't apply to this
                 // category) or strref lookup fails.
+                //
+                // Keyed by the embedded-array index: the constructors
+                // build the crystal bank first, then the weapon bank, in
+                // slot-number order in both games (K1: crystals 1..4 then
+                // weapons 1..3; K2: the six-slot saber bank then weapons
+                // 1..3), so the index maps positionally — no .gui ids.
+                // Tables at namespace scope (k_workbenchSlotNameByIndex*):
+                // this function is SEH-heavy and MSVC C2712 bars locals
+                // needing init guards.
                 acc::strings::Id sid = acc::strings::Id::Count_;
-                const char* tag = nullptr;
-                if (!acc::game::IsKotor2()) {
-                    switch (cid) {
-                        case 12: sid = acc::strings::Id::WorkbenchSlotWeapon1;       tag = "BTN_UPGRADE31"; break;
-                        case 13: sid = acc::strings::Id::WorkbenchSlotWeapon2;       tag = "BTN_UPGRADE32"; break;
-                        case 14: sid = acc::strings::Id::WorkbenchSlotWeapon3;       tag = "BTN_UPGRADE33"; break;
-                        case 15: sid = acc::strings::Id::WorkbenchSlotSaberCrystal1; tag = "BTN_UPGRADE41"; break;
-                        case 16: sid = acc::strings::Id::WorkbenchSlotSaberCrystal2; tag = "BTN_UPGRADE42"; break;
-                        case 17: sid = acc::strings::Id::WorkbenchSlotSaberCrystal3; tag = "BTN_UPGRADE43"; break;
-                        case 18: sid = acc::strings::Id::WorkbenchSlotSaberCrystal4; tag = "BTN_UPGRADE44"; break;
-                        default: break;
-                    }
+                if (acc::game::IsKotor2()) {
+                    if (slotArrayIdx < 9)
+                        sid = k_workbenchSlotNameByIndexK2[slotArrayIdx];
                 } else {
-                    // K2 upgrade_p renumbers the slot buttons: 7/8/6 are the
-                    // three normal weapon slots, 17/18/19/23/24/25 the six-slot
-                    // lightsaber bank (K2 sabers carry six upgrade slots).
-                    switch (cid) {
-                        case 7:  sid = acc::strings::Id::WorkbenchSlotWeapon1;       tag = "BTN_UPGRADE31"; break;
-                        case 8:  sid = acc::strings::Id::WorkbenchSlotWeapon2;       tag = "BTN_UPGRADE32"; break;
-                        case 6:  sid = acc::strings::Id::WorkbenchSlotWeapon3;       tag = "BTN_UPGRADE33"; break;
-                        case 17: sid = acc::strings::Id::WorkbenchSlotSaberCrystal1; tag = "BTN_UPGRADE31_LS"; break;
-                        case 18: sid = acc::strings::Id::WorkbenchSlotSaberCrystal2; tag = "BTN_UPGRADE32_LS"; break;
-                        case 19: sid = acc::strings::Id::WorkbenchSlotSaberCrystal3; tag = "BTN_UPGRADE33_LS"; break;
-                        case 23: sid = acc::strings::Id::WorkbenchSlotSaberCrystal4; tag = "BTN_UPGRADE34_LS"; break;
-                        case 24: sid = acc::strings::Id::WorkbenchSlotSaberCrystal5; tag = "BTN_UPGRADE35_LS"; break;
-                        case 25: sid = acc::strings::Id::WorkbenchSlotSaberCrystal6; tag = "BTN_UPGRADE36_LS"; break;
-                        default: break;
-                    }
+                    if (slotArrayIdx < 7)
+                        sid = k_workbenchSlotNameByIndexK1[slotArrayIdx];
                 }
                 if (sid != acc::strings::Id::Count_) {
                     const char* lit = acc::strings::Get(sid);
                     if (EmitText(outBuf, bufSize, lit)) {
                         source = "perkind-workbench-slot";
                         acclog::Trace("Menus.PerKind",
-                                      "WorkbenchUpgrade control=%p id=%d cat=%d cval=%d "
-                                      "type=%d strref=%u (sentinel/empty) -> fallback \"%s\"",
-                                      control, cid, (int)category, customValue,
-                                      upgradeType, strref, outBuf);
+                                      "WorkbenchUpgrade control=%p slot_index=%d "
+                                      "cat=%d cval=%d type=%d strref=%u "
+                                      "(sentinel/empty) -> fallback \"%s\"",
+                                      control, slotArrayIdx, (int)category,
+                                      customValue, upgradeType, strref, outBuf);
                     }
                 }
             }

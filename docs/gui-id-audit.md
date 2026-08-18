@@ -4,6 +4,60 @@ Status: IN PROGRESS (started 2026-08-18). Tracks the conversion of every
 lookup that trusts a `.gui`-authored control id to an engine-truth
 mechanism. Update the per-surface status lines as work lands.
 
+DONE + tested: InGameEquip (committed 54533ee), WorkbenchUpgrade
+(committed after the 2026-08-18 evening round). NEXT: SaveLoad (its ids
+double as the panel identifier — highest silent-failure risk left), then
+crafting, powers level-up, container, pazaak, keymap, chargen feats.
+
+## Conversion workflow (follow this per surface — written to run cold)
+
+1. **Find the panel constructors.** K1 project is named: `ListFunctionsByName.java
+   "<ClassName>"` via analyzeHeadless on `C:/Tools/ghidra-projects` kotor1
+   (program `k1_win_gog_swkotor.exe`), or FindCallers.java on any handler
+   the ctor registers (registration sites are DATA refs; FindCallers
+   includes them). K2 project (kotor2 / `swkotor2.exe`) is unnamed — reach
+   its ctor from recorded K2 twin addresses in
+   engine_offsets_addresses.h, or by FindCallers on a known K2 handler.
+2. **Decompile both ctors** with `tools/ghidra-scripts/decomp.sh 0xADDR`
+   (K2: prefix `KDEV_GHIDRA_PROJ=kotor2 KDEV_GHIDRA_PROGRAM=swkotor2.exe`).
+   K1 decompiles show tag strings + named fields; get raw offsets from
+   `PrintListing.java` (the `LEA reg,[ESI+0xNNNN]` + `PUSH <tag-string>`
+   pair before each InitControl call). K2 decompiles often strip call
+   args — cross-read the K2 member from a HANDLER that uses it (the
+   OnSlotSelected/OnSelectSlot pattern: `SetActiveControl(this + dword)`
+   names the listbox) and from the ctor's structural mirror of K1
+   (vector-ctor banks, the `byte+0x54 = 0x10` / `flags &= ~4` triples).
+3. **HARD RULE — every offset needs a direct witness.** A tagged
+   InitControl, a handler decompile that uses the member, or a runtime
+   log line. NEVER infer by adjacency/stride ("one button after X"):
+   the K2 upgrade BTN_BACK was inferred that way, was wrong, and Esc's
+   activate on the resulting non-button CRASHED the game
+   (patch-20260818-113825.log; corrected from the tripwire line itself
+   to +0x3b58). Prefer two independent witnesses; record them in the
+   constant's comment.
+4. **Add constants** to engine_offsets_fields.h (`acc::off::Pick`,
+   embedded members = address-of, never deref the offset itself).
+5. **Add resolvers** in menus_internal.{h,cpp} using
+   `PanelMemberWithTripwire` (member is the answer; the old .gui id is
+   only the GuiIdMismatch tripwire — pass guiId -1 where the historical
+   id is ambiguous on one game). Slot/button-array membership =
+   pointer-arithmetic index fns (see EquipSlotIndexFromButton /
+   UpgradeSlotIndexFromButton; no SEH needed, no control deref).
+6. **Convert every consumer** (grep the id constant + any id-compare
+   predicate), delete the id-based matcher, keep announce-only labels on
+   ids (Tier 2 — degradation there is acceptable and never drives input).
+7. **Build (`kdev build`), apply BOTH games, test round, then grep the
+   fresh logs**: `GuiIdMismatch` must be absent on vanilla installs, and
+   the converted flows must show their normal lines. Only then commit
+   (one tested batch per surface; changelog bullet if user-facing).
+
+Lesson that rode along (not id-related but found by these rounds): a
+picker's cursor park must use `ParkCursorToCorner`, not a button's
+extent center — K1 hit-testing resolves warped coordinates offset from
+extents on some panels, so a "safe" button center can leave the engine
+hovering a list row, and hover-select then reverts every keyboard
+selection (the K1 crystal-picker "only 2 of 8 crystals reachable" bug).
+
 ## Why (the 077noequipment failure)
 
 A K2 beta tester's install carries a variant `equip_p.gui` whose control
@@ -106,11 +160,31 @@ Tier 1 — drives input/state; convert to member offsets:
   (k_equipSlotsByIndex, keyed by engine slot index), Shift-arrow peek,
   and the refusal follow-up's item read. Side win: KOTOR 2's two
   second-weapon-set slots now announce/peek like every other slot.
-- WorkbenchUpgrade: kWorkbenchUpgradeLbItemsId (0), BtnBack (13/28),
-  BtnAssemble, title (menus_listbox.cpp, menus_listbox_picker.cpp,
-  menus_chain_input.cpp:703 duplicate const). upgrade.gui is a prime
-  mod-replacement target. STATUS: to mine (ctors K1 @?, K2 @0x008c9e10
-  recorded in addresses header notes).
+- WorkbenchUpgrade. STATUS: DONE — tested in-game both games 2026-08-18
+  (K1 crystal picker full browse/install/remove; K2 install + Esc clean,
+  no GuiIdMismatch). K2 BTN_BACK corrected to +0x3b58 after the first
+  round's tripwire+crash (see workflow HARD RULE above).
+  Mined from ctors (K1 @0x006c6b60 named decompile + listing, K2
+  @0x008c9e10 listing) + K2 OnSlotSelected @0x008ceb00:
+  items_listbox K1 +0x1580 / K2 +0x2380 (K2 witnessed twice: ctor setup
+  and OnSlotSelected's SetActiveControl); BTN_ASSEMBLE K1 +0x2aa0 / K2
+  +0x3694 (identified by the OnAssemble registration + the byte+0x54 =
+  0x10 / flags&=~4 triple both ctors share); BTN_BACK K1 +0x2d84 / K2
+  +0x3864 (K1 tagged InitControl, K2 one stride after assemble; K1's
+  picker-open flag at +0x2f48 sits right after it — layout cross-check);
+  slot buttons ONE contiguous run K1 7×0x1c4 @+0x64, K2 9×0x1d0 @+0x7a8
+  (banks abut exactly). All consumers converted: chain exclusion +
+  greyed-slot filter, Enter detection, spec find/commit, picker monitor,
+  cursor park, Esc back-button route, per-kind announce (fallback names
+  now keyed by array index: crystal bank first, then weapons — ctor
+  construction order), Shift+arrow peek, peek listbox resolver.
+  IsWorkbenchUpgradeSlotButtonId deleted. NOTE this also fixes a latent
+  K2 bug: the old assemble id (24) collided with a K2 slot-button id, so
+  the K1-style commit lookup could grab a slot button; the K2 commit path
+  never used it, but the resolver now skips the id tripwire on K2 for
+  that reason. Slot semantics still come from custom_value (per-bank),
+  NOT the array index — only membership/identity moved to the array.
+  Title label (id 25) stays id-based: announce-only, degrades gracefully.
 - Crafting (K2 only): kSelUpgradeListId/kSelUpgradeItemsBtn/
   kCraftShopListId/kCraftInvListId/kCraftAcceptBtnId/kCraftExamineBtn*
   (menus_crafting.cpp). STATUS: to mine from the three panel ctors.

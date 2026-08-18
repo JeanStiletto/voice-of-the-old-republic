@@ -260,18 +260,15 @@ struct ItemTooltipPanelInfo {
 // only listbox its ctor 0x008B1EA0 builds, after the same six labels.
 const std::size_t kContainerItemsListBoxOffset = acc::off::Pick(0x07f0, 0x0824);
 
-// CSWGuiInGameEquip.items_listbox: K1 +0x30d8, K2 +0x372c — first of the two
-// listboxes in its ctor 0x008A92D0 (items before description, K1's order),
-// and the pair sits right before the button run whose 0x3edc entry
-// independently matches the witnessed kEquipPanelBackButtonOffset.
-const std::size_t kEquipItemsListBoxOffset = acc::off::Pick(0x30d8, 0x372c);
-
 void* ContainerFindLb(void* panel) {
     return reinterpret_cast<unsigned char*>(panel) + kContainerItemsListBoxOffset;
 }
 
+// Equip / workbench-upgrade listboxes resolve through the shared
+// engine-member resolvers (menus_internal.cpp) — the same ctor-mined
+// offsets this file used to duplicate locally (docs/gui-id-audit.md).
 void* InGameEquipFindLb(void* panel) {
-    return reinterpret_cast<unsigned char*>(panel) + kEquipItemsListBoxOffset;
+    return acc::menus::detail::EquipPanelItemsListBox(panel);
 }
 
 void* WorkbenchItemsFindLb(void* panel) {
@@ -279,7 +276,7 @@ void* WorkbenchItemsFindLb(void* panel) {
 }
 
 void* WorkbenchUpgradeFindLb(void* panel) {
-    return FindControlById(panel, 0);
+    return acc::menus::detail::UpgradePanelItemsListBox(panel);
 }
 
 // Membership rule: this table is ONLY for panels whose rows are navigated by
@@ -690,9 +687,9 @@ bool HandleShiftArrow(int param_1, int param_2, void* activePanel,
         }
     }
 
-    // Workbench upgrade slot button (per-game .gui ids — see
-    // IsWorkbenchUpgradeSlotButtonId): speak the installed mod's
-    // description, or "empty". Runs before the item-tooltip
+    // Workbench upgrade slot button (matched by position in the panel's
+    // embedded button run — UpgradeSlotIndexFromButton): speak the
+    // installed mod's description, or "empty". Runs before the item-tooltip
     // path because that path targets LB_ITEMS — the mod picker shown only
     // after a slot is drilled into.
     //
@@ -705,15 +702,8 @@ bool HandleShiftArrow(int param_1, int param_2, void* activePanel,
     // offered crystal the user is actually sitting on.
     if (kind == acc::engine::PanelKind::WorkbenchUpgrade && focusedControl &&
         !acc::menus::listbox::IsWorkbenchUpgradePickerArmed()) {
-        int cid = -1;
-        __try {
-            cid = *reinterpret_cast<int*>(
-                reinterpret_cast<unsigned char*>(focusedControl) +
-                kControlIdOffset);
-        } __except (EXCEPTION_EXECUTE_HANDLER) {
-            cid = -1;
-        }
-        if (acc::engine::IsWorkbenchUpgradeSlotButtonId(cid)) {
+        if (acc::menus::detail::UpgradeSlotIndexFromButton(
+                activePanel, focusedControl) >= 0) {
             HandleWorkbenchSlotTooltip(activePanel, focusedControl, down);
             return true;
         }

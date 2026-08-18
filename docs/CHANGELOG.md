@@ -35,6 +35,22 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h2>Unreleased</h2>
 
+<h3>Workbench:</h3>
+
+- KOTOR 1: the upgrade picker now reaches every row. The engine's
+  hover-select was snapping the selection back to whichever row sat under
+  the invisible mouse cursor, so with a long list (e.g. 8 lightsaber
+  crystals) only the two rows next to it were ever reachable. The picker
+  now parks the cursor in the empty screen corner, the same fix the
+  dialogue-reply list uses.
+- The workbench upgrade screen's controls (item list, Assemble, Back, all
+  slot buttons) now resolve through the engine's own constructor bindings
+  instead of layout-file ids — the same hardening the equipment screen
+  got, protecting against installs with modified layout files. A wrong
+  first value for KOTOR 2's Back button briefly made leaving the upgrade
+  screen crash during beta-dev testing; it never shipped, and the new
+  mismatch tripwire is what caught it.
+
 <h3>Equipment screen:</h3>
 
 - The equipment screen now works on installs whose mods replace the K2

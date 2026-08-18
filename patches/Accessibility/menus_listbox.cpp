@@ -1041,11 +1041,12 @@ constexpr ListBoxPanelSpec kWorkbenchItemsSpec = {
 // FindCancelButton resolves to "Abbrechen" reliably for this panel.
 // ============================================================================
 
-// LB_ITEMS (kWorkbenchUpgradeLbItemsId) and BTN_BACK
-// (kWorkbenchUpgradeBtnBackId) live in menus_internal.h — the picker monitor
-// in menus_listbox_picker.cpp needs them too.
+// LB_ITEMS / BTN_BACK / BTN_ASSEMBLE resolve through the UpgradePanel*
+// member resolvers in menus_internal.cpp (engine ctor bindings — variant
+// .gui files renumber the ids, docs/gui-id-audit.md). Only the title
+// label is still id-addressed: announce-only, so a variant install
+// degrades to the generic title walk instead of breaking input.
 namespace {
-constexpr int kWorkbenchUpgradeBtnAssemble = 24;
 constexpr int kWorkbenchUpgradeTitleId     = 25;  // LBL_TITLE ("Werkbank")
 }  // namespace
 
@@ -1061,7 +1062,9 @@ bool WorkbenchUpgradeArmed() { return IsWorkbenchUpgradePickerArmed(); }
 // own. There is no mirrored pointer left to go stale against.
 
 void* WorkbenchUpgradeFindLb(void* p) {
-    return FindControlById(p, kWorkbenchUpgradeLbItemsId);
+    // Engine member, not .gui id — variant .gui files renumber ids
+    // (docs/gui-id-audit.md).
+    return acc::menus::detail::UpgradePanelItemsListBox(p);
 }
 
 // LB_ITEMS rows are CSWGuiInventoryItemEntry-style — their text comes
@@ -1166,8 +1169,8 @@ bool WorkbenchUpgradeOnEnter(void* panel) {
         ClearWorkbenchUpgradeArmLatch();
         return true;
     }
-    void* lb  = FindControlById(panel, kWorkbenchUpgradeLbItemsId);
-    void* btn = FindControlById(panel, kWorkbenchUpgradeBtnAssemble);
+    void* lb  = acc::menus::detail::UpgradePanelItemsListBox(panel);
+    void* btn = acc::menus::detail::UpgradePanelAssembleButton(panel);
     void* row = nullptr;
     void* removeRow = nullptr;  // row 0 — the 0x7f000000 remove entry (power slots)
     short selIdx = -1;
