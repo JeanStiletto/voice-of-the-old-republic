@@ -158,10 +158,9 @@ void HandleEnterActivation(void* activePanel, int code, int val, bool& consumed)
     // panel kind.
     bool  isCraftRow = false;
     void* craftRowListBox = nullptr;
-    int   craftCommitBtnId = -1;
     if (!isStoreItemRow) {
         isCraftRow = acc::menus::crafting::ResolveRowCommit(
-            g_chainPanel, e.control, &craftRowListBox, &craftCommitBtnId);
+            g_chainPanel, e.control, &craftRowListBox);
     }
 
     // Journal quest-row Enter — read the description text. The row's own
@@ -281,11 +280,11 @@ void HandleEnterActivation(void* activePanel, int code, int val, bool& consumed)
         consumed = true;
     } else if (isCraftRow) {
         acc::menus::pending::QueueCraftRowCommit(
-            g_chainPanel, craftRowListBox, e.control, craftCommitBtnId);
+            g_chainPanel, craftRowListBox, e.control);
         acclog::Write("Menus.Enter",
-                      "craft-row-commit panel=%p index=%d target=%p lb=%p btnId=%d",
+                      "craft-row-commit panel=%p index=%d target=%p lb=%p",
                       g_chainPanel, g_chainIndex, e.control,
-                      craftRowListBox, craftCommitBtnId);
+                      craftRowListBox);
         consumed = true;
     } else if (isJournalRow) {
         acc::menus::journal::SpeakDescription(g_chainPanel, e.control);

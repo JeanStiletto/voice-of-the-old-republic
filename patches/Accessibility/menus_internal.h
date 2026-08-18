@@ -346,6 +346,27 @@ void* SaveLoadPanelGamesListBox(void* panel);   // LB_GAMES
 void* SaveLoadPanelActionButton(void* panel);   // BTN_SAVELOAD (Laden/Speichern)
 void* SaveLoadPanelBackButton(void* panel);     // BTN_BACK
 
+// K2 workbench/crafting engine-truth resolvers (ctor-bound embedded
+// members, kUpgradeSelPanel*/kCraftComponent*/kCraftChemical* in
+// engine_offsets_fields.h; the historical .gui ids only feed the
+// GuiIdMismatch tripwire). All return nullptr on KOTOR 1 — the member
+// offsets poison there and no K1 code path consumes these panels.
+//
+// UpgradeSelPanel* address CSWGuiUpgradeSelection (upgradesel_p, the K2
+// workbench top screen with the inline item list). CraftPanel* address
+// the two crafting screens and dispatch on the panel's kind internally —
+// CSWGuiCreateItem (component_p) and CSWGuiCreateMedicalItem (chemical_p)
+// lay the same controls out at different offsets — returning nullptr when
+// `panel` is neither. Defined in menus_internal.cpp.
+void* UpgradeSelPanelListBox(void* panel);        // LB_UPGRADELIST
+void* UpgradeSelPanelUpgradeButton(void* panel);  // BTN_UPGRADEITEMS
+void* UpgradeSelPanelTitleLabel(void* panel);     // LBL_TITLE
+void* CraftPanelShopListBox(void* panel);         // LB_SHOPITEMS (create view)
+void* CraftPanelInvListBox(void* panel);          // LB_INVITEMS (breakdown view)
+void* CraftPanelAcceptButton(void* panel);        // BTN_Accept
+void* CraftPanelExamineButton(void* panel);       // BTN_Examine (view flip)
+void* CraftPanelTitleLabel(void* panel);          // LBL_TITLE
+
 }  // namespace acc::menus::detail
 
 // partyselection.gui BTN_NPC ("Hinzuf." / "Add") — the mouse flow's

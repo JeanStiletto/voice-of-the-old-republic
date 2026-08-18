@@ -89,7 +89,7 @@ enum class Kind {
     SliderInput,       // a = target, code = direction (500 inc / 501 dec)
     StoreItemActivate, // a = panel (CSWGuiStore), b = row (StoreItemEntry)
     CraftRowCommit,    // a = panel (K2 workbench screen), b = listbox,
-                       // c = row, code = commit-button .gui id
+                       // c = row (commit button re-resolved at drain)
     GalaxyInput,       // a = panel (galaxy map), code = engine event,
                        // x = announce-planet flag (0/1)
     WagerInput,        // a = panel (pazaak wager popup), code = engine event
@@ -253,13 +253,12 @@ bool QueueStoreItemActivate(void* panel, void* row) {
     return true;
 }
 
-bool QueueCraftRowCommit(void* panel, void* listBox, void* row, int buttonId) {
+bool QueueCraftRowCommit(void* panel, void* listBox, void* row) {
     if (g_op.kind != Kind::None) return false;
     g_op.kind = Kind::CraftRowCommit;
     g_op.a = panel;
     g_op.b = listBox;
     g_op.c = row;
-    g_op.code = buttonId;
     return true;
 }
 
@@ -1045,7 +1044,7 @@ void Drain(void* gm) {
     // the panel's own commit button. No direct engine addresses involved
     // (button dispatch goes through vtable[15]), so no EngineOpsReady gate.
     case Kind::CraftRowCommit: {
-        acc::menus::crafting::DispatchRowCommit(op.a, op.b, op.c, op.code);
+        acc::menus::crafting::DispatchRowCommit(op.a, op.b, op.c);
         break;
     }
 

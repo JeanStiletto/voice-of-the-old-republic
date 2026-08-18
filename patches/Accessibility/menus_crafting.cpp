@@ -31,25 +31,17 @@ namespace acc::menus::crafting {
 
 namespace {
 
-// .gui control ids. Baked into the resources, language-independent.
-// Mined from K2's own gui.bif (upgradesel_p / component_p / chemical_p —
-// the two crafting screens agree on every id we use).
-constexpr int kSelUpgradeListId    = 9;   // upgradesel_p LB_UPGRADELIST
-constexpr int kSelUpgradeItemsBtn  = 5;   // upgradesel_p BTN_UPGRADEITEMS
-constexpr int kSelTitleId          = 4;   // upgradesel_p LBL_TITLE
+// SINCE the gui-id audit (2026-08-18, docs/gui-id-audit.md) the controls
+// this module acts on resolve via the panels' own ctor-bound embedded
+// members (UpgradeSelPanel* / CraftPanel* in menus_internal.cpp; offsets
+// in engine_offsets_fields.h) — the historical .gui ids survive only as
+// those resolvers' GuiIdMismatch tripwires. The two ids below are the
+// remaining Tier-2 announce-only lookups on panels whose members were not
+// mined (upgradeitems_p / upgrade_p titles); degradation there is a wrong
+// or missing title line, never a mis-driven input.
 constexpr int kItemsTitleId        = 3;   // upgradeitems_p LBL_TITLE
 constexpr int kUpgradeTitleId      = 12;  // upgrade_p LBL_TITLE (item name)
-constexpr int kUpgradeBackBtnId    = 13;  // upgrade_p BTN_BACK ("Abbrechen")
-constexpr int kCraftShopListId     = 4;   // LB_SHOPITEMS (craftable list)
-constexpr int kCraftInvListId      = 5;   // LB_INVITEMS (breakdown list)
-constexpr int kCraftAcceptBtnId    = 12;  // BTN_Accept ("Objekt erstellen")
-// BTN_Examine ("Inventar betrachten") — the create/breakdown view flip. The
-// two .gui files disagree on its id: component_p numbers it 13 and puts
-// BTN_Cancel at 27, chemical_p has BTN_Cancel at 13 and Examine at 14. Firing
-// id 13 blind on a lab station would close the screen instead of flipping it.
-constexpr int kCraftExamineBtnComponentId = 13;
-constexpr int kCraftExamineBtnChemicalId  = 14;
-// The screen's own per-selection number labels, LBL_COST_VALUE (id 8) and
+// The crafting screen's own per-selection number labels, LBL_COST_VALUE (id 8) and
 // LBL_STOCK_VALUE (id 11), are deliberately NOT read. Live evidence
 // (patch-20260813-132834.log): they held "12" / "0" across every keyboard
 // selection change and only moved when a craft committed — the engine
@@ -59,8 +51,6 @@ constexpr int kCraftExamineBtnChemicalId  = 14;
 // row's item instead, which cannot go stale. The pool label (id 6) IS
 // reliable — it is written whenever the pool changes — and is surfaced as a
 // virtual chain row by menus_credits.
-constexpr int kCreateItemTitleId   = 19;  // component_p LBL_TITLE
-constexpr int kCreateMedTitleId    = 15;  // chemical_p LBL_TITLE
 
 // upgrade_p.gui bakes this literal (not a strref) into LBL_TITLE; the
 // engine overwrites it with the item's name when it primes the panel.
@@ -100,17 +90,23 @@ int  g_userOpenedUpgradeTtl = 0;
 // (user Enters another item) never does.
 bool g_redirectedThisOpen = false;
 
-// The K2 workbench family whose titles Tick's foreground-edge announcer
-// owns (see OwnsPanelTitle in the header). Returns the .gui id of the
-// panel's title label, or -1 for non-family kinds.
-int TitleLabelIdFor(PanelKind k) {
+// The title label of a K2 workbench-family panel, or nullptr for
+// non-family kinds. Select and the two crafting screens resolve through
+// their ctor-bound members; Items and Upgrade keep the Tier-2 id lookup
+// (their members were not mined — announce-only, degrades gracefully).
+void* TitleLabelFor(void* panel, PanelKind k) {
     switch (k) {
-        case PanelKind::WorkbenchSelect:        return kSelTitleId;
-        case PanelKind::WorkbenchItems:         return kItemsTitleId;
-        case PanelKind::WorkbenchUpgrade:       return kUpgradeTitleId;
-        case PanelKind::WorkbenchCreateItem:    return kCreateItemTitleId;
-        case PanelKind::WorkbenchCreateMedical: return kCreateMedTitleId;
-        default:                                return -1;
+        case PanelKind::WorkbenchSelect:
+            return acc::menus::detail::UpgradeSelPanelTitleLabel(panel);
+        case PanelKind::WorkbenchItems:
+            return FindControlById(panel, kItemsTitleId);
+        case PanelKind::WorkbenchUpgrade:
+            return FindControlById(panel, kUpgradeTitleId);
+        case PanelKind::WorkbenchCreateItem:
+        case PanelKind::WorkbenchCreateMedical:
+            return acc::menus::detail::CraftPanelTitleLabel(panel);
+        default:
+            return nullptr;
     }
 }
 
@@ -124,8 +120,7 @@ void AnnounceFamilyTitleOnFgEdge(void* fg, PanelKind pk, bool edge,
                                  bool suppress) {
     static bool s_retryTitle = false;
 
-    int labelId = TitleLabelIdFor(pk);
-    if (labelId < 0 || !fg) {
+    if (!fg || !IsWorkbenchFamilyKind(pk)) {
         s_retryTitle = false;
         return;
     }
@@ -138,7 +133,7 @@ void AnnounceFamilyTitleOnFgEdge(void* fg, PanelKind pk, bool edge,
     }
     if (!edge && !s_retryTitle) return;
 
-    void* label = FindControlById(fg, labelId);
+    void* label = TitleLabelFor(fg, pk);
     char text[256];
     if (!label ||
         !acc::menus::extract::FromControl(label, text, sizeof(text), fg) ||
@@ -189,9 +184,9 @@ bool IsListBoxVisible(void* listBox) {
 // view, LB_INVITEMS in breakdown view. Null when neither is visible
 // (construction window) or the panel isn't a crafting screen.
 void* FindActiveCraftList(void* panel) {
-    void* shop = FindControlById(panel, kCraftShopListId);
+    void* shop = acc::menus::detail::CraftPanelShopListBox(panel);
     if (shop && IsListBoxVisible(shop)) return shop;
-    void* inv = FindControlById(panel, kCraftInvListId);
+    void* inv = acc::menus::detail::CraftPanelInvListBox(panel);
     if (inv && IsListBoxVisible(inv)) return inv;
     return nullptr;
 }
@@ -359,29 +354,24 @@ bool FireActivate(void* control) {
 
 }  // namespace
 
-bool ResolveRowCommit(void* panel, void* control,
-                      void** outListBox, int* outButtonId) {
-    if (!panel || !control || !outListBox || !outButtonId) return false;
+bool ResolveRowCommit(void* panel, void* control, void** outListBox) {
+    if (!panel || !control || !outListBox) return false;
     PanelKind pk = IdentifyPanel(panel);
     void* lb = nullptr;
-    int   btnId = -1;
     if (pk == PanelKind::WorkbenchSelect && acc::game::IsKotor2()) {
         // K1's upgradesel has no listbox at all — this path is K2 shape.
-        lb = FindControlById(panel, kSelUpgradeListId);
-        btnId = kSelUpgradeItemsBtn;
+        lb = acc::menus::detail::UpgradeSelPanelListBox(panel);
     } else if (IsCraftingKind(pk)) {
         lb = FindActiveCraftList(panel);
-        btnId = kCraftAcceptBtnId;
     } else {
         return false;
     }
     if (!lb || RowIndexIn(lb, control) < 0) return false;
     *outListBox = lb;
-    *outButtonId = btnId;
     return true;
 }
 
-void DispatchRowCommit(void* panel, void* listBox, void* row, int buttonId) {
+void DispatchRowCommit(void* panel, void* listBox, void* row) {
     // Re-verify at drain time — a tick has passed since the input event
     // and the engine may have repopulated the list (category switch racing
     // the Enter). A vanished row is a logged no-op, never a stale commit.
@@ -398,11 +388,17 @@ void DispatchRowCommit(void* panel, void* listBox, void* row, int buttonId) {
                       listBox, idx);
         return;
     }
-    void* btn = FindControlById(panel, buttonId);
+    // The commit button is the panel's own: BTN_UPGRADEITEMS on the
+    // workbench top screen, BTN_Accept on the crafting screens. Resolved
+    // from the ctor-bound member here at drain time, same freshness the
+    // old .gui-id lookup had.
+    bool isSel = IdentifyPanel(panel) == PanelKind::WorkbenchSelect;
+    void* btn = isSel ? acc::menus::detail::UpgradeSelPanelUpgradeButton(panel)
+                      : acc::menus::detail::CraftPanelAcceptButton(panel);
     if (!btn) {
         acclog::Write("Crafting",
-                      "row-commit: commit button id=%d not found on panel=%p",
-                      buttonId, panel);
+                      "row-commit: commit button not resolved on panel=%p",
+                      panel);
         return;
     }
     // The commit button gates the same way its row does; every other
@@ -414,13 +410,13 @@ void DispatchRowCommit(void* panel, void* listBox, void* row, int buttonId) {
     }
     bool ok = FireActivate(btn);
     acclog::Write("Crafting",
-                  "row-commit panel=%p lb=%p row=%p idx=%d btn(id=%d)=%p fired=%d",
-                  panel, listBox, row, idx, buttonId, btn, ok ? 1 : 0);
+                  "row-commit panel=%p lb=%p row=%p idx=%d btn=%p fired=%d",
+                  panel, listBox, row, idx, btn, ok ? 1 : 0);
     // Opening the upgrade flow from the list is user-initiated — mark it so
     // the arriving CSWGuiUpgrade edge is NOT bounced back to the list (see
     // the auto-open redirect in Tick). ~20 ticks covers the engine's
     // one-to-two-frame delay before the panel actually fronts.
-    if (ok && buttonId == kSelUpgradeItemsBtn) {
+    if (ok && isSel) {
         g_userOpenedUpgradeTtl = 20;
     }
 }
@@ -452,7 +448,7 @@ void AnnounceChainStepSuffix(void* panel, void* control) {
     // costs to build, or what breaking it down hands back. They are not the
     // same — the return is the cost scaled by the bench skill, min 1, which
     // is why a low-skill character loses material on every teardown.
-    bool breakdown = (FindControlById(panel, kCraftShopListId) != lb);
+    bool breakdown = (acc::menus::detail::CraftPanelShopListBox(panel) != lb);
     char msg[96];
     if (breakdown) {
         float factor = ReadSkillFactor(panel, medical);
@@ -484,21 +480,13 @@ void AnnounceChainStepSuffix(void* panel, void* control) {
 }
 
 void* ViewToggleButton(void* panel) {
-    if (!panel || !acc::game::IsKotor2()) return nullptr;
-    PanelKind pk = IdentifyPanel(panel);
-    if (pk == PanelKind::WorkbenchCreateItem) {
-        return FindControlById(panel, kCraftExamineBtnComponentId);
-    }
-    if (pk == PanelKind::WorkbenchCreateMedical) {
-        return FindControlById(panel, kCraftExamineBtnChemicalId);
-    }
-    return nullptr;
+    // The resolver is kind-dispatched and returns nullptr off the two
+    // crafting screens (and on K1, where the member offsets poison).
+    return acc::menus::detail::CraftPanelExamineButton(panel);
 }
 
 void* CommitButton(void* panel) {
-    if (!panel || !acc::game::IsKotor2()) return nullptr;
-    if (!IsCraftingKind(IdentifyPanel(panel))) return nullptr;
-    return FindControlById(panel, kCraftAcceptBtnId);
+    return acc::menus::detail::CraftPanelAcceptButton(panel);
 }
 
 // Q / E — flip create <-> break down. Mirrors store::ToggleModeFromHotkey:
@@ -555,10 +543,10 @@ void SyncSelectedRowFromChainFocus() {
 
 bool IsHiddenCraftingListBox(void* panel, void* listBox) {
     if (!panel || !listBox) return false;
-    if (!IsCraftingKind(IdentifyPanel(panel))) return false;
-    if (listBox != FindControlById(panel, kCraftShopListId) &&
-        listBox != FindControlById(panel, kCraftInvListId)) {
-        // Description listboxes etc. — chain handles them normally.
+    if (listBox != acc::menus::detail::CraftPanelShopListBox(panel) &&
+        listBox != acc::menus::detail::CraftPanelInvListBox(panel)) {
+        // Off-kind panels (resolvers null there), description listboxes
+        // etc. — chain handles them normally.
         return false;
     }
     return !IsListBoxVisible(listBox);
@@ -566,7 +554,7 @@ bool IsHiddenCraftingListBox(void* panel, void* listBox) {
 
 bool OwnsPanelTitle(void* panel) {
     if (!acc::game::IsKotor2()) return false;
-    return TitleLabelIdFor(IdentifyPanel(panel)) >= 0;
+    return IsWorkbenchFamilyKind(IdentifyPanel(panel));
 }
 
 void Tick() {
@@ -607,15 +595,15 @@ void Tick() {
         bool suppressTitle = false;
         if (edge && pk == PanelKind::WorkbenchUpgrade &&
             !g_redirectedThisOpen && g_userOpenedUpgradeTtl == 0) {
-            void* back = FindControlById(fg, kUpgradeBackBtnId);
+            void* back = acc::menus::detail::UpgradePanelBackButton(fg);
             if (back && !acc::menus::pending::IsPending()) {
                 acc::menus::pending::QueueActivate(back);
                 g_redirectedThisOpen = true;
                 suppressTitle = true;
                 acclog::Write("Crafting",
                               "engine auto-opened Upgrade for first item; "
-                              "redirecting to item list (BTN_BACK id=%d panel=%p)",
-                              kUpgradeBackBtnId, fg);
+                              "redirecting to item list (BTN_BACK=%p panel=%p)",
+                              back, fg);
             }
         }
         if (edge && pk == PanelKind::WorkbenchUpgrade && g_userOpenedUpgradeTtl > 0) {
@@ -637,11 +625,11 @@ void Tick() {
     void* lb = nullptr;
     int shopVis = -1;
     if (isCraft) {
-        void* shop = FindControlById(fg, kCraftShopListId);
+        void* shop = acc::menus::detail::CraftPanelShopListBox(fg);
         shopVis = (shop && IsListBoxVisible(shop)) ? 1 : 0;
         lb = FindActiveCraftList(fg);
     } else {
-        lb = FindControlById(fg, kSelUpgradeListId);
+        lb = acc::menus::detail::UpgradeSelPanelListBox(fg);
     }
     int count = ReadListBoxRowCount(lb);
 

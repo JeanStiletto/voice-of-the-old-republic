@@ -35,6 +35,18 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h2>Unreleased</h2>
 
+<h3>Crafting (KOTOR 2):</h3>
+
+- The KOTOR 2 workbench and lab-station screens are now immune to
+  installs with modified layout files — the same hardening the
+  equipment, workbench-upgrade and save/load screens got. The item
+  lists, the Create/Upgrade commit buttons, the view-flip button and the
+  screen titles now resolve through the engine's own constructor
+  bindings instead of layout-file ids. This also removed a latent
+  hazard: the two crafting layout files number the view-flip button
+  differently, so an id mix-up there would have closed the lab station
+  instead of flipping its list.
+
 <h3>Save/Load screen:</h3>
 
 - The save/load screen is now immune to installs with modified layout

@@ -267,6 +267,82 @@ void* acc::menus::detail::SaveLoadPanelBackButton(void* panel) {
                                    SaveLoadBtnBackId(), "SaveLoad.BTN_BACK");
 }
 
+// K2 workbench/crafting resolvers (see menus_internal.h). The tripwire ids
+// are the historical hardcoded ones, mined from K2's own gui.bif: the two
+// crafting .gui files agree on the listbox/accept ids (4/5/12) but disagree
+// on BTN_Examine (component_p 13, chemical_p 14), which is why the examine
+// tripwire follows the panel kind. The offsets poison on K1, so every
+// resolver returns nullptr there without touching the tripwire.
+namespace {
+// The two crafting classes lay the same controls out at different offsets;
+// pick per panel kind, or return nullptr when `panel` is neither.
+void* CraftMemberWithTripwire(void* panel, size_t componentOff,
+                              size_t chemicalOff, int guiId,
+                              const char* tag) {
+    switch (acc::engine::IdentifyPanel(panel)) {
+        case acc::engine::PanelKind::WorkbenchCreateItem:
+            return PanelMemberWithTripwire(panel, componentOff, guiId, tag);
+        case acc::engine::PanelKind::WorkbenchCreateMedical:
+            return PanelMemberWithTripwire(panel, chemicalOff, guiId, tag);
+        default:
+            return nullptr;
+    }
+}
+}  // namespace
+
+void* acc::menus::detail::UpgradeSelPanelListBox(void* panel) {
+    return PanelMemberWithTripwire(panel, kUpgradeSelPanelListBoxOffset,
+                                   /*LB_UPGRADELIST=*/9,
+                                   "UpgradeSel.LB_UPGRADELIST");
+}
+
+void* acc::menus::detail::UpgradeSelPanelUpgradeButton(void* panel) {
+    return PanelMemberWithTripwire(panel, kUpgradeSelPanelUpgradeButtonOffset,
+                                   /*BTN_UPGRADEITEMS=*/5,
+                                   "UpgradeSel.BTN_UPGRADEITEMS");
+}
+
+void* acc::menus::detail::UpgradeSelPanelTitleLabel(void* panel) {
+    return PanelMemberWithTripwire(panel, kUpgradeSelPanelTitleLabelOffset,
+                                   /*LBL_TITLE=*/4, "UpgradeSel.LBL_TITLE");
+}
+
+void* acc::menus::detail::CraftPanelShopListBox(void* panel) {
+    return CraftMemberWithTripwire(panel, kCraftComponentShopListBoxOffset,
+                                   kCraftChemicalShopListBoxOffset,
+                                   /*LB_SHOPITEMS=*/4, "Craft.LB_SHOPITEMS");
+}
+
+void* acc::menus::detail::CraftPanelInvListBox(void* panel) {
+    return CraftMemberWithTripwire(panel, kCraftComponentInvListBoxOffset,
+                                   kCraftChemicalInvListBoxOffset,
+                                   /*LB_INVITEMS=*/5, "Craft.LB_INVITEMS");
+}
+
+void* acc::menus::detail::CraftPanelAcceptButton(void* panel) {
+    return CraftMemberWithTripwire(panel, kCraftComponentAcceptButtonOffset,
+                                   kCraftChemicalAcceptButtonOffset,
+                                   /*BTN_Accept=*/12, "Craft.BTN_Accept");
+}
+
+void* acc::menus::detail::CraftPanelExamineButton(void* panel) {
+    bool medical = acc::engine::IdentifyPanel(panel) ==
+                   acc::engine::PanelKind::WorkbenchCreateMedical;
+    return CraftMemberWithTripwire(panel, kCraftComponentExamineButtonOffset,
+                                   kCraftChemicalExamineButtonOffset,
+                                   /*BTN_Examine=*/medical ? 14 : 13,
+                                   "Craft.BTN_Examine");
+}
+
+void* acc::menus::detail::CraftPanelTitleLabel(void* panel) {
+    bool medical = acc::engine::IdentifyPanel(panel) ==
+                   acc::engine::PanelKind::WorkbenchCreateMedical;
+    return CraftMemberWithTripwire(panel, kCraftComponentTitleLabelOffset,
+                                   kCraftChemicalTitleLabelOffset,
+                                   /*LBL_TITLE=*/medical ? 15 : 19,
+                                   "Craft.LBL_TITLE");
+}
+
 // Workbench-upgrade slot membership via the panel's embedded button run
 // (one contiguous array in both games — see the kUpgradePanelSlotButtons
 // note in engine_offsets_fields.h). Returns the ARRAY index (identity /

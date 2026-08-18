@@ -754,9 +754,8 @@ bool HandleShiftArrow(int param_1, int param_2, void* activePanel,
     // resolve; those fall through silently to the generic tooltip path.
     {
         void* peekLb = nullptr;
-        int   peekBtn = -1;
         if (acc::menus::crafting::ResolveRowCommit(activePanel, focusedControl,
-                                                   &peekLb, &peekBtn)) {
+                                                   &peekLb)) {
             if (void* item = ResolveRowItem(focusedControl)) {
                 acclog::Write("Peek.Blocks",
                               "panel=%s crafting row item=%p -> block nav",

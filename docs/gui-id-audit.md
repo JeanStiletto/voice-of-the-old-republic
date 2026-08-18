@@ -9,8 +9,17 @@ DONE + tested: InGameEquip (committed 54533ee), WorkbenchUpgrade
 identity moved to the CSWGuiSaveLoad vtable, controls to ctor members;
 logs patch-20260818-132334 (K1) / patch-20260818-132234 (K2): no
 GuiIdMismatch, row nav + Enter/Esc + K2 chain-sync/slot-info all clean).
-NEXT: crafting (K2 panel trio), then powers level-up, container, pazaak,
-keymap, chargen feats.
+DONE + tested: crafting trio (K2 test round 2026-08-18, log
+patch-20260818-135559: no GuiIdMismatch; Sel row-commit, auto-open
+redirect, component create/breakdown commits, Q/E flip, cost suffix and
+titles all clean — and the logged pointer arithmetic confirms the mined
+offsets at runtime: commit btn − panel = 0x2f8 on Sel, 0xfe4/0x1384/
+0x38dc on the component panel. CAVEAT: the chemical panel ran no runtime
+path — no lab station in the test save. Its offsets carry the same
+double decompile witnesses; the shared code path is proven via the
+component twin. If a tester log ever shows GuiIdMismatch/Craft.* on a
+lab station, that's the place to look).
+NEXT: powers level-up, then container, pazaak, keymap, chargen feats.
 
 Noted during the SaveLoad round (not a regression, optional follow-up):
 K2 Esc on the save/load screen logs "Menus.Esc: ... no cancel/close
@@ -182,6 +191,37 @@ s_LB_GAMES strings, tags dumped the same way; layouts mirror exactly):
 - Full member tables (labels, K2-only CB_CLOUDSAVE/BTN_FILTER/LBL_BAR*)
   in engine_offsets_fields.h at kSaveLoadPanel*Offset.
 
+K2 crafting trio (mined 2026-08-18; all K2-only consumers, offsets poison
+on K1). Panel identity was ALREADY vtable-based for all three — this round
+converted control resolution only. Ctors found via FindCallers on the
+known BTN_Accept handlers (their registrations are DATA refs in the ctors)
+plus DATA refs to each vtable; all three ctors decompile WITH tag strings
+on K2, so every member has a direct tagged-InitControl witness.
+- CSWGuiUpgradeSelection ctor FUN_008c6650 (dtor FUN_008c6e90):
+  LBL_TITLE +0x68, BTN_UPGRADEITEMS +0x2f8, BTN_BACK +0x4c8,
+  LB_UPGRADELIST +0x117c. Second witnesses: BTN_BACK native-Esc bind
+  (0x62), BTN_UPGRADEITEMS accept bind (0x61) AND its handler
+  FUN_008c7f60 comparing its param against `this + 0x2f8`.
+- CSWGuiCreateItem (component_p) ctor FUN_008d1020: LB_SHOPITEMS +0x35ec,
+  LB_INVITEMS +0x38dc, BTN_Accept +0xfe4, BTN_Examine +0x1384, LBL_TITLE
+  +0x2b4c. Cross-checks: `flags &= ~4` triple at each button +0x48,
+  initial-visibility clear at LB_INVITEMS+0x48, and the ctor's
+  skill-factor write landing exactly on the previously mined
+  kCraftComponentSkillFactorOffset 0x3ed4.
+- CSWGuiCreateMedicalItem (chemical_p) ctor FUN_008d6b90: LB_SHOPITEMS
+  +0x2b0c, LB_INVITEMS +0x2dfc, BTN_Accept +0x118c, BTN_Examine +0x152c,
+  LBL_TITLE +0xac4. Same cross-check families incl. the mined 0x33f4
+  skill factor.
+- Resolvers: UpgradeSelPanel* / CraftPanel* in menus_internal.cpp (the
+  CraftPanel* ones dispatch component-vs-chemical on IdentifyPanel; the
+  BTN_Examine tripwire id follows the kind — the two .gui files disagree,
+  13 vs 14). The CraftRowCommit pending op no longer carries a button id
+  at all: DispatchRowCommit re-resolves the commit button from the
+  panel's members at drain time. The upgrade auto-open redirect now uses
+  the existing UpgradePanelBackButton resolver. Titles for the three
+  mined panels converted (Tier-2 for free); upgradeitems_p / upgrade_p
+  titles stay id-based announce-only.
+
 ## Inventory (audit of all id-trusting sites)
 
 Tier 1 — drives input/state; convert to member offsets:
@@ -225,7 +265,15 @@ Tier 1 — drives input/state; convert to member offsets:
   Title label (id 25) stays id-based: announce-only, degrades gracefully.
 - Crafting (K2 only): kSelUpgradeListId/kSelUpgradeItemsBtn/
   kCraftShopListId/kCraftInvListId/kCraftAcceptBtnId/kCraftExamineBtn*
-  (menus_crafting.cpp). STATUS: to mine from the three panel ctors.
+  (menus_crafting.cpp). STATUS: DONE — tested in-game K2 2026-08-18
+  (chemical panel untested, no lab station in save; see status caveat).
+  All converted to UpgradeSelPanel*/CraftPanel* resolvers (see
+  mined-offsets section); the id constants are deleted from
+  menus_crafting.cpp — the historical ids live on only inside the
+  resolvers as tripwires. The K2 upgrade-screen auto-open redirect's
+  kUpgradeBackBtnId also deleted (uses UpgradePanelBackButton now).
+  Remaining id-based in that TU (Tier 2, announce-only): upgradeitems_p
+  LBL_TITLE (3) and upgrade_p LBL_TITLE (12).
 - Powers level-up: IdPowersListbox/IdDescriptionLb/BtnRecommended/
   BtnAccept/BtnBack (menus_powers_levelup.cpp). STATUS: to mine.
 - SaveLoad: SaveLoadLbGamesId/BtnSaveLoad/BtnBack/BtnDelete

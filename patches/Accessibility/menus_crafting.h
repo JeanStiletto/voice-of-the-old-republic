@@ -40,20 +40,18 @@ namespace acc::menus::crafting {
 
 // If `control` is a row of the actionable item list on a K2 workbench
 // screen (WorkbenchSelect's LB_UPGRADELIST, or the VISIBLE item list of a
-// crafting screen), fill the commit target and return true. The caller
-// queues the deferred op with these values.
-//   outListBox — the owning listbox
-//   outButtonId — .gui id of the commit button to fire after selecting
-//                 (BTN_UPGRADEITEMS = 5 on WorkbenchSelect, BTN_Accept = 12
-//                 on both crafting screens)
-bool ResolveRowCommit(void* panel, void* control,
-                      void** outListBox, int* outButtonId);
+// crafting screen), fill the owning listbox and return true. The caller
+// queues the deferred op with these values; the commit button itself is
+// re-resolved at drain time from the panel's kind.
+bool ResolveRowCommit(void* panel, void* control, void** outListBox);
 
 // Drain-side worker for the CraftRowCommit pending op: re-verify the row
 // still sits in the listbox, write the listbox selection to its index,
-// then FireActivate (vtable[15], event 0x27) the commit button resolved
-// by .gui id. SEH-guarded throughout; logs the outcome.
-void DispatchRowCommit(void* panel, void* listBox, void* row, int buttonId);
+// then FireActivate (vtable[15], event 0x27) the panel's own commit
+// button (BTN_UPGRADEITEMS on WorkbenchSelect, BTN_Accept on the crafting
+// screens), resolved from the ctor-bound member. SEH-guarded throughout;
+// logs the outcome.
+void DispatchRowCommit(void* panel, void* listBox, void* row);
 
 // Per-row price quote, spoken after the row's name on each chain step —
 // the crafting counterpart of store::AnnounceChainStepSuffix. In the create

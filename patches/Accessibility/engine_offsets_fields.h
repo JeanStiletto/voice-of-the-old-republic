@@ -819,6 +819,55 @@ const size_t kSaveLoadPanelPlanetLabelOffset  = acc::off::Pick(0x2f4, 0x308);
 const size_t kSaveLoadPanelAreaLabelOffset    = acc::off::Pick(0x434, 0x450);
 const size_t kSaveLoadPanelTimeLabelOffset    = acc::off::Kotor2Only(0xda8);
 
+// K2 workbench/crafting ctor-bound EMBEDDED members (gui-id audit,
+// 2026-08-18 — docs/gui-id-audit.md). Every offset has a DIRECT witness:
+// the ctor's tagged InitControl into `this + off`. All three classes are
+// consumed on KOTOR 2 only (K1's upgradesel has no listbox and no crafting
+// screens exist there), so the constants poison on K1; CSWGuiUpgradeSelection
+// does exist on K1 with a DIFFERENT .gui layout — its K1 members were
+// deliberately not mined because no code path reads them.
+//
+// CSWGuiUpgradeSelection (upgradesel_p) — ctor FUN_008c6650 (found via DATA
+// refs to its vtable 0x009A86CC; FUN_008c6e90 is the dtor). Second
+// witnesses: BTN_BACK gets the native Esc bind (input code 0x62),
+// BTN_UPGRADEITEMS the accept bind (0x61), and the BTN_UPGRADEITEMS handler
+// FUN_008c7f60 compares its param against `this + 0x2f8`. Unconsumed
+// members, recorded for completeness: LBL_TITLE2 +0x1b0, BTN_CREATEITEMS
+// +0x698, category buttons BTN_ALL/LIGHTSABER/RANGED/MELEE/ARMOR one bank
+// at +0x86c (×5, stride 0x1d0), LB_DESCRIPTION +0x146c.
+const size_t kUpgradeSelPanelTitleLabelOffset    = acc::off::Kotor2Only(0x68);
+const size_t kUpgradeSelPanelUpgradeButtonOffset = acc::off::Kotor2Only(0x2f8);
+const size_t kUpgradeSelPanelBackButtonOffset    = acc::off::Kotor2Only(0x4c8);
+const size_t kUpgradeSelPanelListBoxOffset       = acc::off::Kotor2Only(0x117c);
+//
+// CSWGuiCreateItem (component_p) — ctor FUN_008d1020 (registers the known
+// BTN_Accept handler 0x008d2150 AND writes vtable 0x009A8B4C). Layout
+// cross-checks: the ctor's `flags &= ~4` triple lands at each button
+// +0x48; the initial-visibility clear lands at LB_INVITEMS+0x48
+// (kControlBitFlagsOffset); the skill-factor write lands exactly at the
+// previously mined kCraftComponentSkillFactorOffset 0x3ed4. Unconsumed:
+// BTN_Cancel +0x11b4, LBL_TITLE2 +0x2c94, LB_DESCRIPTION +0x3bcc,
+// LB_DESCRIPTIONINV +0x2f24, create/break category banks +0x1554/+0x1e64
+// (×5 each, stride 0x1d0).
+const size_t kCraftComponentShopListBoxOffset    = acc::off::Kotor2Only(0x35ec);
+const size_t kCraftComponentInvListBoxOffset     = acc::off::Kotor2Only(0x38dc);
+const size_t kCraftComponentAcceptButtonOffset   = acc::off::Kotor2Only(0xfe4);
+const size_t kCraftComponentExamineButtonOffset  = acc::off::Kotor2Only(0x1384);
+const size_t kCraftComponentTitleLabelOffset     = acc::off::Kotor2Only(0x2b4c);
+//
+// CSWGuiCreateMedicalItem (chemical_p) — ctor FUN_008d6b90 (registers the
+// known BTN_Accept handler 0x008d7a80 AND writes vtable 0x009A8CBC). Same
+// three cross-check families as the component ctor, including the mined
+// kCraftChemicalSkillFactorOffset 0x33f4; BTN_Cancel +0x135c additionally
+// gets the native Esc bind. Unconsumed: BTN_Cancel +0x135c, LBL_TITLE2
+// +0xc0c, LB_DESCRIPTION +0x30ec, LB_DESCRIPTIONINV +0xe9c, create bank
+// +0x1ad4 (×4, stride 0x1d0).
+const size_t kCraftChemicalShopListBoxOffset     = acc::off::Kotor2Only(0x2b0c);
+const size_t kCraftChemicalInvListBoxOffset      = acc::off::Kotor2Only(0x2dfc);
+const size_t kCraftChemicalAcceptButtonOffset    = acc::off::Kotor2Only(0x118c);
+const size_t kCraftChemicalExamineButtonOffset   = acc::off::Kotor2Only(0x152c);
+const size_t kCraftChemicalTitleLabelOffset      = acc::off::Kotor2Only(0xac4);
+
 // CSWGuiControl.is_active @ +0x4c - the gate every engine On*Slot /
 // OnControlEntered handler tests before doing anything. Keyboard-driven callers
 // must raise it first and restore it after; the handlers themselves are
