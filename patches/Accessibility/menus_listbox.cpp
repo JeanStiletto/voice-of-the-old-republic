@@ -53,20 +53,16 @@ using acc::menus::detail::ListBoxNavOp;
 using acc::menus::detail::ListBoxNavResult;
 using acc::menus::detail::QueueButtonByIdActivate;
 
-// .gui-time IDs (Container loot panel + SaveLoad dialog) — see menus.cpp
-// for the full table. Duplicated locally because the spec entries need
-// them at file scope and menus.cpp's copies are static. The IDs are
-// .gui-resource-baked, stable across localizations.
+// .gui-time IDs (Container loot panel) — see menus.cpp for the full
+// table. Duplicated locally because the spec entries need them at file
+// scope and menus.cpp's copies are static. The IDs are .gui-resource-
+// baked, stable across localizations. (SaveLoad's controls resolve via
+// the ctor-bound member resolvers in menus_internal.cpp since the gui-id
+// audit — no ids needed here any more.)
 namespace {
 constexpr int kContainerBtnOkId      = 3;
 constexpr int kContainerBtnGiveId    = 4;
 constexpr int kContainerBtnCancelId  = 5;
-
-// Per-game — see the id table in menus_internal.cpp. K2 re-authored the
-// screen: the listbox is id=12 there and Cancel is id=13.
-inline int SaveLoadLbGamesId()     { return acc::game::IsKotor2() ? 12 :  0; }
-inline int SaveLoadBtnBackId()     { return acc::game::IsKotor2() ? 13 : 12; }
-inline int SaveLoadBtnSaveLoadId() { return 14; }
 }
 
 namespace acc::menus::listbox {
@@ -305,7 +301,10 @@ bool SaveLoadMatches(void* p) {
 }
 
 void* SaveLoadFindLb(void* p) {
-    return FindControlById(p, SaveLoadLbGamesId());
+    // Engine member, not .gui id — a variant saveload.gui renumbers the
+    // controls (same failure class as userlogs/077noequipment; see
+    // docs/gui-id-audit.md).
+    return acc::menus::detail::SaveLoadPanelGamesListBox(p);
 }
 
 // Speak on every step (no per-tick monitor watches the SaveLoad listbox).
@@ -361,14 +360,16 @@ bool SaveLoadOnEnter(void* panel) {
     if (!acc::engine::GetPlayerPosition(scratch)) {
         acc::transitions::NotifyExternalLoadStarting("SaveLoad load from menu");
     }
-    QueueButtonByIdActivate(panel, SaveLoadBtnSaveLoadId(),
-                            "SaveLoad: Enter -> saveload_button");
+    acc::menus::detail::QueueControlActivate(
+        acc::menus::detail::SaveLoadPanelActionButton(panel),
+        "SaveLoad: Enter -> BTN_SAVELOAD");
     return true;
 }
 
 bool SaveLoadOnEsc(void* panel) {
-    QueueButtonByIdActivate(panel, SaveLoadBtnBackId(),
-                            "SaveLoad: Esc -> back_button");
+    acc::menus::detail::QueueControlActivate(
+        acc::menus::detail::SaveLoadPanelBackButton(panel),
+        "SaveLoad: Esc -> BTN_BACK");
     return true;
 }
 
@@ -1787,12 +1788,6 @@ void PollContainerGiveModeKey() {
 
 }  // namespace
 
-// K2 save/load preview-label ids, witnessed on panel 1C1F2990 in
-// patch-20260813-212757 (18 children; ids 0..11 are the preview block).
-constexpr int kK2SaveLoadLblPlanetId = 3;
-constexpr int kK2SaveLoadLblAreaId   = 5;
-constexpr int kK2SaveLoadLblTimeId   = 9;
-
 // Set by the sync, consumed by the announce one tick later.
 void* s_pendingInfoPanel = nullptr;
 
@@ -1894,9 +1889,13 @@ void MonitorK2SaveLoadSelection() {
 // the engine's own SetSelectedControl rather than a raw index write. Reading
 // them a tick later gives the engine its frame to fill them in.
 //
-//   id=3  planet / module   ("Ebon Hawk")
-//   id=5  area              ("Innenbereich")
-//   id=9  play time         ("Zeit: 8S 16M")
+//   LBL_PLANETNAME   planet / module   ("Ebon Hawk")
+//   LBL_AREANAME     area              ("Innenbereich")
+//   LBL_TIMEPLAYED   play time         ("Zeit: 8S 16M")
+//
+// The labels are the panel's ctor-bound embedded members (gui-id audit;
+// they were read by .gui id 3/5/9 before). LBL_TIMEPLAYED exists only on
+// K2, and this whole function is K2-only.
 //
 // Play time is included where K1 does not, because K1's row text already
 // carries it ("Game 1 - 21h 23m") and K2's does not — same information, from
@@ -1908,11 +1907,11 @@ void AnnounceK2SaveLoadInfo() {
     if (panel != acc::menus::chain::g_chainPanel) return;
 
     char planet[128] = "", area[128] = "", played[128] = "";
-    void* c = FindControlById(panel, kK2SaveLoadLblPlanetId);
+    void* c = acc::off::Ptr(panel, kSaveLoadPanelPlanetLabelOffset);
     if (c) acc::menus::extract::FromControl(c, planet, sizeof(planet), panel);
-    c = FindControlById(panel, kK2SaveLoadLblAreaId);
+    c = acc::off::Ptr(panel, kSaveLoadPanelAreaLabelOffset);
     if (c) acc::menus::extract::FromControl(c, area, sizeof(area), panel);
-    c = FindControlById(panel, kK2SaveLoadLblTimeId);
+    c = acc::off::Ptr(panel, kSaveLoadPanelTimeLabelOffset);
     if (c) acc::menus::extract::FromControl(c, played, sizeof(played), panel);
 
     char msg[384];

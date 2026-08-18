@@ -28,16 +28,17 @@ bool HasVtable(void* obj, uintptr_t expected) {
     }
 }
 
-// CSWGuiSaveLoad structural signature. The panel is allocated dynamically
-// when the user activates load/save and has no slot in CGuiInGame, so the
-// offset table can't catch it — we detect it by the .gui-time control IDs
-// that saveload.gui declares. IDs are baked into the resource at build
-// time, language-independent, and identical between save and load contexts
-// (both render through the same CSWGuiSaveLoad layout).
+// CSWGuiSaveLoad. The panel is allocated dynamically when the user
+// activates load/save and has no slot in CGuiInGame, so the offset table
+// can't catch it — but as a heap-allocated panel it carries its own
+// vtable, and the vtable IS its identity (ctor-written, per-exe constant,
+// immune to .gui renumbering). Replaced the old .gui-id quartet probe in
+// the gui-id audit (docs/gui-id-audit.md); that shape needed a
+// belt-and-braces defence against upgrade.gui's identical id quartet and
+// broke by construction on installs with a variant saveload.gui.
 //
 // Mirror of acc::menus::detail::IsSaveLoadPanel — kept here so engine-layer
-// IdentifyPanel doesn't reach back into the menus layer. The two should
-// stay in sync; if either set of IDs changes both must be updated.
+// IdentifyPanel doesn't reach back into the menus layer.
 namespace {
 
 void* FindControlByGuiId(void* panel, int id) {
@@ -57,40 +58,7 @@ void* FindControlByGuiId(void* panel, int id) {
 }
 
 bool IsSaveLoadStructural(void* panel) {
-    if (!panel) return false;
-    // SEH wrap mirrors IsLevelUpStructural below. IdentifyPanel runs the
-    // structural detectors on any slot-table miss; during Annehmen on
-    // InGameLevelUp the engine destroys the panel synchronously inside the
-    // FireActivate vtable[15] dispatch and re-enters our hooks (or a
-    // tick-level helper like GetForegroundPanel) with a stale or
-    // mid-mutation pointer. The deref of panel.controls (offset 0x20)
-    // inside FindControlByGuiId then AVs (crash analysed 2026-05-21,
-    // dump swkotor.exe.14400.dmp, edi=0xa508ac00).
-    constexpr int kIdGamesListbox  =  0;
-    constexpr int kIdDeleteButton  = 11;
-    constexpr int kIdBackButton    = 12;
-    constexpr int kIdSaveLoadButton = 14;
-    __try {
-        void* lb = FindControlByGuiId(panel, kIdGamesListbox);
-        if (!lb) return false;
-        void** lbVtable = *reinterpret_cast<void***>(lb);
-        if (reinterpret_cast<uintptr_t>(lbVtable) != kVtableListBox) return false;
-        // Tighten: require IDs 11/12/14 to be actual CSWGuiButtons. The
-        // workbench upgrade panel (upgrade.gui) coincidentally has the
-        // same {0, 11, 12, 14} ID quartet, but its ID 11 is LBL_UPGRADE44
-        // (a LabelHilight), not a Button. Without this check the workbench
-        // upgrade panel false-matches as SaveLoad and the SaveLoad input
-        // handler hijacks all keys (Enter → ID 14 / Esc → ID 12),
-        // breaking the panel — see patch-20260521-175339.log analysis.
-        void* del  = FindControlByGuiId(panel, kIdDeleteButton);
-        void* back = FindControlByGuiId(panel, kIdBackButton);
-        void* sl   = FindControlByGuiId(panel, kIdSaveLoadButton);
-        return HasVtable(del,  kVtableCSWGuiButton) &&
-               HasVtable(back, kVtableCSWGuiButton) &&
-               HasVtable(sl,   kVtableCSWGuiButton);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
+    return HasVtable(panel, kVtableCSWGuiSaveLoad);
 }
 
 // Workbench upgrade panel (upgrade.gui). 29 controls; uniquely identifiable
@@ -879,16 +847,17 @@ PanelKind IdentifyPanel(void* panel) {
     // Cost is bounded (a few control-id walks per probe) and only paid
     // when the slot table didn't classify the panel.
     //
-    // Probe order: tighter (more-distinctive) signatures first. SaveLoad
-    // and WorkbenchUpgrade used to collide on the {0, 11, 12, 14} ID
-    // quartet — the tightened SaveLoad detector now requires ID 11 to be
-    // a Button (saveload.gui's BTN_DELETE), so the workbench upgrade
-    // panel's ID 11 = LBL_UPGRADE44 (LabelHilight) no longer false-matches.
-    // Probing workbench-shapes before SaveLoad provides belt-and-braces
-    // protection against future regressions.
-    // Vtable equality, so it is collision-proof and cheap — probe it first.
+    // Probe order: vtable-equality detectors first — collision-proof and
+    // cheap — then the remaining .gui-shape probes, tighter (more-
+    // distinctive) signatures before looser ones.
     if (IsGamepadQuickMenuStructural(panel)) {
         return recordAndReturn(PanelKind::GamepadQuickMenu, "GamepadQuickMenu");
+    }
+    // SaveLoad identifies by vtable since the gui-id audit (it used to be
+    // a .gui-id quartet probe that collided with upgrade.gui and had to
+    // run AFTER the workbench shapes; that ordering constraint is gone).
+    if (IsSaveLoadStructural(panel)) {
+        return recordAndReturn(PanelKind::SaveLoad, "SaveLoad");
     }
     // K2 crafting screens — vtable equality, collision-proof, probe early.
     if (IsWorkbenchCreateItemStructural(panel)) {
@@ -918,9 +887,6 @@ PanelKind IdentifyPanel(void* panel) {
     }
     if (IsWorkbenchSelectStructural(panel)) {
         return recordAndReturn(PanelKind::WorkbenchSelect, "WorkbenchSelect");
-    }
-    if (IsSaveLoadStructural(panel)) {
-        return recordAndReturn(PanelKind::SaveLoad, "SaveLoad");
     }
     if (IsLevelUpStructural(panel)) {
         return recordAndReturn(PanelKind::InGameLevelUp, "InGameLevelUp");

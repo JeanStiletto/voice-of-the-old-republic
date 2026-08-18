@@ -35,6 +35,17 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h2>Unreleased</h2>
 
+<h3>Save/Load screen:</h3>
+
+- The save/load screen is now immune to installs with modified layout
+  files, in both games — the same hardening the equipment and workbench
+  screens got. The screen itself, its save list and its Load/Save and
+  Back buttons are now recognised through the engine's own class identity
+  and constructor bindings instead of layout-file ids. This screen was
+  the riskiest of the audit: a renumbered layout file would previously
+  have made the mod not recognise it at all, silently — no spoken rows,
+  Enter loading the wrong (default-selected) save.
+
 <h3>Workbench:</h3>
 
 - KOTOR 1: the upgrade picker now reaches every row. The engine's

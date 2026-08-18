@@ -5,9 +5,19 @@ lookup that trusts a `.gui`-authored control id to an engine-truth
 mechanism. Update the per-surface status lines as work lands.
 
 DONE + tested: InGameEquip (committed 54533ee), WorkbenchUpgrade
-(committed after the 2026-08-18 evening round). NEXT: SaveLoad (its ids
-double as the panel identifier — highest silent-failure risk left), then
-crafting, powers level-up, container, pazaak, keymap, chargen feats.
+(committed df625d6), SaveLoad (tested both games 2026-08-18 — panel
+identity moved to the CSWGuiSaveLoad vtable, controls to ctor members;
+logs patch-20260818-132334 (K1) / patch-20260818-132234 (K2): no
+GuiIdMismatch, row nav + Enter/Esc + K2 chain-sync/slot-info all clean).
+NEXT: crafting (K2 panel trio), then powers level-up, container, pazaak,
+keymap, chargen feats.
+
+Noted during the SaveLoad round (not a regression, optional follow-up):
+K2 Esc on the save/load screen logs "Menus.Esc: ... no cancel/close
+button found; passing through" — the generic chain Esc handler's
+label-text probe doesn't find K2's Back button, and the engine's native
+Esc closes the screen instead. Works fine; could route through
+SaveLoadPanelBackButton if native Esc ever misbehaves.
 
 ## Conversion workflow (follow this per surface — written to run cold)
 
@@ -144,6 +154,34 @@ row. So on K2 an occupied slot with no spare pops the "no items" modal —
 vanilla behaviour, mouse included. The mod now follows that modal with
 "Item still equipped: <name>" (FmtEquipStillEquipped).
 
+CSWGuiSaveLoad (mined 2026-08-18; K1 ctor @0x006cc680 — named symbol,
+tag strings dumped from the listing's InitControl pairs; K2 ctor
+FUN_00850770, found via DATA refs to its named s_BTN_SAVELOAD /
+s_LB_GAMES strings, tags dumped the same way; layouts mirror exactly):
+- Panel identity = VTABLE, not ids: kVtableCSWGuiSaveLoad K1 0x00757650
+  (labelled CSWGuiSaveLoad_vtable) / K2 0x009A3FBC (both written at
+  object+0 by their ctors). Both IsSaveLoadPanel (menus layer) and
+  IsSaveLoadStructural (engine layer) are now one HasVtable call; the
+  old id-quartet probe and its workbench-collision defence are deleted,
+  and the SaveLoad probe moved into IdentifyPanel's collision-proof
+  vtable group.
+- games_listbox EMBEDDED ("LB_GAMES"): K1 +0x934 / K2 +0x970.
+- action button EMBEDDED ("BTN_SAVELOAD"): K1 +0xc14 / K2 +0x11c0.
+  Second witness in both games: the ctor registers its onClick to a
+  save- or load-handler depending on the mode param (K1 0x6cbb60/
+  0x6cc0e0, K2 0x8578b0/0x8528b0); K2 also binds gamepad 'a' to it.
+- back button EMBEDDED ("BTN_BACK"): K1 +0xdd8 / K2 +0x1390 (K2 gamepad
+  'b' bind corroborates).
+- delete button EMBEDDED ("BTN_DELETE"): K1 +0xf9c / K2 +0x1730 ('d'
+  bind). Recorded but unused — no consumer activates Delete directly
+  (it stays an ordinary chain button).
+- K2 info labels EMBEDDED: LBL_PLANETNAME +0x308, LBL_AREANAME +0x450,
+  LBL_TIMEPLAYED +0xda8 (K1 twins +0x2f4/+0x434 recorded; K1 has no
+  time label). AnnounceK2SaveLoadInfo reads these members now — the
+  Tier-2 id reads (3/5/9) came along for free with direct witnesses.
+- Full member tables (labels, K2-only CB_CLOUDSAVE/BTN_FILTER/LBL_BAR*)
+  in engine_offsets_fields.h at kSaveLoadPanel*Offset.
+
 ## Inventory (audit of all id-trusting sites)
 
 Tier 1 — drives input/state; convert to member offsets:
@@ -192,7 +230,15 @@ Tier 1 — drives input/state; convert to member offsets:
   BtnAccept/BtnBack (menus_powers_levelup.cpp). STATUS: to mine.
 - SaveLoad: SaveLoadLbGamesId/BtnSaveLoad/BtnBack/BtnDelete
   (menus_internal.cpp, menus_listbox.cpp; also used as the panel
-  IDENTIFIER via IsSaveLoadShape — double exposure). STATUS: to mine.
+  IDENTIFIER via IsSaveLoadPanel/IsSaveLoadStructural — double
+  exposure). STATUS: DONE — tested in-game both games 2026-08-18.
+  Identity = vtable (see mined-offsets section); LB_GAMES /
+  BTN_SAVELOAD / BTN_BACK resolve via SaveLoadPanel* resolvers
+  (ids now tripwire-only); Enter/Esc queue the member controls via the
+  new QueueControlActivate; the K2 selection-sync monitor and the K2
+  info-label announce converted too. BTN_DELETE id deleted (was only
+  consumed by the shape probe). Tier-2 K2 detail labels converted
+  along the way (direct witnesses were free).
 - Container: kContainerBtnOkId/GiveId/CancelId (menus_listbox.cpp).
   STATUS: to mine.
 - Pazaak deck builder: kControlPlayId/kControlClearId + side arithmetic
@@ -210,7 +256,8 @@ Tier 1 — drives input/state; convert to member offsets:
 Tier 2 — announce-only; keep id, degradation acceptable (revisit only if
 tester logs show breakage):
 - InGameMenu strip icons (strref table keyed by id).
-- K2 saveload detail labels (kK2SaveLoadLbl planet/area/time).
+- K2 saveload detail labels — CONVERTED with the SaveLoad Tier-1 batch
+  (the ctor witnesses were free); no longer id-based.
 - Journal listbox detection (already pointer/offset-based per
   menus_chain.cpp isJournalItemsLb — verify), credits value labels
   (kCraftPoolValueGuiId etc. — anchored by id but text-only).

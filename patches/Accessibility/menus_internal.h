@@ -122,9 +122,10 @@ void* FindControlById(void* panel, int id);
 // menus_listbox.cpp's Container entry calls it on every Up/Down step.
 void* FindListBoxChild(void* panel);
 
-// Detect the CSWGuiSaveLoad panel by structural signature (saveload.gui
-// IDs are baked into the resource at build time, language-independent).
-// Used by the SaveLoad spec entry's `matches` callback.
+// Detect the CSWGuiSaveLoad panel by its vtable (kVtableCSWGuiSaveLoad) —
+// the ctor-written identity of this dynamically allocated panel, immune
+// to .gui renumbering. Used by the SaveLoad spec entry's `matches`
+// callback and the K2 selection-sync monitor. SEH-safe on stale pointers.
 bool IsSaveLoadPanel(void* panel);
 
 // Read a CExoString-style field on a control by byte offset. Used by the
@@ -193,6 +194,10 @@ bool ParkCursorToCorner(const char* tag);
 // missing target — caller still consumes the keypress so the engine's
 // stale activeControl can't take over.
 bool QueueButtonByIdActivate(void* panel, int buttonId, const char* logPrefix);
+
+// Same debounce/queue/log contract for a control already resolved via an
+// engine-member resolver (SaveLoadPanel* etc.) instead of a .gui id.
+bool QueueControlActivate(void* target, const char* logPrefix);
 
 }  // namespace acc::menus::detail
 
@@ -332,6 +337,14 @@ void* UpgradePanelBackButton(void* panel);
 // IsWorkbenchUpgradeSlotButtonId.
 int UpgradeSlotIndexFromButton(void* panel, void* control);
 inline int UpgradeSlotButtonCount() { return acc::game::IsKotor2() ? 9 : 7; }
+
+// CSWGuiSaveLoad — same engine-truth resolvers (ctor-bound embedded
+// members, kSaveLoadPanel*Offset; ids only feed the GuiIdMismatch
+// tripwire). Panel identity itself is the CSWGuiSaveLoad vtable — see
+// IsSaveLoadPanel above. Defined in menus_internal.cpp.
+void* SaveLoadPanelGamesListBox(void* panel);   // LB_GAMES
+void* SaveLoadPanelActionButton(void* panel);   // BTN_SAVELOAD (Laden/Speichern)
+void* SaveLoadPanelBackButton(void* panel);     // BTN_BACK
 
 }  // namespace acc::menus::detail
 

@@ -29,32 +29,25 @@
 
 using namespace acc::engine;
 
-// CSWGuiSaveLoad control IDs from saveload.gui (verified against chain logs:
-// patch-20260505-160124.log lines 45-65 et al). Stable across save and load
-// contexts — both render through the same .gui file.
+// CSWGuiSaveLoad control ids from saveload.gui / K2 saveload_p.gui
+// (verified against chain logs: patch-20260505-160124.log lines 45-65;
+// K2 witnessed live in patch-20260813-212757 — K2 re-authored the screen
+// and every id but the action button moved, which once silently disabled
+// the whole SaveLoad spec there).
 //
-//   id=0   games_listbox       (CSWGuiListBox; rows are CSWGuiSaveLoadEntry)
-//   id=11  delete_button       ("L\xF6schen" / "Delete")
-//   id=12  back_button         ("Abbrechen" / "Cancel")
-//   id=14  saveload_button     ("Laden" / "Save" / etc.)
-//
-// KOTOR 2 re-authored the same screen and every id but the action button
-// moved. Witnessed live in patch-20260813-212757 (panel 1C1F2990, 18
-// children): the listbox is id=12, Cancel id=13, Delete id=15, and ids 0..11
-// are the preview labels and their frames. The consequence of assuming K1's
-// numbering there was severe and silent — IsSaveLoadPanel found no listbox at
-// id=0, so the whole SaveLoad spec never engaged on K2, the rows were walked
-// as ordinary chain buttons, nothing ever drove the engine's selection index,
-// and Load loaded whatever was selected by default: the newest save, whatever
-// the player picked.
+// SINCE the gui-id audit (2026-08-18, docs/gui-id-audit.md) these ids are
+// NOT how the panel or its controls are resolved any more: identification
+// is the CSWGuiSaveLoad vtable, and the controls are the ctor-bound
+// embedded members (kSaveLoadPanel*Offset). The ids survive only as the
+// GuiIdMismatch tripwire input on the SaveLoadPanel* resolvers below, so
+// a variant .gui file shows up as one loud log line instead of a
+// mis-wired screen.
 //
 //   K1                              K2
 //   id=0   games_listbox            id=12  games_listbox
-//   id=11  delete_button            id=15  delete_button
 //   id=12  back_button              id=13  back_button
 //   id=14  saveload_button          id=14  saveload_button (unchanged)
 inline int SaveLoadLbGamesId() { return acc::game::IsKotor2() ? 12 :  0; }
-inline int SaveLoadBtnDeleteId() { return acc::game::IsKotor2() ? 15 : 11; }
 inline int SaveLoadBtnBackId() { return acc::game::IsKotor2() ? 13 : 12; }
 inline int SaveLoadBtnSaveLoadId() { return 14; }
 
@@ -254,6 +247,26 @@ void* acc::menus::detail::UpgradePanelBackButton(void* panel) {
                                    "Upgrade.BTN_BACK");
 }
 
+// CSWGuiSaveLoad — same engine-truth resolvers (members mined from both
+// games' ctors, see kSaveLoadPanel*Offset). Callers should have vetted the
+// panel with IsSaveLoadPanel first; the member address is pure pointer
+// arithmetic either way.
+void* acc::menus::detail::SaveLoadPanelGamesListBox(void* panel) {
+    return PanelMemberWithTripwire(panel, kSaveLoadPanelGamesListBoxOffset,
+                                   SaveLoadLbGamesId(), "SaveLoad.LB_GAMES");
+}
+
+void* acc::menus::detail::SaveLoadPanelActionButton(void* panel) {
+    return PanelMemberWithTripwire(panel, kSaveLoadPanelActionButtonOffset,
+                                   SaveLoadBtnSaveLoadId(),
+                                   "SaveLoad.BTN_SAVELOAD");
+}
+
+void* acc::menus::detail::SaveLoadPanelBackButton(void* panel) {
+    return PanelMemberWithTripwire(panel, kSaveLoadPanelBackButtonOffset,
+                                   SaveLoadBtnBackId(), "SaveLoad.BTN_BACK");
+}
+
 // Workbench-upgrade slot membership via the panel's embedded button run
 // (one contiguous array in both games — see the kUpgradePanelSlotButtons
 // note in engine_offsets_fields.h). Returns the ARRAY index (identity /
@@ -277,59 +290,20 @@ int acc::menus::detail::UpgradeSlotIndexFromButton(void* panel,
 // Detect the CSWGuiSaveLoad panel (the "Spiel laden" / "Spiel speichern"
 // dialog). The panel is allocated dynamically when the user activates the
 // load/save action, has no slot in CGuiInGame, and so doesn't show up via
-// IdentifyPanel.
+// the slot table — but it carries its own vtable, and for a dynamically
+// allocated panel the vtable IS its identity: written by the ctor, per-exe
+// constant, immune to anything a content mod can put in a .gui file.
 //
-// We classify by a *structural* signature — the four .gui-time control IDs
-// the saveload.gui resource declares:
-//
-//   - id=0  games_listbox       (CSWGuiListBox)
-//   - id=11 delete_button       (CSWGuiButton)
-//   - id=12 back_button         (CSWGuiButton)
-//   - id=14 saveload_button     (CSWGuiButton)
-//
-// .gui-time IDs are baked into the resource at build time and identical
-// between the save and load contexts (both render through the same
-// CSWGuiSaveLoad layout). They're language-independent — only the rendered
-// label text is localised, not the IDs — so this matches every locale
-// without enumerating titles. The combined four-ID tuple is specific
-// enough that no other panel we've observed in the chain logs collides.
-//
-// We deliberately do NOT generalise this to "any panel that has a listbox":
-// listbox row semantics vary. Options sub-dialogs render settings as
-// listbox-row buttons whose onClick toggles state directly, dialog replies
-// have engine-bound arrow keys that mutate selection_index already, and
-// description listboxes are read-only. The select-then-confirm-via-button
-// pattern is shared by Container, Equip-picker, and SaveLoad — all three
-// kinds detected per-panel today.
+// This replaces the old structural probe (the {listbox id 0, buttons
+// 11/12/14} quartet plus per-control vtable tightening) from before the
+// gui-id audit — that shape trusted .gui-authored ids, needed a
+// belt-and-braces collision defence against upgrade.gui's identical id
+// quartet, and would misidentify on any install with a renumbered
+// saveload.gui. HasVtable is SEH-guarded, which this call path needs
+// anyway: the save-popup teardown can leave a freed SaveLoad panel
+// pointer in the chain for a tick (see menus_chain.cpp).
 bool acc::menus::detail::IsSaveLoadPanel(void* panel) {
-    if (!panel) return false;
-
-    void* lb = FindControlById(panel, SaveLoadLbGamesId());
-    if (!lb) return false;
-    void* lbVtable = nullptr;  // guarded: control may be freed mid-check
-    if (!acc::engine::TryReadPtr(lb, 0, &lbVtable) ||
-        reinterpret_cast<uintptr_t>(lbVtable) != kVtableListBox) return false;
-
-    // Tighten: require IDs 11/12/14 to all be Buttons. Mirrors the
-    // engine-layer IsSaveLoadStructural — the workbench upgrade panel
-    // (upgrade.gui) coincidentally has the same {0, 11, 12, 14} ID
-    // quartet but its ID 11 is a LabelHilight (LBL_UPGRADE44), not a
-    // Button. Without the vtable check the SaveLoad listbox-spec handler
-    // hijacks all input on the workbench upgrade panel (Enter dispatches
-    // ID 14 = BTN_UPGRADE33, Esc dispatches ID 12 = BTN_UPGRADE31),
-    // breaking navigation entirely.
-    auto isBtn = [](void* c) -> bool {
-        if (!c) return false;
-        __try {
-            void** vt = *reinterpret_cast<void***>(c);
-            return reinterpret_cast<uintptr_t>(vt) == kVtableCSWGuiButton;
-        } __except (EXCEPTION_EXECUTE_HANDLER) {
-            return false;
-        }
-    };
-    return isBtn(FindControlById(panel, SaveLoadBtnSaveLoadId())) &&
-           isBtn(FindControlById(panel, SaveLoadBtnBackId()))     &&
-           isBtn(FindControlById(panel, SaveLoadBtnDeleteId()));
+    return acc::engine::HasVtable(panel, kVtableCSWGuiSaveLoad);
 }
 
 // Read the user-visible text of a CExoString-style field on a control. Returns
@@ -565,6 +539,26 @@ bool acc::menus::detail::QueueButtonByIdActivate(void* panel, int buttonId,
     }
     acc::menus::pending::QueueActivate(tgt);
     acclog::Write(logPrefix, "panel=%p target=%p", panel, tgt);
+    return true;
+}
+
+// Same debounce + queue + log, for a target already resolved through an
+// engine-member resolver (the gui-id audit's replacement for the id
+// lookup above). Null target is logged, not fatal — callers still
+// consume the keypress.
+bool acc::menus::detail::QueueControlActivate(void* target,
+                                              const char* logPrefix)
+{
+    if (acc::menus::pending::IsPending()) {
+        acclog::Write(logPrefix, "-- op already pending; ignoring");
+        return false;
+    }
+    if (!target) {
+        acclog::Write(logPrefix, "-- target not resolved");
+        return false;
+    }
+    acc::menus::pending::QueueActivate(target);
+    acclog::Write(logPrefix, "target=%p", target);
     return true;
 }
 

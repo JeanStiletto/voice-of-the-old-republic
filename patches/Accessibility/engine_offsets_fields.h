@@ -779,6 +779,46 @@ const size_t kSaveLoadEntrySaveGameNameOffset  = acc::off::Todo(0x1d8);
 const size_t kSaveLoadEntryAreaNameOffset      = acc::off::Todo(0x1e8);
 const size_t kSaveLoadEntryLastModuleOffset    = acc::off::Todo(0x1f0);
 
+// CSWGuiSaveLoad ctor-bound EMBEDDED members (gui-id audit, 2026-08-18 —
+// docs/gui-id-audit.md). Every offset below has a DIRECT witness: the
+// ctor's tagged InitControl pair (LEA this+off / PUSH tag-string).
+//
+// K1 ctor @0x006cc680 (named; tag strings dumped from the listing's PUSH
+// addresses). K2 ctor FUN_00850770 (found via DATA refs to its
+// s_BTN_SAVELOAD / s_LB_GAMES strings; tags dumped the same way).
+// Layouts mirror exactly — same member order, K2 sizes (labels 0x148 vs
+// 0x140, buttons 0x1d0 vs 0x1c4):
+//
+//   member          tag             K1       K2
+//   panel title     LBL_PANELNAME   +0x74    +0x78
+//   screenshot      LBL_SCREENSHOT  +0x1b4   +0x1c0
+//   planet          LBL_PLANETNAME  +0x2f4   +0x308
+//   area            LBL_AREANAME    +0x434   +0x450
+//   portraits ×3    LBL_PM1..PM3    +0x574   +0x598   (stride = label size)
+//   games listbox   LB_GAMES        +0x934   +0x970
+//   action button   BTN_SAVELOAD    +0xc14   +0x11c0
+//   back button     BTN_BACK        +0xdd8   +0x1390
+//   delete button   BTN_DELETE      +0xf9c   +0x1730
+//
+// The action button carries a second witness in both games: the ctor
+// registers its onClick to a SAVE or LOAD handler depending on the mode
+// parameter (K1 0x6cbb60/0x6cc0e0, K2 0x8578b0/0x8528b0), and on K2 it
+// also gets the gamepad 'a' accept hotkey (BTN_BACK gets 'b', BTN_DELETE
+// 'd'). K2-only extras between the buttons: LBL_PCNAME +0xc60,
+// LBL_TIMEPLAYED +0xda8, CB_CLOUDSAVE +0xef0, BTN_FILTER +0x1560,
+// LBL_BAR1..4 +0x1900 (×0x148).
+const size_t kSaveLoadPanelGamesListBoxOffset = acc::off::Pick(0x934, 0x970);
+const size_t kSaveLoadPanelActionButtonOffset = acc::off::Pick(0xc14, 0x11c0);
+const size_t kSaveLoadPanelBackButtonOffset   = acc::off::Pick(0xdd8, 0x1390);
+const size_t kSaveLoadPanelDeleteButtonOffset = acc::off::Pick(0xf9c, 0x1730);
+// The K2 per-slot info labels AnnounceK2SaveLoadInfo reads (K1 gets the
+// same data from the row entry's CExoStrings instead). The planet/area
+// members exist on K1 too (table above); the time-played label is
+// K2-only.
+const size_t kSaveLoadPanelPlanetLabelOffset  = acc::off::Pick(0x2f4, 0x308);
+const size_t kSaveLoadPanelAreaLabelOffset    = acc::off::Pick(0x434, 0x450);
+const size_t kSaveLoadPanelTimeLabelOffset    = acc::off::Kotor2Only(0xda8);
+
 // CSWGuiControl.is_active @ +0x4c - the gate every engine On*Slot /
 // OnControlEntered handler tests before doing anything. Keyboard-driven callers
 // must raise it first and restore it after; the handlers themselves are

@@ -103,6 +103,16 @@ const uintptr_t kVtableCSWGuiNameChargen   = acc::addr::Pick(0x00759F38, 0x009AA
 // layout is documented in engine_offsets_fields.h.
 const uintptr_t kVtableCSWGuiSaveNamePanel    = acc::addr::Pick(0x007576D0, 0x009A42C4);
 
+// CSWGuiSaveLoad vtable (the Spiel laden / Spiel speichern dialog itself).
+// K1: the ctor @0x006cc680 writes it at object+0 (labelled
+// CSWGuiSaveLoad_vtable in the database). K2: the twin ctor FUN_00850770
+// writes it the same way. Since the gui-id audit this vtable IS the
+// SaveLoad panel identification — the panel is heap-allocated with no
+// CGuiInGame slot, and the old structural probe trusted the .gui-authored
+// control-id quartet, which any variant saveload.gui renumbers. Ctor-bound
+// member offsets live in engine_offsets_fields.h (kSaveLoadPanel*).
+const uintptr_t kVtableCSWGuiSaveLoad         = acc::addr::Pick(0x00757650, 0x009A3FBC);
+
 // CSWGuiClassSelection vtable (chargen class picker). Member layout and the
 // class_selections[] geometry are documented in engine_offsets_fields.h.
 const uintptr_t kVtableCSWGuiClassSelection      = acc::addr::Pick(0x00758020, 0x009A9B6C);
