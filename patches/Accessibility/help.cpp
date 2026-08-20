@@ -21,6 +21,7 @@
                                 // so the engine-event consume guard wins the
                                 // poll-vs-event race (no stray Options open)
 #include "log.h"
+#include "minigame_pazaak.h"   // IsBoardForeground — the pazaak help context
 #include "pad_input.h"          // Connected — gates the controller section
 #include "prism.h"
 #include "strings.h"
@@ -42,9 +43,11 @@ enum CtxBit : uint32_t {
     kDialog     = 1u << 4,
     kContainer  = 1u << 5,
     kStore      = 1u << 6,
+    kPazaak     = 1u << 7,
 };
 
-enum class Context { World, Menu, Map, ActionMenu, Dialog, Container, Store };
+enum class Context { World, Menu, Map, ActionMenu, Dialog, Container, Store,
+                     Pazaak };
 
 uint32_t ContextBit(Context c) {
     switch (c) {
@@ -55,6 +58,7 @@ uint32_t ContextBit(Context c) {
         case Context::Dialog:     return kDialog;
         case Context::Container:  return kContainer;
         case Context::Store:      return kStore;
+        case Context::Pazaak:     return kPazaak;
     }
     return kWorld;
 }
@@ -68,6 +72,7 @@ S ContextNameId(Context c) {
         case Context::Dialog:     return S::HelpContextDialog;
         case Context::Container:  return S::HelpContextContainer;
         case Context::Store:      return S::HelpContextStore;
+        case Context::Pazaak:     return S::HelpContextPazaak;
     }
     return S::HelpContextWorld;
 }
@@ -75,6 +80,12 @@ S ContextNameId(Context c) {
 // Detect the screen the user is on. Priority order: the most specific
 // surfaces first, the generic "some menu is up" next, pure world last.
 Context DetectContext() {
+    // The pazaak board first: it is a foreground panel, so every check below
+    // would call it a generic Menu and answer with menu keys the minigame
+    // does not use. Its own arrow-zone navigator and letter shortcuts are the
+    // only keys that do anything while it is up.
+    if (acc::pazaak::IsBoardForeground()) return Context::Pazaak;
+
     if (acc::unified_menu::IsActive() && !acc::unified_menu::IsSuspended()) {
         return Context::ActionMenu;
     }
@@ -94,15 +105,16 @@ Context DetectContext() {
 
 // ----- Catalog ------------------------------------------------------------
 enum class Grp {
-    General, Movement, Interaction, Combat, Exploration, Screens, Map, Mod,
-    Controller,
+    General, Movement, Interaction, Combat, Exploration, Screens, Map, Pazaak,
+    Mod, Controller,
     COUNT
 };
 
 constexpr S kGroupHeader[] = {
     S::HelpGroupGeneral, S::HelpGroupMovement, S::HelpGroupInteraction,
     S::HelpGroupCombat, S::HelpGroupExploration, S::HelpGroupScreens,
-    S::HelpGroupMap, S::HelpGroupMod, S::HelpGroupController,
+    S::HelpGroupMap, S::HelpGroupPazaak, S::HelpGroupMod,
+    S::HelpGroupController,
 };
 static_assert(sizeof(kGroupHeader) / sizeof(kGroupHeader[0]) ==
               static_cast<int>(Grp::COUNT),
@@ -204,6 +216,18 @@ constexpr Entry kEntries[] = {
     // ---- Map panel ----
     { S::HelpKeyMapCursor,       Grp::Map, kMap },
     { S::HelpKeyMapPosition,     Grp::Map, kMap },
+
+    // ---- Pazaak board ----
+    // Tagged for kPazaak only. The board is a foreground panel but not a
+    // navigable menu: our own navigator owns the arrows and Enter, and the
+    // generic General lines (Q/E windows, Shift+arrow description) do nothing
+    // there — so Ctrl+F1 on the board answers with these four and nothing
+    // else. The side-deck builder and the wager popup are ordinary chain
+    // screens and keep the Menu context.
+    { S::HelpKeyPazaakNav,       Grp::Pazaak, kPazaak },
+    { S::HelpKeyPazaakSign,      Grp::Pazaak, kPazaak },
+    { S::HelpKeyPazaakReview,    Grp::Pazaak, kPazaak },
+    { S::HelpKeyPazaakTurn,      Grp::Pazaak, kPazaak },
 
     // ---- Mod features ----
     // F1-list only — Ctrl+F1 deliberately doesn't mention mod settings.

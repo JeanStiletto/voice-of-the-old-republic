@@ -563,6 +563,7 @@ const char* Get(Id id) {
         case Id::HelpGroupExploration:  return "Esplorazione e orientamento";
         case Id::HelpGroupScreens:      return "Schermate";
         case Id::HelpGroupMap:          return "Mappa";
+        case Id::HelpGroupPazaak:              return "Pazaak";
         case Id::HelpGroupMod:          return "Funzioni della mod";
         case Id::HelpGroupController:    return "Controller";
 
@@ -617,6 +618,10 @@ const char* Get(Id id) {
 
         case Id::HelpKeyMapCursor:       return "W, A, S e D: spostare il cursore della mappa per leggere terreno e indicatori";
         case Id::HelpKeyMapPosition:     return "Alt destro: annunciare la tua posizione e orientamento sulla mappa";
+        case Id::HelpKeyPazaakNav:             return "Frecce: spostarsi tra la mano, i due tavoli e le azioni. Invio gioca la carta selezionata";
+        case Id::HelpKeyPazaakSign:            return "Su una carta pi\xF9-meno: sinistra o destra sceglie il segno, Invio la gioca, Esc annulla";
+        case Id::HelpKeyPazaakReview:          return "C: la tua mano. T: entrambi i tavoli. Maiusc e C: quante carte ha ancora l'avversario";
+        case Id::HelpKeyPazaakTurn:            return "S: stare. E: terminare il turno";
 
 
         case Id::HelpKeyModSettings:     return "Le impostazioni della mod sono nelle Opzioni, in fondo all'elenco";
@@ -667,6 +672,7 @@ const char* Get(Id id) {
         case Id::HelpContextDialog:      return "Conversazione.";
         case Id::HelpContextContainer:   return "Contenitore.";
         case Id::HelpContextStore:       return "Negozio.";
+        case Id::HelpContextPazaak:            return "Pazaak.";
 
         case Id::InputBlockedBigPicture:
             return "Il gioco non pu\xF2 ricevere i tuoi tasti perch\xE9 la "

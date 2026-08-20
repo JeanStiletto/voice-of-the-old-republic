@@ -582,6 +582,7 @@ const char* Get(Id id) {
         case Id::HelpGroupExploration:  return "Erkundung und Orientierung";
         case Id::HelpGroupScreens:      return "Bildschirme";
         case Id::HelpGroupMap:          return "Karte";
+        case Id::HelpGroupPazaak:              return "Pazaak";
         case Id::HelpGroupMod:          return "Mod-Funktionen";
         case Id::HelpGroupController:    return "Controller";
 
@@ -636,6 +637,10 @@ const char* Get(Id id) {
 
         case Id::HelpKeyMapCursor:       return "W, A, S und D: Kartencursor bewegen, um Gel\xE4nde und Markierungen zu lesen";
         case Id::HelpKeyMapPosition:     return "Rechte Alt-Taste: Position und Blickrichtung auf der Karte ansagen";
+        case Id::HelpKeyPazaakNav:             return "Pfeiltasten: zwischen Hand, beiden Tischen und den Aktionen wechseln. Enter spielt die gew\xE4hlte Karte";
+        case Id::HelpKeyPazaakSign:            return "Bei einer Plus-Minus-Karte: links oder rechts w\xE4hlt das Vorzeichen, Enter spielt sie, Escape bricht ab";
+        case Id::HelpKeyPazaakReview:          return "C: deine Hand. T: beide Tische. Umschalt und C: wie viele Karten der Gegner noch hat";
+        case Id::HelpKeyPazaakTurn:            return "S: bleiben. E: Zug beenden";
 
 
         case Id::HelpKeyModSettings:     return "Mod-Einstellungen findest du in den Optionen, ganz unten in der Liste";
@@ -686,6 +691,7 @@ const char* Get(Id id) {
         case Id::HelpContextDialog:      return "Gespr\xE4""ch.";
         case Id::HelpContextContainer:   return "Beh\xE4lter.";
         case Id::HelpContextStore:       return "Laden.";
+        case Id::HelpContextPazaak:            return "Pazaak.";
 
         case Id::InputBlockedBigPicture:
             return "Das Spiel kann deine Tasteneingaben nicht empfangen, "

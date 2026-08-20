@@ -563,6 +563,7 @@ const char* Get(Id id) {
         case Id::HelpGroupExploration:  return "Eksploracja i orientacja";
         case Id::HelpGroupScreens:      return "Ekrany";
         case Id::HelpGroupMap:          return "Mapa";
+        case Id::HelpGroupPazaak:              return "Pazaak";
         case Id::HelpGroupMod:          return "Funkcje moda";
         case Id::HelpGroupController:    return "Kontroler";
 
@@ -617,6 +618,10 @@ const char* Get(Id id) {
 
         case Id::HelpKeyMapCursor:       return "W, A, S i D: przesuwaj\xB9 kursor mapy, aby odczyta\xE6 teren i znaczniki";
         case Id::HelpKeyMapPosition:     return "Prawy Alt: podaje twoje po\xB3o\xBF""enie i kierunek na mapie";
+        case Id::HelpKeyPazaakNav:             return "Strza\xB3ki: przechodzenie mi\xEA""dzy r\xEAk\xB9, obydwoma sto\xB3""ami i akcjami. Enter zagrywa wybran\xB9 kart\xEA";
+        case Id::HelpKeyPazaakSign:            return "Na karcie plus-minus: lewo lub prawo wybiera znak, Enter zagrywa, Escape anuluje";
+        case Id::HelpKeyPazaakReview:          return "C: twoja r\xEAka. T: oba sto\xB3y. Shift i C: ile kart ma jeszcze przeciwnik";
+        case Id::HelpKeyPazaakTurn:            return "S: pas. E: koniec tury";
 
 
         case Id::HelpKeyModSettings:     return "Ustawienia moda s\xB9 w Opcjach, na dole listy";
@@ -668,6 +673,7 @@ const char* Get(Id id) {
         case Id::HelpContextDialog:      return "Rozmowa.";
         case Id::HelpContextContainer:   return "Pojemnik.";
         case Id::HelpContextStore:       return "Sklep.";
+        case Id::HelpContextPazaak:            return "Pazaak.";
 
         case Id::InputBlockedBigPicture:
             return "Gra nie odbiera naci\x9Cni\xEA\xE6 klawiszy, poniewa\xBF na wierzchu "

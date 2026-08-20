@@ -1743,6 +1743,7 @@ enum class Id : int {
     HelpGroupExploration,
     HelpGroupScreens,
     HelpGroupMap,
+    HelpGroupPazaak,
     HelpGroupMod,
     //      KOTOR 2 only, and only while a gamepad is present: the engine's own
     //      Help panel for pad users is a bare picture of a controller, which
@@ -1810,6 +1811,14 @@ enum class Id : int {
     // Map panel.
     HelpKeyMapCursor,
     HelpKeyMapPosition,
+
+    //      Pazaak board. The minigame runs its own arrow-zone navigator and
+    //      its own letter shortcuts, so none of the generic menu lines apply
+    //      while it is up — these are the only keys that do.
+    HelpKeyPazaakNav,
+    HelpKeyPazaakSign,
+    HelpKeyPazaakReview,
+    HelpKeyPazaakTurn,
     // Mod features.
     HelpKeyModSettings,
     HelpKeyCopyLastSpoken,
@@ -1881,6 +1890,7 @@ enum class Id : int {
     HelpContextDialog,
     HelpContextContainer,
     HelpContextStore,
+    HelpContextPazaak,
 
 
     // Spoken when the user presses a key while Steam Big Picture Mode holds

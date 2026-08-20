@@ -564,6 +564,7 @@ const char* Get(Id id) {
         case Id::HelpGroupExploration:  return "Exploration et orientation";
         case Id::HelpGroupScreens:      return "\xC9""crans";
         case Id::HelpGroupMap:          return "Carte";
+        case Id::HelpGroupPazaak:              return "Pazaak";
         case Id::HelpGroupMod:          return "Fonctions du mod";
         case Id::HelpGroupController:    return "Manette";
 
@@ -618,6 +619,10 @@ const char* Get(Id id) {
 
         case Id::HelpKeyMapCursor:       return "W, A, S et D : d\xE9placer le curseur de carte pour lire le terrain et les marqueurs";
         case Id::HelpKeyMapPosition:     return "Alt droite : annoncer votre position et orientation sur la carte";
+        case Id::HelpKeyPazaakNav:             return "Fl\xE8""ches : passer de votre main aux deux tables et aux actions. Entr\xE9""e joue la carte s\xE9lectionn\xE9""e";
+        case Id::HelpKeyPazaakSign:            return "Sur une carte plus-moins : gauche ou droite choisit le signe, Entr\xE9""e la joue, \xC9""chap annule";
+        case Id::HelpKeyPazaakReview:          return "C : votre main. T : les deux tables. Maj et C : combien de cartes l'adversaire garde en main";
+        case Id::HelpKeyPazaakTurn:            return "S : rester. E : terminer le tour";
 
 
         case Id::HelpKeyModSettings:     return "Les r\xE9glages du mod sont dans les Options, en bas de la liste";
@@ -668,6 +673,7 @@ const char* Get(Id id) {
         case Id::HelpContextDialog:      return "Conversation.";
         case Id::HelpContextContainer:   return "Conteneur.";
         case Id::HelpContextStore:       return "Boutique.";
+        case Id::HelpContextPazaak:            return "Pazaak.";
 
         case Id::InputBlockedBigPicture:
             return "Le jeu ne peut pas recevoir vos touches, car le mode "

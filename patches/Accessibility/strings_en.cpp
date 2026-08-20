@@ -563,6 +563,7 @@ const char* Get(Id id) {
         case Id::HelpGroupExploration:  return "Exploration and orientation";
         case Id::HelpGroupScreens:      return "Screens";
         case Id::HelpGroupMap:          return "Map";
+        case Id::HelpGroupPazaak:              return "Pazaak";
         case Id::HelpGroupMod:          return "Mod features";
         case Id::HelpGroupController:    return "Controller";
 
@@ -617,6 +618,10 @@ const char* Get(Id id) {
 
         case Id::HelpKeyMapCursor:       return "W, A, S and D: move the map cursor to read terrain and markers";
         case Id::HelpKeyMapPosition:     return "Right Alt: announce your position and facing on the map";
+        case Id::HelpKeyPazaakNav:             return "Arrow keys: move between your hand, the two boards and the actions. Enter plays the card you are on";
+        case Id::HelpKeyPazaakSign:            return "On a plus-minus card: left or right chooses the sign, Enter plays it, Escape cancels";
+        case Id::HelpKeyPazaakReview:          return "C: your hand. T: both boards. Shift plus C: how many cards the opponent still holds";
+        case Id::HelpKeyPazaakTurn:            return "S: stand. E: end turn";
 
 
         case Id::HelpKeyModSettings:     return "Mod settings are in Options, at the bottom of the list";
@@ -666,6 +671,7 @@ const char* Get(Id id) {
         case Id::HelpContextDialog:      return "Conversation.";
         case Id::HelpContextContainer:   return "Container.";
         case Id::HelpContextStore:       return "Store.";
+        case Id::HelpContextPazaak:            return "Pazaak.";
 
         case Id::InputBlockedBigPicture:
             return "The game can't receive your key presses because Steam "
