@@ -440,7 +440,11 @@ void HandleNavStep(void* activePanel, int code, int val, bool& consumed) {
     if (!(navKeyIsUp || navKeyIsDown || navKeyIsHome || navKeyIsEnd)) return;
     if (activePanel == nullptr) return;
 
-    if (activePanel != g_chainPanel) {
+    // Rebind on a different panel, and also when the panel we are bound to
+    // is no longer the object we bound (its address reused by another
+    // panel — see ChainPanelIdentityHolds). Stepping a chain whose entries
+    // describe a dead object is how KOTOR 2 chargen crashed.
+    if (activePanel != g_chainPanel || !ChainPanelIdentityHolds()) {
         RebindChain(activePanel);
     }
     if (g_chainCount == 0) {
@@ -548,7 +552,11 @@ void HandleNavStep(void* activePanel, int code, int val, bool& consumed) {
     }
     int cursorX = e.cx;
     int cursorY = e.cy;
-    if (!e.textOnly) {
+    // The warp exists to make the engine's own hover handler follow our
+    // focus, so it must never point the engine at a panel whose identity
+    // no longer holds — that hands engine code a freed object.
+    bool safeToDrive = ChainPanelIdentityHolds();
+    if (!e.textOnly && safeToDrive) {
         // Cursor warp + suppress-budget exist to make hover-to-focus work for
         // activatable controls. Text-only entries (modal body listboxes) have
         // no hover semantics worth chasing — skipping keeps the cursor stable
@@ -588,7 +596,8 @@ void HandleNavStep(void* activePanel, int code, int val, bool& consumed) {
                   "step panel=%p index=%d/%d target=%p center=(%d,%d) cursor=(%d,%d)%s %s",
                   g_chainPanel, g_chainIndex, g_chainCount,
                   e.control, e.cx, e.cy, cursorX, cursorY,
-                  e.textOnly ? " text-only" : "",
+                  e.textOnly ? " text-only" :
+                               (safeToDrive ? "" : " no-warp-stale"),
                   dirTag);
     // Always consume nav keys on a panel with a non-empty chain.
     consumed = true;

@@ -40,7 +40,34 @@ struct PanelDesc {
     int         count;               // 6 abilities / 8 skills
     const char* logTag;              // "Menus.ChargenAttr" / "Menus.ChargenSkill"
     const char* selectedFieldName;   // log-only: "selected_ability" / "selected_skill"
+    // Engine-binding probe (0 = this panel has no probe and is always
+    // treated as ready). See IsBindingReady below for why it exists.
+    size_t      creatureOffset;      // panel -> chargen_creature
+    size_t      creatureStatsOffset; // chargen_creature -> lvl_up_stats
 };
+
+// True when the panel's engine binding resolves — i.e. when the engine's
+// own per-button handlers can safely touch this panel.
+//
+// The engine's description populator (OnEnterPointsButton) reaches
+// IsClassSkill, which dereferences `panel->chargen_creature->lvl_up_stats`
+// with NO null check in either game. A KOTOR 2 level-up Fähigkeiten panel
+// was observed with that pointer still garbage right after the screen
+// opened: our cost call faulted into its SEH handler (spoke "Preis ?"),
+// and one keystroke later the cursor warp let the ENGINE walk the same
+// chain outside any guard of ours and the process died
+// (patch-20260819-063818, crash inside K2 0x009103a0 +0xF).
+//
+// So this probe walks exactly the same two derefs under SEH first. If it
+// survives, the engine's will too; if it faults, no code path of ours may
+// make the engine touch the panel — not the cost call, not the
+// description refresh, and not the cursor warp that triggers the engine's
+// own hover handler. Panels with creatureOffset == 0 always return true.
+bool IsBindingReady(const PanelDesc& d, void* panel);
+
+// Diagnostic dump of the panel's binding word (log-only, nothing
+// branches on it). `when` tags the call site in the log line.
+void LogBindingWord(const PanelDesc& d, void* panel, const char* when);
 
 // True iff `panel`'s vtable is this panel kind. SEH-guarded.
 bool IsPanel(const PanelDesc& d, void* panel);

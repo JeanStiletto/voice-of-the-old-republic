@@ -545,6 +545,22 @@ void Drain(void* gm) {
                     acc::menus::chain::g_chainPanel, op.a);
             }
 
+            // Never dispatch into a panel whose identity no longer holds:
+            // if the chain's panel address has been reused by a different
+            // panel class, op.a describes the OLD object's layout and the
+            // handler we are about to call lives in freed memory. That is
+            // the KOTOR 2 chargen crash (patch-20260819-221733: the
+            // Abilities panel's buttons dispatched with is_active reading
+            // 2622030025, and the Skills panel that took over the block
+            // then died in the engine's own handler).
+            if (!acc::menus::chain::ChainPanelIdentityHolds()) {
+                acclog::Write("Update",
+                              "FireActivate SKIPPED target=%p — chain panel "
+                              "identity broken (stale/reused address)", op.a);
+                acc::menus::chain::InvalidateChain();
+                break;
+            }
+
             uint32_t prevIsActive = RaiseIsActiveIfZero(op.a);
             acclog::Write("Update", "FireActivate target=%p is_active=%u%s",
                           op.a, prevIsActive,

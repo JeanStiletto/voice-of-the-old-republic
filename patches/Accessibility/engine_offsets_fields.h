@@ -487,6 +487,27 @@ const int       kAbilitiesCharGenAbilityCount          = acc::off::Same(6);
 const size_t    kSkillsCharGenLabelsArrayOffset      = acc::off::Pick(0xfcc, 0xee8);
 const size_t    kSkillsCharGenButtonsArrayOffset     = acc::off::Pick(0x19cc, 0x1928);
 const size_t    kSkillsCharGenSelectedSkillOffset    = acc::off::Pick(0x49bc, 0x4cec);
+
+// The panel's bound chargen creature, and that creature's level-up stats
+// block. Mined 2026-08-19 from the crash these two fields caused: KOTOR 2
+// log patch-20260819-063818 died in CSWGuiSkillsCharGen::IsClassSkill's
+// twin (K2 0x009103a0) dereferencing a garbage chargen_creature.
+//
+// Both games' IsClassSkill opens with exactly this chain and NO null
+// check — K1 (named symbol @0x006f4b60):
+//   MOV EAX,[EDI+0x64]    ; this->chargen_creature
+//   MOV ECX,[EAX+0x2f8]   ; ->lvl_up_stats
+//   MOV AL,[ECX+0x32]     ; ->creature_stats.class_count
+// K2 twin @0x009103a0, same three reads at +0x68 / +0x310 / +0x32 (the
+// faulting instruction was the second one). K1's decompile names the
+// fields, which is what identifies them in both games.
+//
+// We never read these for their VALUES — they exist so we can reproduce
+// the engine's own deref chain under SEH and refuse to drive the panel
+// when it would fault. See chargen_layout::IsBindingReady.
+const size_t    kSkillsCharGenChargenCreatureOffset  = acc::off::Pick(0x64, 0x68);
+const size_t    kChargenCreatureLevelUpStatsOffset   = acc::off::Pick(0x2f8, 0x310);
+const size_t    kLevelUpStatsClassCountOffset        = acc::off::Same(0x32);
 // Eight chargen skills in both games (both ctors loop i < 8).
 const int       kSkillsCharGenSkillCount             = acc::off::Same(8);
 const size_t    kSkillsCharGenRemainingValueOffset   = acc::off::Pick(0x70c, 0x738);

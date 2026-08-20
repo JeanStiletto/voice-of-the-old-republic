@@ -30,6 +30,8 @@ const chargen_layout::PanelDesc kDesc = {
     /*count*/               kSkillsCharGenSkillCount,
     /*logTag*/              "Menus.ChargenSkill",
     /*selectedFieldName*/   "selected_skill",
+    /*creatureOffset*/      kSkillsCharGenChargenCreatureOffset,
+    /*creatureStatsOffset*/ kChargenCreatureLevelUpStatsOffset,
 };
 }  // namespace
 
@@ -65,6 +67,12 @@ typedef int (__thiscall* PFN_IsClassSkill)(void* this_, unsigned short skillIdx)
 int ReadEngineSkillCost(void* panel, int skillIdx) {
     if (!panel) return -1;
     if (skillIdx < 0 || skillIdx >= kSkillsCharGenSkillCount) return -1;
+    // Diagnostic only for now: the binding probe's verdict is logged so we
+    // can correlate it with faults, but it must NOT gate the call. Gating
+    // on it suppressed cost + description on a perfectly ordinary KOTOR 2
+    // level-up screen (log patch-20260819-221733) — the probe's reading of
+    // "not ready" does not match panels the engine itself drives happily.
+    chargen_layout::LogBindingWord(kDesc, panel, "pre-cost");
     int isClass = 0;
     __try {
         auto fn = reinterpret_cast<PFN_IsClassSkill>(

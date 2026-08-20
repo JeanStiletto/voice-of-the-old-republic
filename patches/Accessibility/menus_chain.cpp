@@ -54,6 +54,7 @@ namespace acc::menus::chain {
 
 ChainEntry g_chain[kMaxChainEntries];
 void*      g_chainPanel  = nullptr;
+uintptr_t  g_chainVtable = 0;
 int        g_chainIndex  = 0;
 int        g_chainCount  = 0;
 
@@ -260,7 +261,8 @@ void RebindChainPreserveIndex(void* panel) {
 }
 
 void InvalidateChain() {
-    g_chainPanel = nullptr;
+    g_chainPanel  = nullptr;
+    g_chainVtable = 0;
     g_chainIndex = 0;
     g_chainCount = 0;
     // Tabbed-panel state is intentionally NOT reset here. The chain panel and
@@ -281,8 +283,54 @@ void ValidateTabbedPanel() {
     ResetTabbedState();
 }
 
+// Read a panel/control's vtable word under SEH. 0 on a faulting read or a
+// null object — callers treat 0 as "cannot vouch for this object".
+uintptr_t ReadVtable(void* obj) {
+    if (!obj) return 0;
+    uintptr_t vt = 0;
+    __try {
+        vt = *reinterpret_cast<uintptr_t*>(obj);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+    return vt;
+}
+
+// Identity check for the panel the chain is bound to.
+//
+// IsPanelLive (below) asks "is this pointer in panels[]", which a freed
+// panel can pass again the moment the allocator hands its block to a NEW
+// panel — the pointer looks live because something else now lives there.
+// KOTOR 2 chargen hit exactly that: the Abilities panel was freed, we kept
+// dispatching its buttons (their is_active read as garbage — 2622030025 in
+// patch-20260819-221733), and the Skills panel was then allocated onto the
+// same block, inheriting a half-written creature field. The engine's own
+// handlers then walked that field and took the process down.
+//
+// Comparing the vtable we recorded at rebind against the one at that
+// address now catches the reuse-by-a-different-class case cheaply: same
+// pointer, different class, so the object is not what we bound.
+//
+// NOT covered: reuse by a panel of the SAME class. That needs a generation
+// token; this lands first because it is falsifiable on the known repro.
+bool ChainPanelIdentityHolds() {
+    if (!g_chainPanel || g_chainVtable == 0) return true;  // nothing vouched
+    uintptr_t now = ReadVtable(g_chainPanel);
+    if (now == g_chainVtable) return true;
+    acclog::Write("ChainIdentity",
+                  "STALE panel=%p bound-vtable=0x%p now=0x%p — the address "
+                  "was reused by a different panel class; invalidating "
+                  "instead of driving it",
+                  g_chainPanel, (void*)g_chainVtable, (void*)now);
+    return false;
+}
+
 void ValidateChainPanel() {
     if (!g_chainPanel) return;
+    if (!ChainPanelIdentityHolds()) {
+        InvalidateChain();
+        return;
+    }
     if (IsPanelLive(g_chainPanel)) return;
     acclog::Write("ValidateChainPanel", "%p not in panels[]; invalidating chain",
                   g_chainPanel);
@@ -1269,6 +1317,7 @@ for (int i = 0; i < g_chainCount; ++i) {
 
 void RebindChain(void* panel) {
     g_chainPanel  = panel;
+    g_chainVtable = ReadVtable(panel);
     g_chainIndex  = 0;
     g_chainCount  = 0;
     if (!panel) return;

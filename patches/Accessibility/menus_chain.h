@@ -168,6 +168,20 @@ void ValidateTabbedPanel();
 // Same panels[]-walk shape as ValidateTabbedPanel.
 void ValidateChainPanel();
 
+// True while the object at g_chainPanel is still the panel we bound to.
+//
+// The panels[]-membership test above cannot see a freed panel whose block
+// has been handed to a NEW panel: the pointer is in panels[] again, so it
+// looks live, while our cached chain entries still describe the old
+// object. This compares the vtable recorded at RebindChain time against
+// the one at that address now, which catches reuse by a different panel
+// class. Logs "ChainIdentity STALE" and returns false when it trips.
+//
+// Call before ANY code path that drives the bound panel — dispatching a
+// control's handler, warping the cursor onto it, stepping the chain.
+// Returns true when nothing was recorded (nothing to vouch for).
+bool ChainPanelIdentityHolds();
+
 
 // Detect Options-style layout: CSWGuiListBox at controls[0] with
 // controls.size > 0, followed by a contiguous cluster of buttons. Fills

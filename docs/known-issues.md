@@ -12,7 +12,45 @@ When an entry is closed, move it out of this file (the corresponding fix or comm
 
 ## Bugs
 
-_None currently._
+### Chain drives a freed panel when its address is reused — fix built 2026-08-20, awaiting test
+
+Two KOTOR 2 chargen runs crashed while arrowing the Fähigkeiten list
+(logs `patch-20260819-063818` / `patch-20260819-221733`, dump
+`swkotor2.exe.3664.dmp`). The access violation is in the engine, inside
+`CSWGuiSkillsCharGen::IsClassSkill`'s K2 twin, dereferencing the panel's
+`chargen_creature` (`+0x68`) — a field the constructor sets from its
+`param_2` and nothing rewrites.
+
+Root cause is NOT a chargen binding problem. The chain was still bound to
+the Attribute panel after the engine freed it: its buttons dispatched with
+`is_active` reading 2622030025 (freed memory), and the Skills panel was
+then allocated onto the same block, which is why it appeared at the
+Attribute panel's old address with a half-written creature field. The
+engine's own handlers then walked that field and died.
+
+`ValidateChainPanel` could not catch it: it tests membership in `panels[]`,
+which the address passes again as soon as a new panel occupies it.
+
+Evidence it is address reuse and not a chargen invariant: the healthy run
+`patch-20260820-105008` shows the Skills panel at its own address with
+`+0x68` valid and stable, costs resolving (Preis 2 / 2 / 1), descriptions
+and remaining points all correct — on the same screen the user has used
+for months.
+
+Fix: `ChainPanelIdentityHolds` records the panel's vtable at RebindChain
+time and compares it before anything drives that panel — the FireActivate
+dispatch, the cursor warp, and the chain step (which now rebinds instead).
+Trips loudly as `ChainIdentity STALE`.
+
+Known gap: reuse by a panel of the SAME class passes the vtable compare.
+That needs a generation token; the vtable version landed first because it
+is falsifiable on the known repro.
+
+Two dead ends worth not repeating: the crash is not a transient
+init race (the field stayed zero for 7s), and gating our announcements on
+a "binding ready" probe is wrong — it suppressed cost, description and
+warp on healthy panels while fixing nothing, because the probe was reading
+a symptom of the recycled memory.
 
 ## Unreproduced
 

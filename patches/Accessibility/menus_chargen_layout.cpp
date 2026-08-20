@@ -118,6 +118,7 @@ void SyncSelectedFromChainFocus(const PanelDesc& d) {
 
 void CaptureLabels(const PanelDesc& d, void* panel) {
     if (!IsPanel(d, panel)) return;
+    LogBindingWord(d, panel, "capture");
     auto* base = reinterpret_cast<unsigned char*>(panel);
     for (int i = 0; i < d.count; ++i) {
         void* labelCtl = base + d.labelsOffset +
@@ -134,9 +135,73 @@ void CaptureLabels(const PanelDesc& d, void* panel) {
     }
 }
 
+// Diagnostic: dump the panel's binding word and its neighbours. The
+// engine's IsClassSkill dereferences panel+creatureOffset, and a KOTOR 2
+// chargen run found it zero while the same screen had been announcing
+// costs correctly for months — so we need to see the raw value at sight
+// time and at every step before drawing any more conclusions from it.
+// Log-only; nothing branches on this.
+void LogBindingWord(const PanelDesc& d, void* panel, const char* when) {
+    if (d.creatureOffset == 0 || !panel) return;
+    auto* base = reinterpret_cast<unsigned char*>(panel);
+    unsigned int creature = 0xdeadbeef, stats = 0xdeadbeef;
+    unsigned int prev = 0xdeadbeef, next = 0xdeadbeef;
+    bool creatureRead = false, statsRead = false;
+    __try {
+        creature = *reinterpret_cast<unsigned int*>(base + d.creatureOffset);
+        prev     = *reinterpret_cast<unsigned int*>(base + d.creatureOffset - 4);
+        next     = *reinterpret_cast<unsigned int*>(base + d.creatureOffset + 4);
+        creatureRead = true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        creatureRead = false;
+    }
+    if (creatureRead && creature != 0) {
+        __try {
+            stats = *reinterpret_cast<unsigned int*>(
+                creature + d.creatureStatsOffset);
+            statsRead = true;
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            statsRead = false;
+        }
+    }
+    acclog::Trace(d.logTag,
+                  "binding@%s panel=%p +0x%x=0x%08x%s (prev=0x%08x "
+                  "next=0x%08x) stats=0x%08x%s",
+                  when, panel, (unsigned)d.creatureOffset, creature,
+                  creatureRead ? "" : " <read faulted>", prev, next,
+                  stats, statsRead ? "" : " <not read>");
+}
+
+bool IsBindingReady(const PanelDesc& d, void* panel) {
+    if (d.creatureOffset == 0) return true;   // panel has no probe
+    if (!panel) return false;
+    auto* base = reinterpret_cast<unsigned char*>(panel);
+    // Mirror the engine's own three reads (see the header). Reading them
+    // under SEH is the whole point: a survivable read here is proof the
+    // engine's identical read will survive too.
+    __try {
+        void* creature = *reinterpret_cast<void**>(base + d.creatureOffset);
+        if (!creature) return false;
+        void* stats = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(creature) + d.creatureStatsOffset);
+        if (!stats) return false;
+        volatile unsigned char classCount = *(reinterpret_cast<unsigned char*>(
+            stats) + kLevelUpStatsClassCountOffset);
+        (void)classCount;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    return true;
+}
+
 bool AnnounceDescription(const PanelDesc& d, void* panel, void* control) {
     int idx = IndexFromButton(d, panel, control);
     if (idx < 0) return false;
+    // Log the binding word before handing the panel to the engine's own
+    // populator. It is pure diagnostics: a zero here meant the panel's
+    // memory had been recycled under us, which the chain identity check
+    // (ChainPanelIdentityHolds) is what actually prevents now.
+    LogBindingWord(d, panel, "pre-description");
 
     typedef void (__thiscall* PFN_OnEnter)(void* this_, void* btn);
     __try {
