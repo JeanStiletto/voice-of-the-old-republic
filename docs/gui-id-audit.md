@@ -70,6 +70,22 @@ pointers confirm the mined offsets at runtime.
   K2 SkillInfoBox lb 098B9408 / BTN_OK 098B9840 (+0x68 / +0x4a0);
   WorkbenchItems, WorkbenchUpgrade and WorkbenchSelect all identifying by
   their new vtables.
+CODE-COMPLETE, TEST PENDING (2026-08-20): the chain's decorative filter —
+the last two Tier-1 sites, found by sweeping the id compares rather than
+the inventory (which never listed them). IsDecorativeControl decides what
+the chain lets the user land on, so a wrong match there either deletes a
+live button from navigation or keeps a dead one. Both now match by
+embedded member:
+  InGameCharacter btn_3dchar / btn_change1 / btn_change2 / btn_charleft /
+  btn_charright — was a per-game id set {1,64,65,66,67} on K1, {5} on K2.
+  Those two sets COLLIDE: K1's decorative 65/66 are K2's BTN_AUTO and
+  BTN_LEVELUP, real actions, so applying one game's list to the other
+  silently removes working buttons. The party four are K1-only (K2's
+  character_p.gui has neither portraits nor roster pagination).
+  PartySelection accept_button ("Hinzuf.") — was id 38, K1 only.
+With these, NO .gui id decides input or state anywhere in the patch. What
+remains is Tier 2 only: label text, listed at the end of the inventory.
+
 CAVEATS — three surfaces have decompile witnesses only, no runtime path:
 K1 script select (never opened in either round), K2 keymap, and K2 pazaak
 (the whole K2 minigame is generally untested, not just this change). Same
@@ -536,6 +552,22 @@ Tier 1 — drives input/state; convert to member offsets:
   close probe. Offsets + witnesses in the mined-offsets section. The
   panel's other controls (name label, select button, feats/desc
   listboxes, chart) were already member-based.
+- Chain decorative filter — InGameCharacter's five ornamental controls
+  and PartySelection's "Hinzuf." (menus_chain.cpp IsDecorativeControl).
+  Not on the original inventory; found by sweeping every remaining
+  kControlIdOffset compare after the batch above. STATUS: DONE (code)
+  2026-08-20, test pending. Mined from the ctors (K1 CSWGuiInGameCharacter
+  @0x006b0e40, K2 FUN_0084c3a0 via vtable 0x009A3E7C; K1
+  CSWGuiPartySelection @0x006bfa40): BTN_3DCHAR K1 +0x580c / K2 +0x3cb8,
+  BTN_CHANGE1 +0x4b2c, BTN_CHANGE2 +0x4cf0, BTN_CHARLEFT +0x4eb4,
+  BTN_CHARRIGHT +0x5078, PartySelection BTN_ACCEPT +0x38b8 (the last five
+  K1-only). Second witnesses: BTN_3DCHAR gets the CSWGuiSpeedButton vtable
+  written over it in both ctors, the party four sit in one contiguous
+  0x1c4-stride run, BTN_ACCEPT carries the OnToggled registration.
+  kPartySelectionAddBtnId is deleted, and IsDecorativeControl no longer
+  reads a control id at all. The comparisons go through acc::off::Ptr, so
+  the K1-only offsets answer nullptr on K2 rather than forming a wild
+  pointer (lesson_poison_offset_pointer_formation).
 - SkillInfoBox: kSkillInfoBoxLbSkillsId/TitleId/BtnOkId
   (menus_listbox.cpp). STATUS: DONE 2026-08-20 (tested).
   LB_SKILLS / LBL_MESSAGE / BTN_OK resolve via SkillInfoBoxPanel*

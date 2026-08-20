@@ -2193,3 +2193,58 @@ const size_t    kKeyMapPanelFilterButtonStride   = acc::off::Pick(0x1c4, 0x1d0);
 const size_t    kWorkbenchItemsPanelItemsListBoxOffset   = acc::off::Pick(0x64,  0x68);
 const size_t    kWorkbenchItemsPanelUpgradeButtonOffset  = acc::off::Pick(0x8a4, 0x8d8);
 const size_t    kWorkbenchItemsPanelBackButtonOffset     = acc::off::Pick(0xa68, 0xaa8);
+
+// CSWGuiInGameCharacter (character / character_p) — the five controls the
+// chain's decorative filter drops. K1 ctor @0x006b0e40 (named decompile +
+// listing), K2 ctor FUN_0084c3a0 (reached from the class vtable 0x009A3E7C;
+// it is the one that loads "character_p").
+//
+// Two witnesses each. BTN_3DCHAR: the tagged InitControl, plus BOTH games'
+// ctors overwriting its control vtable with CSWGuiSpeedButton right after
+// construction (K1 the 0.2/0.5 speed pair at member+0x1c4/+0x1c8, K2
+// in_ECX[0xf2e]). The four party controls: the tagged InitControl plus the
+// contiguous 0x1c4-stride run they sit in (change1, change2, charleft,
+// charright, then BTN_EXIT +0x523c and BTN_SCRIPTS +0x5400 continue it).
+//
+// The party four are KOTOR 1 only — K2's character_p.gui dropped the
+// portraits and the roster pagination, and its ctor loads no such tag. The
+// offsets poison there and acc::off::Ptr answers nullptr, which no live
+// control can equal, so the filter simply never fires on K2.
+//
+// Historical ids, all K1: BTN_3DCHAR 1 (K2 renumbers it to 5), BTN_CHANGE1
+// 64, BTN_CHARRIGHT 65, BTN_CHARLEFT 66, BTN_CHANGE2 67.
+const size_t    kCharacterPanel3DCharButtonOffset      = acc::off::Pick(0x580c, 0x3cb8);
+const size_t    kCharacterPanelChangeParty1ButtonOffset = acc::off::Kotor1Only(0x4b2c);
+const size_t    kCharacterPanelChangeParty2ButtonOffset = acc::off::Kotor1Only(0x4cf0);
+const size_t    kCharacterPanelCharLeftButtonOffset     = acc::off::Kotor1Only(0x4eb4);
+const size_t    kCharacterPanelCharRightButtonOffset    = acc::off::Kotor1Only(0x5078);
+
+// CSWGuiPartySelection (partyselection.gui) BTN_ACCEPT — the "Hinzuf." button
+// the chain drops, because Enter on a portrait already runs the same
+// OnToggled handler. K1 ctor @0x006bfa40: tagged InitControl, plus the
+// `bit_flags &= ~4` + AddEvent(0x27, OnToggled) pair, plus the 0x1c4 stride
+// from BTN_BACK +0x36f4 (BTN_DONE +0x28b0 sits apart).
+//
+// KOTOR 1 only, matching what the id constant it replaces already encoded:
+// K2's partyselect_p.gui gives every portrait its own BTN_NPCn and has no
+// single add button, so the filter was already inert there.
+// Historical id: 38.
+const size_t    kPartySelectionPanelAcceptButtonOffset  = acc::off::Kotor1Only(0x38b8);
+
+// CSWGuiMainMenu BTN_WARP — the developer module-warp button, which both
+// games leave in the title screen's layout. It opens a raw module list
+// (PopulateModules / OnModulePicked) that jumps straight into any area of
+// the game by resref, bypassing the story entirely; nothing about it is
+// meaningful to a player, and its label is untranslated. The chain drops it.
+//
+// K1 ctor @0x0067c4c0: the ctor-bank LEA held in EDI through both AddEvent
+// registrations of OnWarpButtonPressed (events 0x27 and 0x2d), one button
+// stride after BTN_EXIT +0x1084.
+// K2 ctor FUN_00880740 + its LoadFromLayout FUN_00881970: the tagged
+// InitControl for "BTN_WARP", plus the ctor registering handler
+// FUN_00883d70 on that same member (BTN_EXIT is +0x5550 there).
+//
+// Both ctors also clear the control's visible bit on it — which is why the
+// button is invisible on screen yet still sits in panel.controls[] for the
+// chain to find.
+const size_t    kMainMenuWarpButtonOffset = acc::off::Pick(0x1248, 0x5c90);

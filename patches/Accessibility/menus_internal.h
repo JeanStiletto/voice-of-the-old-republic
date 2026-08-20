@@ -462,17 +462,6 @@ void* WorkbenchItemsPanelBackButton(void* panel);     // BTN_BACK
 
 }  // namespace acc::menus::detail
 
-// partyselection.gui BTN_NPC ("Hinzuf." / "Add") — the mouse flow's
-// commit button: click a portrait to highlight it, then click this to
-// toggle that companion in or out of the party. Keyboard nav never needs
-// it because Enter on the portrait itself already runs the engine's
-// OnToggled (see menus_chain_input.cpp's isPartyAddBlocked branch, which
-// rides that same path), so it is filtered from the chain. KOTOR 1 only:
-// K2's partyselect_p.gui has no single add button (every portrait is its
-// own BTN_NPCn), so the K2 value matches no control and the filter is
-// inert there.
-const int kPartySelectionAddBtnId = acc::game::IsKotor2() ? -1 : 38;  // BTN_NPC
-
 // CSWGuiInGameItemEntry (LB_ITEMS row) — field6_0x394 bit-field after the
 // embedded CSWGuiButton + item id + borders + text. OnEnterSlot tags the
 // currently-equipped row via SetItem(id, /*param_2=*/1, 0); SetItem packs

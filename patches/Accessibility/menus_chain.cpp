@@ -582,26 +582,29 @@ if (IdentifyPanel(panel) == PanelKind::WorkbenchUpgrade) {
 // adding a new entry is one line per kind.
 //
 // Currently registered:
-//   InGameCharacter id=1  (btn_3dchar)   — interaction button for the
-//     3D character model rotator. Image-only with no caption; mouse-
-//     drives the model spin which isn't a screen-reader-useful action.
-//     Without the filter it appears as "control 1" in the chain.
-//   InGameCharacter id=64/67 (btn_change1/btn_change2) — party-member
-//     switch portraits. The engine cycles party leader on Tab, which
-//     re-binds the panel to the new leader and announces the name via
+//   InGameCharacter btn_3dchar — interaction button for the 3D character
+//     model rotator. Image-only with no caption; mouse-drives the model
+//     spin, which isn't a screen-reader-useful action. Without the filter
+//     it appears as "control N" in the chain.
+//   InGameCharacter btn_change1/btn_change2 — party-member switch
+//     portraits. The engine cycles party leader on Tab, which re-binds the
+//     panel to the new leader and announces the name via
 //     party_leader_announce — that covers the same gesture and works
 //     in-world too, so these portrait buttons are redundant.
-//   InGameCharacter id=65/66 (btn_charright/btn_charleft) — pagination
-//     arrows over the 9-slot NPC roster. Useless in KOTOR 1: max
-//     active party is 3 (PC + 2 NPCs), and the 2 portrait slots already
-//     cover both companions.
-//   (All charsheet ids above are KOTOR 1; the K2 set — just the moved
-//   model rotator — lives in the per-game branch below.)
+//   InGameCharacter btn_charleft/btn_charright — pagination arrows over
+//     the 9-slot NPC roster. Useless in KOTOR 1: max active party is 3
+//     (PC + 2 NPCs), and the 2 portrait slots already cover both
+//     companions. KOTOR 1 only; the K2 panel has neither.
+//   PartySelection accept_button ("Hinzuf.") — the mouse flow's second
+//     step; Enter on a portrait runs the same OnToggled directly.
+//   MainMenu warp_button — the developer module-warp button both games
+//     ship in the title screen. It jumps into an arbitrary module by
+//     resref; there is nothing here for a player, and the engine already
+//     hides it visually.
+//   All are matched by embedded member, never by .gui id — see below.
 bool IsDecorativeControl(void* panel, void* c,
                          const char* closeCaption, bool haveCloseCaption) {
     PanelKind pk = IdentifyPanel(panel);
-    int cid = *reinterpret_cast<int*>(
-        reinterpret_cast<unsigned char*>(c) + kControlIdOffset);
     // Pazaak deck builder: drop the overlay value/count/title labels and
     // the unaddable (zero-owned) available cards.
     if (acc::menus::pazaakdeck::IsChainDecorative(panel, c)) return true;
@@ -637,10 +640,18 @@ bool IsDecorativeControl(void* panel, void* c,
     // BTN_LEVELUP, real actions that must stay in the chain (mined from K2
     // character_p.gui 2026-08-02; override copy id-identical to gui.bif).
     if (pk == PanelKind::InGameCharacter) {
-        if (acc::game::IsKotor2()) {
-            if (cid == 5) return true;  // BTN_3DCHAR (model rotator)
-        } else if (cid == 1 || cid == 64 || cid == 65 || cid == 66 ||
-                   cid == 67) {
+        // Members, not .gui ids. The ids were per game and COLLIDED across
+        // them: K1's decorative 65/66 are K2's BTN_AUTO and BTN_LEVELUP,
+        // real actions that must stay navigable — so an id set applied to
+        // the wrong game (or to a variant character.gui) silently deletes a
+        // live button from the chain. The four party controls exist on K1
+        // only; their offsets poison on K2 and acc::off::Ptr answers
+        // nullptr, which no live control can equal.
+        if (c == acc::off::Ptr(panel, kCharacterPanel3DCharButtonOffset) ||
+            c == acc::off::Ptr(panel, kCharacterPanelChangeParty1ButtonOffset) ||
+            c == acc::off::Ptr(panel, kCharacterPanelChangeParty2ButtonOffset) ||
+            c == acc::off::Ptr(panel, kCharacterPanelCharLeftButtonOffset) ||
+            c == acc::off::Ptr(panel, kCharacterPanelCharRightButtonOffset)) {
             return true;
         }
     }
@@ -715,7 +726,16 @@ bool IsDecorativeControl(void* panel, void* c,
     // drives the engine's OnToggled directly, so this button is the
     // mouse flow's redundant second step — landing on it after every
     // portrait just doubles the path to OK.
-    if (pk == PanelKind::PartySelection && cid == kPartySelectionAddBtnId) {
+    if (pk == PanelKind::PartySelection &&
+        c == acc::off::Ptr(panel, kPartySelectionPanelAcceptButtonOffset)) {
+        return true;
+    }
+    // MainMenu BTN_WARP. Both ctors clear its visible bit, so a sighted
+    // player never sees it — but it stays in panel.controls[], and the chain
+    // does not honour that bit, so keyboard nav was the only way to reach a
+    // debug jump into an arbitrary module.
+    if (pk == PanelKind::MainMenu &&
+        c == acc::off::Ptr(panel, kMainMenuWarpButtonOffset)) {
         return true;
     }
     // Inventory "Verwenden" (useitem_button). Same redundancy as the
