@@ -33,6 +33,30 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>v0.7.8.1</h2>
+
+<h3>Bug fixes:</h3>
+
+- The inventory lists your items again on the first visit after they
+  change. The game builds that list one frame after the screen appears,
+  so opening the inventory just after looting or dropping something could
+  land on an empty list — leaving the category buttons (All, Weapons,
+  Armor...) as the only thing arrow keys could reach, for the whole
+  visit. Pressing a category happened to rebuild the list, which is why
+  the items reappeared out of nowhere. The screen now builds the list
+  itself when it finds it empty.
+- The inventory shows your item when you are carrying only one. A list
+  holding a single row was treated as a description blob rather than a
+  list, so a one-item pack navigated as an empty one — the state the
+  opening hour of KOTOR 2 is spent in.
+- Items whose name the game leaves blank on the row now speak their own
+  name instead of the screen title. Such a row used to be captioned by
+  whatever text sat nearest to it on screen, and since a list row's
+  position is measured inside its list rather than on the screen, that
+  search matched the heading: one KOTOR 2 item announced itself as
+  "Inventory, 50 charges" on every visit. The name now comes from the
+  item the row points at, which also covers container loot and shop rows.
+
 <h2>v0.7.8</h2>
 
 <h3>Screens no longer break on installs with modified layout files:</h3>

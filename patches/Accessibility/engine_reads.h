@@ -244,6 +244,19 @@ int ReadItemRowStackCount(void* rowControl);
 int ReadItemCharges(void* item);
 int ReadItemRowCharges(void* rowControl);
 
+// Name an item row from the ITEM it points at, not from its own caption.
+// The engine normally writes the localised name into the row control and
+// every extractor reads it there; a row whose caption comes up empty used
+// to fall through to the spatial sibling-label search, which for a listbox
+// row can only ever match something on the panel behind it (KOTOR 2
+// announced one inventory item as the screen title "Inventory" -
+// userlogs/daninventoryequipmentbroken077, three separate visits).
+// Resolves the row's obj_id through GetObjectDisplayNameByHandle, so it
+// answers for both row vtables (inventory/container and store) and for
+// either handle namespace. False when the control is not an item row, the
+// handle is a sentinel, or the name does not resolve.
+bool ReadItemRowName(void* rowControl, char* outBuf, size_t bufSize);
+
 // Raw stack_size for a resolved CSWSItem* (0 on fault / infinite stock).
 // The row/handle wrappers above are preferred for menu rows; this is for
 // callers that already hold the item* (store suffix, action-menu items).

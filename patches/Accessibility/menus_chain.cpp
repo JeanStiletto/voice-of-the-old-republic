@@ -905,6 +905,17 @@ void AppendListBoxChildren(void* panel, void* c, void* equipPickerLb,
             IdentifyPanel(panel) == PanelKind::InGameJournal &&
             c == reinterpret_cast<unsigned char*>(panel) +
                      kJournalItemsListBoxOffset;
+        // The inventory's item list needs the same exemption, for the same
+        // reason: with exactly ONE item carried, the size>1 test below left
+        // the row out and the screen offered nothing but its filter strip.
+        // "You own one thing" is a real state — the opening hour of KOTOR 2
+        // is spent in it — and the generic size==1 rule was written for
+        // description blobs (a listbox holding one label), not for a list
+        // that happens to be short.
+        const bool isInventoryItemsLb =
+            IdentifyPanel(panel) == PanelKind::InGameInventory &&
+            c == reinterpret_cast<unsigned char*>(panel) +
+                     kInventoryItemListBoxOffset;
         // Sort anchor for every row this listbox contributes. Row extents are
         // listbox-local content coordinates that keep climbing one row-pitch
         // at a time whether or not the row is inside the viewport, so they are
@@ -926,7 +937,8 @@ void AppendListBoxChildren(void* panel, void* c, void* equipPickerLb,
             reinterpret_cast<unsigned char*>(c) + kListBoxControlsOffset);
         if (lbList && lbList->data) {
             if (lbList->size > 1 ||
-                (isJournalItemsLb && lbList->size == 1)) {
+                ((isJournalItemsLb || isInventoryItemsLb) &&
+                 lbList->size == 1)) {
                 // Cap the per-listbox walk at the chain bound — AppendChain
                 // Entry self-stops there anyway, so anything past it would
                 // spin the loop for nothing. Using kMaxChainEntries (not a

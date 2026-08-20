@@ -717,7 +717,7 @@ const char* TryKeyBindingRow(void* control, void* owner,
 //    so non-virtual controls in InGameCharacter still hit the
 //    standard ladder.
 //
-//    Owner is resolved here rather than reusing step 9 resolution: that
+//    Owner is resolved here rather than reusing step 10 resolution: that
 //    one runs after the standard extract sections and we need the owner
 //    now. Cost is one extra FindOwningPanel call when ownerPanel is null
 //    (announce-control path).
@@ -854,7 +854,7 @@ const char* TryLabelHilight(void* control, char* outBuf, size_t bufSize) {
 //    we substitute the localized "Video volume" string for the label.
 //
 //    `owner` is FromControl's ResolveOwnerPanel result, for the same reason
-//    TrySiblingLabel (step 9) takes it: the g_currentPanel global this used
+//    TrySiblingLabel (step 10) takes it: the g_currentPanel global this used
 //    to read is the panel that last fired SetActiveControl, which is NOT the
 //    panel holding the control whenever one is pushed on top without firing
 //    it. KOTOR 2's Soundoptionen is exactly that — a modal over the options
@@ -2170,7 +2170,50 @@ const char* TryPortraitCharGenArrow(void* control, void* owner,
     return source;
 }
 
-// 9. Sibling-label fallback for chain-navigable controls with no text.
+// True when `control` sits directly in panel.controls[]. Distinguishes a
+// panel-direct widget (screen-space extent, comparable with its siblings)
+// from a listbox row (listbox-local content extent, comparable with
+// nothing outside its own list). Same 256 cap the chain walk and
+// FindSiblingLabel use, so the three agree on what "on this panel" means.
+bool IsPanelDirectChild(void* panel, void* control) {
+    if (!panel || !control) return false;
+    __try {
+        auto* list = reinterpret_cast<CExoArrayList*>(
+            reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
+        if (!list || !list->data) return false;
+        int n = list->size > 256 ? 256 : list->size;
+        for (int i = 0; i < n; ++i) {
+            if (list->data[i] == control) return true;
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {}
+    return false;
+}
+
+// 9. Item-row name, read from the ITEM rather than the row control.
+//
+//    Inventory / container / store rows normally carry the localised name
+//    in their own CExoString and TryButton (step 3) reads it there. When
+//    that string comes up empty the row still knows which object it was
+//    built for, so ask the engine for that object's name instead of
+//    guessing from the panel behind it.
+//
+//    Placed immediately before the sibling-label fallback, and that
+//    ordering is the point: a listbox row's extent is listbox-LOCAL
+//    content space, so a spatial search across the panel's controls can
+//    only ever match something unrelated. KOTOR 2 captioned an inventory
+//    item with the screen title "Inventory" that way, on every visit
+//    (userlogs/daninventoryequipmentbroken077).
+const char* TryItemEntryRow(void* control, char* outBuf, size_t bufSize) {
+    if (!acc::engine::ReadItemRowName(control, outBuf, bufSize)) {
+        return nullptr;
+    }
+    if (outBuf[0] == '\0') return nullptr;
+    acclog::Trace("Menus.ItemRow",
+                  "control=%p named from item: \"%s\"", control, outBuf);
+    return "itemrow-name";
+}
+
+// 10. Sibling-label fallback for chain-navigable controls with no text.
 //    Image-only icon buttons (vtable=0x0073E658 in CSWGuiInGameMenu —
 //    Equipment / Inventory / Character / Map / Abilities / Journal /
 //    Options / Messages icons) genuinely have no inline text. Their
@@ -2202,6 +2245,18 @@ const char* TryPortraitCharGenArrow(void* control, void* owner,
 //    is the stray "1" entry the KOTOR 2 chargen Attribute and
 //    Fähigkeiten chains grew between their 4th, 5th and 6th rows
 //    (patch-20260803-095222.log, chain indices 4 and 6 on both panels).
+//
+//    Gated on IsPanelDirectChild as well, and that gate is what keeps the
+//    search meaningful at all: both callees compare GetControlCenter
+//    values against the panel's own controls, and only a panel-direct
+//    control has a screen-space extent to compare. A LISTBOX ROW's extent
+//    is listbox-local content space that starts near the origin and
+//    climbs one row-pitch at a time, so matching it against panel labels
+//    is a coordinate-system error - it pairs whatever label happens to
+//    sit near the top-left of the screen. That is exactly how a KOTOR 2
+//    inventory row with an empty caption came out as the panel title
+//    "Inventory"; step 9 above now names such a row from its item, and
+//    this gate stops the spatial search from firing on rows at all.
 const char* TrySiblingLabel(void* control, void* owner,
                             char* outBuf, size_t bufSize) {
     const char* source = nullptr;
@@ -2212,6 +2267,7 @@ const char* TrySiblingLabel(void* control, void* owner,
     // ResolveOwnerPanel already applied that filter to `owner`.
     void* panel = owner;
     if (panel && IsChainNavigable(control) &&
+        IsPanelDirectChild(panel, control) &&
         !IsCycleFlankerArrow(panel, control)) {
         char label[256];
         if (FindSiblingLabel(panel, control,
@@ -2419,6 +2475,7 @@ const char* FromControl(void* control,
     if (!source) source = TryWorkbenchCreateItemsButton(control, owner, outBuf, bufSize);
     if (!source) source = TryClassSelectionIcon(control, owner, outBuf, bufSize);
     if (!source) source = TryPortraitCharGenArrow(control, owner, outBuf, bufSize);
+    if (!source) source = TryItemEntryRow(control, outBuf, bufSize);
     if (!source) source = TrySiblingLabel(control, owner, outBuf, bufSize);
 
 

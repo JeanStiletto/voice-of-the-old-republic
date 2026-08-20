@@ -21,6 +21,7 @@
 #include <cstring>
 
 #include "engine_app.h"     // GetServerApp
+#include "engine_area.h"    // GetObjectDisplayNameByHandle
 #include "log.h"
 #include "engine_offsets_select.h"
 
@@ -266,18 +267,25 @@ bool IsItemEntryRow(void* control) {
            v == kVtableCSWGuiStoreItemEntry;
 }
 
-}  // namespace
-
-int ReadItemRowStackCount(void* rowControl) {
+// obj_id the row was built for. Same offset on both row vtables. 0 when the
+// control is not a row or the read faults, which every caller treats as
+// "nothing to resolve".
+uint32_t ReadItemRowHandle(void* rowControl) {
     if (!IsItemEntryRow(rowControl)) return 0;
-    uint32_t handle = 0;
     __try {
-        handle = *reinterpret_cast<uint32_t*>(
+        return *reinterpret_cast<uint32_t*>(
             reinterpret_cast<unsigned char*>(rowControl) +
-            kStoreItemEntryObjIdOffset);  // same offset on both row vtables
+            kStoreItemEntryObjIdOffset);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return 0;
     }
+}
+
+}  // namespace
+
+int ReadItemRowStackCount(void* rowControl) {
+    uint32_t handle = ReadItemRowHandle(rowControl);
+    if (handle == 0) return 0;
     void* item = ResolveItemFromClientHandle(handle);
     if (!item) return 0;
     return ReadItemStackSize(item);
@@ -289,18 +297,31 @@ int ReadItemCharges(void* item) {
 }
 
 int ReadItemRowCharges(void* rowControl) {
-    if (!IsItemEntryRow(rowControl)) return -1;
-    uint32_t handle = 0;
-    __try {
-        handle = *reinterpret_cast<uint32_t*>(
-            reinterpret_cast<unsigned char*>(rowControl) +
-            kStoreItemEntryObjIdOffset);  // same offset on both row vtables
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return -1;
-    }
+    uint32_t handle = ReadItemRowHandle(rowControl);
+    if (handle == 0) return -1;
     void* item = ResolveItemFromClientHandle(handle);
     if (!item) return -1;
     return ReadItemCharges(item);
+}
+
+bool ReadItemRowName(void* rowControl, char* outBuf, size_t bufSize) {
+    if (!outBuf || bufSize < 2) return false;
+    outBuf[0] = '\0';
+    uint32_t handle = ReadItemRowHandle(rowControl);
+    if (handle == 0) return false;
+    // Engine's universal name accessor - localised, and it crosses the
+    // client/server handle namespaces itself, which matters here because
+    // the row stores a CLIENT handle while most of our name reads start
+    // from a server object.
+    if (!GetObjectDisplayNameByHandle(handle, outBuf, bufSize) ||
+        outBuf[0] == '\0') {
+        acclog::Write("Menus.ItemRow",
+                      "row=%p handle=0x%08x name-resolve missed",
+                      rowControl, handle);
+        outBuf[0] = '\0';
+        return false;
+    }
+    return true;
 }
 
 int ReadItemStack(void* item) {
