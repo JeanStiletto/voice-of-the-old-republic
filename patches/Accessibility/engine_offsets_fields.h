@@ -559,6 +559,34 @@ const size_t    kAbilitiesCharGenDescriptionListBoxOffset      = acc::off::Pick(
 // the name label (+0xab0, via its text_params at +0xf0) and BTN_SELECT.
 const size_t    kFeatsCharGenNameLabelOffset        = acc::off::Pick(0xbac, 0xab0);
 const size_t    kFeatsCharGenSelectButtonOffset     = acc::off::Pick(0x1238, 0x1168);
+// The three chargen buttons the keyboard flow activates (gui-id audit,
+// mined 2026-08-18). Both ctors call InitControl in the order
+// ACCEPT / RECOMMENDED / BACK / SELECT while laying the members out in
+// memory as accept < back < recommended < select, one button stride
+// apart (K1 0x1c4, K2 0x1d0) — the run ends on the already-shipped,
+// runtime-proven SELECT member, which is the layout cross-check.
+//
+// K1 ctor CSWGuiFeatsCharGen::CSWGuiFeatsCharGen @0x006f3d60 (named
+// symbol): the decompile names each member (accept_button /
+// reccomended_button / back_button) and the listing's tagged-InitControl
+// LEA pairs give the raw offsets. Second witness: the ctor's tail clears
+// bit_flags &= ~4 at member+0x44 and registers an AddEvent(0x27) handler
+// on each of the three — CSWGuiPanel::OnXButtonPressed on accept,
+// OnYButtonPressed on recommended, OnBButtonPressed on back, i.e. the
+// same pad semantics K2 binds explicitly below.
+//
+// K2 ctor FUN_00909E00 decompiles WITH tag strings; offsets are dword
+// indices x4 off in_ECX (BTN_ACCEPT 0x2fe, BTN_BACK 0x372,
+// BTN_RECOMMENDED 0x3e6). Second witness: the same flags-clear +
+// AddEvent(0x27) triple at member+0x48, third witness: the gamepad binds
+// 'a' (0x61) on accept, 'b' (0x62) on back, 'y' (0x79) on recommended —
+// the same corroboration the powers level-up and save/load rounds used.
+// The same K2 ctor independently reproduces four constants already
+// shipped here (LBL_NAME 0xab0, BTN_SELECT 0x1168, LB_FEATS 0x15c8,
+// LB_DESC 0x18b8), which validates the x4 dword-index reading.
+const size_t    kFeatsCharGenAcceptButtonOffset      = acc::off::Pick(0xcec, 0xbf8);
+const size_t    kFeatsCharGenBackButtonOffset        = acc::off::Pick(0xeb0, 0xdc8);
+const size_t    kFeatsCharGenRecommendedButtonOffset = acc::off::Pick(0x1074, 0xf98);
 const size_t    kFeatsCharGenFeatsListBoxOffset     = acc::off::Pick(0x13fc, 0x15c8);
 const size_t    kFeatsCharGenDescriptionListBoxOffset = acc::off::Pick(0x16dc, 0x18b8);
 

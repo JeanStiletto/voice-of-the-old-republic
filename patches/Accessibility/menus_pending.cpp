@@ -30,7 +30,7 @@
 #include "menus_crafting.h"  // DispatchRowCommit for CraftRowCommit
 #include "menus_galaxymap.h"        // DispatchInput for GalaxyInput
 #include "minigame_pazaak.h"                 // DispatchWagerInput for WagerInput
-#include "menus_internal.h"  // PowersPanelAccept/BackButton — chargen sub-screen close
+#include "menus_internal.h"  // PowersPanel*/FeatsPanel* Accept/Back — chargen sub-screen close
 #include "menus_inventory.h"  // filter list-rebuild repair + item-row selection sync
 #include "menus_journal.h"   // Sort/Swap post-activate list-rebuild repair
 #include "menus_listbox.h"   // ClearWorkbenchUpgradeArmLatch (post-slot-select cleanup)
@@ -495,11 +495,22 @@ void Drain(void* gm) {
                                     chainPanel) ||
                         op.a == acc::menus::detail::PowersPanelBackButton(
                                     chainPanel);
+                } else if (acc::menus::chargen_feats::IsChargenFeatsPanel(
+                               chainPanel)) {
+                    // Engine-member compare (gui-id audit), same as the
+                    // powers panel above: the feats panel's Accept/Back
+                    // are ctor-bound embedded members, so pointer
+                    // equality is exact. The id 11/12 probe was doubly
+                    // wrong on KOTOR 2 — it numbers Accept=10/Back=9,
+                    // and its id 12 is LB_FEATS, a listbox.
+                    chargenSubClosing =
+                        op.a == acc::menus::detail::FeatsPanelAcceptButton(
+                                    chainPanel) ||
+                        op.a == acc::menus::detail::FeatsPanelBackButton(
+                                    chainPanel);
                 } else if (acc::menus::chargen_attr::IsChargenAttributesPanel(
                                chainPanel) ||
                            acc::menus::chargen_skills::IsChargenSkillsPanel(
-                               chainPanel) ||
-                           acc::menus::chargen_feats::IsChargenFeatsPanel(
                                chainPanel)) {
                     // Still id-based (11/12 = Annehmen/Abbrechen by the
                     // InGameLevelUp sub-screen convention) until those

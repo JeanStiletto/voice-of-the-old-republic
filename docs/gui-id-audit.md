@@ -41,7 +41,20 @@ runtime witness — it keeps its two decompile witnesses (tagged
 InitControl + the OnBButtonPressed registration, plus K2's gamepad 'b'
 bind). Same precedent as the crafting chemical panel: if a log ever
 shows GuiIdMismatch/Container.BTN_CANCEL, look there first.
-NEXT: pazaak, keymap, chargen feats. NEW FINDING (see
+DONE + tested (2026-08-20): chargen feats (Talente) — K1 round 2026-08-19
+(all flows clean), K2 round log patch-20260820-105858: no Feats.*
+GuiIdMismatch, 32-row chart rebuild, cell focus + OnFeatPicked (status
+0->4), button rows announcing their real labels, Enter committing through
+the resolved member — and the logged Enter targets confirm two of the
+three mined K2 offsets at runtime (BTN_RECOMMENDED = panel + 0xf98,
+BTN_ACCEPT = panel + 0xbf8), with the K2 button ORDER confirmed too (End
+lands on Empfohlen, Up on OK — the mirrored K2 layout). CAVEAT: every exit
+in both rounds went through Enter/BTN_ACCEPT, so BTN_BACK has no runtime
+witness — it keeps its three decompile witnesses (tagged InitControl, the
+bit_flags clear + AddEvent registration, and K2's gamepad 'b' bind). Same
+precedent as the container BTN_CANCEL: if a log ever shows
+GuiIdMismatch/Feats.BTN_BACK, look there first.
+NEXT: pazaak, keymap, skill info box, script select. NEW FINDING (see
 inventory): the loose WorkbenchSelect structural fallback misidentifies
 level-up sub-screens in BOTH games.
 
@@ -298,6 +311,48 @@ then the listbox, then ok / cancel / giveitems):
   BTN_GIVEITEMS 4, BTN_CANCEL 5), so one tripwire id per control covers both
   games.
 
+CSWGuiFeatsCharGen (mined 2026-08-18; K1 ctor
+CSWGuiFeatsCharGen::CSWGuiFeatsCharGen @0x006f3d60 — named symbol whose
+decompile names each member (accept_button / reccomended_button /
+back_button) while the listing's tagged-InitControl LEA pairs give the
+raw offsets; K2 ctor FUN_00909E00 — decompiles WITH tag strings, offsets
+are dword indices x4 off in_ECX):
+- Panel identity was ALREADY vtable-based (kVtableCSWGuiFeatsCharGen);
+  this round converted control resolution only. The panel's name label,
+  select button, both listboxes and the skill-flow chart were already
+  member offsets — only the three activatable buttons were id-driven.
+- Member table (K1 / K2): BTN_ACCEPT +0xcec/+0xbf8, BTN_BACK
+  +0xeb0/+0xdc8, BTN_RECOMMENDED +0x1074/+0xf98. Both ctors call
+  InitControl in the order accept / recommended / back / select while
+  laying the members out accept < back < recommended < select, one button
+  stride apart (K1 0x1c4, K2 0x1d0) — the run ends on the already-shipped,
+  runtime-proven BTN_SELECT member, which is the layout cross-check.
+- Second witnesses both games: each button gets the ctor's
+  `bit_flags &= ~4` clear (K1 member+0x44, K2 member+0x48) plus its
+  AddEvent(0x27) registration — K1 binds CSWGuiPanel::OnXButtonPressed to
+  accept, OnYButtonPressed to recommended, OnBButtonPressed to back; K2
+  binds the pad keys explicitly ('a' 0x61 accept, 'b' 0x62 back, 'y' 0x79
+  recommended). Back and recommended carry the same pad semantics in both
+  games.
+- Third cross-check (K2): the same ctor independently reproduces four
+  constants already shipped — LBL_NAME +0xab0, BTN_SELECT +0x1168,
+  LB_FEATS +0x15c8, LB_DESC +0x18b8 — which validates reading its dword
+  indices x4.
+- Resolvers: FeatsPanelAcceptButton / FeatsPanelBackButton /
+  FeatsPanelRecommendedButton in menus_internal.cpp. The per-game id
+  tables in menus_chargen_feats.cpp are gone: ButtonRow now carries a
+  resolver function pointer instead of an id, and the focus log line
+  reports the tag + resolved target instead of the id. kBtnBackId is
+  deleted; Enter and Esc both go through QueueControlActivate.
+- menus_pending's chargen-sub-close probe now does pointer equality
+  against FeatsPanelAccept/BackButton for this panel (the id 11/12 probe
+  was doubly wrong on K2: it numbers Accept=10/Back=9, and its id 12 is
+  LB_FEATS, a listbox). The id probe remains for attributes and skills
+  until their batches.
+- NOTE: QueueButtonByIdActivate is NOT dead yet — menus_listbox.cpp still
+  uses it for the skill info box, workbench items and script select, all
+  still on the to-mine list.
+
 ## Inventory (audit of all id-trusting sites)
 
 Tier 1 — drives input/state; convert to member offsets:
@@ -406,8 +461,13 @@ Tier 1 — drives input/state; convert to member offsets:
   menus_extract.cpp). STATUS: to mine.
 - Keymap screen: kIdListBox/Default/Accept/Cancel/Filter* —
   K1-only screen (menus_keymap.cpp). STATUS: to mine.
-- Chargen feats + powers: kBtnBackId, buttonId table
-  (menus_chargen_feats.cpp). STATUS: to mine.
+- Chargen feats: kBtnBackId, buttonId table
+  (menus_chargen_feats.cpp). STATUS: DONE — tested both games (K1
+  2026-08-19, K2 2026-08-20). All three buttons resolve via FeatsPanel*
+  (menus_internal.cpp) — announce, Enter, Esc, and the menus_pending
+  close probe. Offsets + witnesses in the mined-offsets section. The
+  panel's other controls (name label, select button, feats/desc
+  listboxes, chart) were already member-based.
 - SkillInfoBox: kSkillInfoBoxLbSkillsId/TitleId (menus_listbox.cpp).
   STATUS: to mine.
 - Script select (AI state): kScriptSelectLbAiStateId. STATUS: to mine.

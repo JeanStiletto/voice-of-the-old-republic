@@ -414,6 +414,31 @@ void* acc::menus::detail::ContainerPanelGiveItemsButton(void* panel) {
                                    "Container.BTN_GIVEITEMS");
 }
 
+// CSWGuiFeatsCharGen resolvers (see menus_internal.h). The tripwire ids
+// are each game's own ftchrgen numbering: K1 9/11/12 =
+// Recommended/Accept/Back, K2 9/10/11 = Back/Accept/Recommended. K1's
+// BTN_BACK id 12 lands on K2's LB_FEATS listbox, which is what made the
+// old id table mis-fire on KOTOR 2 (patch-20260803-011930.log: reading a
+// listbox as a button spoke a stray str_ref and Enter activated the
+// listbox instead of Abbrechen).
+void* acc::menus::detail::FeatsPanelAcceptButton(void* panel) {
+    return PanelMemberWithTripwire(panel, kFeatsCharGenAcceptButtonOffset,
+                                   acc::game::IsKotor2() ? 10 : 11,
+                                   "Feats.BTN_ACCEPT");
+}
+
+void* acc::menus::detail::FeatsPanelBackButton(void* panel) {
+    return PanelMemberWithTripwire(panel, kFeatsCharGenBackButtonOffset,
+                                   acc::game::IsKotor2() ? 9 : 12,
+                                   "Feats.BTN_BACK");
+}
+
+void* acc::menus::detail::FeatsPanelRecommendedButton(void* panel) {
+    return PanelMemberWithTripwire(panel, kFeatsCharGenRecommendedButtonOffset,
+                                   acc::game::IsKotor2() ? 11 : 9,
+                                   "Feats.BTN_RECOMMENDED");
+}
+
 // Workbench-upgrade slot membership via the panel's embedded button run
 // (one contiguous array in both games — see the kUpgradePanelSlotButtons
 // note in engine_offsets_fields.h). Returns the ARRAY index (identity /

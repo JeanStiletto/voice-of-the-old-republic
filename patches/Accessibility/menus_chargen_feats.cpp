@@ -13,7 +13,7 @@
 #include "engine_offsets.h"
 #include "engine_reads.h"
 #include "log.h"
-#include "menus_internal.h"   // FindControlById, QueueButtonByIdActivate
+#include "menus_internal.h"   // FeatsPanel* resolvers, QueueControlActivate
 #include "menus_pending.h"
 #include "menus_skillflow_nav.h"
 #include "strings.h"
@@ -21,28 +21,26 @@
 
 using namespace acc::engine;  // kInput*, ReadGuiString, ExtractTextOrStrRefIndirect
 
-using acc::menus::detail::FindControlById;
-using acc::menus::detail::QueueButtonByIdActivate;
+using acc::menus::detail::FeatsPanelAcceptButton;
+using acc::menus::detail::FeatsPanelBackButton;
+using acc::menus::detail::FeatsPanelRecommendedButton;
+using acc::menus::detail::QueueControlActivate;
 
 namespace acc::menus::chargen_feats {
 
 namespace {
 
-// .gui-time button IDs. Stable across localisations — they're baked into
-// the resource at build time — but NOT across games: KOTOR 2's
-// ftchrgen_p.gui renumbers every control, and each of the three KOTOR 1
-// ids lands on a different button there (K1 9/11/12 =
-// Recommended/Accept/Back; K2 9/10/11 = Back/Accept/Recommended).
-//
-// Worse, K1's BTN_BACK id 12 is K2's LB_FEATS — a LISTBOX. Reading a
-// listbox as a button walks off the end of the CSWGuiButton layout, so
-// its gui_string read faulted and the str_ref fallback resolved whatever
-// dword happened to sit at the button str_ref offset: the row spoke
-// "<CUSTOM0> hat die Gruppe verlassen." and Enter fired the listbox
-// instead of the accept button (patch-20260803-011930.log).
-//
-// Mined from both games' own gui.bif copies 2026-08-03.
-const int kBtnBackId = acc::game::IsKotor2() ? 9 : 12;  // "Abbrechen" (Esc)
+// The three activatable buttons resolve through the panel's own
+// ctor-bound members (FeatsPanel*, menus_internal.cpp), not .gui ids —
+// gui-id audit. The ids that used to drive this are why: they are NOT
+// stable across games (KOTOR 2's ftchrgen_p.gui renumbers every control)
+// and K1's BTN_BACK id 12 is K2's LB_FEATS, a LISTBOX. Reading a listbox
+// as a button walked off the end of the CSWGuiButton layout, so its
+// gui_string read faulted and the str_ref fallback resolved whatever
+// dword sat at the button str_ref offset: the row spoke "<CUSTOM0> hat
+// die Gruppe verlassen." and Enter fired the listbox instead of the
+// accept button (patch-20260803-011930.log). The historical ids now live
+// only inside the resolvers, as the GuiIdMismatch tripwire.
 
 // 2D cursor model — Up/Down moves between rows (feat chains), Left/Right
 // moves between cells within a chain (root → successor → master). Empty
@@ -61,7 +59,7 @@ struct ChartRow {
 };
 
 struct ButtonRow {
-    int                 buttonId;
+    void*            (*resolve)(void*);  // engine-member resolver
     const char*         logTag;    // log only - never spoken
     acc::strings::Id    labelId;   // localised spoken fallback
 };
@@ -71,17 +69,25 @@ struct ButtonRow {
 // on the sibling Attribute / Fähigkeiten panels of the same game, so the
 // three chargen screens stay consistent with each other. The two games
 // lay the row out mirrored: K1 is Empfohlen / OK / Abbrechen, K2 is
-// Abbrechen / OK / Empfohlen. Ids are literals rather than the per-game
-// consts above precisely because each table is one game's answer.
+// Abbrechen / OK / Empfohlen. That mirroring is a .gui layout property —
+// in MEMORY both ctors order the members accept < back < recommended —
+// so each table is one game's on-screen answer even though the resolvers
+// behind them are shared.
 constexpr ButtonRow kButtonRowsK1[] = {
-    {  9, "BTN_RECOMMENDED", acc::strings::Id::ChargenBtnRecommended },
-    { 11, "BTN_ACCEPT",      acc::strings::Id::ChargenBtnAccept },
-    { 12, "BTN_BACK",        acc::strings::Id::ChargenBtnBack },
+    { FeatsPanelRecommendedButton, "BTN_RECOMMENDED",
+      acc::strings::Id::ChargenBtnRecommended },
+    { FeatsPanelAcceptButton,      "BTN_ACCEPT",
+      acc::strings::Id::ChargenBtnAccept },
+    { FeatsPanelBackButton,        "BTN_BACK",
+      acc::strings::Id::ChargenBtnBack },
 };
 constexpr ButtonRow kButtonRowsK2[] = {
-    {  9, "BTN_BACK",        acc::strings::Id::ChargenBtnBack },
-    { 10, "BTN_ACCEPT",      acc::strings::Id::ChargenBtnAccept },
-    { 11, "BTN_RECOMMENDED", acc::strings::Id::ChargenBtnRecommended },
+    { FeatsPanelBackButton,        "BTN_BACK",
+      acc::strings::Id::ChargenBtnBack },
+    { FeatsPanelAcceptButton,      "BTN_ACCEPT",
+      acc::strings::Id::ChargenBtnAccept },
+    { FeatsPanelRecommendedButton, "BTN_RECOMMENDED",
+      acc::strings::Id::ChargenBtnRecommended },
 };
 constexpr int kButtonRowCount = sizeof(kButtonRowsK1) / sizeof(kButtonRowsK1[0]);
 const ButtonRow* const kButtonRows =
@@ -326,7 +332,7 @@ void AnnounceFocused(void* panel) {
 
     if (IsButtonRow(s_curRow)) {
         const ButtonRow& br = kButtonRows[s_curRow - s_chartRowCount];
-        void* btn = FindControlById(panel, br.buttonId);
+        void* btn = br.resolve(panel);
         char btnText[64];
         bool got = btn && ReadButtonText(btn, btnText, sizeof(btnText)) &&
                    btnText[0] != '\0';
@@ -339,8 +345,8 @@ void AnnounceFocused(void* panel) {
         }
         prism::Speak(btnText, /*interrupt=*/false);
         acclog::Write("ChargenFeats",
-                      "focus button id=%d text=\"%s\"",
-                      br.buttonId, btnText);
+                      "focus button %s target=%p text=\"%s\"",
+                      br.logTag, btn, btnText);
         return;
     }
 
@@ -506,8 +512,8 @@ bool HandleInput(int n, void* thisPtr, void* panel,
     if (param_1 == kInputEnter1 || param_1 == kInputEnter2) {
         if (IsButtonRow(s_curRow)) {
             const ButtonRow& br = kButtonRows[s_curRow - s_chartRowCount];
-            QueueButtonByIdActivate(panel, br.buttonId,
-                                    "ChargenFeats: Enter -> button");
+            QueueControlActivate(br.resolve(panel),
+                                 "ChargenFeats: Enter -> button");
         } else if (s_curRow >= 0 && s_curRow < s_chartRowCount &&
                    s_curCol >= 0 && s_curCol < kSkillFlowColumnsPerRow &&
                    ColFilled(s_curRow, s_curCol)) {
@@ -543,8 +549,8 @@ bool HandleInput(int n, void* thisPtr, void* panel,
     }
 
     if (param_1 == kInputEsc1 || param_1 == kInputEsc2) {
-        QueueButtonByIdActivate(
-            panel, kBtnBackId, "ChargenFeats: Esc -> BTN_BACK");
+        QueueControlActivate(FeatsPanelBackButton(panel),
+                             "ChargenFeats: Esc -> BTN_BACK");
         outRv = 1;
         return true;
     }

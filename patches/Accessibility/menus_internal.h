@@ -394,6 +394,19 @@ void* ContainerPanelOkButton(void* panel);        // BTN_OK (take all)
 void* ContainerPanelCancelButton(void* panel);    // BTN_CANCEL
 void* ContainerPanelGiveItemsButton(void* panel); // BTN_GIVEITEMS (give mode)
 
+// CSWGuiFeatsCharGen (ftchrgen / ftchrgen_p) engine-truth resolvers —
+// ctor-bound embedded members, kFeatsCharGen*ButtonOffset in
+// engine_offsets_fields.h. Panel identity is already the
+// CSWGuiFeatsCharGen vtable (IsChargenFeatsPanel); this only moves the
+// three activatable buttons off their .gui ids. The two games renumber
+// ftchrgen and COLLIDE badly — K1's BTN_BACK id 12 is K2's LB_FEATS, a
+// listbox — so the per-game historical ids survive only as the
+// GuiIdMismatch tripwire inside these resolvers. Defined in
+// menus_internal.cpp.
+void* FeatsPanelAcceptButton(void* panel);       // BTN_ACCEPT ("OK")
+void* FeatsPanelBackButton(void* panel);         // BTN_BACK ("Abbrechen")
+void* FeatsPanelRecommendedButton(void* panel);  // BTN_RECOMMENDED
+
 }  // namespace acc::menus::detail
 
 // partyselection.gui BTN_NPC ("Hinzuf." / "Add") — the mouse flow's

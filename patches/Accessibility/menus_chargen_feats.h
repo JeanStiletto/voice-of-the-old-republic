@@ -15,8 +15,10 @@
 // row-major cursor over non-empty chart cells + 3 trailing button
 // virtual-entries, navigated with K/L. The three are ordered as the panel
 // lays them out left to right, which the two games mirror: KOTOR 1 is
-// Empfohlen / OK / Abbrechen, KOTOR 2 Abbrechen / OK / Empfohlen. Their
-// .gui ids are per game — see the tables in the .cpp.
+// Empfohlen / OK / Abbrechen, KOTOR 2 Abbrechen / OK / Empfohlen. Each
+// entry carries the engine-member resolver for its button (FeatsPanel*,
+// menus_internal.h) — the .gui ids they used to carry survive only as
+// GuiIdMismatch tripwires inside those resolvers.
 //
 // Engine state changes we drive from the keyboard:
 //   * On per-cell focus: SetSelectedSkill(featId) + OnEnterFeat(featId)
@@ -26,9 +28,9 @@
 //     dispatches DetermineFeat + AddChosenFeat / RemoveChosenFeat /
 //     "you can't change this" message box, then BuildButtons rewrites
 //     statuses on every cell.
-//   * On Enter against a button virtual-entry: QueueButtonByIdActivate
-//     for the matching .gui-time button id.
-//   * On Esc: QueueButtonByIdActivate(BTN_BACK).
+//   * On Enter against a button virtual-entry: QueueControlActivate on
+//     the ctor-bound member the entry's resolver returns.
+//   * On Esc: QueueControlActivate(FeatsPanelBackButton).
 //
 // Cell statuses (chart enum, lowest byte at FlowSkillStruct +0x120):
 //   0 available, 1 existing, 2 granted-this-level, 3 locked
@@ -48,7 +50,7 @@ bool IsChargenFeatsPanel(void* panel);
 // Up/Down: advance the cursor across non-empty chart cells + the 3
 // button entries, announcing each focus.
 // Enter: activate the focused entry (chart cell → OnFeatPicked; button
-// → QueueButtonByIdActivate).
+// → QueueControlActivate on its resolved member).
 // Esc: queue BTN_BACK activation.
 // All other keys: fall through.
 bool HandleInput(int n, void* thisPtr, void* panel,
