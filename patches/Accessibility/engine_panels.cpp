@@ -41,123 +41,58 @@ bool HasVtable(void* obj, uintptr_t expected) {
 // IdentifyPanel doesn't reach back into the menus layer.
 namespace {
 
-void* FindControlByGuiId(void* panel, int id) {
-    if (!panel) return nullptr;
-    auto* list = reinterpret_cast<CExoArrayList*>(
-        reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
-    if (!list->data || list->size <= 0) return nullptr;
-    int n = list->size > 64 ? 64 : list->size;
-    for (int i = 0; i < n; ++i) {
-        void* c = list->data[i];
-        if (!c) continue;
-        int cid = *reinterpret_cast<int*>(
-            reinterpret_cast<unsigned char*>(c) + kControlIdOffset);
-        if (cid == id) return c;
-    }
-    return nullptr;
-}
-
 bool IsSaveLoadStructural(void* panel) {
     return HasVtable(panel, kVtableCSWGuiSaveLoad);
 }
 
-// Workbench upgrade panel (upgrade.gui). 29 controls; uniquely identifiable
-// by the 7 BTN_UPGRADE3X/4X slot buttons at .gui IDs 12..18 — all standard
-// CSWGuiButtons — plus the BTN_ASSEMBLE button at ID 24. ID 11 is the
-// LBL_UPGRADE44 LabelHilight (NOT a button), which is what disambiguates
-// this panel from SaveLoad.
-// K2 upgrade_p.gui RE-NUMBERS everything (mined from its own gui.bif):
-// BTN_ASSEMBLE is id 11, the normal slot buttons BTN_UPGRADE31/32/33 are
-// ids 7/8/6, the saber bank BTN_UPGRADE31_LS..36_LS ids 17/18/19/23/24/25,
-// BTN_BACK id 13. The probes below therefore go per game — K1's id-15 probe
-// hits LBL_UPGRADE32_LS (a label) on K2 and the panel silently never
-// identified there.
+// CSWGuiUpgrade (upgrade.gui / upgrade_p.gui) — the workbench slot-detail
+// screen. Heap-allocated, single class per game, so vtable equality is the
+// identifier: K1 symbol CSWGuiUpgrade_vtable, K2 from the RTTI census
+// (docs/llm-docs/re/k2/k2-vtables.csv).
+//
+// This replaces an id-shape probe ("listbox at id 0 + buttons at the game's
+// BTN_ASSEMBLE and one slot id"). That probe needed a per-game id table
+// because upgrade_p.gui renumbers every control, which is precisely the
+// .gui-authored-id trust the gui-id audit removes — one variant file and
+// the workbench screen stops identifying at all.
+const uintptr_t kVtableCSWGuiUpgrade = acc::addr::Pick(0x00757298, 0x009A88A4);
+
 bool IsWorkbenchUpgradeStructural(void* panel) {
-    if (!panel) return false;
-    __try {
-        // Quick coarse check: the panel needs a listbox at ID 0 (LB_ITEMS).
-        // Workbench items go here; if missing this isn't the upgrade panel.
-        void* lb = FindControlByGuiId(panel, /*LB_ITEMS=*/0);
-        if (!lb) return false;
-        void** lbVtable = *reinterpret_cast<void***>(lb);
-        if (reinterpret_cast<uintptr_t>(lbVtable) != kVtableListBox) return false;
-        // Probe BTN_ASSEMBLE and one slot button for the standard
-        // CSWGuiButton vtable, at each game's own ids. Two ID hits +
-        // vtable checks is enough to disambiguate from every other
-        // heap-allocated listbox-at-0 panel we've seen.
-        const bool k2 = acc::game::IsKotor2();
-        void* assemble = FindControlByGuiId(panel, k2 ? 11 : 24);  // BTN_ASSEMBLE
-        void* slot     = FindControlByGuiId(panel, k2 ? 7 : 15);   // BTN_UPGRADE31 / BTN_UPGRADE41
-        return HasVtable(assemble, kVtableCSWGuiButton) &&
-               HasVtable(slot,     kVtableCSWGuiButton);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
+    return HasVtable(panel, kVtableCSWGuiUpgrade);
 }
 
-// Workbench items panel (upgradeitems.gui). 5 controls: LB_ITEMS (id 0),
-// LB_DESCRIPTION (id 2), LBL_TITLE (id 3), BTN_UPGRADEITEM (id 4),
-// BTN_BACK (id 5). Identified by the LB_ITEMS at id 0 + the BTN_BACK
-// at id 5 (which uniquely sits at id 5 — saveload.gui has no id 5, and
-// other listbox panels we know about don't put their back button at id 5).
+// CSWGuiUpgradeItemSelect (upgradeitems.gui / upgradeitems_p.gui) — the
+// workbench per-category item picker. Vtable equality, same reasoning as
+// CSWGuiUpgrade above; K1 symbol CSWGuiUpgradeItemSelect_vtable, K2 from the
+// RTTI census. Replaces a probe that keyed on "listbox at id 0 + buttons at
+// ids 4 and 5 + a 4..8 control count" — a shape shared with several other
+// small listbox panels and one variant .gui away from failing.
+const uintptr_t kVtableCSWGuiUpgradeItemSelect =
+    acc::addr::Pick(0x00757228, 0x009A876C);
+
 bool IsWorkbenchItemsStructural(void* panel) {
-    if (!panel) return false;
-    __try {
-        void* lb = FindControlByGuiId(panel, /*LB_ITEMS=*/0);
-        if (!lb) return false;
-        void** lbVtable = *reinterpret_cast<void***>(lb);
-        if (reinterpret_cast<uintptr_t>(lbVtable) != kVtableListBox) return false;
-        void* upgrade = FindControlByGuiId(panel, /*BTN_UPGRADEITEM=*/4);
-        void* back    = FindControlByGuiId(panel, /*BTN_BACK=*/5);
-        if (!HasVtable(upgrade, kVtableCSWGuiButton)) return false;
-        if (!HasVtable(back,    kVtableCSWGuiButton)) return false;
-        // Disambiguate from any other shape that might have a listbox at
-        // ID 0 + buttons at IDs 4/5: require the panel to NOT also be the
-        // upgrade panel (29 controls). upgradeitems.gui has exactly 5
-        // controls; the upgrade panel's structural detector matches first
-        // when both succeed, but checking control count here keeps each
-        // detector self-consistent.
-        auto* list = reinterpret_cast<CExoArrayList*>(
-            reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
-        if (!list || !list->data) return false;
-        return list->size >= 4 && list->size <= 8;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
+    return HasVtable(panel, kVtableCSWGuiUpgradeItemSelect);
 }
 
-// Workbench category-select panel (upgradesel.gui). 11 controls: four
-// pairs of category Button + ProtoItem icon at IDs 0/1, 2/3, 4/5, 6/7;
-// LBL_TITLE at id 8; BTN_UPGRADEITEMS ("Aufwerten") at id 9; BTN_BACK at
-// id 10. Identified by the pair Button-at-0 + Button-at-9 + Button-at-10
-// — id 0 is a Button on this panel (BTN_RANGED), distinguishing it from
-// every other workbench panel where id 0 is a ListBox.
 // CSWGuiUpgradeSelection (upgradesel.gui — the workbench category chooser:
 // Ranged / Lightsaber / Melee / Armor). Heap-allocated, single class, so the
-// vtable is a clean identifier (symbol CSWGuiUpgradeSelection_vtable). The
-// structural check below was rejecting this panel — its category buttons use a
-// button subclass whose vtable isn't kVtableCSWGuiButton — so it fell through
-// to Unknown; the vtable test fixes that.
+// vtable is the identifier (symbol CSWGuiUpgradeSelection_vtable).
+//
+// The old id-based fallback ("a control at id 0 + buttons at ids 9 and 10")
+// is deleted — same call as PowersLevelUp's below, for a sharper reason: that
+// shape is not distinctive at all. The audit's own tripwires caught it
+// mislabelling the K1 attributes screen (patch-20260818-204614) and the K2
+// skills screen (patch-20260818-204814, where the crafting UpgradeSel
+// resolvers then probed the wrong panel and logged GuiIdMismatch — those two
+// lines meant "wrong panel", not "variant .gui"). Both are level-up
+// sub-screens that merely happen to carry that id shape, which is exactly the
+// .gui-authored-id trust this audit removes. The vtable constant sits behind
+// the installer's SHA-256 gate, so "a build relocates the vtable" cannot
+// happen without new constants anyway.
 const uintptr_t kVtableCSWGuiUpgradeSelection = acc::addr::Pick(0x007571b0, 0x009A86CC);
 
 bool IsWorkbenchSelectStructural(void* panel) {
-    if (!panel) return false;
-    __try {
-        void** vt = *reinterpret_cast<void***>(panel);
-        if (reinterpret_cast<uintptr_t>(vt) == kVtableCSWGuiUpgradeSelection) {
-            return true;
-        }
-        // Fallback structural signature (kept in case a build relocates the
-        // vtable): id 9 = BTN_UPGRADEITEMS, id 10 = BTN_BACK are plain buttons.
-        void* btnUpg  = FindControlByGuiId(panel, /*BTN_UPGRADEITEMS=*/9);
-        void* btnBack = FindControlByGuiId(panel, /*BTN_BACK=*/10);
-        void* btnFirst = FindControlByGuiId(panel, /*BTN_RANGED=*/0);
-        return btnFirst != nullptr &&
-               HasVtable(btnUpg,  kVtableCSWGuiButton) &&
-               HasVtable(btnBack, kVtableCSWGuiButton);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
+    return HasVtable(panel, kVtableCSWGuiUpgradeSelection);
 }
 
 // KOTOR 2 crafting screens: CSWGuiCreateItem (component_p.gui — the
@@ -848,16 +783,14 @@ PanelKind IdentifyPanel(void* panel) {
     if (IsWorkbenchItemsStructural(panel)) {
         return recordAndReturn(PanelKind::WorkbenchItems, "WorkbenchItems");
     }
-    // PowersLevelUp must probe before WorkbenchSelect. WorkbenchSelect's
-    // structural fallback was loosened (commit 29bdb2b) to "id 0 present +
-    // id 9 button + id 10 button" — a signature the force-power picker
-    // (pwrlvlup.gui) also satisfies (id 0 placeholder, id 9 "Empfohlen",
-    // id 10 BTN_SELECT), so it stole the powers panel and the skill tree
-    // went silent. PowersLevelUp now identifies by vtable (collision-proof),
-    // but the workbench fallback is purely structural and ignores the vtable,
-    // so it would still grab the powers panel if probed first — hence the
-    // order. Per the "tighter first" rule above, the more-distinctive
-    // detector claims its panel before the loose workbench fallback.
+    // Order here is now historical rather than load-bearing: every workbench
+    // probe below identifies by vtable, so none of them can claim a panel
+    // that isn't theirs. It used to matter — WorkbenchSelect's loose id-shape
+    // fallback ("id 0 present + id 9 button + id 10 button") also matched the
+    // force-power picker (id 0 placeholder, id 9 "Empfohlen", id 10
+    // BTN_SELECT) and stole it, silencing the skill tree, which is why
+    // PowersLevelUp was moved ahead of it. Both fallbacks are gone; keeping
+    // the tighter detector first still costs nothing.
     if (IsPowersLevelUpStructural(panel)) {
         return recordAndReturn(PanelKind::PowersLevelUp, "PowersLevelUp");
     }

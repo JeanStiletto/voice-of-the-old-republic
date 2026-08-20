@@ -65,16 +65,6 @@ bool TryHandleInput(void* activePanel, int param_1, int param_2, int& rv);
 constexpr int kWagerLessCode = 0x2f;  // decrement
 constexpr int kWagerMoreCode = 0x30;  // increment
 
-// pazaakwager .gui control ids, which KOTOR 2 renumbers wholesale
-// (pazaakwager.gui vs pazaakwager_p.gui): LBL_MAXIMUM 3 -> 2, BTN_LESS 4 -> 6,
-// BTN_MORE 5 -> 7. Three TUs need them — the chain filter that masks the two
-// speed buttons, the Enter router that re-dispatches them, and the extractor
-// that builds the virtual wager row — so they live here rather than being
-// re-derived per call site.
-int WagerLessButtonGuiId();
-int WagerMoreButtonGuiId();
-int WagerMaxLabelGuiId();
-
 // Drive a wager-popup less/more step by calling CSWGuiWagerPopup::
 // HandleInputEvent(panel, code, 1) directly — the same path the engine's own
 // button-push callbacks take. `code` is kWagerLessCode / kWagerMoreCode.

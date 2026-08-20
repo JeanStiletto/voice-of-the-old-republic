@@ -35,6 +35,15 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h2>Unreleased</h2>
 
+<h3>Bug fixes:</h3>
+
+- Escape leaves the Game Settings screen again. The screen's difficulty
+  button reads "Normal", and Escape's search for a Cancel button matched
+  that caption against the keyword "No" — so Escape re-rolled the
+  difficulty instead of closing, and since the key was consumed, the
+  screen had no keyboard way out. Cancel/Close captions now have to match
+  a whole word.
+
 <h3>Crafting (KOTOR 2):</h3>
 
 - The KOTOR 2 workbench and lab-station screens are now immune to

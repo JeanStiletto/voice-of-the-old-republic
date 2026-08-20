@@ -36,7 +36,6 @@
                                 // interactive bit; see AppendDisabledSuffix
 #include "menus_equipstats.h"
 #include "menus_pazaakdeck.h"
-#include "minigame_pazaak.h"   // wager .gui ids (per game)
 #include "menus_internal.h"
 #include "menus_modsettings.h"
 #include "strings.h"
@@ -436,7 +435,7 @@ bool IsSoundOptionsMovieSlider(void* panel, void* control) {
 
 // ---- Pazaak wager popup virtual row --------------------------------------
 // CSWGuiWagerPopup.field13_0xc94 is the live wager (UpdateWagerText writes it
-// to wager_value_label each step). The maximum_label (gui id 3) renders
+// to wager_value_label each step). The maximum_label renders
 // "Maximaler Einsatz: M\nCredits: K". We surface a single top-of-chain row
 // combining the live wager with that max+credits line — the analogue of the
 // inventory credits row.
@@ -445,25 +444,11 @@ bool IsSoundOptionsMovieSlider(void* panel, void* control) {
 // wager-exit call, decrements it under `if (1 < value)`, and increments it under
 // `if (value < max)` where max is the next field along (0xe34, KOTOR 1 0xc98).
 const size_t kWagerCurrentValueOffset = acc::off::Pick(0xc94, 0xe30);
-// LBL_MAXIMUM — .gui id 3 on KOTOR 1, 2 on KOTOR 2.
-inline int kWagerMaxLabelGuiIdFor() { return acc::pazaak::WagerMaxLabelGuiId(); }
-
+// LBL_MAXIMUM / BTN_LESS / BTN_MORE all resolve through the popup's own
+// ctor-bound members (WagerPopupPanel* in menus_internal.cpp); the two games'
+// .gui ids for them survive only as those resolvers' GuiIdMismatch tripwires.
 void* FindWagerMaxLabel(void* panel) {
-    if (!panel) return nullptr;
-    __try {
-        auto* list = reinterpret_cast<CExoArrayList*>(
-            reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
-        if (!list || !list->data) return nullptr;
-        int n = list->size > 64 ? 64 : list->size;
-        for (int i = 0; i < n; ++i) {
-            void* c = list->data[i];
-            if (!c) continue;
-            int id = *reinterpret_cast<int*>(
-                reinterpret_cast<unsigned char*>(c) + kControlIdOffset);
-            if (id == kWagerMaxLabelGuiIdFor()) return c;
-        }
-    } __except (EXCEPTION_EXECUTE_HANDLER) {}
-    return nullptr;
+    return acc::menus::detail::WagerPopupPanelMaximumLabel(panel);
 }
 
 // Format "Einsatz N. Maximaler Einsatz: M, Credits: K" from the live wager
@@ -628,31 +613,29 @@ const char* TryPazaakDeckCard(void* control, void* owner,
 }
 
 // Pazaak wager popup (CSWGuiWagerPopup). BTN_LESS / BTN_MORE are
-// text-less CSWGuiSpeedButtons (gui ids 4 / 5); name them so the chain
-// doesn't fall back to "control 4 / 5". The live amount is announced
-// separately by pazaak.cpp (the chain re-reads only on focus change).
+// text-less CSWGuiSpeedButtons; name them so the chain doesn't fall back to
+// "control N". The live amount is announced separately by pazaak.cpp (the
+// chain re-reads only on focus change).
 const char* TryPazaakWager(void* control, void* owner,
                            char* outBuf, size_t bufSize) {
     const char* source = nullptr;
     if (owner &&
         IdentifyPanel(owner) == PanelKind::PazaakWager) {
-        __try {
-            int cid = *reinterpret_cast<int*>(
-                reinterpret_cast<unsigned char*>(control) + kControlIdOffset);
-            const int lessId = acc::pazaak::WagerLessButtonGuiId();
-            if (cid == lessId || cid == acc::pazaak::WagerMoreButtonGuiId()) {
-                snprintf(outBuf, bufSize, "%s",
-                         acc::strings::Get(cid == lessId
-                             ? acc::strings::Id::PazaakWagerLess
-                             : acc::strings::Id::PazaakWagerMore));
-                if (outBuf[0] != '\0') source = "perkind-pazaakwager";
-            } else if (cid == kWagerMaxLabelGuiIdFor() &&
-                       ExtractWagerRow(owner, control, outBuf, bufSize)) {
-                // Virtual top-of-chain row: live wager + max + credits.
-                source = "perkind-pazaakwager-row";
-            }
-        } __except (EXCEPTION_EXECUTE_HANDLER) {
-            source = nullptr;
+        const bool isLess =
+            control == acc::menus::detail::WagerPopupPanelLessButton(owner);
+        const bool isMore =
+            control == acc::menus::detail::WagerPopupPanelMoreButton(owner);
+        if (isLess || isMore) {
+            snprintf(outBuf, bufSize, "%s",
+                     acc::strings::Get(isLess
+                         ? acc::strings::Id::PazaakWagerLess
+                         : acc::strings::Id::PazaakWagerMore));
+            if (outBuf[0] != '\0') source = "perkind-pazaakwager";
+        } else if (control ==
+                       acc::menus::detail::WagerPopupPanelMaximumLabel(owner) &&
+                   ExtractWagerRow(owner, control, outBuf, bufSize)) {
+            // Virtual top-of-chain row: live wager + max + credits.
+            source = "perkind-pazaakwager-row";
         }
     }
     return source;

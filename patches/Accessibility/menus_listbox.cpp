@@ -50,17 +50,26 @@ using acc::menus::detail::DriveListBoxSelection;
 using acc::menus::detail::DriveListBoxSelectionEngine;
 using acc::menus::detail::ListBoxNavOp;
 using acc::menus::detail::ListBoxNavResult;
-using acc::menus::detail::QueueButtonByIdActivate;
 using acc::menus::detail::QueueControlActivate;
 using acc::menus::detail::ContainerPanelItemsListBox;
 using acc::menus::detail::ContainerPanelOkButton;
 using acc::menus::detail::ContainerPanelCancelButton;
 using acc::menus::detail::ContainerPanelGiveItemsButton;
+using acc::menus::detail::SkillInfoBoxPanelSkillsListBox;
+using acc::menus::detail::SkillInfoBoxPanelMessageLabel;
+using acc::menus::detail::SkillInfoBoxPanelOkButton;
+using acc::menus::detail::ScriptSelectPanelAiStateListBox;
+using acc::menus::detail::ScriptSelectPanelAcceptButton;
+using acc::menus::detail::ScriptSelectPanelBackButton;
+using acc::menus::detail::WorkbenchItemsPanelItemsListBox;
+using acc::menus::detail::WorkbenchItemsPanelUpgradeButton;
+using acc::menus::detail::WorkbenchItemsPanelBackButton;
 
-// Container's controls resolve through the ctor-bound member resolvers in
-// menus_internal.cpp (ContainerPanel*), like SaveLoad's and the two
-// pickers' — no .gui ids are needed in this file any more. The historical
-// ids live on only inside those resolvers, as GuiIdMismatch tripwires.
+// Every panel this file drives resolves its controls through the ctor-bound
+// member resolvers in menus_internal.cpp (ContainerPanel*, SkillInfoBoxPanel*,
+// ScriptSelectPanel*, WorkbenchItemsPanel*, the SaveLoad and picker sets) —
+// no .gui ids are needed here any more. The historical ids live on only
+// inside those resolvers, as GuiIdMismatch tripwires.
 
 namespace acc::menus::listbox {
 
@@ -577,16 +586,12 @@ constexpr ListBoxPanelSpec kEquipPickerSpec = {
 // which we then read for the per-row enrichment speech.
 // ============================================================================
 
-constexpr int kSkillInfoBoxTitleId    = 0;
-constexpr int kSkillInfoBoxLbSkillsId = 2;
-constexpr int kSkillInfoBoxBtnOkId    = 4;
-
 bool SkillInfoBoxMatches(void* p) {
     return IdentifyPanel(p) == PanelKind::SkillInfoBox;
 }
 
 void* SkillInfoBoxFindLb(void* p) {
-    return FindControlById(p, kSkillInfoBoxLbSkillsId);
+    return SkillInfoBoxPanelSkillsListBox(p);
 }
 
 // Walk the manager's panels[] for a CSWGuiFeatsCharGen instance. Returns
@@ -744,8 +749,8 @@ void SkillInfoBoxEnrichRow(void* /*panel*/, const ListBoxNavResult& r) {
 }
 
 bool SkillInfoBoxOnEnter(void* panel) {
-    QueueButtonByIdActivate(panel, kSkillInfoBoxBtnOkId,
-                            "SkillInfoBox: Enter -> BTN_OK");
+    QueueControlActivate(SkillInfoBoxPanelOkButton(panel),
+                         "SkillInfoBox: Enter -> BTN_OK");
     return true;
 }
 
@@ -761,7 +766,7 @@ bool SkillInfoBoxOnEnter(void* panel) {
 // last thing standing between the user and the world.
 bool SkillInfoBoxTitleIsPlaceholder(void* panel, char* outText, size_t outSize) {
     if (outSize) outText[0] = '\0';
-    void* title = FindControlById(panel, kSkillInfoBoxTitleId);
+    void* title = SkillInfoBoxPanelMessageLabel(panel);
     if (!title ||
         !acc::menus::extract::FromControl(title, outText, outSize, panel) ||
         outText[0] == '\0') {
@@ -970,18 +975,12 @@ constexpr ListBoxPanelSpec kDialogComputerCameraSpec =
 // "Schliess.") closes back to upgradesel.gui.
 // ============================================================================
 
-namespace {
-constexpr int kWorkbenchItemsLbId        = 0;
-constexpr int kWorkbenchItemsBtnUpgrade  = 4;
-constexpr int kWorkbenchItemsBtnBack     = 5;
-}  // namespace
-
 bool WorkbenchItemsMatches(void* p) {
     return IdentifyPanel(p) == PanelKind::WorkbenchItems;
 }
 
 void* WorkbenchItemsFindLb(void* p) {
-    return FindControlById(p, kWorkbenchItemsLbId);
+    return WorkbenchItemsPanelItemsListBox(p);
 }
 
 // Speak the focused weapon row + position. No per-tick monitor watches
@@ -992,14 +991,14 @@ void WorkbenchItemsAnnounce(void* /*lb*/, const ListBoxNavResult& r) {
 }
 
 bool WorkbenchItemsOnEnter(void* panel) {
-    QueueButtonByIdActivate(panel, kWorkbenchItemsBtnUpgrade,
-                            "WorkbenchItems: Enter -> BTN_UPGRADEITEM");
+    QueueControlActivate(WorkbenchItemsPanelUpgradeButton(panel),
+                         "WorkbenchItems: Enter -> BTN_UPGRADEITEM");
     return true;
 }
 
 bool WorkbenchItemsOnEsc(void* panel) {
-    QueueButtonByIdActivate(panel, kWorkbenchItemsBtnBack,
-                            "WorkbenchItems: Esc -> BTN_BACK");
+    QueueControlActivate(WorkbenchItemsPanelBackButton(panel),
+                         "WorkbenchItems: Esc -> BTN_BACK");
     return true;
 }
 
@@ -1366,15 +1365,13 @@ constexpr ListBoxPanelSpec kExamineSpec = {
 // ============================================================================
 
 namespace {
-constexpr int kScriptSelectLbAiStateId   = 0;
-constexpr int kScriptSelectBtnAbbrechen  = 3;
-constexpr int kScriptSelectBtnWaehlen    = 4;
-
 // Option table (CExoArrayList data pointer at panel+0x64). The constructor
 // fills it from aiscripts.2da, one 8-byte entry per row indexed by the row's
 // control id: +0 = DESCRIPTION_STRREF, +4 = AISTATE. (Decompiled
 // CSWGuiScriptSelect ctor @0x006ea000 / OnScriptSelected @0x006e9e70.)
-const size_t kScriptSelectOptionTableOffset = acc::off::Todo(0x64);
+// Kotor1Only rather than Todo: KOTOR 2 ships no CSWGuiScriptSelect at all
+// (see engine_panels.cpp), so there is no K2 value to go and find.
+const size_t kScriptSelectOptionTableOffset = acc::off::Kotor1Only(0x64);
 constexpr size_t kScriptSelectOptionStride      = 8;
 constexpr size_t kScriptSelectOptionDescOffset  = 0;
 }  // namespace
@@ -1384,7 +1381,7 @@ bool ScriptSelectMatches(void* p) {
 }
 
 void* ScriptSelectFindLb(void* p) {
-    return FindControlById(p, kScriptSelectLbAiStateId);
+    return ScriptSelectPanelAiStateListBox(p);
 }
 
 // Speak the behaviour name + position, dropping the toggle's ", ein"/", aus"
@@ -1455,14 +1452,14 @@ void ScriptSelectEnrichRow(void* panel, const ListBoxNavResult& r) {
 // drives the panel's confirm/cancel path (engine codes 0x2d / 0x2e), which
 // reads the same selection_index DriveListBoxSelection writes.
 bool ScriptSelectOnEnter(void* panel) {
-    QueueButtonByIdActivate(panel, kScriptSelectBtnWaehlen,
-                            "ScriptSelect: Enter -> BTN_WAEHLEN");
+    QueueControlActivate(ScriptSelectPanelAcceptButton(panel),
+                         "ScriptSelect: Enter -> BTN_WAEHLEN");
     return true;
 }
 
 bool ScriptSelectOnEsc(void* panel) {
-    QueueButtonByIdActivate(panel, kScriptSelectBtnAbbrechen,
-                            "ScriptSelect: Esc -> BTN_ABBRECHEN");
+    QueueControlActivate(ScriptSelectPanelBackButton(panel),
+                         "ScriptSelect: Esc -> BTN_ABBRECHEN");
     return true;
 }
 

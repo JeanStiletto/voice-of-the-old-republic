@@ -60,36 +60,47 @@ const size_t    kK2KeymapFilterIndexOff = 0x1364;      // K2 only: int, selected
 // K2 twin is the int the cancel case (0x28/0x2e) zeroes — [panel+0x1368].
 const size_t kCaptureActiveOff = acc::off::Pick(0xf2c, 0x1368);
 
-// Stable .gui control IDs (optkeymapping.gui; locale-independent like the
-// equip-slot IDs). Verified in the PanelProbe dump.
-constexpr int kIdListBox      = 0;   // LST_EventList
-constexpr int kIdDefaultBtn   = 2;   // BTN_Default ("Standard")
-constexpr int kIdAcceptBtn    = 3;   // BTN_Accept  ("OK")
-constexpr int kIdCancelBtn    = 4;   // BTN_Cancel  ("Abbrechen")
-constexpr int kIdFilterMove   = 6;   // BTN_Filter_Move ("Bewegung")
-constexpr int kIdFilterGame   = 7;   // BTN_Filter_Game ("Spiel")
-constexpr int kIdFilterMini   = 8;   // BTN_Filter_Mini ("Minigames")
-
 // Tab-level entry list, in announced order: the three category tabs, then the
 // three dialog buttons (so the confirm/discard/reset actions live in the same
 // flat list the user arrows through — there is no separate button row).
+//
+// Controls resolve through the ctor-bound members (KeyMapPanel* in
+// menus_internal.cpp), not through optkeymapping.gui's ids — see
+// docs/gui-id-audit.md. The historical ids survive only as the resolvers'
+// GuiIdMismatch tripwires.
 enum class EntryKind { Category, Button };
 struct TabEntry {
     EntryKind kind;
-    int       guiId;       // control to read/activate
+    int       filterIndex;              // Category: engine filter index; else -1
+    void*   (*resolveButton)(void*);    // Button: engine-member resolver
+    bool      closesScreen;             // Button: OK/Abbrechen pop the panel
+    const char* logName;
 };
 // Category rows are in engine filter order (MOVE, GAME, MINI): their tab
-// index doubles as the K2 SetFilter index, and SwitchCategory maps the same
-// index to the K1 per-filter handler.
+// index doubles as the K2 SetFilter index and as the panel's filter-button
+// array index, and SwitchCategory maps the same index to the K1 per-filter
+// handler.
 const TabEntry kTabEntries[] = {
-    { EntryKind::Category, kIdFilterMove },
-    { EntryKind::Category, kIdFilterGame },
-    { EntryKind::Category, kIdFilterMini },
-    { EntryKind::Button,   kIdAcceptBtn  },
-    { EntryKind::Button,   kIdCancelBtn  },
-    { EntryKind::Button,   kIdDefaultBtn },
+    { EntryKind::Category, 0, nullptr, false, "BTN_Filter_Move" },
+    { EntryKind::Category, 1, nullptr, false, "BTN_Filter_Game" },
+    { EntryKind::Category, 2, nullptr, false, "BTN_Filter_Mini" },
+    { EntryKind::Button,  -1, acc::menus::detail::KeyMapPanelAcceptButton,
+      true,  "BTN_Accept" },
+    { EntryKind::Button,  -1, acc::menus::detail::KeyMapPanelCancelButton,
+      true,  "BTN_Cancel" },
+    { EntryKind::Button,  -1, acc::menus::detail::KeyMapPanelDefaultButton,
+      false, "BTN_Default" },
 };
 constexpr int kTabEntryCount = sizeof(kTabEntries) / sizeof(kTabEntries[0]);
+
+// The control a tab entry reads/activates.
+void* ResolveTabEntry(void* panel, int idx) {
+    if (idx < 0 || idx >= kTabEntryCount) return nullptr;
+    const TabEntry& e = kTabEntries[idx];
+    return e.kind == EntryKind::Category
+               ? acc::menus::detail::KeyMapPanelFilterButton(panel, e.filterIndex)
+               : e.resolveButton(panel);
+}
 
 // Two-level drill state + the row we armed for capture (for the completion
 // re-announce in Tick). Reset on a fresh panel open.
@@ -121,29 +132,11 @@ bool  s_parkPending    = false;
 // two rows flanking one fixed index and left that index unreachable.
 short s_rowCursor      = -1;
 
-void* FindByGuiId(void* panel, int wantId) {
-    if (!panel) return nullptr;
-    __try {
-        auto* list = reinterpret_cast<CExoArrayList*>(
-            reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
-        if (!list || !list->data) return nullptr;
-        int n = list->size > 64 ? 64 : list->size;
-        for (int i = 0; i < n; ++i) {
-            void* c = list->data[i];
-            if (!c) continue;
-            int id = *reinterpret_cast<int*>(
-                reinterpret_cast<unsigned char*>(c) + kControlIdOffset);
-            if (id == wantId) return c;
-        }
-    } __except (EXCEPTION_EXECUTE_HANDLER) {}
-    return nullptr;
-}
-
 // Row control at `index`, or nullptr if the list is shorter than that.
 void* RowAt(void* panel, short index) {
     void* row = nullptr;
     __try {
-        void* lb = FindByGuiId(panel, kIdListBox);
+        void* lb = acc::menus::detail::KeyMapPanelEventListBox(panel);
         if (!lb) return nullptr;
         auto* rows = reinterpret_cast<CExoArrayList*>(
             reinterpret_cast<unsigned char*>(lb) + kListBoxControlsOffset);
@@ -191,15 +184,15 @@ void SpeakControl(void* panel, void* ctrl) {
 
 void AnnounceTabEntry(void* panel, int idx) {
     if (idx < 0 || idx >= kTabEntryCount) return;
-    SpeakControl(panel, FindByGuiId(panel, kTabEntries[idx].guiId));
-    acclog::Write("Menus.KeyMap", "tab-level idx=%d id=%d", idx,
-                  kTabEntries[idx].guiId);
+    SpeakControl(panel, ResolveTabEntry(panel, idx));
+    acclog::Write("Menus.KeyMap", "tab-level idx=%d %s", idx,
+                  kTabEntries[idx].logName);
 }
 
 // Step the binding list from OUR remembered cursor and announce the row we land
 // on. Returns false only if the listbox is missing/empty.
 bool StepRow(void* panel, ListBoxNavOp op) {
-    void* lb = FindByGuiId(panel, kIdListBox);
+    void* lb = acc::menus::detail::KeyMapPanelEventListBox(panel);
     if (!lb) return false;
     if (s_rowCursor >= 0) SetSelectionIndex(lb, s_rowCursor);
     ListBoxNavResult r;
@@ -409,19 +402,21 @@ bool HandleInput(void* activePanel, int param_1, int param_2, int& outRv) {
                 // Anchor our cursor on the first binding and announce it.
                 s_rowCursor = 0;
                 StepRow(activePanel, ListBoxNavOp::JumpFirst);
-                acclog::Write("Menus.KeyMap", "drill into category id=%d", e.guiId);
+                acclog::Write("Menus.KeyMap", "drill into category %s",
+                              e.logName);
             } else {
                 // OK / Abbrechen / Standard — activate via the engine's own
                 // click path (deferred click-sim, like every other button
                 // activation in the mod). OK/Cancel pop the panel; Standard
                 // resets and stays, so re-announce the current tab after.
-                void* btn = FindByGuiId(activePanel, e.guiId);
+                void* btn = e.resolveButton(activePanel);
                 if (btn) acc::menus::pending::QueueActivate(btn);
-                acclog::Write("Menus.KeyMap", "activate button id=%d", e.guiId);
-                if (e.guiId == kIdDefaultBtn) {
-                    AnnounceTabEntry(activePanel, s_tabCursor);
-                } else {
+                acclog::Write("Menus.KeyMap", "activate button %s target=%p",
+                              e.logName, btn);
+                if (e.closesScreen) {
                     s_panel = nullptr;  // closing — re-init on next open
+                } else {
+                    AnnounceTabEntry(activePanel, s_tabCursor);
                 }
             }
             outRv = 1;

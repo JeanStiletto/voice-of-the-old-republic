@@ -54,9 +54,42 @@ witness — it keeps its three decompile witnesses (tagged InitControl, the
 bit_flags clear + AddEvent registration, and K2's gamepad 'b' bind). Same
 precedent as the container BTN_CANCEL: if a log ever shows
 GuiIdMismatch/Feats.BTN_BACK, look there first.
-NEXT: pazaak, keymap, skill info box, script select. NEW FINDING (see
-inventory): the loose WorkbenchSelect structural fallback misidentifies
-level-up sub-screens in BOTH games.
+DONE + tested (2026-08-20): the final batch — pazaak side-deck builder +
+wager popup, keymap, skill info box, script select, workbench item picker
+— plus the panel-IDENTIFICATION half of the workbench family (see below).
+Test round on both games, logs patch-20260820-121034 + patch-20260820-120136
+(K1) / patch-20260820-120251 (K2): zero GuiIdMismatch, and the logged
+pointers confirm the mined offsets at runtime.
+  K1 WorkbenchItems panel 1904D018 -> LB_ITEMS 1904D07C (+0x64),
+  BTN_UPGRADEITEM 1904D8BC (+0x8a4), BTN_BACK 1904DA80 (+0xa68) — all
+  three; SkillInfoBox lb 075CBD3C / BTN_OK 075CC15C (+0x64 / +0x484);
+  wager max label at panel + 0x1a4 with the chain rebuilding to 3 entries
+  out of 8 controls (the two speed buttons masked by member identity, not
+  by id); BTN_ATEXT committing into the pazaak board; keymap drilling,
+  row-stepping and Esc-ing to Abbrechen.
+  K2 SkillInfoBox lb 098B9408 / BTN_OK 098B9840 (+0x68 / +0x4a0);
+  WorkbenchItems, WorkbenchUpgrade and WorkbenchSelect all identifying by
+  their new vtables.
+CAVEATS — three surfaces have decompile witnesses only, no runtime path:
+K1 script select (never opened in either round), K2 keymap, and K2 pazaak
+(the whole K2 minigame is generally untested, not just this change). Same
+precedent as the crafting chemical panel: if a log ever shows
+GuiIdMismatch/ScriptSelect.* or /KeyMap.* or /PazaakDeck.*, look here
+first.
+
+Also landed with this batch, and worth stating on its own: the last three
+id-shape PANEL PROBES are gone. WorkbenchSelect, WorkbenchUpgrade and
+WorkbenchItems now identify by vtable like every other heap panel
+(CSWGuiUpgradeSelection / CSWGuiUpgrade / CSWGuiUpgradeItemSelect; K1
+symbols, K2 from docs/llm-docs/re/k2/k2-vtables.csv). The WorkbenchSelect
+one is the misidentification this doc recorded as a NEW FINDING; the
+other two carried per-game id tables that would have failed the same way.
+With them go the last two .gui-id lookups in the engine layer:
+engine_panels.cpp's local FindControlByGuiId is deleted outright.
+
+Two dead helpers went with the batch: QueueButtonByIdActivate (every
+select-then-confirm panel now uses QueueControlActivate on a resolved
+member) and acc::pazaak::Wager{Less,More,MaxLabel}ButtonGuiId.
 
 Noted during the SaveLoad round (not a regression, optional follow-up):
 K2 Esc on the save/load screen logs "Menus.Esc: ... no cancel/close
@@ -429,19 +462,24 @@ Tier 1 — drives input/state; convert to member offsets:
   info-label announce converted too. BTN_DELETE id deleted (was only
   consumed by the shape probe). Tier-2 K2 detail labels converted
   along the way (direct witnesses were free).
-- WorkbenchSelect loose structural fallback (engine_panels.cpp):
-  misidentifies level-up sub-screens as WorkbenchSelect in BOTH games —
-  witnessed 2026-08-18 by the audit's own tripwires: K1 attributes screen
-  (patch-20260818-204614, also present pre-audit in patch-20260818-142801,
-  so NOT a regression) and K2 skills screen (patch-20260818-204814, where
-  the crafting UpgradeSel resolvers then probed the wrong panel and their
-  LBL_TITLE/LB_UPGRADELIST tripwires fired — those two GuiIdMismatch
-  lines mean "wrong panel", not "variant .gui"). Benign so far: the
-  level-up sub-screen handlers identify their panels independently, and
-  the mis-probed paths are announce-only. Fix = tighten or vtable the
-  WorkbenchSelect probe (its "id 0 + id 9 button + id 10 button" shape is
-  exactly the id-trusting pattern this audit deletes). STATUS: to mine
-  (fold into the workbench-family follow-up).
+- Workbench family panel IDENTIFICATION (engine_panels.cpp) — all three
+  probes keyed on .gui id shapes. STATUS: DONE 2026-08-20 (tested). Each now identifies by vtable:
+  CSWGuiUpgradeSelection K1 0x007571b0 / K2 0x009A86CC (already the
+  primary; only its fallback was live), CSWGuiUpgrade K1 0x00757298 /
+  K2 0x009A88A4, CSWGuiUpgradeItemSelect K1 0x00757228 / K2 0x009A876C
+  (K1 from the exe's own *_vtable symbols, K2 from
+  docs/llm-docs/re/k2/k2-vtables.csv).
+  The WorkbenchSelect fallback was the misidentification this doc
+  reported: its "id 0 + id 9 button + id 10 button" shape also matches
+  level-up sub-screens, witnessed 2026-08-18 by the audit's own tripwires
+  on the K1 attributes screen (patch-20260818-204614, present pre-audit in
+  patch-20260818-142801 too, so NOT a regression) and the K2 skills screen
+  (patch-20260818-204814, where the crafting UpgradeSel resolvers then
+  probed the wrong panel — those two GuiIdMismatch lines meant "wrong
+  panel", not "variant .gui"). WorkbenchUpgrade and WorkbenchItems were
+  the same pattern with per-game id tables. All three fallbacks deleted;
+  engine_panels.cpp's local FindControlByGuiId went with them, so the
+  engine layer reads no .gui ids at all any more.
 - Container: kContainerBtnOkId/GiveId/CancelId (menus_listbox.cpp).
   STATUS: DONE — tested in-game both games 2026-08-18 (Esc/BTN_CANCEL
   untested, every close used take-all; see status caveat). All four controls resolve
@@ -455,12 +493,42 @@ Tier 1 — drives input/state; convert to member offsets:
   listbox would have taken the wrong one; both now name the engine's own
   member. peek_description.cpp's duplicated copy of the container listbox
   offset is gone too — it calls the shared resolver.
-- Pazaak deck builder: kControlPlayId/kControlClearId + side arithmetic
-  (menus_pazaakdeck.cpp private FindControlById). STATUS: to mine.
+- Pazaak deck builder: kControlPlayId/kControlClearId
+  (menus_pazaakdeck.cpp private FindControlById). STATUS: DONE 2026-08-20
+  (tested — see the status block above). Both resolve via PazaakStartPanel*
+  (CSWGuiPazaakStart: BTN_ATEXT K1 +0x7108 / K2 +0x8d58, BTN_CLEARCARDS
+  K2-only +0x91c8 — K1's pazaaksetup.gui has no clear button, so the
+  offset poisons and the resolver answers nullptr, exactly as the id -1
+  did). The card banks that drive the 3-row navigator were already
+  offset-based, and this round's ctor decompiles re-confirmed every one
+  of them (all_cards K1 +0x1a4 / K2 +0x1b0 stride 0x31c/0x334,
+  sidedeck_gui +0x501c/+0x6d50, card_counts +0x755c/+0x94e0). The private
+  FindControlById is deleted.
 - Pazaak wager: WagerLess/More/MaxLabel gui ids (minigame_pazaak.cpp,
-  menus_extract.cpp). STATUS: to mine.
-- Keymap screen: kIdListBox/Default/Accept/Cancel/Filter* —
-  K1-only screen (menus_keymap.cpp). STATUS: to mine.
+  menus_extract.cpp, menus_chain.cpp, menus_chain_input.cpp). STATUS:
+  DONE 2026-08-20 (tested, K1). All three resolve via
+  WagerPopupPanel* (CSWGuiWagerPopup: LBL_MAXIMUM K1 +0x1a4 / K2 +0x1b0,
+  BTN_LESS +0x424/+0x440, BTN_MORE +0x5f8/+0x620). The three consumers —
+  the chain filter that masks the two speed buttons, the Enter router
+  that re-dispatches them, and the extractor's virtual wager row — now do
+  pointer equality against the members instead of comparing ids, and the
+  acc::pazaak::Wager*GuiId accessors are deleted. Cross-check that fell
+  out of the same ctors: kWagerCurrentValueOffset (K1 +0xc94 / K2 +0xe30)
+  and the max one field along are exactly what the ctor seeds.
+- Keymap screen: kIdListBox/Default/Accept/Cancel/Filter*
+  (menus_keymap.cpp) — BOTH games, despite the "K1-only" note this line
+  used to carry: menus_keymap has had a K2 path since the port. STATUS:
+  DONE 2026-08-20 (tested on K1; the K2 screen never opened in the round —
+  see the CAVEATS in the status block). All eight controls resolve via
+  KeyMapPanel* (CSWGuiInGameOptKeyMappings), with the three category
+  buttons indexed by the engine's own filter index (0 MOVE / 1 GAME /
+  2 MINI) so one axis serves both K2's SetFilter call and the control
+  lookup. The tab table now holds resolvers instead of ids, and the
+  screen's private FindByGuiId is deleted. Second witnesses on K2 came
+  free: the gamepad binds the ctor adds last (accept 0x61, cancel 0x62,
+  default 0x79) and each filter button's bit_flags clear — and the same
+  decompile re-confirmed kK2KeymapFilterIndexOff (+0x1364) and
+  kCaptureActiveOff (+0x1368) from the earlier HandleInputEvent RE.
 - Chargen feats: kBtnBackId, buttonId table
   (menus_chargen_feats.cpp). STATUS: DONE — tested both games (K1
   2026-08-19, K2 2026-08-20). All three buttons resolve via FeatsPanel*
@@ -468,9 +536,27 @@ Tier 1 — drives input/state; convert to member offsets:
   close probe. Offsets + witnesses in the mined-offsets section. The
   panel's other controls (name label, select button, feats/desc
   listboxes, chart) were already member-based.
-- SkillInfoBox: kSkillInfoBoxLbSkillsId/TitleId (menus_listbox.cpp).
-  STATUS: to mine.
-- Script select (AI state): kScriptSelectLbAiStateId. STATUS: to mine.
+- SkillInfoBox: kSkillInfoBoxLbSkillsId/TitleId/BtnOkId
+  (menus_listbox.cpp). STATUS: DONE 2026-08-20 (tested).
+  LB_SKILLS / LBL_MESSAGE / BTN_OK resolve via SkillInfoBoxPanel*
+  (CSWGuiSkillInfoBox: K1 +0x64/+0x344/+0x484, K2 +0x68/+0x358/+0x4a0).
+  The title read that decides the popup's two lives (placeholder vs the
+  real "Du hast ... erhalten" text) now reads the member label.
+- Script select (AI state): kScriptSelectLbAiStateId + the two buttons.
+  STATUS: DONE 2026-08-20 (tested). LST_AIState / BTN_Accept
+  / BTN_Back resolve via ScriptSelectPanel* (CSWGuiScriptSelect +0x70 /
+  +0xa74 / +0x8b0). KOTOR 1 only — the class does not exist on K2 — so
+  the offsets are Kotor1Only and the resolvers answer nullptr there, the
+  same answer the vtable-gated callers already expect. The same ctor
+  decompile promoted kScriptSelectOptionTableOffset from Todo(0x64) to
+  Kotor1Only(0x64): it is the aiscripts.2da option table the ctor fills.
+- WorkbenchItems: kWorkbenchItemsLbId/BtnUpgrade/BtnBack
+  (menus_listbox.cpp) + peek_description.cpp's FindControlById(panel, 0).
+  Not on the original inventory — found while sweeping the remaining id
+  lookups. STATUS: DONE 2026-08-20 (tested). All three
+  resolve via WorkbenchItemsPanel* (CSWGuiUpgradeItemSelect: LB_ITEMS K1
+  +0x64 / K2 +0x68, BTN_UPGRADEITEM +0x8a4/+0x8d8, BTN_BACK
+  +0xa68/+0xaa8).
 
 Tier 2 — announce-only; keep id, degradation acceptable (revisit only if
 tester logs show breakage):

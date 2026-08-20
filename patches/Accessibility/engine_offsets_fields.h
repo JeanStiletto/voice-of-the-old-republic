@@ -2100,3 +2100,96 @@ const size_t    kInventoryFilterButtonOffset           = acc::off::Kotor1Only(0x
 const size_t    kInventoryFilterFirstButtonOffset      = acc::off::Pick(0, 0x1800);  // BTN_ALL
 const size_t    kInventoryFilterLastButtonOffset       = acc::off::Pick(0, 0x22e0);  // BTN_QUESTS
 const size_t    kInventoryFilterButtonStride           = acc::off::Pick(1, 0x1d0);
+
+// ---------------------------------------------------------------------------
+// gui-id audit, final batch (2026-08-20): panel members for the surfaces that
+// still resolved controls by .gui-authored id. Same rule as every block above
+// — the member address IS the answer, the historical id survives only as the
+// GuiIdMismatch tripwire inside the resolver. Each offset carries two
+// independent witnesses; see docs/gui-id-audit.md for the workflow.
+// ---------------------------------------------------------------------------
+
+// CSWGuiSkillInfoBox (skillinfo / skillinfo_p) — the granted-feats popup the
+// chargen Talente flow and the in-world level-up both mount.
+// K1 ctor @0x006ce7c0 (named decompile: skills_listbox / message_label /
+// ok_button, each with a tagged InitControl and its own ctor-bank LEA).
+// K2 ctor FUN_0089c5f0 (same three tags in the same order; second witness =
+// the BTN_OK `bit_flags &= ~4` at member+0x48 → 0x4e8, and the listbox's
+// `bit_flags |= 0x200` at member+kListBoxBitFlagsOffset).
+// Historical ids: LBL_MESSAGE 0, LB_SKILLS 2, BTN_OK 4.
+const size_t    kSkillInfoBoxPanelSkillsListBoxOffset = acc::off::Pick(0x64,  0x68);
+const size_t    kSkillInfoBoxPanelMessageLabelOffset  = acc::off::Pick(0x344, 0x358);
+const size_t    kSkillInfoBoxPanelOkButtonOffset      = acc::off::Pick(0x484, 0x4a0);
+
+// CSWGuiScriptSelect (ScriptSelect.gui) — the character sheet's combat
+// behaviour picker. KOTOR 1 only: K2's RTTI names no such class and the exe
+// holds no "ScriptSelect" layout string (see engine_panels.cpp).
+// Ctor @0x006ea000, named decompile + listing: every member below has a
+// tagged InitControl AND its own ctor-bank LEA. Second witness for the two
+// buttons: BTN_Back registers CSWGuiPanel::OnBButtonPressed and BTN_Accept
+// AcceptButtonCallback on event 0x27, both after a `bit_flags &= ~4`.
+// Historical ids: LST_AIState 0, BTN_Back 3, BTN_Accept 4.
+const size_t    kScriptSelectPanelAiStateListBoxOffset = acc::off::Kotor1Only(0x70);
+const size_t    kScriptSelectPanelBackButtonOffset     = acc::off::Kotor1Only(0x8b0);
+const size_t    kScriptSelectPanelAcceptButtonOffset   = acc::off::Kotor1Only(0xa74);
+
+// CSWGuiWagerPopup (pazaakwager / pazaakwager_p) — the "Wie viel setzt du?"
+// bet popup. K1 ctor @0x0067f000 (named), K2 ctor FUN_00886fc0.
+// BTN_LESS / BTN_MORE are CSWGuiSpeedButtons: the ctor overwrites each one's
+// control vtable with CSWGuiSpeedButton_vtable right after constructing it,
+// which is the second witness on both games (K2 in_ECX[0x110] / [0x188]),
+// alongside the tagged InitControl and the `bit_flags &= ~4` at member+0x44
+// (K1) / +0x48 (K2). LBL_MAXIMUM is the label the ctor finally SetText's the
+// "Maximaler Einsatz / Credits" block onto.
+// Historical ids: LBL_MAXIMUM 3 (K1) / 2 (K2), BTN_LESS 4/6, BTN_MORE 5/7.
+const size_t    kWagerPopupPanelMaximumLabelOffset = acc::off::Pick(0x1a4, 0x1b0);
+const size_t    kWagerPopupPanelLessButtonOffset   = acc::off::Pick(0x424, 0x440);
+const size_t    kWagerPopupPanelMoreButtonOffset   = acc::off::Pick(0x5f8, 0x620);
+
+// CSWGuiPazaakStart (pazaaksetup / pazaaksetup_p) — the side-deck builder.
+// K1 ctor @0x00681a90 (named), K2 ctor FUN_00887da0.
+// BTN_ATEXT is the "Spielen" commit; BTN_CLEARCARDS empties the chosen deck
+// and exists only on KOTOR 2. Second witness on both: the AddEvent(0x27)
+// registration (HandleAcceptButton / K2 FUN_00889c00, FUN_0088aa80) paired
+// with the `bit_flags &= ~4` at member+0x48 on K2 (0x8da0 / 0x9210).
+// Historical ids: BTN_ATEXT 78 (K1) / 95 (K2), BTN_CLEARCARDS 96 (K2).
+const size_t    kPazaakStartPanelPlayButtonOffset  = acc::off::Pick(0x7108, 0x8d58);
+const size_t    kPazaakStartPanelClearButtonOffset = acc::off::Kotor2Only(0x91c8);
+
+// CSWGuiInGameOptKeyMappings (OPTKeyMapping / OPTKeyMapping_p) — the
+// Tastaturbelegung screen. K1 ctor @0x006edc90 (named), K2 ctor FUN_008fff20.
+// All eight members carry a tagged InitControl plus a ctor-bank LEA; the
+// buttons additionally carry their handler registration (OnDefaultClick /
+// OnAcceptClick / OnBButtonPressed / OnFilter{Move,Game,Mini}) and, on K2,
+// the gamepad binds the ctor adds last (accept 0x61, cancel 0x62,
+// default 0x79). The listbox is the panel's SetActiveControl target.
+// Cross-check that fell out of the same K2 decompile: the filter-index field
+// is in_ECX[0x4d9] = +0x1364 and the capture-armed flag in_ECX[0x4da] =
+// +0x1368 — both already shipped as kK2KeymapFilterIndexOff /
+// kCaptureActiveOff from the earlier HandleInputEvent RE.
+// Historical ids: LST_EventList 0, BTN_Default 2, BTN_Accept 3, BTN_Cancel 4,
+// filters 6/7/8.
+const size_t    kKeyMapPanelEventListBoxOffset   = acc::off::Pick(0xc48, 0xc9c);
+const size_t    kKeyMapPanelDefaultButtonOffset  = acc::off::Pick(0x1b0, 0x1bc);
+const size_t    kKeyMapPanelAcceptButtonOffset   = acc::off::Pick(0x374, 0x38c);
+const size_t    kKeyMapPanelCancelButtonOffset   = acc::off::Pick(0x538, 0x55c);
+// The three category buttons are one contiguous run in ctor order
+// (MOVEMENT, GAME, MINIGAME) at the game's button stride — 0x6fc/0x8c0/0xa84
+// on K1, 0x72c/0x8fc/0xacc on K2 — each one separately witnessed above.
+// Indexing it keeps the filter index (which K2's SetFilter takes directly)
+// and the control lookup on one axis.
+const size_t    kKeyMapPanelFilterButtonsOffset  = acc::off::Pick(0x6fc, 0x72c);
+const size_t    kKeyMapPanelFilterButtonStride   = acc::off::Pick(0x1c4, 0x1d0);
+
+// CSWGuiUpgradeItemSelect (upgradeitems / upgradeitems_p) — the workbench
+// per-category item picker that sits between the category chooser and the
+// slot detail screen. K1 ctor @0x006c7630 (named decompile + listing),
+// K2 ctor FUN_008c80f0. Every member has a tagged InitControl plus a
+// ctor-bank LEA (K1) / a second structural witness (K2): BTN_UPGRADEITEM's
+// `bit_flags &= ~4` lands at member+0x48 (0x920) and registers
+// OnUpgradableSelected on 0x27, BTN_BACK registers OnBButtonPressed, and
+// LB_ITEMS is the panel's SetActiveControl target on both games.
+// Historical ids: LB_ITEMS 0, BTN_UPGRADEITEM 4, BTN_BACK 5.
+const size_t    kWorkbenchItemsPanelItemsListBoxOffset   = acc::off::Pick(0x64,  0x68);
+const size_t    kWorkbenchItemsPanelUpgradeButtonOffset  = acc::off::Pick(0x8a4, 0x8d8);
+const size_t    kWorkbenchItemsPanelBackButtonOffset     = acc::off::Pick(0xa68, 0xaa8);

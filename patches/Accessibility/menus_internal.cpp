@@ -439,6 +439,135 @@ void* acc::menus::detail::FeatsPanelRecommendedButton(void* panel) {
                                    "Feats.BTN_RECOMMENDED");
 }
 
+// CSWGuiSkillInfoBox resolvers (see menus_internal.h). skillinfo.gui and
+// skillinfo_p.gui agree on the ids, so the same tripwire serves both games.
+void* acc::menus::detail::SkillInfoBoxPanelSkillsListBox(void* panel) {
+    return PanelMemberWithTripwire(panel, kSkillInfoBoxPanelSkillsListBoxOffset,
+                                   2, "SkillInfoBox.LB_SKILLS");
+}
+
+void* acc::menus::detail::SkillInfoBoxPanelMessageLabel(void* panel) {
+    return PanelMemberWithTripwire(panel, kSkillInfoBoxPanelMessageLabelOffset,
+                                   0, "SkillInfoBox.LBL_MESSAGE");
+}
+
+void* acc::menus::detail::SkillInfoBoxPanelOkButton(void* panel) {
+    return PanelMemberWithTripwire(panel, kSkillInfoBoxPanelOkButtonOffset,
+                                   4, "SkillInfoBox.BTN_OK");
+}
+
+// CSWGuiScriptSelect resolvers (see menus_internal.h). KOTOR 1 only — the
+// offsets poison on KOTOR 2 and acc::off::Ptr answers nullptr there, which
+// is the same answer the vtable-gated callers already expect.
+void* acc::menus::detail::ScriptSelectPanelAiStateListBox(void* panel) {
+    return PanelMemberWithTripwire(panel, kScriptSelectPanelAiStateListBoxOffset,
+                                   0, "ScriptSelect.LST_AIState");
+}
+
+void* acc::menus::detail::ScriptSelectPanelAcceptButton(void* panel) {
+    return PanelMemberWithTripwire(panel, kScriptSelectPanelAcceptButtonOffset,
+                                   4, "ScriptSelect.BTN_Accept");
+}
+
+void* acc::menus::detail::ScriptSelectPanelBackButton(void* panel) {
+    return PanelMemberWithTripwire(panel, kScriptSelectPanelBackButtonOffset,
+                                   3, "ScriptSelect.BTN_Back");
+}
+
+// CSWGuiWagerPopup resolvers (see menus_internal.h). The two games number
+// this .gui differently, so each tripwire id is per game.
+void* acc::menus::detail::WagerPopupPanelLessButton(void* panel) {
+    return PanelMemberWithTripwire(panel, kWagerPopupPanelLessButtonOffset,
+                                   acc::game::IsKotor2() ? 6 : 4,
+                                   "Wager.BTN_LESS");
+}
+
+void* acc::menus::detail::WagerPopupPanelMoreButton(void* panel) {
+    return PanelMemberWithTripwire(panel, kWagerPopupPanelMoreButtonOffset,
+                                   acc::game::IsKotor2() ? 7 : 5,
+                                   "Wager.BTN_MORE");
+}
+
+void* acc::menus::detail::WagerPopupPanelMaximumLabel(void* panel) {
+    return PanelMemberWithTripwire(panel, kWagerPopupPanelMaximumLabelOffset,
+                                   acc::game::IsKotor2() ? 2 : 3,
+                                   "Wager.LBL_MAXIMUM");
+}
+
+// CSWGuiPazaakStart resolvers (see menus_internal.h).
+void* acc::menus::detail::PazaakStartPanelPlayButton(void* panel) {
+    return PanelMemberWithTripwire(panel, kPazaakStartPanelPlayButtonOffset,
+                                   acc::game::IsKotor2() ? 95 : 78,
+                                   "PazaakDeck.BTN_ATEXT");
+}
+
+void* acc::menus::detail::PazaakStartPanelClearButton(void* panel) {
+    // KOTOR 1's pazaaksetup.gui has no clear-deck button; the offset poisons
+    // there and Ptr answers nullptr, so the caller's row simply loses that
+    // entry (which is how the id -1 behaved before).
+    return PanelMemberWithTripwire(panel, kPazaakStartPanelClearButtonOffset,
+                                   acc::game::IsKotor2() ? 96 : -1,
+                                   "PazaakDeck.BTN_CLEARCARDS");
+}
+
+// CSWGuiInGameOptKeyMappings resolvers (see menus_internal.h). The
+// tripwire ids are optkeymapping.gui's; KOTOR 2's file was never mined, so
+// if optkeymapping_p renumbers, the mismatch lines are the report of that
+// rather than a broken screen — the member path is unaffected either way.
+void* acc::menus::detail::KeyMapPanelEventListBox(void* panel) {
+    return PanelMemberWithTripwire(panel, kKeyMapPanelEventListBoxOffset,
+                                   0, "KeyMap.LST_EventList");
+}
+
+void* acc::menus::detail::KeyMapPanelDefaultButton(void* panel) {
+    return PanelMemberWithTripwire(panel, kKeyMapPanelDefaultButtonOffset,
+                                   2, "KeyMap.BTN_Default");
+}
+
+void* acc::menus::detail::KeyMapPanelAcceptButton(void* panel) {
+    return PanelMemberWithTripwire(panel, kKeyMapPanelAcceptButtonOffset,
+                                   3, "KeyMap.BTN_Accept");
+}
+
+void* acc::menus::detail::KeyMapPanelCancelButton(void* panel) {
+    return PanelMemberWithTripwire(panel, kKeyMapPanelCancelButtonOffset,
+                                   4, "KeyMap.BTN_Cancel");
+}
+
+void* acc::menus::detail::KeyMapPanelFilterButton(void* panel, int filterIndex) {
+    if (filterIndex < 0 || filterIndex > 2) return nullptr;
+    if (!acc::off::Ok(kKeyMapPanelFilterButtonsOffset) ||
+        !acc::off::Ok(kKeyMapPanelFilterButtonStride)) {
+        return nullptr;
+    }
+    static const char* const kTags[3] = { "KeyMap.BTN_Filter_Move",
+                                          "KeyMap.BTN_Filter_Game",
+                                          "KeyMap.BTN_Filter_Mini" };
+    const size_t off = kKeyMapPanelFilterButtonsOffset +
+                       static_cast<size_t>(filterIndex) *
+                           kKeyMapPanelFilterButtonStride;
+    return PanelMemberWithTripwire(panel, off, 6 + filterIndex,
+                                   kTags[filterIndex]);
+}
+
+// CSWGuiUpgradeItemSelect resolvers (see menus_internal.h). upgradeitems.gui
+// and upgradeitems_p.gui agree on the ids (LB_ITEMS 0, BTN_UPGRADEITEM 4,
+// BTN_BACK 5), so one tripwire id serves both games.
+void* acc::menus::detail::WorkbenchItemsPanelItemsListBox(void* panel) {
+    return PanelMemberWithTripwire(panel, kWorkbenchItemsPanelItemsListBoxOffset,
+                                   0, "WorkbenchItems.LB_ITEMS");
+}
+
+void* acc::menus::detail::WorkbenchItemsPanelUpgradeButton(void* panel) {
+    return PanelMemberWithTripwire(panel, kWorkbenchItemsPanelUpgradeButtonOffset,
+                                   4, "WorkbenchItems.BTN_UPGRADEITEM");
+}
+
+void* acc::menus::detail::WorkbenchItemsPanelBackButton(void* panel) {
+    return PanelMemberWithTripwire(panel, kWorkbenchItemsPanelBackButtonOffset,
+                                   5, "WorkbenchItems.BTN_BACK");
+}
+
 // Workbench-upgrade slot membership via the panel's embedded button run
 // (one contiguous array in both games — see the kUpgradePanelSlotButtons
 // note in engine_offsets_fields.h). Returns the ARRAY index (identity /
@@ -683,41 +812,19 @@ static bool DriveListBoxSelectionEngineBody(
     return true;
 }
 
-// Queue activation of the chain-navigable button child of `panel` whose
-// .gui-time id matches `buttonId`. Mirrors the activate path used by
-// chain-Enter elsewhere: queues an Activate op via menus_pending and sets
-// the speech-suppress budget so the post-activation focus echo doesn't
-// double-speak. The actual vtable[15].HandleInputEvent runs one tick later
-// in TickPendingOps.
+// Queue activation of a control the caller resolved through an engine-member
+// resolver. Mirrors the activate path used by chain-Enter elsewhere: queues
+// an Activate op via menus_pending and sets the speech-suppress budget so the
+// post-activation focus echo doesn't double-speak. The actual
+// vtable[15].HandleInputEvent runs one tick later in TickPendingOps.
 //
-// Returns false on debounce (any op already pending) or if the button id
-// isn't found on the panel; caller still consumes the keypress in those
-// cases so the engine's stale activeControl can't take over.
+// Returns false on debounce (any op already pending) or on a null target
+// (an unported offset, or a panel that has no such control); caller still
+// consumes the keypress in those cases so the engine's stale activeControl
+// can't take over.
 //
 // `logPrefix` is used in the diagnostic log line — pass something like
 // "Container: Enter -> BTN_OK".
-bool acc::menus::detail::QueueButtonByIdActivate(void* panel, int buttonId,
-                                                 const char* logPrefix)
-{
-    if (acc::menus::pending::IsPending()) {
-        acclog::Write(logPrefix, "-- op already pending; ignoring");
-        return false;
-    }
-    void* tgt = FindControlById(panel, buttonId);
-    if (!tgt) {
-        acclog::Write(logPrefix, "-- target id=%d not resolved on panel=%p",
-                      buttonId, panel);
-        return false;
-    }
-    acc::menus::pending::QueueActivate(tgt);
-    acclog::Write(logPrefix, "panel=%p target=%p", panel, tgt);
-    return true;
-}
-
-// Same debounce + queue + log, for a target already resolved through an
-// engine-member resolver (the gui-id audit's replacement for the id
-// lookup above). Null target is logged, not fatal — callers still
-// consume the keypress.
 bool acc::menus::detail::QueueControlActivate(void* target,
                                               const char* logPrefix)
 {

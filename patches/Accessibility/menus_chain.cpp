@@ -32,7 +32,6 @@
 #include "menus_inventory.h"
 #include "menus_modsettings.h"
 #include "menus_pazaakdeck.h"
-#include "minigame_pazaak.h"   // wager .gui ids (per game)
 #include "menus_crafting.h"  // IsHiddenCraftingListBox — K2 crafting view filter
 #include "menus_store.h"
 #include "prism.h"
@@ -395,7 +394,34 @@ void* FindAdjacentArrow(void* panel, void* focused, bool toRight) {
     return best;
 }
 
-void* FindCloseButton(void* panel) {
+namespace {
+
+// Does `text` OPEN WITH the whole word `word`? A plain prefix test is not
+// enough: the German difficulty cycler on Spieleinstellungen reads "Normal",
+// which starts with the English cancel keyword "No", so Esc on that screen
+// activated the difficulty cycler instead of closing — and since Esc was
+// consumed, the screen became unleavable by keyboard (K1 round 2026-08-20,
+// log patch-20260820-120136: 22x "Menus.Esc: cancel ... kind=GameSettings
+// target=136F6E24", id 2, text "Normal"). Long-standing, not new: the panel
+// already identified as GameSettings in patch-20260731-132418, so this Esc
+// path was reachable then too — a two-letter keyword in a prefix test is
+// simply a trap that waits for the right caption.
+//
+// Requiring the next character to be a non-letter/non-digit keeps the
+// keyword list a word list rather than a prefix list. Trailing punctuation
+// still matches, which is what the engine's own truncated "Schliess." needs.
+bool LabelOpensWithWord(const char* text, const char* word) {
+    const size_t n = strlen(word);
+    if (strncmp(text, word, n) != 0) return false;
+    const unsigned char next = static_cast<unsigned char>(text[n]);
+    return !(next >= 'A' && next <= 'Z') &&
+           !(next >= 'a' && next <= 'z') &&
+           !(next >= '0' && next <= '9');
+}
+
+// Shared scan behind both finders below: first chain-navigable control whose
+// caption opens with one of `words`.
+void* FindButtonByWords(void* panel, const char* const* words, int wordCount) {
     if (!panel) return nullptr;
     auto* list = reinterpret_cast<CExoArrayList*>(
         reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
@@ -406,36 +432,31 @@ void* FindCloseButton(void* panel) {
         if (!IsChainNavigable(c)) continue;
         char text[256];
         if (!acc::menus::extract::FromControl(c, text, sizeof(text), panel)) continue;
-        if (strncmp(text, "Schliess", 8) == 0 ||
-            strncmp(text, "Close",    5) == 0 ||
-            strncmp(text, "OK",       2) == 0 ||
-            strncmp(text, "Weiter",   6) == 0 ||
-            strncmp(text, "Continue", 8) == 0) {
-            return c;
+        for (int w = 0; w < wordCount; ++w) {
+            if (LabelOpensWithWord(text, words[w])) return c;
         }
     }
     return nullptr;
 }
 
+}  // namespace
+
+void* FindCloseButton(void* panel) {
+    // "Schliessen" as well as the engine's truncated "Schliess." — the word
+    // rule would reject the longer form as a different word.
+    static const char* const kWords[] = {
+        "Schliess.", "Schliessen", "Close", "OK", "Weiter", "Continue",
+    };
+    return FindButtonByWords(panel, kWords,
+                             sizeof(kWords) / sizeof(kWords[0]));
+}
+
 void* FindCancelButton(void* panel) {
-    if (!panel) return nullptr;
-    auto* list = reinterpret_cast<CExoArrayList*>(
-        reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
-    if (!list->data || list->size <= 0) return nullptr;
-    int n = list->size > 256 ? 256 : list->size;
-    for (int i = 0; i < n; ++i) {
-        void* c = list->data[i];
-        if (!IsChainNavigable(c)) continue;
-        char text[256];
-        if (!acc::menus::extract::FromControl(c, text, sizeof(text), panel)) continue;
-        if (strncmp(text, "Abbrechen", 9) == 0 ||
-            strncmp(text, "Cancel",    6) == 0 ||
-            strncmp(text, "Nein",      4) == 0 ||
-            strncmp(text, "No",        2) == 0) {
-            return c;
-        }
-    }
-    return nullptr;
+    static const char* const kWords[] = {
+        "Abbrechen", "Cancel", "Nein", "No",
+    };
+    return FindButtonByWords(panel, kWords,
+                             sizeof(kWords) / sizeof(kWords[0]));
 }
 
 namespace {
@@ -599,15 +620,15 @@ bool IsDecorativeControl(void* panel, void* c,
             return true;
         }
     }
-    // Pazaak wager popup: mask the less/more SpeedButtons (ids 4/5 on KOTOR 1,
-    // 6/7 on KOTOR 2 — see acc::pazaak::WagerLessButtonGuiId).
-    // The wager is adjusted with Left/Right (held = auto-repeat) via
-    // pazaak::Tick's polled stepper, so these buttons are redundant in the
-    // chain — dropping them lets Up/Down step straight from the wager row
-    // to Setzen/Beenden.
+    // Pazaak wager popup: mask the less/more SpeedButtons. The wager is
+    // adjusted with Left/Right (held = auto-repeat) via pazaak::Tick's polled
+    // stepper, so these buttons are redundant in the chain — dropping them
+    // lets Up/Down step straight from the wager row to Setzen/Beenden.
+    // Identified by the popup's own members, not by .gui id (the two games
+    // number them 4/5 vs 6/7); see WagerPopupPanel* in menus_internal.cpp.
     if (pk == PanelKind::PazaakWager &&
-        (cid == acc::pazaak::WagerLessButtonGuiId() ||
-         cid == acc::pazaak::WagerMoreButtonGuiId())) {
+        (c == acc::menus::detail::WagerPopupPanelLessButton(panel) ||
+         c == acc::menus::detail::WagerPopupPanelMoreButton(panel))) {
         return true;
     }
     // Charsheet decorative ids are strictly per game: K2's panel dropped

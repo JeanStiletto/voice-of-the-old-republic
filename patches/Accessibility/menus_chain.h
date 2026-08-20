@@ -198,10 +198,12 @@ bool IsTabButton(void* control);
 void* FindAdjacentArrow(void* panel, void* focused, bool toRight);
 
 // Heuristic finders for the back-out / cancel buttons used by the Esc
-// handler. FindCloseButton matches "Schliess" / "Close" / "OK" / "Weiter"
-// / "Continue" prefixes; FindCancelButton matches "Abbrechen" / "Cancel"
-// / "Nein" / "No". Probe order matters at the call site (cancel-first to
-// route Esc on confirm dialogs to the safe option).
+// handler. FindCloseButton matches "Schliess." / "Schliessen" / "Close" /
+// "OK" / "Weiter" / "Continue"; FindCancelButton matches "Abbrechen" /
+// "Cancel" / "Nein" / "No". The match is on the caption's opening WORD, not
+// a bare prefix — "Normal" must not read as "No" (see the note above
+// LabelOpensWithWord in menus_chain.cpp). Probe order matters at the call
+// site (cancel-first to route Esc on confirm dialogs to the safe option).
 void* FindCloseButton(void* panel);
 void* FindCancelButton(void* panel);
 

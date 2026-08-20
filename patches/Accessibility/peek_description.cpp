@@ -12,13 +12,11 @@
 #include "menus_abilities.h"  // RefreshDetail (abilities description repaint)
 #include "menus_crafting.h"   // ResolveRowCommit — K2 crafting row peek gate
 #include "menus_galaxymap.h"  // SpeakDescription — galaxy-map LBL_DESC peek
-#include "menus_internal.h"   // kEquipBtn* slot ids, FindControlById
+#include "menus_internal.h"   // panel-member control resolvers
 #include "menus_listbox.h"    // IsEquipPickerArmed
 #include "pad_input.h"        // PeekModifierHeld — Y is the pad's Shift
 #include "prism.h"
 #include "strings.h"          // WorkbenchSlotPeekEmpty
-
-using acc::menus::detail::FindControlById;
 
 #include <cctype>
 #include <cstddef>
@@ -248,8 +246,8 @@ const PanelPeekInfo* LookupPanel(acc::engine::PanelKind k) {
 // minSel=1 skips the Equip-picker's protoitem template row;
 // Container uses 0.
 //
-// findLb: the panel's ctor-bound member resolver where one exists,
-// FindControlById for the heap-allocated workbench listboxes.
+// findLb: the panel's ctor-bound member resolver — every entry now names an
+// engine member rather than a .gui id.
 struct ItemTooltipPanelInfo {
     acc::engine::PanelKind kind;
     void*                (*findLb)(void* panel);
@@ -271,7 +269,7 @@ void* InGameEquipFindLb(void* panel) {
 }
 
 void* WorkbenchItemsFindLb(void* panel) {
-    return FindControlById(panel, 0);
+    return acc::menus::detail::WorkbenchItemsPanelItemsListBox(panel);
 }
 
 void* WorkbenchUpgradeFindLb(void* panel) {

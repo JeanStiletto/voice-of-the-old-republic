@@ -17,8 +17,9 @@
 #include "engine_game.h"     // IsKotor2 — Batch 1 decline
 #include "engine_input.h"    // kInputNav* / kInputEnter*
 #include "engine_manager.h"  // IsPanelInManager
-#include "engine_offsets.h"  // CExoArrayList, kPanelControlsOffset, kControlIdOffset
+#include "engine_offsets.h"  // acc::off — the panel's card/model field offsets
 #include "menus_extract.h"   // FromControl — reads BTN_CLEARCARDS' own label
+#include "menus_internal.h"  // PazaakStartPanel* — engine-member control resolution
 #include "menus_pending.h"   // QueueActivate (Play button)
 #include "minigame_pazaak.h"          // FormatCardLabel, CardContext
 #include "prism.h"
@@ -162,16 +163,13 @@ typedef int (__thiscall* PFN_RemoveChosenCard)(void* panel, int slot);
 const uintptr_t kAddrAddChosenCard = acc::addr::Pick(0x0067fb10, 0x00889DD0);
 const uintptr_t kAddrRemoveChosenCard = acc::addr::Pick(0x0067fd10, 0x0088A0B0);
 
-// "Spielen" — BTN_ATEXT, by .gui id (locale-stable). KOTOR 2 renumbers the
-// setup screen: pazaaksetup.gui puts BTN_ATEXT at 78, pazaaksetup_p.gui at 95
-// (it inserts six more available-card buttons, their labels and their count
-// labels ahead of it, and adds BTN_CLEARCARDS at 96).
-const int kControlPlayId = acc::game::IsKotor2() ? 95 : 78;
-
-// BTN_CLEARCARDS — empties the chosen deck in one press. KOTOR 2 only; KOTOR 1's
-// setup screen has no such button, so the id poisons to -1 there and the
-// controls row is one entry long (see RowLength).
-const int kControlClearId = acc::game::IsKotor2() ? 96 : -1;
+// "Spielen" (BTN_ATEXT) and KOTOR 2's BTN_CLEARCARDS resolve through the
+// panel's own ctor-bound members — see PazaakStartPanel* in
+// menus_internal.cpp and docs/gui-id-audit.md. The .gui ids they used to be
+// looked up by (78/95 and 96) survive only as those resolvers' GuiIdMismatch
+// tripwires. KOTOR 1's pazaaksetup.gui has no clear button at all, so the
+// resolver answers nullptr there and the controls row is one entry long
+// (see RowLength).
 
 enum class Op { None, Add, Remove, Play, ClearCards };
 
@@ -224,23 +222,6 @@ int RowLength(void* panel, int row) {
     return acc::game::IsKotor2() ? 2 : 1;
 }
 
-void* FindControlById(void* panel, int id) {
-    __try {
-        auto* list = reinterpret_cast<CExoArrayList*>(
-            reinterpret_cast<unsigned char*>(panel) + kPanelControlsOffset);
-        if (!list->data || list->size <= 0) return nullptr;
-        int n = list->size > 256 ? 256 : list->size;
-        for (int i = 0; i < n; ++i) {
-            void* c = list->data[i];
-            if (!c) continue;
-            int cid = *reinterpret_cast<int*>(
-                reinterpret_cast<unsigned char*>(c) + kControlIdOffset);
-            if (cid == id) return c;
-        }
-    } __except (EXCEPTION_EXECUTE_HANDLER) {}
-    return nullptr;
-}
-
 void Speak(const char* s) { if (s && s[0]) prism::Speak(s, /*interrupt=*/true); }
 
 void AnnounceFocus(void* panel) {
@@ -279,7 +260,7 @@ void AnnounceFocus(void* panel) {
         // button with real text, and the extractor already knows how to read
         // one. Falls back to naming the deck's current fill so the row is never
         // silent if the read fails.
-        void* btn = FindControlById(panel, kControlClearId);
+        void* btn = acc::menus::detail::PazaakStartPanelClearButton(panel);
         char label[128];
         if (btn && acc::menus::extract::FromControl(btn, label, sizeof(label), panel) &&
             label[0] != '\0') {
@@ -400,13 +381,13 @@ void Tick() {
     } else if (op == Op::ClearCards) {
         // Let the engine's own button do the work, then report the result —
         // the deck should read empty afterwards.
-        void* btn = FindControlById(panel, kControlClearId);
+        void* btn = acc::menus::detail::PazaakStartPanelClearButton(panel);
         if (btn) {
             acc::menus::pending::QueueActivate(btn);
             g_announceClearOnNextTick = true;
         }
     } else if (op == Op::Play) {
-        void* btn = FindControlById(panel, kControlPlayId);
+        void* btn = acc::menus::detail::PazaakStartPanelPlayButton(panel);
         if (btn) acc::menus::pending::QueueActivate(btn);
     }
 }

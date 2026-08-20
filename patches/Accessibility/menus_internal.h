@@ -188,15 +188,11 @@ bool DriveListBoxSelectionEngine(void* listbox, ListBoxNavOp op, short minSel,
 // rationale (the corner has to clear the camera edge-turn band).
 bool ParkCursorToCorner(const char* tag);
 
-// Queue activation of the chain-navigable button child of `panel` whose
-// +0x50 ID matches `buttonId`. Reserved for select-then-confirm panels
-// (Container / SaveLoad spec entries). Returns false on debounce or
-// missing target — caller still consumes the keypress so the engine's
-// stale activeControl can't take over.
-bool QueueButtonByIdActivate(void* panel, int buttonId, const char* logPrefix);
-
-// Same debounce/queue/log contract for a control already resolved via an
-// engine-member resolver (SaveLoadPanel* etc.) instead of a .gui id.
+// Queue activation of a control resolved through an engine-member resolver
+// (SaveLoadPanel* / ContainerPanel* / ...). Used by every select-then-confirm
+// panel to commit its Enter/Esc. Returns false on debounce or a null target —
+// the caller still consumes the keypress so the engine's stale activeControl
+// can't take over.
 bool QueueControlActivate(void* target, const char* logPrefix);
 
 }  // namespace acc::menus::detail
@@ -406,6 +402,63 @@ void* ContainerPanelGiveItemsButton(void* panel); // BTN_GIVEITEMS (give mode)
 void* FeatsPanelAcceptButton(void* panel);       // BTN_ACCEPT ("OK")
 void* FeatsPanelBackButton(void* panel);         // BTN_BACK ("Abbrechen")
 void* FeatsPanelRecommendedButton(void* panel);  // BTN_RECOMMENDED
+
+// CSWGuiSkillInfoBox (skillinfo / skillinfo_p) engine-truth resolvers —
+// the granted-feats / level-up info popup. Panel identity is already
+// engine-truth (the gui manager's own panel slot, IdentifyPanel ==
+// PanelKind::SkillInfoBox); these move its three live controls off the
+// .gui ids. Defined in menus_internal.cpp.
+void* SkillInfoBoxPanelSkillsListBox(void* panel);  // LB_SKILLS (rows)
+void* SkillInfoBoxPanelMessageLabel(void* panel);   // LBL_MESSAGE (title)
+void* SkillInfoBoxPanelOkButton(void* panel);       // BTN_OK
+
+// CSWGuiScriptSelect (ScriptSelect.gui) engine-truth resolvers — the
+// character sheet's combat-behaviour picker, KOTOR 1 only. Panel identity
+// is already the CSWGuiScriptSelect vtable (IsScriptSelectStructural).
+// The offsets poison on KOTOR 2, where the class does not exist, so these
+// answer nullptr there. Defined in menus_internal.cpp.
+void* ScriptSelectPanelAiStateListBox(void* panel);  // LST_AIState
+void* ScriptSelectPanelAcceptButton(void* panel);    // BTN_Accept ("Wählen")
+void* ScriptSelectPanelBackButton(void* panel);      // BTN_Back ("Abbrechen")
+
+// CSWGuiWagerPopup (pazaakwager / pazaakwager_p) engine-truth resolvers —
+// the pazaak bet popup. Panel identity is already the CSWGuiWagerPopup
+// vtable (IsPazaakWagerStructural); the two games renumber the .gui
+// (BTN_LESS 4 vs 6, BTN_MORE 5 vs 7, LBL_MAXIMUM 3 vs 2), so those ids
+// survive only as the GuiIdMismatch tripwire. Defined in
+// menus_internal.cpp.
+void* WagerPopupPanelLessButton(void* panel);     // BTN_LESS (SpeedButton)
+void* WagerPopupPanelMoreButton(void* panel);     // BTN_MORE (SpeedButton)
+void* WagerPopupPanelMaximumLabel(void* panel);   // LBL_MAXIMUM (max + credits)
+
+// CSWGuiPazaakStart (pazaaksetup / pazaaksetup_p) engine-truth resolvers —
+// the side-deck builder. Panel identity is already the CSWGuiPazaakStart
+// vtable (IsPazaakStartStructural). The clear button is KOTOR 2 only and
+// answers nullptr on KOTOR 1 (poisoned offset). Defined in
+// menus_internal.cpp.
+void* PazaakStartPanelPlayButton(void* panel);    // BTN_ATEXT ("Spielen")
+void* PazaakStartPanelClearButton(void* panel);   // BTN_CLEARCARDS (K2)
+
+// CSWGuiInGameOptKeyMappings (OPTKeyMapping / OPTKeyMapping_p) engine-truth
+// resolvers — the Tastaturbelegung screen. Panel identity comes from the
+// panel-kind probe; these move the eight controls the navigator drives off
+// their .gui ids. FilterButton takes the engine's own filter index
+// (0 = MOVEMENT, 1 = GAME, 2 = MINIGAME) — the same index KOTOR 2's
+// SetFilter takes — and answers nullptr outside 0..2. Defined in
+// menus_internal.cpp.
+void* KeyMapPanelEventListBox(void* panel);       // LST_EventList
+void* KeyMapPanelDefaultButton(void* panel);      // BTN_Default ("Standard")
+void* KeyMapPanelAcceptButton(void* panel);       // BTN_Accept ("OK")
+void* KeyMapPanelCancelButton(void* panel);       // BTN_Cancel ("Abbrechen")
+void* KeyMapPanelFilterButton(void* panel, int filterIndex);
+
+// CSWGuiUpgradeItemSelect (upgradeitems / upgradeitems_p) engine-truth
+// resolvers — the workbench per-category item picker. Panel identity is the
+// CSWGuiUpgradeItemSelect vtable (IsWorkbenchItemsStructural). Defined in
+// menus_internal.cpp.
+void* WorkbenchItemsPanelItemsListBox(void* panel);   // LB_ITEMS
+void* WorkbenchItemsPanelUpgradeButton(void* panel);  // BTN_UPGRADEITEM
+void* WorkbenchItemsPanelBackButton(void* panel);     // BTN_BACK
 
 }  // namespace acc::menus::detail
 

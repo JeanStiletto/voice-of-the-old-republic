@@ -818,10 +818,6 @@ void ResetState() {
 
 }  // namespace
 
-int WagerLessButtonGuiId() { return acc::game::IsKotor2() ? 6 : 4; }
-int WagerMoreButtonGuiId() { return acc::game::IsKotor2() ? 7 : 5; }
-int WagerMaxLabelGuiId()   { return acc::game::IsKotor2() ? 2 : 3; }
-
 bool IsSignChoiceCard(int index) {
     if (index >= 12 && index <= 17) return true;                 // ±1..±6, both games
     return acc::game::IsKotor2() && index == kCardTiebreaker;    // ±1 T, KOTOR 2 only

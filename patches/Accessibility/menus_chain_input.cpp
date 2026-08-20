@@ -40,7 +40,7 @@
 #include "menus_monitors.h"
 #include "menus_pending.h"
 #include "menus_store.h"
-#include "minigame_pazaak.h"
+#include "minigame_pazaak.h"  // kWagerLessCode / kWagerMoreCode
 #include "peek_description.h"
 #include "prism.h"
 #include "strings.h"
@@ -233,31 +233,28 @@ void HandleEnterActivation(void* activePanel, int code, int val, bool& consumed)
         }
     }
 
-    // Pazaak wager popup less/more buttons (CSWGuiSpeedButton; .gui ids 4/5 on
-    // KOTOR 1, 6/7 on KOTOR 2 — see acc::pazaak::WagerLessButtonGuiId).
-    // They act only on their push callback (OnMinus/OnPlusButtonPushed →
+    // Pazaak wager popup less/more buttons (CSWGuiSpeedButton).
+    // They act only on their push callback (OnMinus/OnPlusButtonPushed ->
     // panel HandleInputEvent 0x2f/0x30); the generic vtable[15] activate
     // (0x27) they ignore — its switch case 0x27 is the popup's *commit*, and
     // the button-level activate never reaches it, so Enter was a silent no-op.
     // The wager also starts AT the maximum (the constructor seeds current =
     // max), so "more" is a no-op until "less" has lowered it. Route Enter to
-    // the panel's own less/more dispatch. cid 4 = less, cid 5 = more.
+    // the panel's own less/more dispatch. Which button is which comes from
+    // the popup's ctor-bound members (WagerPopupPanel*), not from the .gui
+    // ids the two games disagree on.
     bool isWagerStepButton = false;
     int  wagerStepCode = 0;
     if (acc::engine::IdentifyPanel(g_chainPanel) ==
             acc::engine::PanelKind::PazaakWager) {
-        __try {
-            int cid = *reinterpret_cast<int*>(
-                reinterpret_cast<unsigned char*>(e.control) + kControlIdOffset);
-            if (cid == acc::pazaak::WagerLessButtonGuiId()) {
-                isWagerStepButton = true;
-                wagerStepCode = acc::pazaak::kWagerLessCode;
-            } else if (cid == acc::pazaak::WagerMoreButtonGuiId()) {
-                isWagerStepButton = true;
-                wagerStepCode = acc::pazaak::kWagerMoreCode;
-            }
-        } __except (EXCEPTION_EXECUTE_HANDLER) {
-            isWagerStepButton = false;
+        if (e.control ==
+            acc::menus::detail::WagerPopupPanelLessButton(g_chainPanel)) {
+            isWagerStepButton = true;
+            wagerStepCode = acc::pazaak::kWagerLessCode;
+        } else if (e.control ==
+                   acc::menus::detail::WagerPopupPanelMoreButton(g_chainPanel)) {
+            isWagerStepButton = true;
+            wagerStepCode = acc::pazaak::kWagerMoreCode;
         }
     }
 
