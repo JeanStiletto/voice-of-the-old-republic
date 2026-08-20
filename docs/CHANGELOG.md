@@ -33,74 +33,64 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
-<h2>Unreleased</h2>
+<h2>v0.7.8</h2>
+
+<h3>Screens no longer break on installs with modified layout files:</h3>
+
+- Every screen the mod drives is now recognised the way the game itself
+  recognises it, instead of by the numeric control ids in the game's
+  layout (`.gui`) files. Those files are ordinary data: any content mod
+  may replace one, and a replacement that merely renumbers its controls
+  used to make the mod read the wrong control — or stop recognising a
+  screen at all — silently. A beta tester's install did exactly that to
+  the KOTOR 2 equipment screen, which is what started this work: the item
+  picker read an empty list, Enter could not equip, and nothing said why.
+  All screen and control identification now comes from the engine's own
+  class identity and the bindings its constructors make, which no layout
+  file can renumber. If an install's layout file still disagrees with what
+  we expect, one line lands in the patch log so a submitted log bundle
+  shows it.
 
 <h3>Bug fixes:</h3>
 
+- KOTOR 2: character creation no longer crashes while browsing the Skills
+  list. Closing one creation step and opening the next could hand the new
+  screen the memory address the old one had just released; the mod kept
+  navigating what it thought was the old screen and the game died inside
+  its own handler. Navigation now verifies a screen is still the one it
+  was bound to before driving it.
 - Escape leaves the Game Settings screen again. The screen's difficulty
   button reads "Normal", and Escape's search for a Cancel button matched
   that caption against the keyword "No" — so Escape re-rolled the
   difficulty instead of closing, and since the key was consumed, the
   screen had no keyboard way out. Cancel/Close captions now have to match
   a whole word.
+- KOTOR 1: the workbench upgrade picker now reaches every row. The
+  engine's hover-select was snapping the selection back to whichever row
+  sat under the invisible mouse cursor, so with a long list (e.g. 8
+  lightsaber crystals) only the two rows next to it were ever reachable.
+  The picker now parks the cursor in the empty screen corner, the same fix
+  the dialogue-reply list uses.
 
-<h3>Crafting (KOTOR 2):</h3>
+<h3>Navigation and speech:</h3>
 
-- The KOTOR 2 workbench and lab-station screens are now immune to
-  installs with modified layout files — the same hardening the
-  equipment, workbench-upgrade and save/load screens got. The item
-  lists, the Create/Upgrade commit buttons, the view-flip button and the
-  screen titles now resolve through the engine's own constructor
-  bindings instead of layout-file ids. This also removed a latent
-  hazard: the two crafting layout files number the view-flip button
-  differently, so an id mix-up there would have closed the lab station
-  instead of flipping its list.
-
-<h3>Save/Load screen:</h3>
-
-- The save/load screen is now immune to installs with modified layout
-  files, in both games — the same hardening the equipment and workbench
-  screens got. The screen itself, its save list and its Load/Save and
-  Back buttons are now recognised through the engine's own class identity
-  and constructor bindings instead of layout-file ids. This screen was
-  the riskiest of the audit: a renumbered layout file would previously
-  have made the mod not recognise it at all, silently — no spoken rows,
-  Enter loading the wrong (default-selected) save.
-
-<h3>Workbench:</h3>
-
-- KOTOR 1: the upgrade picker now reaches every row. The engine's
-  hover-select was snapping the selection back to whichever row sat under
-  the invisible mouse cursor, so with a long list (e.g. 8 lightsaber
-  crystals) only the two rows next to it were ever reachable. The picker
-  now parks the cursor in the empty screen corner, the same fix the
-  dialogue-reply list uses.
-- The workbench upgrade screen's controls (item list, Assemble, Back, all
-  slot buttons) now resolve through the engine's own constructor bindings
-  instead of layout-file ids — the same hardening the equipment screen
-  got, protecting against installs with modified layout files. A wrong
-  first value for KOTOR 2's Back button briefly made leaving the upgrade
-  screen crash during beta-dev testing; it never shipped, and the new
-  mismatch tripwire is what caught it.
-
-<h3>Equipment screen:</h3>
-
-- The equipment screen now works on installs whose mods replace the K2
-  equipment layout file. A beta install shipped an `equip_p.gui` variant with
-  renumbered control ids, which left the item picker unusable there — arrows
-  read an empty list, Enter could not equip, and picker rows leaked into the
-  slot navigation as phantom buttons. All equipment-screen lookups now resolve
-  through the engine's own constructor-bound members (immune to layout-file
-  renumbering, on both games); if an install's layout file still disagrees, one
-  `GuiIdMismatch` line lands in the patch log so we see it in log bundles.
+- Ctrl+F1 during a game of Pazaak now reads the Pazaak keys — moving
+  between your hand, the two boards and the actions, playing a card,
+  choosing the sign on a plus-minus card, reviewing hand and table, stand
+  and end turn. It used to fall back to the generic menu keys, none of
+  which do anything at the table. The same keys are listed under F1.
+- The title screen's developer "Warp" button is no longer reachable by
+  keyboard. It jumps into an arbitrary game area by internal name; the
+  game hides it from sight but leaves it in the screen, so arrow
+  navigation was the only thing that could still land on it.
 - KOTOR 2: pressing Enter on an equipped slot with nothing else to swap in now
   follows the game's "You have no items that can be equipped in this slot"
   popup with "Item still equipped: <name>". The refusal is the game's own rule
   (unlike KOTOR 1 it only opens the list when another fitting item exists), and
   without the extra line it sounded as if the equipped item had vanished.
-- KOTOR 2: the two secondary weapon-configuration slots now announce their slot
-  name and equipped item and support the Shift+arrow item description, like
-  every other slot.
+- KOTOR 2: the two secondary weapon-configuration slots on the equipment
+  screen now announce their slot name and equipped item and support the
+  Shift+arrow item description, like every other slot.
 
 <h2>v0.7.7</h2>
 
