@@ -353,7 +353,7 @@ bool SetGuiInputClass(int klass);
 // Triggers: a CSWGuiDialog* in panels[]; foreground = modal_stack[top];
 // foreground kind ∈ {Container, Store, Examine, Dialog*, TutorialBox,
 // MessageBoxModal, StatusSummary, AreaTransition, InGameMenu (the strip
-// stays fg while any sub-screen is drilled)}.
+// stays fg while any sub-screen is drilled), InGameGalaxyMap}.
 enum class UiBlockReason {
     NotBlocked,
     DialogInStack,
@@ -370,6 +370,19 @@ struct UiBlockState {
 
 // outState (optional) carries diagnostic detail for the log line.
 bool IsForegroundUiBlocking(UiBlockState* outState = nullptr);
+
+// True for the handful of foreground kinds that coexist with normal in-world
+// play — the HUD, the pause overlay, a bark bubble, a fade, and the
+// unclassified Unknown. Every other kind is a screen or a popup that routes
+// its own keys, so a world-hotkey dispatch running over one is a gate gap of
+// the class the galaxy-map Enter double-fire belonged to.
+//
+// This is the AUDIT half of IsForegroundUiBlocking, not a second gate: the
+// blocking predicate stays a blacklist (a mis-identified panel must not cost
+// the player their interact key), while this one is the whitelist the log
+// lines are checked against, so a leak shows up in a tester log as a named
+// kind instead of going unnoticed until it breaks a module transition.
+bool IsWorldLevelForegroundKind(PanelKind k);
 
 // Verify an object's vtable pointer matches `expected`. Works on anything
 // whose vtable sits at +0 — both child controls and whole panels.

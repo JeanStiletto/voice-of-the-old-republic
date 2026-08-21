@@ -659,6 +659,15 @@ void PollWin32() {
                 case acc::engine::PanelKind::PartySelection:
                 case acc::engine::PanelKind::AreaTransition:
                 case acc::engine::PanelKind::InGameMenu:
+                // Same gap the interact gate had: the star map is neither a
+                // drilled sub-screen nor a modal, so nothing above catches
+                // it, and view mode's toggle flips engine input state — the
+                // one thing this gate exists to keep away from a live panel.
+                // This list and IsForegroundUiBlocking's are deliberately
+                // different (this one is stricter — any modal, any drilled
+                // sub-screen) but every kind in that one belongs here too;
+                // add to both when a new screen appears.
+                case acc::engine::PanelKind::InGameGalaxyMap:
                     blockReason = "UI panel foreground";
                     break;
                 default:

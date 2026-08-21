@@ -1416,27 +1416,66 @@ void NotifyExternalLoadStarting(const char* reason) {
                   reason ? reason : "?");
 }
 
-void AnnouncePreLoadDestination(void* exoStringPtr) {
-    // Latch the module-load transient unconditionally on every fire.
-    // Even if the dedup window below suppresses the announce, the engine
-    // is still beginning a transition — gating consumers off the announce
-    // path would let the second-of-a-pair fire go un-latched and the
-    // probes would resume mid-handoff.
-    g_module_load_pending = true;
+namespace {
 
-    if (!exoStringPtr) return;
-
-    // CExoString = { char* c_string; uint32 length } at offset 0.
-    // ReadCExoString already SEH-guards the c_string read.
-    char dest[128] = {0};
-    if (!acc::engine::ReadCExoString(exoStringPtr, /*offset=*/0,
-                                     dest, sizeof(dest))) {
-        acclog::Write("Transition", "pre-load string read failed (exoStr=%p)",
-            exoStringPtr);
-        return;
+// A destination module resref is short printable ASCII — "endar_spire",
+// "tar_m02ac", "101PER". Anything else means the argument was read in the
+// wrong shape, and the two consequences of trusting it are both bad: the log
+// line stops identifying the destination (the one field a stuck-transition
+// report needs) and the "Loading: …" announce speaks binary noise at the
+// player. Both K2 fires on record failed this test.
+bool LooksLikeResref(const char* s) {
+    if (!s || !s[0]) return false;
+    bool sawAlnum = false;
+    for (size_t n = 0; s[n]; ++n) {
+        if (n >= 32) return false;                 // resrefs are 16 chars
+        unsigned char c = static_cast<unsigned char>(s[n]);
+        if (c < 0x20 || c > 0x7e) return false;    // non-printable → wrong shape
+        if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') ||
+            (c >= 'a' && c <= 'z')) {
+            sawAlnum = true;
+        }
     }
-    if (dest[0] == '\0') return;  // empty resref — silently skip
+    return sawAlnum;
+}
 
+// Shape A — `base` is a CExoString* { char* c_string; uint32 length }.
+// ReadCExoString dereferences c_string unguarded, so the guard is ours (the
+// old comment here claimed otherwise; the K1 hook survived on a correct
+// argument, not on a guard).
+bool TryReadExoString(void* base, char* out, size_t outSize) {
+    if (!base || !out || outSize == 0) return false;
+    out[0] = '\0';
+    __try {
+        return acc::engine::ReadCExoString(base, /*offset=*/0, out, outSize);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+// Shape B — the slot holds a by-value CExoString, so the dword IS c_string
+// and the text starts there. Bounded, NUL-terminated, SEH-guarded.
+bool TryReadNarrowText(const void* p, char* out, size_t outSize) {
+    if (!p || !out || outSize == 0) return false;
+    out[0] = '\0';
+    __try {
+        const char* s = static_cast<const char*>(p);
+        size_t n = 0;
+        for (; n + 1 < outSize && s[n]; ++n) out[n] = s[n];
+        out[n] = '\0';
+        return out[0] != '\0';
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        out[0] = '\0';
+        return false;
+    }
+}
+
+}  // namespace
+
+// Shared tail of both hooks: dedup, then speak + log the destination. `shape`
+// tags which reading produced it, so a future log says whether the K2 probe
+// below settled on the pointer or the by-value form.
+static void AnnouncePreLoadDest(const char* dest, const char* shape) {
     // Dedup: the engine sometimes fires SetMoveToModuleString more than
     // once inside the same transition (e.g. once with the raw resref,
     // once with a normalized form). Suppress repeats of the same
@@ -1460,7 +1499,8 @@ void AnnouncePreLoadDestination(void* exoStringPtr) {
     // probes stay gated regardless.
     if (acc::bringup_announce::IsMovieWindowForeground()) {
         acclog::Write("Transition",
-            "pre-load -> '%s' (speech suppressed — movie foreground)", dest);
+            "pre-load -> '%s' [%s] (speech suppressed — movie foreground)",
+            dest, shape);
         return;
     }
 
@@ -1469,7 +1509,72 @@ void AnnouncePreLoadDestination(void* exoStringPtr) {
                   acc::strings::Get(acc::strings::Id::FmtTransitionLoading),
                   dest);
     prism::Speak(speech, /*interrupt=*/false);
-    acclog::Write("Transition", "pre-load -> '%s'", dest);
+    acclog::Write("Transition", "pre-load -> '%s' [%s]", dest, shape);
+}
+
+void AnnouncePreLoadDestination(void* exoStringPtr) {
+    // Latch the module-load transient unconditionally on every fire.
+    // Even if the dedup window below suppresses the announce, the engine
+    // is still beginning a transition — gating consumers off the announce
+    // path would let the second-of-a-pair fire go un-latched and the
+    // probes would resume mid-handoff.
+    //
+    // The latch is also the reason this line is worth grepping in a bug
+    // report: it is the mod's only witness that the engine ASKED for a
+    // module change. Its absence across a whole failed travel (KOTOR 2
+    // prologue, k2-patch-20260820-143622.log) is what separated "the
+    // transition was requested and then died" from "the transition was
+    // never requested at all".
+    g_module_load_pending = true;
+
+    if (!exoStringPtr) return;
+
+    char dest[128] = {0};
+    if (!TryReadExoString(exoStringPtr, dest, sizeof(dest))) {
+        acclog::Write("Transition",
+            "pre-load requested but string read failed (exoStr=%p) — "
+            "transition is under way regardless", exoStringPtr);
+        return;
+    }
+    if (!LooksLikeResref(dest)) {
+        acclog::Write("Transition",
+            "pre-load requested but destination is not resref-shaped "
+            "(exoStr=%p first byte 0x%02x) — announce skipped", exoStringPtr,
+            static_cast<unsigned char>(dest[0]));
+        return;
+    }
+
+    AnnouncePreLoadDest(dest, "exoString*");
+}
+
+void AnnouncePreLoadDestinationK2(void* slotValue) {
+    g_module_load_pending = true;
+
+    if (!slotValue) return;
+
+    // Shape A first — the K1 reading, and what the hook comment assumes.
+    char dest[128] = {0};
+    if (TryReadExoString(slotValue, dest, sizeof(dest)) &&
+        LooksLikeResref(dest)) {
+        AnnouncePreLoadDest(dest, "K2 exoString*");
+        return;
+    }
+
+    // Shape B — the slot holds the CExoString by value, so it IS the c_string.
+    if (TryReadNarrowText(slotValue, dest, sizeof(dest)) &&
+        LooksLikeResref(dest)) {
+        AnnouncePreLoadDest(dest, "K2 inline");
+        return;
+    }
+
+    // Neither reading produced a resref. Say so plainly rather than speaking
+    // the noise: the transition itself is latched and under way, and the log
+    // line still marks the request, which is what a stuck-transition report
+    // needs. If this line is what a future log shows, the argument shape at
+    // the K2 hook site is a third thing and wants a decompile, not a guess.
+    acclog::Write("Transition",
+        "pre-load requested (K2) but neither shape read a resref "
+        "(slot=%p) — announce skipped, load latch armed", slotValue);
 }
 
 }  // namespace acc::transitions
@@ -1512,19 +1617,26 @@ extern "C" void __cdecl OnSetMoveToModuleString(void* /*serverApp*/,
 // the body assigns the destination CExoString at internal([this+4])+0x1008C.
 // Unoptimised frame, so the destination is a clean frame param at [EBP+8] —
 // the value itself, NOT the K1 LEA'd slot address; no double-deref here.
+//
+// The hook itself is proven — it fires on K2's scripted module changes (turret
+// entry / exit, patch-20260812-115149.log) — but every K2 fire on record read
+// its destination as noise where K1 reads a clean resref, so the dword is
+// handed on unread and AnnouncePreLoadDestinationK2 decides what it is.
 extern "C" __declspec(dllexport)
 void __cdecl OnSetMoveToModuleStringK2(void* ebp) {
     if (!acc::game::IsKotor2()) return;
     if (!ebp) return;
 
-    void* exoStringPtr = nullptr;
+    void* slotValue = nullptr;
     __try {
-        exoStringPtr = *reinterpret_cast<void**>(static_cast<char*>(ebp) + 8);
+        slotValue = *reinterpret_cast<void**>(static_cast<char*>(ebp) + 8);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("Transition", "pre-load (K2) arg read faulted (ebp=%p)",
+                      ebp);
         return;
     }
-    if (!exoStringPtr) return;
+    if (!slotValue) return;
 
     EnsurePrismInitialized();
-    acc::transitions::AnnouncePreLoadDestination(exoStringPtr);
+    acc::transitions::AnnouncePreLoadDestinationK2(slotValue);
 }

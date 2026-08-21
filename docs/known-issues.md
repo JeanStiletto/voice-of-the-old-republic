@@ -12,6 +12,34 @@ When an entry is closed, move it out of this file (the corresponding fix or comm
 
 ## Bugs
 
+### Galaxy-map travel never loaded the destination — fix built 2026-08-20, awaiting test
+
+A tester finished KOTOR 2's prologue, flew to Peragus, watched the movie and
+landed back on the Ebon Hawk with the star map open — three times in a row,
+which is where the run ended (`k2-patch-20260820-143622.log`, 14:49-14:51,
+bundle `userlogs/tutorialreset0781.7z`).
+
+Cause: one Enter drove both the star map's accept (`GalaxyMap: accept/travel`)
+and the in-world interact dispatcher (`Interact: Enter gate -- ALLOW,
+kind=InGameGalaxyMap` → a queued `AddUseObjectAction` on the Galaxy Map
+placeable). `IsForegroundUiBlocking`'s kind blacklist did not carry
+`InGameGalaxyMap`, and the engine does not push that panel onto `modal_stack`,
+so neither of the other two block rules covered it. The queued action outlived
+the 25-second movie and fired at the end of the travel cutscene — the star map
+re-opened with no keypress behind it, and `Transition: pre-load` never appeared
+for any of the three attempts, so the module change was never requested at all.
+
+Fixed by blacklisting the kind. Same failure class as the save-name popup
+(commit `21d8a99`), which was closed with a per-popup latch rather than at the
+gate; a latch cannot fix this one, because the poll router runs *before* the
+menus consume in the same tick (visible in the log — the interact dispatch is
+logged above `accept/travel`).
+
+Test: KOTOR 2 prologue, Galaxy Map → Peragus II → Enter. Expect the movie, then
+Peragus, and a `Transition: pre-load` line in the log. Then the same on KOTOR 1
+(Ebon Hawk → any planet), where the double-fire also existed but the immediate
+module load hid it.
+
 ### Chain drives a freed panel when its address is reused — fix built 2026-08-20, awaiting test
 
 Two KOTOR 2 chargen runs crashed while arrowing the Fähigkeiten list
@@ -91,6 +119,37 @@ Let players give their own map pins a name when they drop one, and read that nam
 Offer the community resolution / widescreen + HR-menus patches as an installer option, and make our own code robust to the layout changes they introduce. Deliberately deferred until the mod leaves beta: it widens the support surface (several of our paths still assume a particular screen geometry — screen-pixel coordinates, the OS cursor, hardcoded hit-test offset compensations), and a beta is the wrong time to add a second variable to every bug report. Prerequisite when we do take it on: audit every place we depend on screen geometry and read it live from the engine instead of assuming. See `docs/installer.md` (Widescreen / HR-menus bundling) and the `project_radial_cursor_coupling` memory.
 
 ## Monitor
+
+### World hotkeys that still act while a screen owns the keyboard
+
+Audit run 2026-08-20 alongside the galaxy-map fix above, over every Win32-polled
+hotkey that can reach an engine dispatch. Three surfaces remain gated on
+"is there a world" alone (`GetPlayerPosition`), with no UI-block check:
+
+- **Shift+H combat queue** — arms over any panel, and its rows call
+  `RemoveLastAction` on the live combat round. Worst case is mutating a round
+  from inside a screen; it cannot injure a module load. One-line fix if wanted:
+  `ForegroundPanelBlocks()` at the opener, same call the action menu uses.
+- **Camera orient (turn-to-cardinal / turn-to-beacon)** — synthesises the
+  player's bound turn key via `SendInput`, so with a screen up those scancodes
+  land in the screen. Injects no action; see the
+  `lesson_mod_injected_input_feeds_own_detectors` memory for the related trap.
+- **Shift+L level-up** — opens the engine's level-up wizard over whatever is
+  foreground. Has its own already-open and can-level-up guards, so it stacks a
+  panel at worst.
+
+None is reproduced in a log; all three are the same *shape* as the galaxy-map
+fault (one press, two consumers, one of them the world) and each would cost a
+test round to change, so they are listed rather than fixed. The detector for
+the rest is now in the log: `Interact: <key> GATE GAP?` fires whenever an
+in-world dispatch runs over a foreground panel that is not a world-level
+surface (`IsWorldLevelForegroundKind` — HUD, pause, bark, fade, Unknown). Grep
+tester bundles for `GATE GAP` before adding kinds by guesswork.
+
+Also open: three separate lists now describe "is the UI in the way" —
+`IsForegroundUiBlocking`'s blacklist, `view_mode.cpp`'s stricter copy, and the
+new world-level allow-list. They agree today (all three were updated together);
+they are a consolidation candidate, not a bug.
 
 ### Grass crash — worked around with `Grass=0`, root cause not fully pinned
 

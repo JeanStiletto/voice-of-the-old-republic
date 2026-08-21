@@ -23,6 +23,14 @@ void Tick();
 // the destination and re-emits the call).
 void AnnouncePreLoadDestination(void* exoStringPtr);
 
+// KOTOR 2 twin. Same latch + announce, but the destination argument's shape
+// at the K2 hook site is not settled: every K2 fire so far logged either
+// binary noise or a read failure where K1 logs a clean resref, so this one
+// probes both readings (a CExoString* and a by-value CExoString whose
+// c_string sits directly in the slot) and reports which produced a plausible
+// resref. `slotValue` is the raw dword the wrapper handed us from [EBP+8].
+void AnnouncePreLoadDestinationK2(void* slotValue);
+
 // Closest landmark waypoint to pos within rangeM. Cache rebuilds on each
 // area-change by scanning CSWSWaypoint with map_note_enabled. NOT keyed
 // by .lyt-room — K1's .lyt-rooms over-segment into slivers (94-98%

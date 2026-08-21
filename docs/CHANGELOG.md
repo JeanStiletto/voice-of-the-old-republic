@@ -33,6 +33,31 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>v0.7.9</h2>
+
+<h3>Bug fixes:</h3>
+
+- Travelling from the galaxy map arrives. Picking a planet and pressing
+  Enter played the departure movie and then put you back where you
+  started, star map open, as if nothing had happened — repeatable, and in
+  KOTOR 2's prologue it left the tutorial unfinishable, since flying to
+  Peragus is how it ends. That one Enter was doing two jobs: it confirmed
+  the travel, and it also counted as an in-world "use the Galaxy Map",
+  which queued a second use of the console on your character. The queued
+  use outlived the movie and interrupted the scene that carries you to the
+  new world, so the game never got as far as loading it, and re-opened the
+  star map instead. The star map now takes Enter for itself.
+- Auto-walk (Shift and minus) and its diagnostic twin (Alt and minus) no
+  longer start a walk while a screen or a pop-up has the keyboard. The walk
+  was queued on your character regardless of what was on screen and only
+  played out once you closed it, landing in the middle of whatever the game
+  was doing by then — the same shape as the galaxy-map fault above. Walking
+  to a map marker from the map screen is unchanged, and a walk already
+  under way can still be cancelled from anywhere.
+- View mode no longer toggles while the galaxy map is open. It switches the
+  game's input handling, which is why it already stood back for every other
+  screen; the star map was missing from that list.
+
 <h2>v0.7.8.1</h2>
 
 <h3>Bug fixes:</h3>

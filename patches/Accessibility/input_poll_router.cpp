@@ -487,6 +487,24 @@ void PollHotkey() {
         acclog::Write("Interact", "%s gate -- ALLOW, fg=%p kind=%s",
                       keyTag, ui.fgPanel,
                       acc::engine::PanelKindName(ui.fgKind));
+        // Gate-gap audit. The kinds that legitimately sit in front of live
+        // world play are few (HUD, pause overlay, bark, fade, Unknown); any
+        // other kind reaching here means a screen is routing its own keys
+        // AND we are about to queue an engine action on the same press —
+        // the shape that cost KOTOR 2's prologue its module transition
+        // (galaxy map, fixed by blacklisting the kind) and that queued a
+        // phantom dialogue action behind the save-name popup before it
+        // (kind=Unknown, fixed by the editbox latch below). Not a gate:
+        // logged loud and greppable so the next one is found in a tester
+        // log rather than in a stuck playthrough.
+        if (!acc::engine::IsWorldLevelForegroundKind(ui.fgKind)) {
+            acclog::Write("Interact",
+                "%s GATE GAP? -- dispatching in-world over fg=%p kind=%s "
+                "(not a world-level surface; if this press also drove the "
+                "panel, that kind belongs in IsForegroundUiBlocking)",
+                keyTag, ui.fgPanel,
+                acc::engine::PanelKindName(ui.fgKind));
+        }
     }
 
     // Swallow the Enter that just confirmed a save-name editbox. That popup is

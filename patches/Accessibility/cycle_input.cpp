@@ -633,6 +633,34 @@ acc::strings::Id GuidancePreRollFor(acc::filter::CycleCategory c) {
     return S::FmtInteractOpen;
 }
 
+// True when a screen or popup owns the keyboard, so queueing a walk on the
+// player creature now would be the galaxy-map Enter double-fire in another
+// skin: one press drives the panel AND injects an action that surfaces later,
+// after the panel is gone, in whatever the engine was doing meanwhile. The
+// cycle keys reach here from two routes (the engine key hook and our own
+// Win32 poll) and both gate only on "is there a world", so this is the choke
+// point — the dispatchers, not the routers.
+//
+// The Map sub-screen is exempt on purpose: auto-walking (and beaconing) to a
+// map pin from the map screen is a shipped feature, and the map always reads
+// as blocked because it drills under the InGameMenu strip.
+//
+// Narration-only members of the family (`,` / `.` cycling, bare `-`, Ctrl+-
+// beacon) are deliberately NOT gated — they queue nothing, and reading the
+// world out from inside a screen is useful.
+bool UiOwnsKeysForWalkDispatch(const char* keyTag) {
+    if (acc::engine::HasActiveMapPanel(nullptr)) return false;
+    acc::engine::UiBlockState blk;
+    if (!acc::engine::IsForegroundUiBlocking(&blk)) return false;
+    acclog::Write("Cycle",
+                  "%s refused — UI owns input (fg=%p kind=%s reason=%d); "
+                  "queueing a walk here would fire after the panel closes",
+                  keyTag, blk.fgPanel,
+                  acc::engine::PanelKindName(blk.fgKind),
+                  static_cast<int>(blk.reason));
+    return true;
+}
+
 // Shift+- — autowalk the player to the currently-focused target. Hybrid
 // dispatch:
 //   - A real interactable object → `acc::guidance::UseObject`. The engine
@@ -679,6 +707,11 @@ void OnPathfindFocus() {
         // press at least does *something*.
         acclog::Write("Cycle", "Shift+- cancel SEH-FAULT, falling through to UseObject");
     }
+
+    // Cancelling an in-flight walk above stays available from anywhere —
+    // it only clears actions. Starting one does not: see
+    // UiOwnsKeysForWalkDispatch.
+    if (UiOwnsKeysForWalkDispatch("Shift+-")) return;
 
     NarratedActivation a;
     if (!TryResolveOrAnnounceNoFocus(a, "Shift+-")) return;
@@ -853,6 +886,8 @@ void OnBeaconFocus() {
 // character actually moves. The log distinguishes via "(force path)" /
 // "(queue path)" tags so post-mortem grep finds each path cleanly.
 void OnPathfindFocusForce() {
+    if (UiOwnsKeysForWalkDispatch("Alt+-")) return;
+
     NarratedActivation a;
     if (!TryResolveOrAnnounceNoFocus(a, "Alt+-")) return;
 

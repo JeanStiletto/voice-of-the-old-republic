@@ -388,7 +388,39 @@ bool IsForegroundUiBlocking(UiBlockState* outState) {
     case PanelKind::StatusSummary:
     case PanelKind::AreaTransition:
     case PanelKind::InGameMenu:
+    // The star map is opened from the world, not from the menu strip, and the
+    // engine does not push it onto modal_stack — so neither (2) nor the
+    // InGameMenu case above covers it, and Enter over it used to reach BOTH
+    // menus_galaxymap (accept = travel) and the in-world interact dispatcher
+    // (a queued UseObject on the Galaxy Map placeable). On KOTOR 2's prologue
+    // that queued action outlived the travel movie and pre-empted the cutscene
+    // that ends in the module change: the movie played, the map re-opened, and
+    // the player stayed on the Ebon Hawk with no transition ever requested
+    // (k2-patch-20260820-143622.log, three attempts 14:49-14:51 — no
+    // "Transition: pre-load" line for any of them). Unlike the stale Fade /
+    // dismissed-Options overlays this blacklist exists to tolerate, the panel
+    // is dropped from panels[] the moment it closes (fg goes straight back to
+    // MainInterface), so blocking on it cannot strand in-world input.
+    case PanelKind::InGameGalaxyMap:
         if (outState) outState->reason = UiBlockReason::ForegroundBlockingKind;
+        return true;
+    default:
+        return false;
+    }
+}
+
+bool IsWorldLevelForegroundKind(PanelKind k) {
+    switch (k) {
+    // Unknown is deliberately world-level: an unclassified foreground panel
+    // must never cost the player their interact key (see the blacklist-not-
+    // whitelist note in engine_panels.h). It is still audit-worthy — the
+    // save-name popup that queued a phantom dialogue action classified as
+    // Unknown — so callers log it, they just don't block on it.
+    case PanelKind::Unknown:
+    case PanelKind::MainInterface:
+    case PanelKind::InGamePause:
+    case PanelKind::BarkBubble:
+    case PanelKind::Fade:
         return true;
     default:
         return false;
