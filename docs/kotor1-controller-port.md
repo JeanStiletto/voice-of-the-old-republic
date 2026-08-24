@@ -130,6 +130,47 @@ In the world:
 - L3 — flourish weapon (Flourish)
 - R3 — camera orient (the keyboard's N)
 
+### Added after the first round (2026-08-21)
+
+Bindings that closed the last gaps between the keyboard's vocabulary and the
+pad's. Everything below is shared with KOTOR 2 — same helpers, two sources.
+
+- D-Pad held past a second — jump to the end of the run. Left / right in the
+  world and on the map are the nearest / farthest object (the keyboard's
+  Ctrl + comma / period); up / down in a list are its first / last entry
+  (Home / End). The direction then latches until it is released, so the repeat
+  that ran on the way there cannot walk back off the end.
+- R3 on the map screen — drop a map marker at the cursor (Shift+N). Claimed
+  from XInput, because neither game delivers a stick press on a menu surface.
+- LT + RT in a dialogue — repeat the spoken line (R) instead of the context
+  help. A dialogue's only control is "continue"; there are no screen keys worth
+  reading there.
+- The face-button chord grid. Hold a trigger, press a face button:
+  LT + A announce the focused object · LT + B the action queue · LT + X own
+  status · LT + Y cancel combat (engine Action240, default F) · RT + A
+  look-around mode · RT + B copy the last spoken text · RT + X free ·
+  RT + Y the level-up screen.
+  Slots are assigned by ERGONOMICS, not by category. LT is two hands working
+  independently and takes what is reached for often; RT is a same-hand stretch,
+  fine at A and increasingly awkward toward X and Y, so it carries only the rare
+  and unhurried and RT + X is left empty rather than filled with something that
+  would then be hard to press.
+- The action queue's clear-all is a BARE Y inside the queue overlay, not a
+  chord. It was LT + A, which spent the grid's best slot on a binding that could
+  only ever fire on one screen; the overlay owns Y while it is up, at the cost
+  of the quick menu being unreachable from there. Inside the queue, A removes
+  the entry you are on and Y removes them all.
+  Read from XInput on both games: only XInput sees a trigger, and these have to
+  answer on every screen. KOTOR 2 consumes the matching engine event while a
+  trigger is held so the bare job does not also run.
+- Pazaak board. D-Pad, A and B need no board-specific code — the pad layer
+  already synthesises the arrows, Return and Escape a menu surface expects, so
+  the board's own arrow-zone navigator answers them. The five that the keyboard
+  reaches through LETTERS (which the engine drops before any hook) are handed to
+  the board directly, through `pazaak::TryHandlePadAction`: Y stand, X end turn,
+  LB your hand, RB both boards, L3 the opponent's remaining card count.
+
+
 In menus the pad simply IS the keyboard: D-Pad navigates (with a 400 ms / 150 ms
 auto-repeat the mod supplies, since KOTOR 1 has no engine repeat gate to
 inherit), A is Enter, B is Escape, LB / RB step the in-game menu's sub-screens
@@ -164,6 +205,54 @@ It does not pause the world (it is an overlay over a running game, as on KOTOR
 2), but it DOES stand the left stick down, so the player cannot walk off
 mid-choice. It declines to open while the F1 list is up, because that list gets
 first refusal on every nav code and a menu underneath it would be unreachable.
+
+## The KOTOR 2 fallback: when the engine's own pad path is missing
+
+Found from a tester log on 2026-08-24 (`k2/logs/patch-20260824-122325.log`).
+
+**The failure.** KOTOR 2 enumerates game controllers exactly once, at input
+init. A pad switched on after that is invisible to the engine for the rest of
+the session. The log shows the split with no ambiguity: across 4020 lines the
+GUI-manager hook received only codes 183, 182, 181 and 223 — the engine's own
+Down / Up / Enter / Escape — and not one raw pad code (47-54, 39-42). Zero
+`Pad: D-Pad` lines, against 111 in a healthy session on 2026-08-08. Everything
+that worked that session was XInput-sourced (LT, RT, LT+RT, LT+X); everything
+that failed was engine-delivered (D-Pad, shoulders, A, B, X, Y, both sticks).
+Timing confirms the cause: XInput bound at 12:23:27 and its first slot scan,
+which runs immediately, found nothing; the pad first answered at 12:23:30.
+
+It also explains the two symptoms the tester reported. B could not close the
+action menu because B is an engine event. And "the trigger combinations just
+open the action menu" is the same cause seen from the other end: a chord
+cancels the trigger's solo job, but the chord button was an engine event, so
+nothing marked the trigger chorded and the solo job fired on release.
+
+**The fix.** KOTOR 1 has no engine pad path at all, so the mod is already the
+driver there. That driver now runs on KOTOR 2 as well whenever its engine's
+half is missing — `pad::EnginePadDead()` gates `PollButtons`, `pad_movement`
+and the quick menu, and is simply always true on KOTOR 1.
+
+**Deciding it without double-firing.** Driving from XInput unconditionally would
+fire every press twice on a healthy session, and absence of engine events cannot
+be waited for because absence produces nothing to wait for. So the first D-Pad
+press of the session is the probe: XInput sees it at once, and a live engine
+delivers its own event for the same press within a frame or two. Hold it for
+150 ms — if the engine's event arrives, its pad is Live and we never ask again;
+if the beat passes in silence it is Dead, we dispatch the press ourselves and
+latch the fallback. Dead is reversible: an engine pad event arriving afterwards
+flips it back to Live and logs the correction, because doubling every press is
+much worse than delaying one.
+
+The D-Pad is the probe because it is the one surface that reaches the manager
+hook from every screen on a healthy KOTOR 2, and because its codes are among the
+two event shapes `NoteSeen` can tell apart from a real keyboard press. Grep
+`engine gamepad path is` for the verdict.
+
+**Why the port needs no translation.** Both games' `[Keymapping]` action ids are
+identical — verified across Action204/205/206/207/216/218/240/241/242/243/244/264
+and the whole Action280-286 movement block, in both inis. Every `FireGameAction`
+constant, every quick-menu entry and `MoveAxisScancode` therefore mean the same
+thing on KOTOR 2 as on KOTOR 1.
 
 ## Where the code lives
 

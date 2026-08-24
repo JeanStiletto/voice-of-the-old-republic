@@ -51,6 +51,32 @@ bool IsBoardForeground();
 // CSWGuiManager::HandleInputEvent hook ahead of the generic chain.
 bool TryHandleInput(void* activePanel, int param_1, int param_2, int& rv);
 
+// The two board actions a gamepad has to carry itself.
+//
+// Everything else the pad does on the board arrives as an ordinary menu key:
+// the pad layer synthesises the arrow cluster for the D-Pad, Return for A and
+// Escape for B, so the arrow-zone navigator above sees exactly what a keyboard
+// player's presses produce and needs no controller knowledge at all. These five
+// are the exception — the keyboard reaches all of them through LETTERS, which
+// the engine drops before any hook, so there is nothing for the pad to
+// synthesise and the board is handed the press directly.
+//
+// The three buttons the review actions sit on are idle on the board and only
+// there: away from it the shoulders cycle targets and step menu screens, and
+// the left stick press is the engine's Flourish Weapon.
+//
+// Returns true when the board took it, which the caller must treat as consume:
+// false means no board is in the foreground and the press belongs to whoever
+// would otherwise have had it.
+enum class PadAction {
+    Stand,        // Y — the keyboard's S
+    EndTurn,      // X — the keyboard's E
+    ReviewHand,   // left shoulder button  — C
+    ReviewTable,  // right shoulder button — T
+    OppHand,      // press the left stick  — Shift+C
+};
+bool TryHandlePadAction(PadAction a);
+
 // Engine event codes the wager popup's HandleInputEvent switch maps to a
 // less/more step. The BTN_LESS / BTN_MORE speed buttons don't act on these
 // directly — their "pushed" callbacks (CSWGuiSkillsCharGen::OnMinus/

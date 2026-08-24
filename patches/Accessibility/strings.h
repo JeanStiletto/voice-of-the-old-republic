@@ -1827,16 +1827,39 @@ enum class Id : int {
     // menu, then the trigger chords, then the remaining buttons.
     // Every line is true on both games — KOTOR 2 gets the last few from its
     // engine, KOTOR 1 from the mod synthesising the player's own bind.
+    // The stick pair, and the two routes a pad has into the game's own screens.
+    // Listed first because they are what a player reaches for before anything
+    // else, and because with a pad connected this section is the WHOLE list —
+    // every keyboard row is hidden, so nothing basic may be missing from it.
+    HelpKeyPadMove,
     HelpKeyPadMenuNav,
     HelpKeyPadTooltip,
+    HelpKeyPadTabs,
+    HelpKeyPadScreens,
     HelpKeyPadInteract,
+    HelpKeyPadAnnounceFocus,
     HelpKeyPadCycleObjects,
     HelpKeyPadCycleCategory,
+    // The D-Pad's second gesture: keep holding a direction past a second and
+    // the step becomes the jump to the end. Two rows because the two surfaces
+    // it lands on are two different answers — the object run in the world and
+    // on the map, an ordinary list everywhere else.
+    HelpKeyPadCycleEnds,
+    HelpKeyPadListEnds,
     HelpKeyPadMapHints,
+    HelpKeyPadMapCursor,
+    HelpKeyPadDropMarker,
     HelpKeyPadActionMenuToggle,
     HelpKeyPadActionMenuNav,
+    // The face-button chord grid: hold a trigger, press a face button. Eight
+    // slots, and they are what closed the last gaps between the keyboard's
+    // vocabulary and the pad's.
     HelpKeyPadSelfStatus,
     HelpKeyPadActionQueue,
+    HelpKeyPadViewMode,
+    HelpKeyPadLevelUp,
+    HelpKeyPadCancelCombat,
+    HelpKeyPadCopyLastSpoken,
     HelpKeyPadWalkToFocus,
     HelpKeyPadBeacon,
     HelpKeyPadDegrees,
@@ -1848,6 +1871,19 @@ enum class Id : int {
     HelpKeyPadOptions,
     HelpKeyPadPause,
     HelpKeyPadSwitchLeader,
+    // In a dialogue the trigger pair drops the context help and repeats the
+    // line instead — the pad has no R, and a screen whose only control is
+    // "continue" has no keys worth reading out.
+    HelpKeyPadDialogRepeat,
+    // The Pazaak board. The D-Pad, A and B need no controller knowledge on the
+    // board at all — the pad layer synthesises the arrows, Return and Escape,
+    // and the board's own navigator answers them. Y and X are the two the
+    // keyboard reaches through letters the engine drops, so the board is handed
+    // those presses directly.
+    HelpKeyPadPazaakNav,
+    HelpKeyPadPazaakSign,
+    HelpKeyPadPazaakTurn,
+    HelpKeyPadPazaakReview,
     // The KOTOR 1 quick menu (Y). KOTOR 2 has the engine's own panel here and
     // the navigation chain reads its captions, so these are K1's only.
     // PadQuickMenus is the in-game menu screens (the engine's "GUI" action),
@@ -2105,6 +2141,65 @@ enum class Id : int {
     //      such a line is silent unless force-spoken, we append a one-off hint
     //      that R re-speaks it — the only other way to hear it.
     DialogRepeatLineHint,    // "Press R to repeat the last dialogue line."
+
+    //      Controller wording. Every id above names KEYBOARD keys, because a
+    //      keyboard is the one input device a KOTOR install always has. When a
+    //      gamepad is present the same hint has to name buttons instead, so
+    //      each keyboard id gets an optional `<Name>Pad` twin here and
+    //      binding_hints::Text() picks between the two — one decision point,
+    //      every surface flipping together. A hint with no twin (or an untrans-
+    //      lated twin) simply keeps its keyboard wording, which is always
+    //      truthful: the keyboard stays live on both games, pad or no pad.
+    //
+    //      Button names are spelled out in full — "left shoulder button", not
+    //      "LB"; "press the left stick", not "L3" — because a screen reader
+    //      reads the abbreviations as letters, and the glyphs a console prompt
+    //      would use are not read at all.
+    //
+    //      Order mirrors the keyboard block above, one for one.
+    TutHintCombatFeatPad,
+    TutHintGrenadePad,
+    TutHintMinePad,
+    TutHintFriendlyPowerPad,
+    TutHintHostilePowerPad,
+    TutHintActionMenuScrollPad,
+    TutHintOpenScreensPad,
+    TutHintCycleTargetsPad,
+    TutHintEquipSlotPad,
+    TutHintEnemyNearPad,
+    TutHintBashPad,
+    TutHintAttackPad,
+    TutHintAttackAutoPad,
+    TutHintMovementPad,
+    TutHintMapScreenPad,
+    TutHintJournalPad,
+    TutHintMessagesPad,
+    TutHintPartyDiesPad,
+    TutHintInventoryPad,
+    TutTraskGettingStartedPad,
+    TutTraskEquipOpenPad,
+    TutTraskEquipBrowsePad,
+    TutTraskEquipWeaponPad,
+    TutTraskCameraPad,
+    TutTraskFootlockerPad,
+    TutTraskPickItemPad,
+    TutTraskLeaderPad,
+    TutTraskMakeLeaderPad,
+    TutTraskMenusPad,
+    TutTraskTabsPad,
+    TutTraskActionMenuPad,
+    TutTraskMedkitPad,
+    TutTraskOpenDoorPad,
+    TutTraskActivateEntryPad,
+    TutTraskTargetMenuPad,
+    TutTraskConfirmEntryPad,
+    TutTraskPausedPad,
+    TutTraskWalkToPad,
+    TutTraskSecurityPad,
+    TutTraskHealWoundedPad,
+    TutLevelUpPad,
+    TutStealthModePad,
+    DialogRepeatLineHintPad,
 
     // ---- Rakatan temple floor-plate puzzle (floor_puzzle.cpp; Unknown
     //      World Temple Main Floor, module unk_m44ab). A 3x3 lights-out

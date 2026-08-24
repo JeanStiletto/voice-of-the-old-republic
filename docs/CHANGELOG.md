@@ -35,6 +35,61 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h2>v0.7.9</h2>
 
+<h3>Controller:</h3>
+
+- Help and tutorial text now names controller buttons when a controller is
+  plugged in, and keyboard keys when there isn't one. Every one of the mod's
+  help surfaces switches together off a single check: the F1 key list, the
+  Ctrl+F1 summary of the current screen, the game's silent tutorial popups and
+  the voice-acted Endar Spire tutorial lines. Button names are spelled out for
+  screen readers — "left shoulder button", "right trigger", "press the left
+  stick" — never LB, RT or a console glyph. Unplug the pad and the wording
+  returns to the keyboard within a few seconds.
+- The F1 key list reads one device at a time. With a controller connected it is
+  the controller vocabulary and nothing else; without one it is the keyboard's,
+  exactly as before.
+- Pazaak is playable on a controller. The D-pad moves between your hand, both
+  boards and the actions and within each of them, A plays the card you are on,
+  B cancels a plus-minus sign choice, X ends the turn and Y stands. The
+  shoulder buttons re-read your hand and both boards, and pressing the left
+  stick says how many cards the opponent still holds.
+- Nine bindings that only the keyboard could reach are now on the pad, so a
+  controller player is no longer sent back to the keyboard for anything.
+  Holding a D-pad direction for a second jumps to the end of the run — the
+  nearest or farthest object in the world and on the map, the first or last
+  entry in a list. Pressing the right stick on the map screen drops a marker at
+  the cursor. Both triggers in a dialogue repeat the line that just went past,
+  instead of reading out keys for a screen whose only control is "continue".
+  The rest join the trigger chords as a single grid to remember — hold a
+  trigger, press a face button. Left trigger with A announces the focused
+  object, with B opens the action queue, with X reads your own status and with Y
+  cancels combat; right trigger with A is look-around mode, with B copies the
+  last spoken text and with Y opens the level-up screen. The left trigger is the
+  comfortable side, two hands working independently, so what you reach for often
+  lives there; the right trigger is a same-hand stretch and carries only the
+  rare and unhurried, with its hardest reach left deliberately empty.
+- Clearing the whole action queue is a plain Y while the queue is open, where it
+  used to be a trigger chord. Inside the queue, A removes the entry you are on
+  and Y removes them all.
+- A controller switched on after KOTOR 2 has started now works fully. That
+  engine enumerates game controllers exactly once, at input init, so a pad that
+  answers a few seconds late stays invisible to it for the whole session: the
+  D-pad, the face buttons, the shoulders, walking and the camera are all dead,
+  while the mod's own trigger bindings keep working, because those are read
+  straight from the controller. Half a controller, with nothing on screen to
+  say which half or why. KOTOR 1's engine has no controller support at all, so
+  the mod has always been the driver there; that driver now takes over on
+  KOTOR 2 too whenever its engine turns out not to have seen the pad. The first
+  D-pad press of a session decides it — held for a sixth of a second while we
+  wait for the engine's own event, and if none comes, the mod drives everything
+  from then on. "Plug the controller in before launching" is no longer a rule
+  you have to know.
+- Controller detection follows the pad, not the session. It used to latch on
+  first sight and stay on for good; XInput is now polled live, with a short
+  window that absorbs a missed read, so unplugging is noticed. A pad that
+  announces itself through KOTOR 2's engine events still counts for the
+  session — that route is an edge with nothing to re-ask.
+
 <h3>Bug fixes:</h3>
 
 - Travelling from the galaxy map arrives. Picking a planet and pressing

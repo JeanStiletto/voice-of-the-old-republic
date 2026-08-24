@@ -1,7 +1,6 @@
 #include "pad_movement.h"
 
 #include "camera_orient.h"    // IsActive — the snap-turn owns the turn key
-#include "engine_game.h"
 #include "engine_keymap.h"    // MoveAxisScancode / TurnScancode
 #include "hotkeys.h"          // IsForegroundGame
 #include "key_inject.h"
@@ -91,8 +90,10 @@ void ReleaseAll() {
 }
 
 void Tick() {
-    // KOTOR 2 walks itself.
-    if (!acc::game::IsKotor1()) return;
+    // KOTOR 2 walks itself — unless its engine never saw the pad, in which case
+    // nothing does and this is the only thing that will. EnginePadDead() is
+    // always true on KOTOR 1, so this is the old gate plus one case.
+    if (!acc::pad::EnginePadDead()) return;
 
     // pad::InWorld() is the shared predicate — the mod's own overlays do NOT
     // make it false, because the live action menu deliberately runs over a

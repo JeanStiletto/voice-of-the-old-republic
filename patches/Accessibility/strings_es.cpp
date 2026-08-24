@@ -637,7 +637,7 @@ const char* Get(Id id) {
         case Id::HelpKeyPadActionMenuToggle: return "Gatillo izquierdo: abre el men\xFA de acciones; al pulsarlo de nuevo se cierra";
         case Id::HelpKeyPadActionMenuNav:    return "Men\xFA de acciones, cruceta: izquierda y derecha cambian de categor\xED" "a, arriba y abajo de entrada, A ejecuta, B o el gatillo izquierdo cierra";
         case Id::HelpKeyPadSelfStatus:       return "Gatillo izquierdo con X: tu propio estado";
-        case Id::HelpKeyPadActionQueue:      return "Gatillo derecho con X: la cola de acciones. La cruceta arriba y abajo recorre las entradas, A quita la \xFAltima en cola, el gatillo izquierdo con A vac\xED" "a toda la cola, B cierra";
+        case Id::HelpKeyPadActionQueue:      return "Gatillo izquierdo con B: la cola de acciones. La cruceta arriba y abajo recorre las entradas, A quita la \xFAltima en cola, Y vac\xED" "a toda la cola, B cierra";
         case Id::HelpKeyPadWalkToFocus:      return "Gatillo derecho con bot\xF3n superior derecho: caminar hasta el objeto enfocado";
         case Id::HelpKeyPadBeacon:           return "Gatillo izquierdo con bot\xF3n superior izquierdo: baliza sonora hacia el objeto enfocado";
         case Id::HelpKeyPadDegrees:          return "Gatillo derecho: anunciar la orientaci\xF3n en grados";
@@ -650,6 +650,47 @@ const char* Get(Id id) {
         case Id::HelpKeyPadPause:            return "Start: pausa";
         case Id::HelpKeyPadSwitchLeader:
             return "X: cambiar de l\xED" "der de grupo";
+
+        // Controller rows added with the Pazaak board bindings, the D-Pad's
+        // hold-to-jump gesture and the map's marker press.
+        case Id::HelpKeyPadCycleEnds:
+            return "Mant\xE9n la cruceta a la izquierda o a la derecha: ir al objeto m\xE1s cercano o m\xE1s lejano";
+        case Id::HelpKeyPadListEnds:
+            return "Mant\xE9n la cruceta arriba o abajo: ir a la primera o a la \xFAltima entrada de una lista";
+        case Id::HelpKeyPadDropMarker:
+            return "Pantalla del mapa, pulsar la palanca derecha: colocar una marca en la posici\xF3n del cursor";
+        case Id::HelpKeyPadDialogRepeat:
+            return "En di\xE1logo, ambos gatillos: repetir la l\xEDnea actual";
+        case Id::HelpKeyPadPazaakNav:
+            return "Mesa de Pazaak, cruceta: arriba y abajo cambian entre tu mano, las dos mesas y las acciones; izquierda y derecha se mueven dentro. A juega la carta, B cancela la elecci\xF3n de signo";
+        case Id::HelpKeyPadPazaakSign:
+            return "Mesa de Pazaak, en una carta m\xE1s-menos: izquierda y derecha eligen el signo, A la juega, B cancela";
+        case Id::HelpKeyPadPazaakTurn:
+            return "Mesa de Pazaak, Y: Plantarse. X: Terminar ronda";
+
+        // Controller rows that close the last of the keyboard-only gaps: the
+        // stick pair, the two routes into the game's screens, and the face-button
+        // chord grid.
+        case Id::HelpKeyPadMove:
+            return "Palanca izquierda: caminar y desplazarse de lado. Palanca derecha: girar la c\xE1mara y, con ella, tu direcci\xF3n de marcha";
+        case Id::HelpKeyPadTabs:
+            return "Botones superiores izquierdo y derecho: cambiar de pesta\xF1" "a y pasar entre las pantallas del juego";
+        case Id::HelpKeyPadScreens:
+            return "Y, entrada Men\xFAs: abrir las pantallas del juego. Los botones superiores pasan luego entre mapa, mensajes, misiones, habilidades, personaje, inventario y equipo";
+        case Id::HelpKeyPadMapCursor:
+            return "Pantalla del mapa, palanca izquierda: mover el cursor para leer el terreno y las marcas";
+        case Id::HelpKeyPadAnnounceFocus:
+            return "Gatillo izquierdo con A: anunciar el objeto enfocado";
+        case Id::HelpKeyPadViewMode:
+            return "Gatillo derecho con A: modo de observaci\xF3n, mantener la posici\xF3n mientras giras la c\xE1mara";
+        case Id::HelpKeyPadLevelUp:
+            return "Gatillo derecho con Y: abrir la pantalla de subida de nivel";
+        case Id::HelpKeyPadCancelCombat:
+            return "Gatillo izquierdo con Y: cancelar el combate";
+        case Id::HelpKeyPadCopyLastSpoken:
+            return "Gatillo derecho con B: copiar al portapapeles el \xFAltimo texto le\xED" "do";
+        case Id::HelpKeyPadPazaakReview:
+            return "Mesa de Pazaak, bot\xF3n superior izquierdo: tu mano. Bot\xF3n superior derecho: las dos mesas. Pulsar la palanca izquierda: cu\xE1ntas cartas le quedan al rival";
         case Id::PadQuickMenuOpened:
             return "Men\xFA r\xE1pido. Arriba y abajo para elegir, "
                    "A confirma, B cierra.";
@@ -892,6 +933,95 @@ const char* Get(Id id) {
 
         case Id::DialogRepeatLineHint:
             return "Pulsa R para repetir la \xFAltima l\xEDnea de di\xE1logo.";
+
+        // ---- Controller wording for the tutorial hints above. Selected by
+        //      binding_hints::Text() when a gamepad is present; see strings.h.
+
+        case Id::TutHintCombatFeatPad:
+            return "Las dotes de combate est\xE1n en el men\xFA de acciones. Tira del gatillo izquierdo para abrirlo, ve a Ataques con la cruceta izquierda y derecha y pulsa A.";
+        case Id::TutHintGrenadePad:
+            return "Lanza granadas desde el men\xFA de acciones. Tira del gatillo izquierdo, ve a Explosivos con la cruceta izquierda y derecha y pulsa A.";
+        case Id::TutHintMinePad:
+            return "Coloca minas desde el men\xFA de acciones. Tira del gatillo izquierdo, ve a Explosivos con la cruceta izquierda y derecha y pulsa A.";
+        case Id::TutHintFriendlyPowerPad:
+            return "Los poderes de la Fuerza beneficiosos est\xE1n en el men\xFA de acciones. Tira del gatillo izquierdo, ve a tus propios poderes con la cruceta izquierda y derecha y pulsa A.";
+        case Id::TutHintHostilePowerPad:
+            return "Los poderes de la Fuerza ofensivos est\xE1n en el men\xFA de acciones. Tira del gatillo izquierdo, ve a los poderes de objetivo con la cruceta izquierda y derecha y pulsa A.";
+        case Id::TutHintActionMenuScrollPad:
+            return "En el men\xFA de acciones, la cruceta arriba y abajo cambia de entrada, izquierda y derecha cambia de categor\xED" "a.";
+        case Id::TutHintOpenScreensPad:
+            return "Pulsa Y para el men\xFA r\xE1pido y elige Men\xFAs para abrir las pantallas del juego. Los botones superiores izquierdo y derecho pasan luego entre mapa, mensajes, misiones, habilidades, personaje, inventario y equipo. B vuelve atr\xE1s.";
+        case Id::TutHintCycleTargetsPad:
+            return "Elige objetivos con los botones superiores izquierdo y derecho. La cruceta izquierda y derecha recorre los objetos ya descubiertos. En combate solo puedes apuntar a enemigos.";
+        case Id::TutHintEquipSlotPad:
+            return "En la pantalla de equipo, elige una ranura con la cruceta y A, y luego toma un objeto de la lista. Mant\xE9n Y y pulsa la cruceta arriba o abajo para leer la descripci\xF3n de un objeto.";
+        case Id::TutHintEnemyNearPad:
+            return "Hay un enemigo cerca. Cambia de objetivo con los botones superiores izquierdo y derecho y ataca con A.";
+        case Id::TutHintBashPad:
+            return "Para forzar, enfoca la puerta o el contenedor, tira del gatillo izquierdo para abrir el men\xFA de acciones y elige Forzar.";
+        case Id::TutHintAttackPad:
+            return "Enfoca a un enemigo con los botones superiores izquierdo y derecho y ataca con A. Basta una pulsaci\xF3n: tu personaje ataca luego autom\xE1ticamente cada ronda hasta que elijas otro objetivo.";
+        case Id::TutHintAttackAutoPad:
+            return "Recuerda: una pulsaci\xF3n de A ataca autom\xE1ticamente cada ronda. Solo un nuevo objetivo lo cambia.";
+        case Id::TutHintMovementPad:
+            return "Tira de ambos gatillos a la vez en cualquier momento para las teclas de la pantalla actual, y pulsa Y para el men\xFA r\xE1pido, entrada Ayuda, para la lista completa. Para moverte, empuja la palanca izquierda en cualquier direcci\xF3n. Empuja la palanca derecha a izquierda o derecha para girar la c\xE1mara y, con ella, tu direcci\xF3n de marcha, de modo que ambas apunten siempre igual. Unos tonos te avisan cuando te acercas a una pared, y mientras avanzas se describe la forma de la sala a tu alrededor. Tira del gatillo derecho para repetir tu orientaci\xF3n y la sala actual.";
+        case Id::TutHintMapScreenPad:
+            return "El mapa muestra cada zona explorada de un nivel. Los puntos importantes est\xE1n marcados, y algunas zonas, como las ciudades, aparecen ya trazadas antes de explorarlas. Mu\xE9vete por el mapa con la palanca izquierda. Cambia de marca con la cruceta izquierda y derecha. Tira del gatillo izquierdo junto con el bot\xF3n superior izquierdo para lanzar una baliza que te gu\xED" "e hasta ella por sonido, o del gatillo derecho con el bot\xF3n superior derecho para ir all\xED autom\xE1ticamente.";
+        case Id::TutHintJournalPad:
+            return "La pantalla de misiones muestra tu progreso y qu\xE9 hacer a continuaci\xF3n. \xC1" "brela desde el men\xFA r\xE1pido en Y, entrada Men\xFAs, y llega a ella con los botones superiores. Elige una entrada con la cruceta y lee sus detalles manteniendo Y y pulsando la cruceta arriba o abajo.";
+        case Id::TutHintMessagesPad:
+            return "La pantalla de mensajes muestra valores como los puntos de experiencia, las tiradas de ataque y da\xF1o y los cambios de tu personaje. \xC1" "brela desde el men\xFA r\xE1pido en Y, entrada Men\xFAs, y llega a ella con los botones superiores.";
+        case Id::TutHintPartyDiesPad:
+            return "Un miembro del grupo ha ca\xED" "do. Los miembros abatidos en combate se recuperan tras la pelea, pero si mueren todos, la partida termina. Pulsa X para controlar a otro miembro.";
+        case Id::TutHintInventoryPad:
+            return "El inventario lista los objetos del grupo, compartidos por todos los miembros. \xC1" "brelo desde el men\xFA r\xE1pido en Y, entrada Men\xFAs, y llega a \xE9l con los botones superiores. Recorre los objetos con la cruceta y lee una descripci\xF3n manteniendo Y y pulsando la cruceta arriba o abajo.";
+        case Id::TutTraskGettingStartedPad:
+            return "Ya tienes el control. Lo b\xE1sico: tira de ambos gatillos a la vez para las teclas de la pantalla actual, o pulsa Y para el men\xFA r\xE1pido, entrada Ayuda, para la lista completa. Empuja la palanca izquierda para caminar, y la derecha a izquierda o derecha para girar la c\xE1mara y, con ella, tu direcci\xF3n de marcha, de modo que ambas apunten siempre igual. Los botones superiores izquierdo y derecho cambian de objetivo, la cruceta izquierda y derecha recorre los objetos, y A interact\xFA" "a con el objeto enfocado.";
+        case Id::TutTraskEquipOpenPad:
+            return "En la pantalla de equipo eliges armaduras y armas. \xC1" "brela desde el men\xFA r\xE1pido en Y, entrada Men\xFAs, y llega a ella con los botones superiores.";
+        case Id::TutTraskEquipBrowsePad:
+            return "Recorre las ranuras de equipo con la cruceta; cada una admite un objeto. Mant\xE9n Y y pulsa la cruceta arriba o abajo para leer la descripci\xF3n del objeto.";
+        case Id::TutTraskEquipWeaponPad:
+            return "Selecciona la ranura de arma y pulsa A, luego elige un arma de la lista.";
+        case Id::TutTraskCameraPad:
+        case Id::TutTraskFootlockerPad:
+            return "Cambias la c\xE1mara, y con ella tu direcci\xF3n de marcha, con la palanca derecha. Pulsa la palanca derecha para girarte al siguiente punto cardinal. Los botones superiores izquierdo y derecho recorren todos los objetos visibles. La cruceta izquierda y derecha navega la lista de todos los objetos ya vistos, arriba y abajo cambia de categor\xED" "a. Pulsa A para caminar hasta un objeto seleccionado y activarlo.";
+        case Id::TutTraskPickItemPad:
+            return "Elige una ranura con la cruceta y A, recorre la lista y confirma el objeto con A.";
+        case Id::TutTraskLeaderPad:
+            return "Controlas al l\xED" "der del grupo. Pulsa X para cambiar el miembro que controlas.";
+        case Id::TutTraskMakeLeaderPad:
+            return "Pulsa X para hacerme l\xED" "der, y luego abre la puerta.";
+        case Id::TutTraskMenusPad:
+            return "Abre las pantallas del juego desde el men\xFA r\xE1pido en Y, entrada Men\xFAs. Los botones superiores pasan luego entre ellas.";
+        case Id::TutTraskTabsPad:
+            return "Cambia de pesta\xF1" "a con los botones superiores izquierdo y derecho.";
+        case Id::TutTraskActionMenuPad:
+            return "Tira del gatillo izquierdo para abrir el men\xFA de acciones sobre tu objetivo. La cruceta izquierda y derecha cambia de categor\xED" "a, arriba y abajo de entrada, y A ejecuta la entrada en la que est\xE1s.";
+        case Id::TutTraskMedkitPad:
+            return "Usa los botiquines desde el men\xFA de acciones. Tira del gatillo izquierdo, ve a M\xE9" "dico con la cruceta izquierda y derecha y pulsa A.";
+        case Id::TutTraskOpenDoorPad:
+            return "Enfoca la puerta con la cruceta izquierda y derecha y \xE1" "brela con A.";
+        case Id::TutTraskActivateEntryPad:
+            return "En el men\xFA de acciones, elige una entrada con la cruceta arriba y abajo y act\xEDvala con A.";
+        case Id::TutTraskTargetMenuPad:
+            return "Enfoca un objetivo con los botones superiores izquierdo y derecho, o los objetos con la cruceta izquierda y derecha. Pulsa A para la acci\xF3n predeterminada, o tira del gatillo izquierdo para abrir el men\xFA de acciones.";
+        case Id::TutTraskConfirmEntryPad:
+            return "Resalta la entrada con la cruceta arriba y abajo y confirma con A.";
+        case Id::TutTraskPausedPad:
+            return "Incluso en pausa eliges objetivos con los botones superiores izquierdo y derecho y cambias el miembro controlado con X.";
+        case Id::TutTraskWalkToPad:
+            return "Enfoca el arc\xF3n con los botones superiores izquierdo y derecho y \xE1" "brelo con A.";
+        case Id::TutTraskSecurityPad:
+            return "Enfoca la puerta, tira del gatillo izquierdo para abrir el men\xFA de acciones y elige Seguridad.";
+        case Id::TutTraskHealWoundedPad:
+            return "Cambia al personaje herido con X, tira del gatillo izquierdo y ve a M\xE9" "dico, y elige el botiqu\xEDn.";
+        case Id::TutLevelUpPad:
+            return "Para subir de nivel, tira del gatillo izquierdo y pulsa Y, luego sigue las indicaciones.";
+        case Id::TutStealthModePad:
+            return "Pulsa Y para el men\xFA r\xE1pido y elige Sigilo para activar o desactivar el modo sigiloso. Debes llevar equipado un generador de campo de sigilo.";
+        case Id::DialogRepeatLineHintPad:
+            return "Tira de ambos gatillos a la vez para repetir la \xFAltima l\xEDnea de di\xE1logo.";
 
         case Id::FmtModLoadedVersion:   return "Voice of the Old Republic cargado, versi�n %s";
         case Id::FmtChargenFeatUnnamed: return "Dote %u";

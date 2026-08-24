@@ -634,8 +634,8 @@ const char* Get(Id id) {
         case Id::HelpKeyPadMapHints:         return "Ekran mapy, krzy\xBF" "ak w lewo i w prawo: poprzedni i nast\xEApny znacznik mapy";
         case Id::HelpKeyPadActionMenuToggle: return "Lewy spust: otwiera menu akcji, ponowne naci\x9Cni\xEA" "cie je zamyka";
         case Id::HelpKeyPadActionMenuNav:    return "Menu akcji, krzy\xBF" "ak: w lewo i w prawo zmienia kategori\xEA, w g\xF3r\xEA i w d\xF3\xB3 pozycj\xEA, A wykonuje, B lub lewy spust zamyka";
-        case Id::HelpKeyPadSelfStatus:       return "Lewy spust z X: tw\xF3j stan";
-        case Id::HelpKeyPadActionQueue:      return "Prawy spust z X: kolejka akcji. Krzy\xBF" "ak w g\xF3r\xEA i w d\xF3\xB3 przechodzi po pozycjach, A usuwa ostatni\xB9 w kolejce, lewy spust z A czy\x9C" "ci ca\xB3\xB9 kolejk\xEA, B zamyka";
+        case Id::HelpKeyPadSelfStatus:       return "Lewy spust z X: tw\xF3j w\xB3" "asny stan";
+        case Id::HelpKeyPadActionQueue:      return "Lewy spust z B: kolejka akcji. Krzy\xBF" "ak w g\xF3r\xEA i w d\xF3\xB3 przechodzi przez pozycje, A usuwa ostatnio dodan\xB9, Y czy\x9C" "ci ca\xB3\xB9 kolejk\xEA, B zamyka";
         case Id::HelpKeyPadWalkToFocus:      return "Prawy spust z prawym bumperem: id\x9F do wybranego obiektu";
         case Id::HelpKeyPadBeacon:           return "Lewy spust z lewym bumperem: sygna\xB3 d\x9Fwi\xEAkowy do wybranego obiektu";
         case Id::HelpKeyPadDegrees:          return "Prawy spust: podaj kierunek w stopniach";
@@ -648,6 +648,47 @@ const char* Get(Id id) {
         case Id::HelpKeyPadPause:            return "Start: pauza";
         case Id::HelpKeyPadSwitchLeader:
             return "X: zmiana przyw\xF3" "dcy dru\xBFyny";
+
+        // Controller rows added with the Pazaak board bindings, the D-Pad's
+        // hold-to-jump gesture and the map's marker press.
+        case Id::HelpKeyPadCycleEnds:
+            return "Przytrzymaj krzy\xBF" "ak w lewo lub w prawo: skok do najbli\xBFszego lub najdalszego obiektu";
+        case Id::HelpKeyPadListEnds:
+            return "Przytrzymaj krzy\xBF" "ak w g\xF3r\xEA lub w d\xF3\xB3: skok do pierwszej lub ostatniej pozycji listy";
+        case Id::HelpKeyPadDropMarker:
+            return "Ekran mapy, naci\x9Cni\xEA" "cie prawej ga\xB3ki: postaw w\xB3" "asny znacznik w miejscu kursora";
+        case Id::HelpKeyPadDialogRepeat:
+            return "W dialogu, oba spusty: powt\xF3rz bie\xBF\xB9" "c\xB9 kwesti\xEA";
+        case Id::HelpKeyPadPazaakNav:
+            return "St\xF3\xB3 Pazaaka, krzy\xBF" "ak: g\xF3ra i d\xF3\xB3 prze\xB3\xB9" "czaj\xB9 mi\xEA" "dzy twoj\xB9 r\xEAk\xB9, dwoma sto\xB3" "ami i akcjami; lewo i prawo poruszaj\xB9 si\xEA wewn\xB9trz. A zagrywa kart\xEA, B anuluje wyb\xF3r znaku";
+        case Id::HelpKeyPadPazaakSign:
+            return "St\xF3\xB3 Pazaaka, na karcie plus-minus: lewo i prawo wybieraj\xB9 znak, A zagrywa, B anuluje";
+        case Id::HelpKeyPadPazaakTurn:
+            return "St\xF3\xB3 Pazaaka, Y: Do\x9C\xE6. X: Zako\xF1" "cz tur\xEA";
+
+        // Controller rows that close the last of the keyboard-only gaps: the
+        // stick pair, the two routes into the game's screens, and the face-button
+        // chord grid.
+        case Id::HelpKeyPadMove:
+            return "Lewa ga\xB3ka: chodzenie i kroki w bok. Prawa ga\xB3ka: obr\xF3t kamery, a wraz z ni\xB9 kierunku marszu";
+        case Id::HelpKeyPadTabs:
+            return "Lewy i prawy bumper: zmiana zak\xB3" "adek i przechodzenie mi\xEA" "dzy ekranami gry";
+        case Id::HelpKeyPadScreens:
+            return "Y, pozycja Menu: otwiera ekrany gry. Bumpery przechodz\xB9 potem mi\xEA" "dzy map\xB9, wiadomo\x9C" "ciami, zadaniami, umiej\xEAtno\x9C" "ciami, postaci\xB9, ekwipunkiem i wyposa\xBF" "eniem";
+        case Id::HelpKeyPadMapCursor:
+            return "Ekran mapy, lewa ga\xB3ka: przesuwanie kursora, aby czyta\xE6 teren i znaczniki";
+        case Id::HelpKeyPadAnnounceFocus:
+            return "Lewy spust z A: podaj wybrany obiekt";
+        case Id::HelpKeyPadViewMode:
+            return "Prawy spust z A: tryb rozgl\xB9" "dania, stoisz w miejscu obracaj\xB9" "c kamer\xEA";
+        case Id::HelpKeyPadLevelUp:
+            return "Prawy spust z Y: otw\xF3rz ekran awansu poziomu";
+        case Id::HelpKeyPadCancelCombat:
+            return "Lewy spust z Y: przerwij walk\xEA";
+        case Id::HelpKeyPadCopyLastSpoken:
+            return "Prawy spust z B: skopiuj do schowka ostatnio wypowiedziany tekst";
+        case Id::HelpKeyPadPazaakReview:
+            return "St\xF3\xB3 Pazaaka, lewy bumper: twoja r\xEAka. Prawy bumper: oba sto\xB3y. Naci\x9Cni\xEA" "cie lewej ga\xB3ki: ile kart ma jeszcze przeciwnik";
         case Id::PadQuickMenuOpened:
             return "Szybkie menu. G\xF3ra i d\xF3\xB3 wybiera, A zatwierdza, "
                    "B zamyka.";
@@ -868,6 +909,95 @@ const char* Get(Id id) {
             return "Naci\x9Cnij G, aby w\xB3\xB9""czy\xE6 lub wy\xB3\xB9""czy\xE6 tryb ukrycia. Musisz mie\xE6 za\xB3o\xBFony generator pola maskuj\xB9""cego, aby z niego korzysta\xE6.";
         case Id::DialogRepeatLineHint:
             return "Naci\x9Cnij R, aby powt\xF3rzy\xE6 ostatni\xB9 kwesti\xEA dialogu.";
+
+        // ---- Controller wording for the tutorial hints above. Selected by
+        //      binding_hints::Text() when a gamepad is present; see strings.h.
+
+        case Id::TutHintCombatFeatPad:
+            return "Atuty bojowe znajdziesz w menu akcji. Poci\xB9gnij lewy spust, aby je otworzy\xE6, przejd\x9F krzy\xBF" "akiem w lewo i w prawo do Atak\xF3w i naci\x9Cnij A.";
+        case Id::TutHintGrenadePad:
+            return "Granaty rzucasz z menu akcji. Poci\xB9gnij lewy spust, przejd\x9F krzy\xBF" "akiem w lewo i w prawo do Materia\xB3\xF3w wybuchowych i naci\x9Cnij A.";
+        case Id::TutHintMinePad:
+            return "Miny stawiasz z menu akcji. Poci\xB9gnij lewy spust, przejd\x9F krzy\xBF" "akiem w lewo i w prawo do Materia\xB3\xF3w wybuchowych i naci\x9Cnij A.";
+        case Id::TutHintFriendlyPowerPad:
+            return "Przyjazne moce Mocy s\xB9 w menu akcji. Poci\xB9gnij lewy spust, przejd\x9F krzy\xBF" "akiem w lewo i w prawo do w\xB3" "asnych mocy i naci\x9Cnij A.";
+        case Id::TutHintHostilePowerPad:
+            return "Wrogie moce Mocy s\xB9 w menu akcji. Poci\xB9gnij lewy spust, przejd\x9F krzy\xBF" "akiem w lewo i w prawo do mocy na cel i naci\x9Cnij A.";
+        case Id::TutHintActionMenuScrollPad:
+            return "W menu akcji krzy\xBF" "ak w g\xF3r\xEA i w d\xF3\xB3 zmienia pozycj\xEA, a w lewo i w prawo kategori\xEA.";
+        case Id::TutHintOpenScreensPad:
+            return "Naci\x9Cnij Y, aby otworzy\xE6 szybkie menu, i wybierz Menu, aby otworzy\xE6 ekrany gry. Lewy i prawy bumper przechodz\xB9 potem mi\xEA" "dzy map\xB9, wiadomo\x9C" "ciami, zadaniami, umiej\xEAtno\x9C" "ciami, postaci\xB9, ekwipunkiem i wyposa\xBF" "eniem. B cofa.";
+        case Id::TutHintCycleTargetsPad:
+            return "Cele wybierasz lewym i prawym bumperem. Krzy\xBF" "ak w lewo i w prawo przechodzi przez ju\xBF odkryte obiekty. W walce mo\xBF" "esz bra\xE6 na cel tylko wrog\xF3w.";
+        case Id::TutHintEquipSlotPad:
+            return "Na ekranie wyposa\xBF" "enia wybierz slot krzy\xBF" "akiem i A, a potem we\x9F przedmiot z listy. Przytrzymaj Y i naci\x9Cnij krzy\xBF" "ak w g\xF3r\xEA lub w d\xF3\xB3, aby przeczyta\xE6 opis przedmiotu.";
+        case Id::TutHintEnemyNearPad:
+            return "Wr\xF3g jest blisko. Zmieniaj cele lewym i prawym bumperem i atakuj przyciskiem A.";
+        case Id::TutHintBashPad:
+            return "Aby wywa\xBFy\xE6, wybierz drzwi lub pojemnik, poci\xB9gnij lewy spust, aby otworzy\xE6 menu akcji, i wybierz Wywa\xBF.";
+        case Id::TutHintAttackPad:
+            return "Wybierz wroga lewym i prawym bumperem i zaatakuj przyciskiem A. Jedno naci\x9Cni\xEA" "cie wystarczy: twoja posta\xE6 atakuje potem automatycznie w ka\xBF" "dej rundzie, dop\xF3ki nie wybierzesz innego celu.";
+        case Id::TutHintAttackAutoPad:
+            return "Pami\xEAtaj: jedno naci\x9Cni\xEA" "cie A atakuje automatycznie w ka\xBF" "dej rundzie. Zmienia to tylko nowy cel.";
+        case Id::TutHintMovementPad:
+            return "W ka\xBF" "dej chwili poci\xB9gnij oba spusty naraz, aby us\xB3ysze\xE6 klawisze bie\xBF\xB9" "cego ekranu, a naci\x9Cnij Y i wybierz Pomoc w szybkim menu, aby otworzy\xE6 pe\xB3n\xB9 list\xEA. Aby si\xEA porusza\xE6, wychyl lew\xB9 ga\xB3k\xEA w dowolnym kierunku. Wychyl praw\xB9 ga\xB3k\xEA w lewo lub w prawo, aby obr\xF3" "ci\xE6 kamer\xEA, a wraz z ni\xB9 kierunek marszu, tak by oba zawsze wskazywa\xB3y to samo. D\x9Fwi\xEAki ostrzegaj\xB9 ci\xEA przed zbli\xBF" "aniem si\xEA do \x9C" "ciany, a w trakcie ruchu opisywany jest kszta\xB3t pomieszczenia wok\xF3\xB3 ciebie. Poci\xB9gnij prawy spust, aby powt\xF3rzy\xE6 kierunek patrzenia i bie\xBF\xB9" "ce pomieszczenie.";
+        case Id::TutHintMapScreenPad:
+            return "Mapa pokazuje ka\xBF" "dy zbadany obszar poziomu. Wa\xBFne miejsca s\xB9 zaznaczone, a niekt\xF3re obszary, na przyk\xB3" "ad miasta, s\xB9 naniesione jeszcze przed zbadaniem. Poruszaj si\xEA po mapie lew\xB9 ga\xB3k\xB9. Znaczniki zmieniasz krzy\xBF" "akiem w lewo i w prawo. Poci\xB9gnij lewy spust razem z lewym bumperem, aby uruchomi\xE6 sygna\xB3 d\x9Fwi\xEAkowy prowadz\xB9" "cy do znacznika, albo prawy spust z prawym bumperem, aby doj\x9C\xE6 tam automatycznie.";
+        case Id::TutHintJournalPad:
+            return "Ekran zada\xF1 pokazuje twoje post\xEApy i wskaz\xF3wki, co robi\xE6 dalej. Otw\xF3rz go z szybkiego menu na Y, pozycja Menu, a potem przejd\x9F do niego bumperami. Wybierz pozycj\xEA krzy\xBF" "akiem i przeczytaj szczeg\xF3\xB3y, przytrzymuj\xB9" "c Y i naciskaj\xB9" "c krzy\xBF" "ak w g\xF3r\xEA lub w d\xF3\xB3.";
+        case Id::TutHintMessagesPad:
+            return "Ekran wiadomo\x9C" "ci pokazuje warto\x9C" "ci takie jak punkty do\x9Cwiadczenia, rzuty na atak i obra\xBF" "enia oraz zmiany twojej postaci. Otw\xF3rz go z szybkiego menu na Y, pozycja Menu, a potem przejd\x9F do niego bumperami.";
+        case Id::TutHintPartyDiesPad:
+            return "Cz\xB3onek dru\xBFyny pad\xB3. Powaleni w walce wracaj\xB9 do si\xB3 po jej zako\xF1" "czeniu, ale je\x9Cli zgin\xB9 wszyscy, gra si\xEA ko\xF1" "czy. Naci\x9Cnij X, aby sterowa\xE6 innym cz\xB3onkiem.";
+        case Id::TutHintInventoryPad:
+            return "Ekwipunek zawiera przedmioty dru\xBFyny, wsp\xF3lne dla wszystkich cz\xB3onk\xF3w. Otw\xF3rz go z szybkiego menu na Y, pozycja Menu, a potem przejd\x9F do niego bumperami. Przechod\x9F przez przedmioty krzy\xBF" "akiem i czytaj opis, przytrzymuj\xB9" "c Y i naciskaj\xB9" "c krzy\xBF" "ak w g\xF3r\xEA lub w d\xF3\xB3.";
+        case Id::TutTraskGettingStartedPad:
+            return "Masz teraz sterowanie. Podstawy: poci\xB9gnij oba spusty naraz, aby us\xB3ysze\xE6 klawisze bie\xBF\xB9" "cego ekranu, albo naci\x9Cnij Y i wybierz Pomoc w szybkim menu, aby otworzy\xE6 pe\xB3n\xB9 list\xEA. Lew\xB9 ga\xB3k\xB9 chodzisz, a praw\xB9 w lewo lub w prawo obracasz kamer\xEA, a wraz z ni\xB9 kierunek marszu, tak by oba zawsze wskazywa\xB3y to samo. Lewy i prawy bumper zmieniaj\xB9 cel, krzy\xBF" "ak w lewo i w prawo przechodzi przez obiekty, a A wchodzi w interakcj\xEA z wybranym obiektem.";
+        case Id::TutTraskEquipOpenPad:
+            return "Na ekranie wyposa\xBF" "enia wybierasz pancerz i bro\xF1. Otw\xF3rz go z szybkiego menu na Y, pozycja Menu, a potem przejd\x9F do niego bumperami.";
+        case Id::TutTraskEquipBrowsePad:
+            return "Przechod\x9F przez sloty wyposa\xBF" "enia krzy\xBF" "akiem; w ka\xBF" "dym mie\x9C" "ci si\xEA jeden przedmiot. Przytrzymaj Y i naci\x9Cnij krzy\xBF" "ak w g\xF3r\xEA lub w d\xF3\xB3, aby przeczyta\xE6 opis.";
+        case Id::TutTraskEquipWeaponPad:
+            return "Wybierz slot broni i naci\x9Cnij A, a potem wybierz bro\xF1 z listy.";
+        case Id::TutTraskCameraPad:
+        case Id::TutTraskFootlockerPad:
+            return "Kamer\xEA, a wraz z ni\xB9 kierunek marszu, zmieniasz praw\xB9 ga\xB3k\xB9. Naci\x9Cni\xEA" "cie prawej ga\xB3ki obraca ci\xEA do nast\xEApnej strony \x9Cwiata. Lewy i prawy bumper przechodz\xB9 przez wszystkie widoczne obiekty. Krzy\xBF" "ak w lewo i w prawo prowadzi przez list\xEA wszystkich ju\xBF widzianych obiekt\xF3w, a w g\xF3r\xEA i w d\xF3\xB3 zmienia kategori\xEA. Naci\x9Cnij A, aby podej\x9C\xE6 do wybranego obiektu i go u\xBFy\xE6.";
+        case Id::TutTraskPickItemPad:
+            return "Wybierz slot krzy\xBF" "akiem i A, przejrzyj list\xEA i zatwierd\x9F przedmiot przyciskiem A.";
+        case Id::TutTraskLeaderPad:
+            return "Sterujesz przyw\xF3" "dc\xB9 dru\xBFyny. Naci\x9Cnij X, aby zmieni\xE6 sterowanego cz\xB3onka.";
+        case Id::TutTraskMakeLeaderPad:
+            return "Naci\x9Cnij X, aby uczyni\xE6 mnie przyw\xF3" "dc\xB9, a potem otw\xF3rz drzwi.";
+        case Id::TutTraskMenusPad:
+            return "Ekrany gry otwierasz z szybkiego menu na Y, pozycja Menu. Bumpery przechodz\xB9 potem mi\xEA" "dzy nimi.";
+        case Id::TutTraskTabsPad:
+            return "Zak\xB3" "adki zmieniasz lewym i prawym bumperem.";
+        case Id::TutTraskActionMenuPad:
+            return "Poci\xB9gnij lewy spust, aby otworzy\xE6 menu akcji dla twojego celu. Krzy\xBF" "ak w lewo i w prawo zmienia kategori\xEA, w g\xF3r\xEA i w d\xF3\xB3 pozycj\xEA, a A wykonuje pozycj\xEA, na kt\xF3rej stoisz.";
+        case Id::TutTraskMedkitPad:
+            return "Apteczek u\xBFywasz z menu akcji. Poci\xB9gnij lewy spust, przejd\x9F krzy\xBF" "akiem w lewo i w prawo do Medycyny i naci\x9Cnij A.";
+        case Id::TutTraskOpenDoorPad:
+            return "Wybierz drzwi krzy\xBF" "akiem w lewo i w prawo i otw\xF3rz je przyciskiem A.";
+        case Id::TutTraskActivateEntryPad:
+            return "W menu akcji wybierz pozycj\xEA krzy\xBF" "akiem w g\xF3r\xEA i w d\xF3\xB3 i uruchom j\xB9 przyciskiem A.";
+        case Id::TutTraskTargetMenuPad:
+            return "Wybierz cel lewym i prawym bumperem albo obiekty krzy\xBF" "akiem w lewo i w prawo. Naci\x9Cnij A, aby wykona\xE6 domy\x9Cln\xB9 akcj\xEA, albo poci\xB9gnij lewy spust, aby otworzy\xE6 menu akcji.";
+        case Id::TutTraskConfirmEntryPad:
+            return "Pod\x9Cwietl pozycj\xEA krzy\xBF" "akiem w g\xF3r\xEA i w d\xF3\xB3 i zatwierd\x9F przyciskiem A.";
+        case Id::TutTraskPausedPad:
+            return "Nawet w pauzie wybierasz cele lewym i prawym bumperem i zmieniasz sterowanego cz\xB3onka przyciskiem X.";
+        case Id::TutTraskWalkToPad:
+            return "Wybierz kufer lewym i prawym bumperem i otw\xF3rz go przyciskiem A.";
+        case Id::TutTraskSecurityPad:
+            return "Wybierz drzwi, poci\xB9gnij lewy spust, aby otworzy\xE6 menu akcji, i wybierz Zabezpieczenia.";
+        case Id::TutTraskHealWoundedPad:
+            return "Prze\xB3\xB9" "cz si\xEA na rann\xB9 posta\xE6 przyciskiem X, poci\xB9gnij lewy spust i przejd\x9F do Medycyny, a potem wybierz apteczk\xEA.";
+        case Id::TutLevelUpPad:
+            return "Aby awansowa\xE6 na poziom, poci\xB9gnij lewy spust i naci\x9Cnij Y, a potem post\xEApuj wed\xB3ug wskaz\xF3wek.";
+        case Id::TutStealthModePad:
+            return "Naci\x9Cnij Y, aby otworzy\xE6 szybkie menu, i wybierz Ukrycie, aby w\xB3\xB9" "czy\xE6 lub wy\xB3\xB9" "czy\xE6 tryb ukrycia. Musisz mie\xE6 za\xB3o\xBFony generator pola maskuj\xB9" "cego.";
+        case Id::DialogRepeatLineHintPad:
+            return "Poci\xB9gnij oba spusty naraz, aby powt\xF3rzy\xE6 ostatni\xB9 kwesti\xEA dialogu.";
 
         case Id::FloorPuzzleIntro:
             return "Zagadka p\xB3yt pod\xB3ogowych: dziewi\xEA\xE6 p\xB3yt w siatce trzy na trzy, "

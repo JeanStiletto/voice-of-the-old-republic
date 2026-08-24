@@ -635,7 +635,7 @@ const char* Get(Id id) {
         case Id::HelpKeyPadActionMenuToggle: return "Grilletto sinistro: apre il menu azioni; premendolo di nuovo si chiude";
         case Id::HelpKeyPadActionMenuNav:    return "Menu azioni, croce: sinistra e destra cambiano categoria, su e gi\xF9 cambiano voce, A esegue, B o il grilletto sinistro chiude";
         case Id::HelpKeyPadSelfStatus:       return "Grilletto sinistro con X: il tuo stato";
-        case Id::HelpKeyPadActionQueue:      return "Grilletto destro con X: la coda delle azioni. Il D-pad su e gi\xF9 scorre le voci, A rimuove l'ultima in coda, il grilletto sinistro con A svuota tutta la coda, B chiude";
+        case Id::HelpKeyPadActionQueue:      return "Grilletto sinistro con B: la coda delle azioni. La croce su e gi\xF9 scorre le voci, A rimuove l'ultima in coda, Y svuota tutta la coda, B chiude";
         case Id::HelpKeyPadWalkToFocus:      return "Grilletto destro con dorsale destro: cammina verso l'oggetto selezionato";
         case Id::HelpKeyPadBeacon:           return "Grilletto sinistro con dorsale sinistro: radiofaro sonoro verso l'oggetto selezionato";
         case Id::HelpKeyPadDegrees:          return "Grilletto destro: annuncia l'orientamento in gradi";
@@ -647,6 +647,48 @@ const char* Get(Id id) {
         case Id::HelpKeyPadOptions:          return "Pulsante Indietro: menu opzioni";
         case Id::HelpKeyPadPause:            return "Start: pausa";
         case Id::HelpKeyPadSwitchLeader:     return "X: cambia capogruppo";
+
+        // Controller rows added with the Pazaak board bindings, the D-Pad's
+        // hold-to-jump gesture and the map's marker press.
+        case Id::HelpKeyPadCycleEnds:
+            return "Tieni premuta la croce a sinistra o a destra: vai all'oggetto pi\xF9 vicino o pi\xF9 lontano";
+        case Id::HelpKeyPadListEnds:
+            return "Tieni premuta la croce su o gi\xF9: vai alla prima o all'ultima voce di un elenco";
+        case Id::HelpKeyPadDropMarker:
+            return "Schermata mappa, premi la levetta destra: piazza un segnalino alla posizione del cursore";
+        case Id::HelpKeyPadDialogRepeat:
+            return "In dialogo, entrambi i grilletti: ripeti la battuta corrente";
+        case Id::HelpKeyPadPazaakNav:
+            return "Tavolo di Pazaak, croce: su e gi\xF9 passano tra la tua mano, i due tavoli e le azioni; sinistra e destra si muovono all'interno. A gioca la carta, B annulla la scelta del segno";
+        case Id::HelpKeyPadPazaakSign:
+            return "Tavolo di Pazaak, su una carta pi\xF9-meno: sinistra e destra scelgono il segno, A la gioca, B annulla";
+        case Id::HelpKeyPadPazaakTurn:
+            return "Tavolo di Pazaak, Y: Stare. X: Fine turno";
+
+        // Controller rows that close the last of the keyboard-only gaps: the
+        // stick pair, the two routes into the game's screens, and the face-button
+        // chord grid.
+        case Id::HelpKeyPadMove:
+            return "Levetta sinistra: camminare e spostarsi di lato. Levetta destra: ruotare la telecamera e con essa la direzione di marcia";
+        case Id::HelpKeyPadTabs:
+            return "Dorsali sinistro e destro: cambiare scheda e passare tra le schermate di gioco";
+        case Id::HelpKeyPadScreens:
+            return "Y, voce Menu: aprire le schermate di gioco. I dorsali passano poi tra mappa, messaggi, missioni, abilit\xE0, personaggio, inventario ed equipaggiamento";
+        case Id::HelpKeyPadMapCursor:
+            return "Schermata mappa, levetta sinistra: muovere il cursore per leggere terreno e segnalini";
+        case Id::HelpKeyPadAnnounceFocus:
+            return "Grilletto sinistro con A: annuncia l'oggetto selezionato";
+        case Id::HelpKeyPadViewMode:
+            return "Grilletto destro con A: modalit\xE0 osservazione, resti fermo mentre ruoti la telecamera";
+        case Id::HelpKeyPadLevelUp:
+            return "Grilletto destro con Y: apri la schermata di avanzamento di livello";
+        case Id::HelpKeyPadCancelCombat:
+            return "Grilletto sinistro con Y: annulla il combattimento";
+        case Id::HelpKeyPadCopyLastSpoken:
+            return "Grilletto destro con B: copia negli appunti l'ultimo testo letto";
+        case Id::HelpKeyPadPazaakReview:
+            return "Tavolo di Pazaak, dorsale sinistro: la tua mano. Dorsale destro: entrambi i tavoli. Premi la levetta sinistra: quante carte ha ancora l'avversario";
+
         case Id::PadQuickMenuOpened:
             return "Menu rapido. Su e gi\xF9 per scegliere, A conferma, "
                    "B chiude.";
@@ -889,6 +931,95 @@ const char* Get(Id id) {
 
         case Id::DialogRepeatLineHint:
             return "Premi R per ripetere l'ultima battuta di dialogo.";
+
+        // ---- Controller wording for the tutorial hints above. Selected by
+        //      binding_hints::Text() when a gamepad is present; see strings.h.
+
+        case Id::TutHintCombatFeatPad:
+            return "I talenti di combattimento sono nel menu delle azioni. Tira il grilletto sinistro per aprirlo, vai su Attacchi con la croce sinistra e destra e premi A.";
+        case Id::TutHintGrenadePad:
+            return "Lancia le granate dal menu delle azioni. Tira il grilletto sinistro, vai su Esplosivi con la croce sinistra e destra e premi A.";
+        case Id::TutHintMinePad:
+            return "Piazza le mine dal menu delle azioni. Tira il grilletto sinistro, vai su Esplosivi con la croce sinistra e destra e premi A.";
+        case Id::TutHintFriendlyPowerPad:
+            return "I poteri della Forza benefici sono nel menu delle azioni. Tira il grilletto sinistro, vai sui tuoi poteri con la croce sinistra e destra e premi A.";
+        case Id::TutHintHostilePowerPad:
+            return "I poteri della Forza offensivi sono nel menu delle azioni. Tira il grilletto sinistro, vai sui poteri da bersaglio con la croce sinistra e destra e premi A.";
+        case Id::TutHintActionMenuScrollPad:
+            return "Nel menu delle azioni, la croce su e gi\xF9 cambia voce, sinistra e destra cambia categoria.";
+        case Id::TutHintOpenScreensPad:
+            return "Premi Y per il menu rapido e scegli Menu per aprire le schermate di gioco. I dorsali sinistro e destro passano poi tra mappa, messaggi, missioni, abilit\xE0, personaggio, inventario ed equipaggiamento. B torna indietro.";
+        case Id::TutHintCycleTargetsPad:
+            return "Scegli i bersagli con i dorsali sinistro e destro. La croce sinistra e destra scorre gli oggetti gi\xE0 scoperti. In combattimento puoi puntare solo i nemici.";
+        case Id::TutHintEquipSlotPad:
+            return "Nella schermata equipaggiamento scegli uno slot con la croce e A, poi prendi un oggetto dall'elenco. Tieni premuto Y e premi la croce su o gi\xF9 per leggere la descrizione di un oggetto.";
+        case Id::TutHintEnemyNearPad:
+            return "Un nemico \xE8 vicino. Cambia bersaglio con i dorsali sinistro e destro e attacca con A.";
+        case Id::TutHintBashPad:
+            return "Per sfondare, seleziona la porta o il contenitore, tira il grilletto sinistro per aprire il menu delle azioni e scegli Sfonda.";
+        case Id::TutHintAttackPad:
+            return "Seleziona un nemico con i dorsali sinistro e destro e attacca con A. Basta una pressione: il tuo personaggio attacca poi automaticamente ogni round finch\xE9 non scegli un altro bersaglio.";
+        case Id::TutHintAttackAutoPad:
+            return "Ricorda: una pressione di A attacca automaticamente ogni round. Solo un nuovo bersaglio lo cambia.";
+        case Id::TutHintMovementPad:
+            return "Tira entrambi i grilletti insieme in qualsiasi momento per i tasti della schermata corrente, e premi Y per il menu rapido, voce Aiuto, per l'elenco completo. Per muoverti spingi la levetta sinistra in qualsiasi direzione. Spingi la levetta destra a sinistra o a destra per ruotare la telecamera e con essa la direzione di marcia, cos\xEC le due puntano sempre nello stesso senso. Dei toni ti avvertono quando ti avvicini a un muro, e mentre ti muovi viene descritta la forma della stanza intorno a te. Tira il grilletto destro per ripetere l'orientamento e la stanza attuale.";
+        case Id::TutHintMapScreenPad:
+            return "La mappa mostra ogni area esplorata di un livello. I punti importanti sono segnati, e alcune zone, come le citt\xE0, sono mappate prima ancora di essere esplorate. Muoviti sulla mappa con la levetta sinistra. Cambia indicazione con la croce sinistra e destra. Tira il grilletto sinistro insieme al dorsale sinistro per avviare un radiofaro che ti guida l\xE0 con il suono, oppure il grilletto destro con il dorsale destro per andarci automaticamente.";
+        case Id::TutHintJournalPad:
+            return "La schermata delle missioni mostra i tuoi progressi e cosa fare dopo. Aprila dal menu rapido su Y, voce Menu, poi raggiungila con i dorsali. Scegli una voce con la croce e leggine i dettagli tenendo premuto Y e premendo la croce su o gi\xF9.";
+        case Id::TutHintMessagesPad:
+            return "La schermata dei messaggi mostra valori come i punti esperienza, i tiri di attacco e danno e i cambiamenti del tuo personaggio. Aprila dal menu rapido su Y, voce Menu, poi raggiungila con i dorsali.";
+        case Id::TutHintPartyDiesPad:
+            return "Un membro del gruppo \xE8 caduto. Chi viene abbattuto in combattimento si riprende dopo lo scontro, ma se muoiono tutti la partita \xE8 finita. Premi X per controllare un altro membro.";
+        case Id::TutHintInventoryPad:
+            return "L'inventario elenca gli oggetti del gruppo, condivisi da tutti i membri. Aprilo dal menu rapido su Y, voce Menu, poi raggiungilo con i dorsali. Scorri gli oggetti con la croce e leggi una descrizione tenendo premuto Y e premendo la croce su o gi\xF9.";
+        case Id::TutTraskGettingStartedPad:
+            return "Ora hai il controllo. Le basi: tira entrambi i grilletti insieme per i tasti della schermata corrente, oppure premi Y per il menu rapido, voce Aiuto, per l'elenco completo. Spingi la levetta sinistra per camminare, e la levetta destra a sinistra o a destra per ruotare la telecamera e con essa la direzione di marcia, cos\xEC le due puntano sempre nello stesso senso. I dorsali sinistro e destro cambiano bersaglio, la croce sinistra e destra scorre gli oggetti, e A interagisce con l'oggetto selezionato.";
+        case Id::TutTraskEquipOpenPad:
+            return "Nella schermata equipaggiamento scegli armature e armi. Aprila dal menu rapido su Y, voce Menu, poi raggiungila con i dorsali.";
+        case Id::TutTraskEquipBrowsePad:
+            return "Scorri gli slot dell'equipaggiamento con la croce; ognuno ospita un oggetto. Tieni premuto Y e premi la croce su o gi\xF9 per leggere la descrizione.";
+        case Id::TutTraskEquipWeaponPad:
+            return "Seleziona lo slot dell'arma e premi A, poi scegli un'arma dall'elenco.";
+        case Id::TutTraskCameraPad:
+        case Id::TutTraskFootlockerPad:
+            return "Cambi la telecamera, e con essa la direzione di marcia, con la levetta destra. Premi la levetta destra per girarti verso il punto cardinale successivo. I dorsali sinistro e destro scorrono tutti gli oggetti visibili. La croce sinistra e destra naviga l'elenco di ogni oggetto gi\xE0 visto, su e gi\xF9 cambia categoria. Premi A per raggiungere un oggetto selezionato e attivarlo.";
+        case Id::TutTraskPickItemPad:
+            return "Scegli uno slot con la croce e A, scorri l'elenco e conferma l'oggetto con A.";
+        case Id::TutTraskLeaderPad:
+            return "Controlli il capogruppo. Premi X per cambiare il membro che controlli.";
+        case Id::TutTraskMakeLeaderPad:
+            return "Premi X per rendere me il capogruppo, poi apri la porta.";
+        case Id::TutTraskMenusPad:
+            return "Apri le schermate di gioco dal menu rapido su Y, voce Menu. I dorsali passano poi dall'una all'altra.";
+        case Id::TutTraskTabsPad:
+            return "Cambia scheda con i dorsali sinistro e destro.";
+        case Id::TutTraskActionMenuPad:
+            return "Tira il grilletto sinistro per aprire il menu delle azioni sul tuo bersaglio. La croce sinistra e destra cambia categoria, su e gi\xF9 cambia voce, e A esegue la voce su cui ti trovi.";
+        case Id::TutTraskMedkitPad:
+            return "Usa i kit medici dal menu delle azioni. Tira il grilletto sinistro, vai su Medico con la croce sinistra e destra e premi A.";
+        case Id::TutTraskOpenDoorPad:
+            return "Seleziona la porta con la croce sinistra e destra e aprila con A.";
+        case Id::TutTraskActivateEntryPad:
+            return "Nel menu delle azioni, scegli una voce con la croce su e gi\xF9 e attivala con A.";
+        case Id::TutTraskTargetMenuPad:
+            return "Seleziona un bersaglio con i dorsali sinistro e destro, o gli oggetti con la croce sinistra e destra. Premi A per l'azione predefinita, oppure tira il grilletto sinistro per aprire il menu delle azioni.";
+        case Id::TutTraskConfirmEntryPad:
+            return "Evidenzia la voce con la croce su e gi\xF9 e conferma con A.";
+        case Id::TutTraskPausedPad:
+            return "Anche in pausa scegli i bersagli con i dorsali sinistro e destro e cambi il membro controllato con X.";
+        case Id::TutTraskWalkToPad:
+            return "Seleziona il baule con i dorsali sinistro e destro e aprilo con A.";
+        case Id::TutTraskSecurityPad:
+            return "Seleziona la porta, tira il grilletto sinistro per aprire il menu delle azioni e scegli Sicurezza.";
+        case Id::TutTraskHealWoundedPad:
+            return "Passa al personaggio ferito con X, tira il grilletto sinistro e vai su Medico, poi scegli il kit medico.";
+        case Id::TutLevelUpPad:
+            return "Per salire di livello, tira il grilletto sinistro e premi Y, poi segui le indicazioni.";
+        case Id::TutStealthModePad:
+            return "Premi Y per il menu rapido e scegli Furtivit\xE0 per attivare o disattivare la modalit\xE0 furtiva. Devi avere equipaggiato un generatore di campo occultante.";
+        case Id::DialogRepeatLineHintPad:
+            return "Tira entrambi i grilletti insieme per ripetere l'ultima battuta di dialogo.";
 
         case Id::FmtModLoadedVersion:   return "Voice of the Old Republic caricato, versione %s";
         case Id::FmtChargenFeatUnnamed: return "Talento %u";

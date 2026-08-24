@@ -636,7 +636,7 @@ const char* Get(Id id) {
         case Id::HelpKeyPadActionMenuToggle: return "G\xE2" "chette gauche : ouvre le menu d'actions ; appuyer de nouveau le ferme";
         case Id::HelpKeyPadActionMenuNav:    return "Menu d'actions, croix : gauche et droite changent de cat\xE9gorie, haut et bas d'entr\xE9" "e, A d\xE9" "clenche, B ou la g\xE2" "chette gauche ferme";
         case Id::HelpKeyPadSelfStatus:       return "G\xE2" "chette gauche avec X : votre propre \xE9tat";
-        case Id::HelpKeyPadActionQueue:      return "G\xE2" "chette droite avec X : la file d'actions. La croix directionnelle vers le haut et le bas parcourt les entr\xE9" "es, A retire la derni\xE8re mise en file, la g\xE2" "chette gauche avec A vide toute la file, B ferme";
+        case Id::HelpKeyPadActionQueue:      return "G\xE2" "chette gauche avec B : la file d'actions. La croix haut et bas parcourt les entr\xE9" "es, A retire la derni\xE8re mise en file, Y vide toute la file, B ferme";
         case Id::HelpKeyPadWalkToFocus:      return "G\xE2" "chette droite avec bouton de tranche droit : marcher jusqu'\xE0 l'objet cibl\xE9";
         case Id::HelpKeyPadBeacon:           return "G\xE2" "chette gauche avec bouton de tranche gauche : balise sonore vers l'objet cibl\xE9";
         case Id::HelpKeyPadDegrees:          return "G\xE2" "chette droite : annoncer l'orientation en degr\xE9s";
@@ -648,6 +648,48 @@ const char* Get(Id id) {
         case Id::HelpKeyPadOptions:          return "Bouton Retour : menu des options";
         case Id::HelpKeyPadPause:            return "Start : pause";
         case Id::HelpKeyPadSwitchLeader:     return "X : changer de chef de groupe";
+
+        // Controller rows added with the Pazaak board bindings, the D-Pad's
+        // hold-to-jump gesture and the map's marker press.
+        case Id::HelpKeyPadCycleEnds:
+            return "Maintenir la croix \xE0 gauche ou \xE0 droite : aller \xE0 l'objet le plus proche ou le plus \xE9loign\xE9";
+        case Id::HelpKeyPadListEnds:
+            return "Maintenir la croix en haut ou en bas : aller \xE0 la premi\xE8re ou \xE0 la derni\xE8re entr\xE9" "e d'une liste";
+        case Id::HelpKeyPadDropMarker:
+            return "\xC9" "cran de carte, pression du stick droit : poser un rep\xE8re \xE0 la position du curseur";
+        case Id::HelpKeyPadDialogRepeat:
+            return "En dialogue, les deux g\xE2" "chettes : r\xE9p\xE9ter la ligne en cours";
+        case Id::HelpKeyPadPazaakNav:
+            return "Plateau de Pazaak, croix : haut et bas passent entre votre main, les deux plateaux et les actions ; gauche et droite s'y d\xE9placent. A joue la carte, B annule le choix du signe";
+        case Id::HelpKeyPadPazaakSign:
+            return "Plateau de Pazaak, sur une carte plus-moins : gauche et droite choisissent le signe, A la joue, B annule";
+        case Id::HelpKeyPadPazaakTurn:
+            return "Plateau de Pazaak, Y : Rester. X : Finir le tour";
+
+        // Controller rows that close the last of the keyboard-only gaps: the
+        // stick pair, the two routes into the game's screens, and the face-button
+        // chord grid.
+        case Id::HelpKeyPadMove:
+            return "Stick gauche : marcher et faire un pas de c\xF4t\xE9. Stick droit : tourner la cam\xE9ra et, avec elle, votre direction de marche";
+        case Id::HelpKeyPadTabs:
+            return "Boutons de tranche gauche et droit : changer d'onglet et passer d'un \xE9" "cran de jeu \xE0 l'autre";
+        case Id::HelpKeyPadScreens:
+            return "Y, entr\xE9" "e Menus : ouvrir les \xE9" "crans de jeu. Les boutons de tranche passent ensuite entre carte, messages, qu\xEAtes, aptitudes, personnage, inventaire et \xE9quipement";
+        case Id::HelpKeyPadMapCursor:
+            return "\xC9" "cran de carte, stick gauche : d\xE9placer le curseur pour lire le terrain et les rep\xE8res";
+        case Id::HelpKeyPadAnnounceFocus:
+            return "G\xE2" "chette gauche avec A : annoncer l'objet cibl\xE9";
+        case Id::HelpKeyPadViewMode:
+            return "G\xE2" "chette droite avec A : mode observation, rester sur place pendant que vous tournez la cam\xE9ra";
+        case Id::HelpKeyPadLevelUp:
+            return "G\xE2" "chette droite avec Y : ouvrir l'\xE9" "cran de niveau sup\xE9rieur";
+        case Id::HelpKeyPadCancelCombat:
+            return "G\xE2" "chette gauche avec Y : annuler le combat";
+        case Id::HelpKeyPadCopyLastSpoken:
+            return "G\xE2" "chette droite avec B : copier le dernier texte lu dans le presse-papiers";
+        case Id::HelpKeyPadPazaakReview:
+            return "Plateau de Pazaak, bouton de tranche gauche : votre main. Bouton de tranche droit : les deux plateaux. Pression du stick gauche : combien de cartes l'adversaire garde en main";
+
         case Id::PadQuickMenuOpened:
             return "Menu rapide. Haut et bas pour choisir, A confirme, "
                    "B ferme.";
@@ -890,6 +932,95 @@ const char* Get(Id id) {
 
         case Id::DialogRepeatLineHint:
             return "Appuyez sur R pour r\xE9p\xE9ter la derni\xE8re ligne de dialogue.";
+
+        // ---- Controller wording for the tutorial hints above. Selected by
+        //      binding_hints::Text() when a gamepad is present; see strings.h.
+
+        case Id::TutHintCombatFeatPad:
+            return "Les dons de combat sont dans le menu d'actions. Tirez la g\xE2" "chette gauche pour l'ouvrir, allez sur Attaques avec la croix gauche et droite, puis appuyez sur A.";
+        case Id::TutHintGrenadePad:
+            return "Lancez les grenades depuis le menu d'actions. Tirez la g\xE2" "chette gauche, allez sur Explosifs avec la croix gauche et droite, puis appuyez sur A.";
+        case Id::TutHintMinePad:
+            return "Posez les mines depuis le menu d'actions. Tirez la g\xE2" "chette gauche, allez sur Explosifs avec la croix gauche et droite, puis appuyez sur A.";
+        case Id::TutHintFriendlyPowerPad:
+            return "Les pouvoirs de Force b\xE9n\xE9" "fiques sont dans le menu d'actions. Tirez la g\xE2" "chette gauche, allez sur vos propres pouvoirs avec la croix gauche et droite, puis appuyez sur A.";
+        case Id::TutHintHostilePowerPad:
+            return "Les pouvoirs de Force offensifs sont dans le menu d'actions. Tirez la g\xE2" "chette gauche, allez sur les pouvoirs de cible avec la croix gauche et droite, puis appuyez sur A.";
+        case Id::TutHintActionMenuScrollPad:
+            return "Dans le menu d'actions, la croix haut et bas change d'entr\xE9" "e, gauche et droite change de cat\xE9gorie.";
+        case Id::TutHintOpenScreensPad:
+            return "Appuyez sur Y pour le menu rapide et choisissez Menus pour ouvrir les \xE9" "crans de jeu. Les boutons de tranche gauche et droit passent ensuite entre carte, messages, qu\xEAtes, aptitudes, personnage, inventaire et \xE9quipement. B revient en arri\xE8re.";
+        case Id::TutHintCycleTargetsPad:
+            return "Choisissez vos cibles avec les boutons de tranche gauche et droit. La croix gauche et droite parcourt les objets d\xE9j\xE0 d\xE9" "couverts. En combat, vous ne pouvez viser que des ennemis.";
+        case Id::TutHintEquipSlotPad:
+            return "Sur l'\xE9" "cran d'\xE9quipement, choisissez un emplacement avec la croix et A, puis prenez un objet dans la liste. Maintenez Y et appuyez sur la croix haut ou bas pour lire la description d'un objet.";
+        case Id::TutHintEnemyNearPad:
+            return "Un ennemi est proche. Changez de cible avec les boutons de tranche gauche et droit et attaquez avec A.";
+        case Id::TutHintBashPad:
+            return "Pour forcer, ciblez la porte ou le conteneur, tirez la g\xE2" "chette gauche pour ouvrir le menu d'actions et choisissez Forcer.";
+        case Id::TutHintAttackPad:
+            return "Ciblez un ennemi avec les boutons de tranche gauche et droit et attaquez avec A. Une pression suffit : votre personnage attaque ensuite automatiquement \xE0 chaque round jusqu'\xE0 ce que vous changiez de cible.";
+        case Id::TutHintAttackAutoPad:
+            return "Rappelez-vous : une pression sur A attaque automatiquement \xE0 chaque round. Seule une nouvelle cible change cela.";
+        case Id::TutHintMovementPad:
+            return "Tirez les deux g\xE2" "chettes ensemble \xE0 tout moment pour les touches de l'\xE9" "cran en cours, et appuyez sur Y pour le menu rapide, entr\xE9" "e Aide, pour la liste compl\xE8te. Pour vous d\xE9placer, poussez le stick gauche dans n'importe quelle direction. Poussez le stick droit \xE0 gauche ou \xE0 droite pour tourner la cam\xE9ra et, avec elle, votre direction de marche, afin que les deux pointent toujours dans le m\xEAme sens. Des sons vous avertissent quand vous approchez d'un mur, et \xE0 mesure que vous avancez la forme de la pi\xE8" "ce autour de vous est d\xE9" "crite. Tirez la g\xE2" "chette droite pour r\xE9p\xE9ter votre orientation et la pi\xE8" "ce actuelle.";
+        case Id::TutHintMapScreenPad:
+            return "La carte montre chaque zone explor\xE9" "e d'un niveau. Les endroits importants sont marqu\xE9s, et certaines zones, comme les villes, sont cartographi\xE9" "es avant m\xEAme d'\xEAtre explor\xE9" "es. D\xE9placez-vous sur la carte avec le stick gauche. Changez de rep\xE8re avec la croix gauche et droite. Tirez la g\xE2" "chette gauche avec le bouton de tranche gauche pour lancer une balise sonore qui vous y guide, ou la g\xE2" "chette droite avec le bouton de tranche droit pour vous y rendre automatiquement.";
+        case Id::TutHintJournalPad:
+            return "L'\xE9" "cran des qu\xEAtes montre votre progression et ce qu'il reste \xE0 faire. Ouvrez-le depuis le menu rapide sur Y, entr\xE9" "e Menus, puis rejoignez-le avec les boutons de tranche. Choisissez une entr\xE9" "e avec la croix et lisez ses d\xE9tails en maintenant Y et en appuyant sur la croix haut ou bas.";
+        case Id::TutHintMessagesPad:
+            return "L'\xE9" "cran des messages affiche des valeurs comme les points d'exp\xE9rience, les jets d'attaque et de d\xE9g\xE2ts, et les changements de votre personnage. Ouvrez-le depuis le menu rapide sur Y, entr\xE9" "e Menus, puis rejoignez-le avec les boutons de tranche.";
+        case Id::TutHintPartyDiesPad:
+            return "Un membre du groupe est tomb\xE9. Les membres mis \xE0 terre en combat se rel\xE8vent apr\xE8s la bataille, mais si tous meurent, la partie est finie. Appuyez sur X pour contr\xF4ler un autre membre.";
+        case Id::TutHintInventoryPad:
+            return "L'inventaire liste les objets de votre groupe, partag\xE9s par tous les membres. Ouvrez-le depuis le menu rapide sur Y, entr\xE9" "e Menus, puis rejoignez-le avec les boutons de tranche. Parcourez les objets avec la croix et lisez une description en maintenant Y et en appuyant sur la croix haut ou bas.";
+        case Id::TutTraskGettingStartedPad:
+            return "Vous avez maintenant le contr\xF4le. L'essentiel : tirez les deux g\xE2" "chettes ensemble pour les touches de l'\xE9" "cran en cours, ou appuyez sur Y pour le menu rapide, entr\xE9" "e Aide, pour la liste compl\xE8te. Poussez le stick gauche pour marcher, et le stick droit \xE0 gauche ou \xE0 droite pour tourner la cam\xE9ra et, avec elle, votre direction de marche, afin que les deux pointent toujours dans le m\xEAme sens. Les boutons de tranche gauche et droit changent de cible, la croix gauche et droite parcourt les objets, et A interagit avec l'objet cibl\xE9.";
+        case Id::TutTraskEquipOpenPad:
+            return "L'\xE9" "cran d'\xE9quipement sert \xE0 choisir armures et armes. Ouvrez-le depuis le menu rapide sur Y, entr\xE9" "e Menus, puis rejoignez-le avec les boutons de tranche.";
+        case Id::TutTraskEquipBrowsePad:
+            return "Parcourez les emplacements d'\xE9quipement avec la croix ; chacun re\xE7oit un objet. Maintenez Y et appuyez sur la croix haut ou bas pour lire la description de l'objet.";
+        case Id::TutTraskEquipWeaponPad:
+            return "S\xE9lectionnez l'emplacement d'arme et appuyez sur A, puis choisissez une arme dans la liste.";
+        case Id::TutTraskCameraPad:
+        case Id::TutTraskFootlockerPad:
+            return "Vous changez la cam\xE9ra, et avec elle votre direction de marche, avec le stick droit. Une pression du stick droit vous tourne vers le point cardinal suivant. Les boutons de tranche gauche et droit parcourent tous les objets visibles. La croix gauche et droite navigue dans la liste de tous les objets d\xE9j\xE0 vus, haut et bas change de cat\xE9gorie. Appuyez sur A pour marcher jusqu'\xE0 un objet s\xE9lectionn\xE9 et l'activer.";
+        case Id::TutTraskPickItemPad:
+            return "Choisissez un emplacement avec la croix et A, parcourez la liste, et confirmez l'objet avec A.";
+        case Id::TutTraskLeaderPad:
+            return "Vous contr\xF4lez le chef de groupe. Appuyez sur X pour changer de membre contr\xF4l\xE9.";
+        case Id::TutTraskMakeLeaderPad:
+            return "Appuyez sur X pour faire de moi le chef, puis ouvrez la porte.";
+        case Id::TutTraskMenusPad:
+            return "Ouvrez les \xE9" "crans de jeu depuis le menu rapide sur Y, entr\xE9" "e Menus. Les boutons de tranche passent ensuite de l'un \xE0 l'autre.";
+        case Id::TutTraskTabsPad:
+            return "Changez d'onglet avec les boutons de tranche gauche et droit.";
+        case Id::TutTraskActionMenuPad:
+            return "Tirez la g\xE2" "chette gauche pour ouvrir le menu d'actions sur votre cible. La croix gauche et droite change de cat\xE9gorie, haut et bas change d'entr\xE9" "e, et A lance l'entr\xE9" "e sur laquelle vous \xEAtes.";
+        case Id::TutTraskMedkitPad:
+            return "Utilisez les kits de soins depuis le menu d'actions. Tirez la g\xE2" "chette gauche, allez sur M\xE9" "dical avec la croix gauche et droite, puis appuyez sur A.";
+        case Id::TutTraskOpenDoorPad:
+            return "Ciblez la porte avec la croix gauche et droite et ouvrez-la avec A.";
+        case Id::TutTraskActivateEntryPad:
+            return "Dans le menu d'actions, choisissez une entr\xE9" "e avec la croix haut et bas et activez-la avec A.";
+        case Id::TutTraskTargetMenuPad:
+            return "Ciblez un ennemi avec les boutons de tranche gauche et droit, ou des objets avec la croix gauche et droite. Appuyez sur A pour l'action par d\xE9" "faut, ou tirez la g\xE2" "chette gauche pour ouvrir le menu d'actions.";
+        case Id::TutTraskConfirmEntryPad:
+            return "Mettez l'entr\xE9" "e en surbrillance avec la croix haut et bas et confirmez avec A.";
+        case Id::TutTraskPausedPad:
+            return "M\xEAme en pause, choisissez vos cibles avec les boutons de tranche gauche et droit et changez de membre contr\xF4l\xE9 avec X.";
+        case Id::TutTraskWalkToPad:
+            return "Ciblez le coffre avec les boutons de tranche gauche et droit et ouvrez-le avec A.";
+        case Id::TutTraskSecurityPad:
+            return "Ciblez la porte, tirez la g\xE2" "chette gauche pour ouvrir le menu d'actions, et choisissez S\xE9" "curit\xE9.";
+        case Id::TutTraskHealWoundedPad:
+            return "Passez au personnage bless\xE9 avec X, tirez la g\xE2" "chette gauche et allez sur M\xE9" "dical, puis choisissez le kit de soins.";
+        case Id::TutLevelUpPad:
+            return "Pour monter de niveau, tirez la g\xE2" "chette gauche et appuyez sur Y, puis suivez les indications.";
+        case Id::TutStealthModePad:
+            return "Appuyez sur Y pour le menu rapide et choisissez Camouflage pour activer ou d\xE9sactiver le mode furtif. Vous devez avoir un g\xE9n\xE9rateur de champ de camouflage \xE9quip\xE9.";
+        case Id::DialogRepeatLineHintPad:
+            return "Tirez les deux g\xE2" "chettes ensemble pour r\xE9p\xE9ter la derni\xE8re ligne de dialogue.";
 
         case Id::FmtModLoadedVersion:   return "Voice of the Old Republic charg�, version %s";
         case Id::FmtChargenFeatUnnamed: return "Don %u";

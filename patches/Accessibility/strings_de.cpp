@@ -653,8 +653,8 @@ const char* Get(Id id) {
         case Id::HelpKeyPadMapHints:         return "Kartenbildschirm, Steuerkreuz links und rechts: vorheriger und n\xE4" "chster Hinweis";
         case Id::HelpKeyPadActionMenuToggle: return "Linker Trigger: Aktionsmen\xFC \xF6" "ffnen; erneut dr\xFC" "cken schlie\xDFt es";
         case Id::HelpKeyPadActionMenuNav:    return "Aktionsmen\xFC, Steuerkreuz: links und rechts wechseln die Kategorie, hoch und runter den Eintrag, A l\xF6st aus, B oder linker Trigger schlie\xDFt";
-        case Id::HelpKeyPadSelfStatus:       return "Linker Trigger mit X: eigener Zustand";
-        case Id::HelpKeyPadActionQueue:      return "Rechter Trigger mit X: Aktionsschlange. Steuerkreuz hoch und runter gehen die Eintr\xE4ge durch, A entfernt den zuletzt eingereihten, linker Trigger mit A leert die ganze Schlange, B schlie\xDFt";
+        case Id::HelpKeyPadSelfStatus:       return "Linker Trigger mit X: dein eigener Status";
+        case Id::HelpKeyPadActionQueue:      return "Linker Trigger mit B: die Aktionswarteschlange. Steuerkreuz hoch und runter geht durch die Eintr\xE4ge, A entfernt den zuletzt eingereihten, Y leert die ganze Warteschlange, B schlie\xDFt";
         case Id::HelpKeyPadWalkToFocus:      return "Rechter Trigger mit rechter Schultertaste: zum fokussierten Objekt laufen";
         case Id::HelpKeyPadBeacon:           return "Linker Trigger mit linker Schultertaste: Audio-Bake zum fokussierten Objekt";
         case Id::HelpKeyPadDegrees:          return "Rechter Trigger: Blickrichtung in Grad ansagen";
@@ -666,6 +666,48 @@ const char* Get(Id id) {
         case Id::HelpKeyPadOptions:          return "Zur\xFC" "ck-Taste: Optionsmen\xFC";
         case Id::HelpKeyPadPause:            return "Start: Pause";
         case Id::HelpKeyPadSwitchLeader:     return "X: Gruppenanf\xFChrer wechseln";
+
+        // Controller rows added with the Pazaak board bindings, the D-Pad's
+        // hold-to-jump gesture and the map's marker press.
+        case Id::HelpKeyPadCycleEnds:
+            return "Steuerkreuz links oder rechts gedr\xFC" "ckt halten: zum n\xE4" "chsten oder entferntesten Objekt springen";
+        case Id::HelpKeyPadListEnds:
+            return "Steuerkreuz hoch oder runter gedr\xFC" "ckt halten: zum ersten oder letzten Eintrag einer Liste springen";
+        case Id::HelpKeyPadDropMarker:
+            return "Kartenbildschirm, rechten Stick dr\xFC" "cken: eigene Markierung an der Cursorposition setzen";
+        case Id::HelpKeyPadDialogRepeat:
+            return "Im Dialog, beide Trigger: die aktuelle gesprochene Zeile wiederholen";
+        case Id::HelpKeyPadPazaakNav:
+            return "Pazaak-Brett, Steuerkreuz: hoch und runter wechseln zwischen deiner Hand, den beiden Brettseiten und den Aktionen; links und rechts bewegen darin. A spielt die Karte, B bricht die Vorzeichenwahl ab";
+        case Id::HelpKeyPadPazaakSign:
+            return "Pazaak-Brett, bei einer Plus-Minus-Karte: links und rechts w\xE4hlen das Vorzeichen, A spielt sie, B bricht ab";
+        case Id::HelpKeyPadPazaakTurn:
+            return "Pazaak-Brett, Y: Halten. X: Runde beenden";
+
+        // Controller rows that close the last of the keyboard-only gaps: the
+        // stick pair, the two routes into the game's screens, and the face-button
+        // chord grid.
+        case Id::HelpKeyPadMove:
+            return "Linker Stick: laufen und seitw\xE4rts treten. Rechter Stick: Kamera drehen und damit auch deine Laufrichtung";
+        case Id::HelpKeyPadTabs:
+            return "Linke und rechte Schultertaste: Reiter wechseln und zwischen den Spielbildschirmen bl\xE4ttern";
+        case Id::HelpKeyPadScreens:
+            return "Y, Eintrag Men\xFCs: die Spielbildschirme \xF6" "ffnen. Mit den Schultertasten wechselst du dann zwischen Karte, Meldungen, Quests, F\xE4higkeiten, Charakter, Inventar und Ausr\xFCstung";
+        case Id::HelpKeyPadMapCursor:
+            return "Kartenbildschirm, linker Stick: den Kartencursor bewegen, um Gel\xE4nde und Markierungen zu lesen";
+        case Id::HelpKeyPadAnnounceFocus:
+            return "Linker Trigger mit A: das fokussierte Objekt ansagen";
+        case Id::HelpKeyPadViewMode:
+            return "Rechter Trigger mit A: Umsehen-Modus, Position halten, w\xE4hrend du die Kamera drehst";
+        case Id::HelpKeyPadLevelUp:
+            return "Rechter Trigger mit Y: den Levelaufstieg \xF6" "ffnen";
+        case Id::HelpKeyPadCancelCombat:
+            return "Linker Trigger mit Y: Kampf abbrechen";
+        case Id::HelpKeyPadCopyLastSpoken:
+            return "Rechter Trigger mit B: den zuletzt gesprochenen Text in die Zwischenablage kopieren";
+        case Id::HelpKeyPadPazaakReview:
+            return "Pazaak-Brett, linke Schultertaste: deine Hand. Rechte Schultertaste: beide Tische. Linken Stick dr\xFC" "cken: wie viele Karten der Gegner noch hat";
+
         case Id::PadQuickMenuOpened:
             return "Schnellmen\xFC. Hoch und runter zum Ausw\xE4hlen, "
                    "A best\xE4tigt, B schlie\xDFt.";
@@ -887,6 +929,95 @@ const char* Get(Id id) {
             return "Dr\xFC""cke G, um den Tarnmodus ein- oder auszuschalten. Daf\xFC""r musst du einen Tarnfeldgenerator tragen.";
         case Id::DialogRepeatLineHint:
             return "Dr\xFC""cke R, um die letzte Dialogzeile zu wiederholen.";
+
+        // ---- Controller wording for the tutorial hints above. Selected by
+        //      binding_hints::Text() when a gamepad is present; see strings.h.
+
+        case Id::TutHintCombatFeatPad:
+            return "Kampftalente stehen im Aktionsmen\xFC. Ziehe den linken Trigger, um es zu \xF6" "ffnen, gehe mit dem Steuerkreuz links und rechts zu Angriffe und dr\xFC" "cke A.";
+        case Id::TutHintGrenadePad:
+            return "Granaten wirfst du \xFC" "ber das Aktionsmen\xFC. Ziehe den linken Trigger, gehe mit dem Steuerkreuz links und rechts zu Sprengstoffe und dr\xFC" "cke A.";
+        case Id::TutHintMinePad:
+            return "Minen legst du \xFC" "ber das Aktionsmen\xFC. Ziehe den linken Trigger, gehe mit dem Steuerkreuz links und rechts zu Sprengstoffe und dr\xFC" "cke A.";
+        case Id::TutHintFriendlyPowerPad:
+            return "Freundliche Machtkr\xE4" "fte stehen im Aktionsmen\xFC. Ziehe den linken Trigger, gehe mit dem Steuerkreuz links und rechts zu den eigenen Kr\xE4" "ften und dr\xFC" "cke A.";
+        case Id::TutHintHostilePowerPad:
+            return "Feindliche Machtkr\xE4" "fte stehen im Aktionsmen\xFC. Ziehe den linken Trigger, gehe mit dem Steuerkreuz links und rechts zu den Zielkr\xE4" "ften und dr\xFC" "cke A.";
+        case Id::TutHintActionMenuScrollPad:
+            return "Im Aktionsmen\xFC wechselst du mit dem Steuerkreuz hoch und runter zwischen den Eintr\xE4gen und mit links und rechts zwischen den Kategorien.";
+        case Id::TutHintOpenScreensPad:
+            return "Dr\xFC" "cke Y f\xFCr das Schnellmen\xFC und w\xE4hle Men\xFCs, um die Spielbildschirme zu \xF6" "ffnen. Mit der linken und rechten Schultertaste wechselst du dann zwischen Karte, Meldungen, Quests, F\xE4higkeiten, Charakter, Inventar und Ausr\xFCstung. B geht zur\xFC" "ck.";
+        case Id::TutHintCycleTargetsPad:
+            return "Ziele w\xE4hlst du mit der linken und rechten Schultertaste. Mit dem Steuerkreuz links und rechts gehst du durch die bereits entdeckten Objekte. Im Kampf kannst du nur Gegner anvisieren.";
+        case Id::TutHintEquipSlotPad:
+            return "Im Ausr\xFCstungsbildschirm w\xE4hlst du einen Platz mit dem Steuerkreuz und A und suchst dann einen Gegenstand aus der Liste. Halte Y und dr\xFC" "cke das Steuerkreuz hoch oder runter, um die Beschreibung zu lesen.";
+        case Id::TutHintEnemyNearPad:
+            return "Ein Gegner ist in der N\xE4he. Schalte Ziele mit der linken und rechten Schultertaste durch und greife mit A an.";
+        case Id::TutHintBashPad:
+            return "Zum Aufbrechen fokussierst du die T\xFCr oder den Beh\xE4lter, ziehst den linken Trigger f\xFCr das Aktionsmen\xFC und w\xE4hlst Aufbrechen.";
+        case Id::TutHintAttackPad:
+            return "Fokussiere einen Gegner mit der linken und rechten Schultertaste und greife mit A an. Ein Druck gen\xFCgt; dein Charakter greift dann jede Runde automatisch an, bis du ein anderes Ziel w\xE4hlst.";
+        case Id::TutHintAttackAutoPad:
+            return "Denk daran: ein Druck auf A greift jede Runde automatisch an. Nur ein neues Ziel \xE4ndert das.";
+        case Id::TutHintMovementPad:
+            return "Ziehe jederzeit beide Trigger zusammen f\xFCr die Tasten des aktuellen Bildschirms, und dr\xFC" "cke Y f\xFCr das Schnellmen\xFC, Eintrag Hilfe, f\xFCr die vollst\xE4ndige Liste. Zum Gehen dr\xFC" "ckst du den linken Stick in eine beliebige Richtung. Mit dem rechten Stick nach links oder rechts drehst du die Kamera und damit auch deine Laufrichtung, sodass beide immer gleich zeigen. T\xF6ne warnen dich, wenn du dich einer Wand n\xE4herst, und w\xE4hrend du dich bewegst, wird die Form des Raumes um dich beschrieben. Ziehe den rechten Trigger, um Blickrichtung und aktuellen Raum zu wiederholen.";
+        case Id::TutHintMapScreenPad:
+            return "Die Karte zeigt jeden erkundeten Bereich einer Ebene. Wichtige Bereiche sind markiert, und manche Gebiete, etwa St\xE4" "dte, sind schon vor der Erkundung eingezeichnet. Bewege dich mit dem linken Stick \xFC" "ber die Karte. Mit dem Steuerkreuz links und rechts wechselst du zwischen den Kartenhinweisen. Ziehe den linken Trigger zusammen mit der linken Schultertaste f\xFCr eine Bake, die dich per Ton zum Hinweis f\xFChrt, oder den rechten Trigger mit der rechten Schultertaste, um automatisch dorthin zu laufen.";
+        case Id::TutHintJournalPad:
+            return "Der Questbildschirm zeigt deinen Fortschritt und Hinweise, was als N\xE4" "chstes zu tun ist. \xD6" "ffne ihn \xFC" "ber das Schnellmen\xFC auf Y, Eintrag Men\xFCs, und wechsle mit den Schultertasten dorthin. W\xE4hle einen Eintrag mit dem Steuerkreuz und lies die Details, indem du Y h\xE4ltst und das Steuerkreuz hoch oder runter dr\xFC" "ckst.";
+        case Id::TutHintMessagesPad:
+            return "Der Meldungsbildschirm zeigt Werte wie Erfahrungspunkte, Angriffs- und Schadensw\xFCrfe und Ver\xE4nderungen an deinem Charakter. \xD6" "ffne ihn \xFC" "ber das Schnellmen\xFC auf Y, Eintrag Men\xFCs, und wechsle mit den Schultertasten dorthin.";
+        case Id::TutHintPartyDiesPad:
+            return "Ein Gruppenmitglied ist gefallen. Im Kampf niedergestreckte Mitglieder werden nach dem Kampf wiederbelebt, aber wenn alle sterben, ist das Spiel vorbei. Dr\xFC" "cke X, um ein anderes Mitglied zu steuern.";
+        case Id::TutHintInventoryPad:
+            return "Das Inventar listet die Gegenst\xE4nde deiner Gruppe, geteilt von allen Mitgliedern. \xD6" "ffne es \xFC" "ber das Schnellmen\xFC auf Y, Eintrag Men\xFCs, und wechsle mit den Schultertasten dorthin. Gehe mit dem Steuerkreuz durch die Gegenst\xE4nde und lies eine Beschreibung, indem du Y h\xE4ltst und das Steuerkreuz hoch oder runter dr\xFC" "ckst.";
+        case Id::TutTraskGettingStartedPad:
+            return "Du hast jetzt die Kontrolle. Die Grundlagen: Ziehe beide Trigger zusammen f\xFCr die Tasten des aktuellen Bildschirms, oder dr\xFC" "cke Y f\xFCr das Schnellmen\xFC, Eintrag Hilfe, f\xFCr die vollst\xE4ndige Liste. Mit dem linken Stick l\xE4ufst du, mit dem rechten Stick nach links oder rechts drehst du die Kamera und damit deine Laufrichtung, sodass beide immer gleich zeigen. Die linke und rechte Schultertaste wechseln zwischen Zielen, das Steuerkreuz links und rechts geht durch Objekte, und A interagiert mit dem fokussierten Objekt.";
+        case Id::TutTraskEquipOpenPad:
+            return "Im Ausr\xFCstungsbildschirm w\xE4hlst du R\xFCstung und Waffen. \xD6" "ffne ihn \xFC" "ber das Schnellmen\xFC auf Y, Eintrag Men\xFCs, und wechsle mit den Schultertasten dorthin.";
+        case Id::TutTraskEquipBrowsePad:
+            return "Gehe mit dem Steuerkreuz durch die Ausr\xFCstungspl\xE4tze; jeder Platz nimmt einen Gegenstand auf. Halte Y und dr\xFC" "cke das Steuerkreuz hoch oder runter, um die Beschreibung zu lesen.";
+        case Id::TutTraskEquipWeaponPad:
+            return "W\xE4hle den Waffenplatz und dr\xFC" "cke A, dann suche eine Waffe aus der Liste.";
+        case Id::TutTraskCameraPad:
+        case Id::TutTraskFootlockerPad:
+            return "Die Kamera und damit deine Laufrichtung \xE4nderst du mit dem rechten Stick. Dr\xFC" "cke den rechten Stick, um dich zur n\xE4" "chsten Himmelsrichtung zu drehen. Die linke und rechte Schultertaste gehen durch alle sichtbaren Objekte. Das Steuerkreuz links und rechts f\xFChrt durch eine Liste aller schon gesehenen Objekte, hoch und runter wechselt die Objektkategorie. Dr\xFC" "cke A, um zu einem gew\xE4hlten Objekt zu laufen und es zu benutzen.";
+        case Id::TutTraskPickItemPad:
+            return "W\xE4hle einen Platz mit dem Steuerkreuz und A, gehe durch die Liste und best\xE4tige den Gegenstand mit A.";
+        case Id::TutTraskLeaderPad:
+            return "Du steuerst den Gruppenanf\xFChrer. Dr\xFC" "cke X, um das gesteuerte Mitglied zu wechseln.";
+        case Id::TutTraskMakeLeaderPad:
+            return "Dr\xFC" "cke X, um mich zum Anf\xFChrer zu machen, und \xF6" "ffne dann die T\xFCr.";
+        case Id::TutTraskMenusPad:
+            return "\xD6" "ffne die Spielbildschirme \xFC" "ber das Schnellmen\xFC auf Y, Eintrag Men\xFCs. Mit den Schultertasten wechselst du dann zwischen ihnen.";
+        case Id::TutTraskTabsPad:
+            return "Wechsle zwischen den Reitern mit der linken und rechten Schultertaste.";
+        case Id::TutTraskActionMenuPad:
+            return "Ziehe den linken Trigger, um das Aktionsmen\xFC f\xFCr dein Ziel zu \xF6" "ffnen. Das Steuerkreuz links und rechts wechselt die Kategorie, hoch und runter den Eintrag, und A f\xFChrt den Eintrag aus, auf dem du stehst.";
+        case Id::TutTraskMedkitPad:
+            return "Medipacks benutzt du \xFC" "ber das Aktionsmen\xFC. Ziehe den linken Trigger, gehe mit dem Steuerkreuz links und rechts zu Medizin und dr\xFC" "cke A.";
+        case Id::TutTraskOpenDoorPad:
+            return "Fokussiere die T\xFCr mit dem Steuerkreuz links und rechts und \xF6" "ffne sie mit A.";
+        case Id::TutTraskActivateEntryPad:
+            return "Im Aktionsmen\xFC w\xE4hlst du einen Eintrag mit dem Steuerkreuz hoch und runter und f\xFChrst ihn mit A aus.";
+        case Id::TutTraskTargetMenuPad:
+            return "Fokussiere ein Ziel mit der linken und rechten Schultertaste oder Objekte mit dem Steuerkreuz links und rechts. Dr\xFC" "cke A f\xFCr die Standardaktion oder ziehe den linken Trigger f\xFCr das Aktionsmen\xFC.";
+        case Id::TutTraskConfirmEntryPad:
+            return "Markiere den Eintrag mit dem Steuerkreuz hoch und runter und best\xE4tige mit A.";
+        case Id::TutTraskPausedPad:
+            return "Auch in der Pause w\xE4hlst du Ziele mit der linken und rechten Schultertaste und wechselst das gesteuerte Mitglied mit X.";
+        case Id::TutTraskWalkToPad:
+            return "Fokussiere die Fu\xDFtruhe mit der linken und rechten Schultertaste und \xF6" "ffne sie mit A.";
+        case Id::TutTraskSecurityPad:
+            return "Fokussiere die T\xFCr, ziehe den linken Trigger f\xFCr das Aktionsmen\xFC und w\xE4hle Sicherheit.";
+        case Id::TutTraskHealWoundedPad:
+            return "Wechsle mit X zum verwundeten Charakter, ziehe den linken Trigger und gehe zu Medizin, und w\xE4hle das Medipack.";
+        case Id::TutLevelUpPad:
+            return "F\xFCr den Levelaufstieg ziehst du den linken Trigger und dr\xFC" "ckst Y.";
+        case Id::TutStealthModePad:
+            return "Dr\xFC" "cke Y f\xFCr das Schnellmen\xFC und w\xE4hle Tarnung, um den Tarnmodus ein- oder auszuschalten. Dazu musst du einen Tarnfeldgenerator ausger\xFCstet haben.";
+        case Id::DialogRepeatLineHintPad:
+            return "Ziehe beide Trigger zusammen, um die letzte Dialogzeile zu wiederholen.";
 
         case Id::FloorPuzzleIntro:
             return "Bodenplatten-R\xE4tsel: neun Platten in drei mal drei Anordnung, "

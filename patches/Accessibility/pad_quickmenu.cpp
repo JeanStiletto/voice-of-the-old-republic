@@ -2,13 +2,13 @@
 
 #include <cstdio>
 
-#include "engine_game.h"
 #include "engine_input.h"     // kInputNav* / kInputEnter1 / kInputEsc1
 #include "engine_keymap.h"    // GameActionScancode
 #include "engine_player.h"    // GetPlayerPosition
 #include "help.h"             // ToggleMenu — the Help entry
 #include "key_inject.h"
 #include "log.h"
+#include "pad_input.h"      // EnginePadDead — is the mod the pad driver here?
 #include "prism.h"
 #include "strings.h"
 
@@ -93,7 +93,11 @@ bool IsOpen() { return g_open; }
 
 void Open() {
     if (g_open) return;
-    if (!acc::game::IsKotor1()) return;   // KOTOR 2 has the engine's own
+    // KOTOR 2 has the engine's own quick-menu panel — except when its engine
+    // never saw the pad, where that panel cannot be reached at all (Y is one of
+    // the events that are not arriving) and this menu is the pad's only route
+    // to the game screens.
+    if (!acc::pad::EnginePadDead()) return;
     // The F1 list gets first refusal on every nav code, so a quick menu opened
     // underneath it would be unreachable — audible, focused, and deaf. Decline
     // instead of stacking.

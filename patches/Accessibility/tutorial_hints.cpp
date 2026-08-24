@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstring>
 
+#include "binding_hints.h"  // Text — keyboard vs controller wording
 #include "engine_reads.h"    // LookupTlk
 #include "log.h"
 #include "strings.h"
@@ -137,7 +138,9 @@ const char* HintForTutorialRow(int row) {
         case 42: id = Id::TutHintMovement;         break;  // Movement_Keys
         default: return nullptr;
     }
-    const char* s = acc::strings::Get(id);
+    // Text(), not Get(): a gamepad turns every one of these into its
+    // controller wording, from the one predicate every hint surface asks.
+    const char* s = acc::binding_hints::Text(id);
     return (s[0]) ? s : nullptr;
 }
 
@@ -204,7 +207,7 @@ const char* HintForMouseText(const char* text) {
     if (!s_mouseTextBuilt) return nullptr;
     for (int i = 0; i < kTutorialMouseMsgCount; ++i) {
         if (s_mouseText[i][0] && EqualsTrimmed(text, s_mouseText[i])) {
-            const char* s = acc::strings::Get(kTutorialMouseMsgs[i].hint);
+            const char* s = acc::binding_hints::Text(kTutorialMouseMsgs[i].hint);
             return (s[0]) ? s : nullptr;
         }
     }
@@ -259,7 +262,7 @@ const char* HintForDialogLine(const char* renderedLine, uint32_t* outStrref) {
     for (int i = 0; i < kDialogHintCount; ++i) {
         if (!s_resolved[i].valid) continue;
         if (EqualsTrimmed(renderedLine, s_resolved[i].text)) {
-            const char* s = acc::strings::Get(s_resolved[i].id);
+            const char* s = acc::binding_hints::Text(s_resolved[i].id);
             if (!s[0]) return nullptr;
             // s_resolved is built parallel to kDialogHints, so index i carries
             // the source strref.

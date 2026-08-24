@@ -192,18 +192,31 @@ bool IsPhysicalF1();
 //   RT alone        announce the facing in degrees (the keyboard's AltGr)
 //   LT + LB         audio beacon to the focused object
 //   RT + RB         walk to the focused object
-//   LT + RT         the current screen's keys (the keyboard's Ctrl+F1)
-//   LT + X          own status (the keyboard's H)
-//   RT + X          the action queue (the keyboard's Shift+H)
-//   LT + A          clear the whole action queue, while it is open (the
-//                   keyboard's Shift+Enter there)
+//   LT + RT         the current screen's keys (the keyboard's Ctrl+F1), or,
+//                   in a dialogue, repeat the spoken line (its R)
 //
-// The two X chords are on the triggers because every button on the pad already
-// has a job the player uses — Start pauses, Back opens Options, the stick
-// presses flourish and orient the camera — and the one button that is genuinely
-// spare, the Series pad's Share, is not reported by any input API available to
-// a game (Windows keeps it for the Game Bar capture; see the Share note in
+// and the face-button grid, whose slots are laid out by ergonomics — see the
+// full table in pad_input.cpp:
+//
+//   LT + A          announce the focused object (the minus key)
+//   LT + B          the action queue (Shift+H)
+//   LT + X          own status (H)
+//   LT + Y          cancel combat (F)
+//   RT + A          look-around mode (B)
+//   RT + B          copy the last spoken text (Ctrl+R)
+//   RT + X          free
+//   RT + Y          the level-up screen (Shift+L)
+//
+// The chords are on the triggers because every button on the pad already has a
+// job the player uses — Start pauses, Back opens Options, the stick presses
+// flourish and orient the camera — and the one button that is genuinely spare,
+// the Series pad's Share, is not reported by any input API available to a game
+// (Windows keeps it for the Game Bar capture; see the Share note in
 // docs/llm-docs/k2-controller-support.md). Bare X keeps Switch Party Leader.
+//
+// The exception is a button a mod OVERLAY owns while it is up, which costs the
+// grid nothing: inside the action queue a bare Y clears the whole queue, and on
+// the Pazaak board a bare Y stands and a bare X ends the turn.
 //
 // The solo job fires on RELEASE, and any chord taken during the hold cancels
 // it. That is not a timing rule and there is nothing for the user to learn —
@@ -220,10 +233,23 @@ bool IsPhysicalF1();
 // has to be fresh before any of them run.
 void Tick();
 
-// KOTOR 1 only: edge-detect the button word Tick() sampled and dispatch it.
-// This is the K1 counterpart of TranslateManagerEvent — same helpers, same
-// bindings, different source. No-op on KOTOR 2, where the engine's own events
-// carry the same presses to the two Translate* seams.
+// True once the mod has to drive the pad itself, because the ENGINE's own
+// gamepad path is not delivering. Always true on KOTOR 1, whose raw-input layer
+// creates a keyboard and a mouse and nothing else. On KOTOR 2 it is a probe
+// result: that engine enumerates controllers exactly once at input init, so a
+// pad switched on a few seconds late is invisible to it for the session, and
+// the first D-Pad press settles the question (see the EnginePad notes in
+// pad_input.cpp). False while the question is still open.
+//
+// Read by the two modules that carry bindings the engine would otherwise own:
+// pad_movement (the walking stick) and the KOTOR 1 quick menu.
+bool EnginePadDead();
+
+// Edge-detect the button word Tick() sampled and dispatch it. This is the
+// counterpart of TranslateManagerEvent — same helpers, same bindings, different
+// source. Runs whenever EnginePadDead(): always on KOTOR 1, and on KOTOR 2 only
+// when its engine never saw the pad, where it is the difference between half a
+// controller and a whole one.
 //
 // Call from the poll slot next to input_poll::PollHotkey, NOT from Tick():
 // these presses open the unified action menu and dispatch interactions, which
@@ -268,11 +294,19 @@ bool PeekModifierHeld();
 bool LeftTriggerHeld();
 bool RightTriggerHeld();
 
-// True once a gamepad has been seen this session — either XInput reports one
-// connected, or an unmistakably pad-shaped event has arrived (a stick axis
-// carrying val = +/-1, or a D-Pad code; the face and shoulder codes are shared
-// with real keyboard rows and do not count). Sticky, and drives the controller
-// section of the F1 help list.
+// True while a gamepad is present. Two sources, two lifetimes: XInput is polled
+// live (so unplugging one turns this false after a short forget window that
+// absorbs a missed read or a slot change), while an unmistakably pad-shaped
+// ENGINE event — a stick axis carrying val = +/-1, or a D-Pad code; the face
+// and shoulder codes are shared with real keyboard rows and do not count — is
+// an edge with nothing to re-ask, so it latches for the session. That second
+// source is KOTOR 2's alone, and it is what keeps a DirectInput-only pad, which
+// XInput never reports, counted.
+//
+// This is the raw hardware fact. Ask binding_hints::ControllerActive() instead
+// when the question is "which wording should the player HEAR" — that is the one
+// decision point every help and tutorial string switches on, and it is allowed
+// to answer differently (a user override).
 bool Connected();
 
 // ---------------------------------------------------------------------------

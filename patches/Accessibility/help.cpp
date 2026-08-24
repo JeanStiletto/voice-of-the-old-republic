@@ -22,7 +22,7 @@
                                 // poll-vs-event race (no stray Options open)
 #include "log.h"
 #include "minigame_pazaak.h"   // IsBoardForeground — the pazaak help context
-#include "pad_input.h"          // Connected — gates the controller section
+#include "binding_hints.h"      // ControllerActive — the one wording predicate
 #include "prism.h"
 #include "strings.h"
 #include "unified_action_menu.h"
@@ -106,19 +106,37 @@ Context DetectContext() {
 // ----- Catalog ------------------------------------------------------------
 enum class Grp {
     General, Movement, Interaction, Combat, Exploration, Screens, Map, Pazaak,
-    Mod, Controller,
+    Controller, Mod,
     COUNT
 };
 
 constexpr S kGroupHeader[] = {
     S::HelpGroupGeneral, S::HelpGroupMovement, S::HelpGroupInteraction,
     S::HelpGroupCombat, S::HelpGroupExploration, S::HelpGroupScreens,
-    S::HelpGroupMap, S::HelpGroupPazaak, S::HelpGroupMod,
-    S::HelpGroupController,
+    S::HelpGroupMap, S::HelpGroupPazaak, S::HelpGroupController,
+    S::HelpGroupMod,
 };
 static_assert(sizeof(kGroupHeader) / sizeof(kGroupHeader[0]) ==
               static_cast<int>(Grp::COUNT),
               "kGroupHeader must cover every Grp");
+
+// Which device a row's wording names — and therefore when it is listed.
+//
+// KOTOR has no input MODE (see binding_hints.h): keyboard and pad are live at
+// the same time, always. What switches here is only which NAMES the list uses,
+// and a row is shown to the device it was written for.
+//
+// Keyboard is the default, which makes adding an ordinary row a one-liner —
+// and carries an obligation with it: a keyboard row is HIDDEN once a pad is
+// present, so a new binding needs its controller row written at the same time
+// or a pad player simply never learns the feature exists. Every keyboard row
+// in the catalog below has one today; Both is reserved for the rows that name
+// no key at all and are therefore true on either device.
+enum class Dev {
+    Keyboard,  // keyboard wording  — listed while no gamepad is present
+    Pad,       // controller wording — listed while one is
+    Both,      // names no control; listed either way
+};
 
 struct Entry {
     S        label;     // header/simple-entry id, or (composed) the format id
@@ -126,10 +144,8 @@ struct Entry {
     uint32_t ctx;       // 0 = F1-list only, never spoken by Ctrl+F1
     bool     composed;  // true → label is a format; text built from MenuCat*
                         // names at BuildRows time (the number-key line)
-    bool     padOnly;   // true → listed only when a gamepad is present.
-                        // Reading a controller layout to a keyboard player is
-                        // noise. Both games now have pad bindings, so this is
-                        // purely about the hardware, not about the title.
+    Dev      dev;       // which device's wording this row is. Defaulted to
+                        // Keyboard, so an ordinary row needs no tag at all.
     bool     k2Only;    // true → listed only on KOTOR 2. For bindings that
                         // exist because the second game has something the
                         // first does not (its fifth action-bar column), where
@@ -137,9 +153,11 @@ struct Entry {
                         // that is never populated there.
 };
 
-// One test for every pad-only row, so the F1 list and the Ctrl+F1 summary can
-// never disagree about whether the controller section exists.
-bool PadEntriesVisible() { return acc::pad::Connected(); }
+// One test for every row, so the F1 list and the Ctrl+F1 summary can never
+// disagree about which device the player is on — and, because it is the same
+// predicate the tutorial hints ask, so the help list and a tutorial popup two
+// seconds later can never name different controls either.
+bool ControllerWording() { return acc::binding_hints::ControllerActive(); }
 
 // Order within a group is the order F1 reads them. The General nav keys are
 // tagged for the menu-like screens they apply to (not World) so they're heard
@@ -198,7 +216,7 @@ constexpr Entry kEntries[] = {
     // variants of that format string in seven languages, and would list a
     // category KOTOR 1 never populates.
     { S::FmtHelpNumberActions8,  Grp::Combat, 0, /*composed=*/true,
-      /*padOnly=*/false, /*k2Only=*/true },
+      /*dev=*/Dev::Keyboard, /*k2Only=*/true },
     { S::HelpKeyActionQueue,     Grp::Combat, 0 },
     { S::HelpKeyLevelUp,         Grp::Combat, 0 },
     { S::HelpKeyCancelCombat,    Grp::Combat, 0 },
@@ -231,7 +249,10 @@ constexpr Entry kEntries[] = {
 
     // ---- Mod features ----
     // F1-list only — Ctrl+F1 deliberately doesn't mention mod settings.
-    { S::HelpKeyModSettings,     Grp::Mod, 0 },
+    // Names no key on either device — the only row in the catalog that is
+    // literally the same sentence to a keyboard and a pad player, so it is the
+    // only one that stays listed in both.
+    { S::HelpKeyModSettings,     Grp::Mod, 0, false, Dev::Both },
     // Ctrl+R works on every screen, but Ctrl+F1 only volunteers it where a
     // player actually wants text out of the game: a dialog line (the
     // number-heavy terminal riddles), a menu entry, an object announcement.
@@ -247,7 +268,7 @@ constexpr Entry kEntries[] = {
     // "what do I press here" wants the pad answer, not the keyboard one.
     //
     // Every line is true on BOTH games, and always was — these rows are gated
-    // on the HARDWARE (padOnly) and never on the title. They are reached
+    // on the HARDWARE (Dev::Pad) and never on the title. They are reached
     // differently: KOTOR 2 gets the engine's own pad bindings for free, KOTOR 1
     // synthesises the player's bound key (pad_input.cpp). The one KOTOR 2 entry
     // with no KOTOR 1 twin, Switch Weapons, was never listed here — it lives on
@@ -255,45 +276,82 @@ constexpr Entry kEntries[] = {
     //
     // Reading order: what the pad does in menus, then the D-Pad's one world
     // job (the object cycle), then the action menu it opens, then the chords.
+    { S::HelpKeyPadMove,           Grp::Controller, kWorld, false, Dev::Pad },
     { S::HelpKeyPadMenuNav,        Grp::Controller,
-      kMenu | kActionMenu | kDialog | kContainer | kStore, false, true },
+      kMenu | kActionMenu | kDialog | kContainer | kStore, false, Dev::Pad },
     // Y is the pad's Shift: held, it turns the D-Pad's up / down into the
     // description peek the keyboard reaches with Shift+arrow. Same reading, one
     // modifier each.
     { S::HelpKeyPadTooltip,        Grp::Controller,
-      kMenu | kActionMenu | kContainer | kStore, false, true },
-    { S::HelpKeyPadInteract,       Grp::Controller, kWorld, false, true },
-    { S::HelpKeyPadCycleObjects,   Grp::Controller, kWorld, false, true },
-    { S::HelpKeyPadCycleCategory,  Grp::Controller, kWorld, false, true },
+      kMenu | kActionMenu | kContainer | kStore, false, Dev::Pad },
+    // Q / E and the in-game menu strip, which is the only route a pad has to
+    // the map, the journal and the equipment screen at all.
+    { S::HelpKeyPadTabs,           Grp::Controller,
+      kMenu | kContainer | kStore, false, Dev::Pad },
+    { S::HelpKeyPadScreens,        Grp::Controller, kWorld | kMenu, false, Dev::Pad },
+    { S::HelpKeyPadInteract,       Grp::Controller, kWorld, false, Dev::Pad },
+    { S::HelpKeyPadAnnounceFocus,  Grp::Controller, kWorld, false, Dev::Pad },
+    { S::HelpKeyPadCycleObjects,   Grp::Controller, kWorld, false, Dev::Pad },
+    { S::HelpKeyPadCycleCategory,  Grp::Controller, kWorld, false, Dev::Pad },
+    // Hold-to-jump. Two rows because the D-Pad's hold lands on two different
+    // answers: the ends of the object run in the world and on the map, the
+    // ends of an ordinary list everywhere else.
+    { S::HelpKeyPadCycleEnds,      Grp::Controller, 0,      false, Dev::Pad },
+    { S::HelpKeyPadListEnds,       Grp::Controller,
+      kMenu | kActionMenu | kContainer | kStore, false, Dev::Pad },
     // The map screen runs the same cycle over its own hints, so the D-Pad
     // reads them on the horizontal axis exactly as it reads objects in the
     // world — see DispatchMapDpad in pad_input.cpp.
-    { S::HelpKeyPadMapHints,       Grp::Controller, kMap,   false, true },
+    { S::HelpKeyPadMapHints,       Grp::Controller, kMap,   false, Dev::Pad },
+    { S::HelpKeyPadMapCursor,      Grp::Controller, kMap,   false, Dev::Pad },
+    // The map's own use of the stick press. In the world that press turns the
+    // camera; here it plants the thing the camera would turn towards.
+    { S::HelpKeyPadDropMarker,     Grp::Controller, kMap,   false, Dev::Pad },
     // Tagged for the action menu as well as the world: the trigger is also how
     // you get back OUT, so the line stays true while the menu is up.
     { S::HelpKeyPadActionMenuToggle, Grp::Controller,
-      kWorld | kActionMenu, false, true },
+      kWorld | kActionMenu, false, Dev::Pad },
     { S::HelpKeyPadActionMenuNav,  Grp::Controller,
-      kWorld | kActionMenu, false, true },
+      kWorld | kActionMenu, false, Dev::Pad },
     // The two trigger chords that carry the keyboard's H and Shift+H. The queue
     // line names its own in-queue keys because a pad player has nowhere else to
     // learn them. Not world-only: the status readout answers on any screen.
-    { S::HelpKeyPadSelfStatus,     Grp::Controller, kWorld | kMenu, false, true },
-    { S::HelpKeyPadActionQueue,    Grp::Controller, kWorld, false, true },
-    { S::HelpKeyPadWalkToFocus,    Grp::Controller, 0,      false, true },
-    { S::HelpKeyPadBeacon,         Grp::Controller, 0,      false, true },
-    { S::HelpKeyPadDegrees,        Grp::Controller, kWorld | kMap, false, true },
-    { S::HelpKeyPadCameraOrient,   Grp::Controller, kWorld, false, true },
-    { S::HelpKeyPadHelp,           Grp::Controller, 0,      false, true },
-    { S::HelpKeyPadQuickMenu,      Grp::Controller, kWorld, false, true },
-    { S::HelpKeyPadCycleTargets,   Grp::Controller, kWorld, false, true },
+    { S::HelpKeyPadSelfStatus,     Grp::Controller, kWorld | kMenu, false, Dev::Pad },
+    { S::HelpKeyPadActionQueue,    Grp::Controller, kWorld, false, Dev::Pad },
+    // The rest of the chord grid. Tagged sparingly for Ctrl+F1 — these are the
+    // rarely-reached ones, and a context summary that listed all eight chords
+    // would bury the four a player actually needs on the screen they are on.
+    { S::HelpKeyPadViewMode,       Grp::Controller, 0,      false, Dev::Pad },
+    { S::HelpKeyPadLevelUp,        Grp::Controller, 0,      false, Dev::Pad },
+    { S::HelpKeyPadCancelCombat,   Grp::Controller, 0,      false, Dev::Pad },
+    { S::HelpKeyPadCopyLastSpoken, Grp::Controller,
+      kWorld | kDialog | kMenu, false, Dev::Pad },
+    { S::HelpKeyPadWalkToFocus,    Grp::Controller, 0,      false, Dev::Pad },
+    { S::HelpKeyPadBeacon,         Grp::Controller, 0,      false, Dev::Pad },
+    { S::HelpKeyPadDegrees,        Grp::Controller, kWorld | kMap, false, Dev::Pad },
+    { S::HelpKeyPadCameraOrient,   Grp::Controller, kWorld, false, Dev::Pad },
+    { S::HelpKeyPadHelp,           Grp::Controller, 0,      false, Dev::Pad },
+    { S::HelpKeyPadQuickMenu,      Grp::Controller, kWorld, false, Dev::Pad },
+    { S::HelpKeyPadCycleTargets,   Grp::Controller, kWorld, false, Dev::Pad },
     // The shoulders' one non-engine job: the keyboard's Q / E mode toggle on
     // the two panels where the engine leaves them free.
     { S::HelpKeyPadTradeMode,      Grp::Controller, kContainer | kStore,
-      false, true },
-    { S::HelpKeyPadOptions,        Grp::Controller, 0,      false, true },
-    { S::HelpKeyPadPause,          Grp::Controller, kWorld, false, true },
-    { S::HelpKeyPadSwitchLeader,   Grp::Controller, kWorld, false, true },
+      false, Dev::Pad },
+    { S::HelpKeyPadOptions,        Grp::Controller, 0,      false, Dev::Pad },
+    { S::HelpKeyPadPause,          Grp::Controller, kWorld, false, Dev::Pad },
+    { S::HelpKeyPadSwitchLeader,   Grp::Controller, kWorld, false, Dev::Pad },
+    // Dialogue takes the trigger pair off the context help: there are no
+    // screen keys worth reading on a screen whose only control is "continue",
+    // and the line that just went past is what a pad player cannot otherwise
+    // ask for again.
+    { S::HelpKeyPadDialogRepeat,   Grp::Controller, kDialog, false, Dev::Pad },
+    // The Pazaak board. Listed here rather than in the Pazaak group so the
+    // whole controller vocabulary stays in one place to read; the ctx tag is
+    // what puts them in front of a pad player who is actually at the board.
+    { S::HelpKeyPadPazaakNav,      Grp::Controller, kPazaak, false, Dev::Pad },
+    { S::HelpKeyPadPazaakSign,     Grp::Controller, kPazaak, false, Dev::Pad },
+    { S::HelpKeyPadPazaakTurn,     Grp::Controller, kPazaak, false, Dev::Pad },
+    { S::HelpKeyPadPazaakReview,   Grp::Controller, kPazaak, false, Dev::Pad },
 };
 constexpr int kEntryCount =
     static_cast<int>(sizeof(kEntries) / sizeof(kEntries[0]));
@@ -347,8 +405,12 @@ void BuildComposedText(S formatId, char* out, size_t cap) {
 // by its entries, in catalog order.
 // A row is listed unless it describes hardware the player does not have.
 bool EntryListed(const Entry& e) {
-    if (e.padOnly && !PadEntriesVisible()) return false;
-    if (e.k2Only  && !acc::game::IsKotor2()) return false;
+    if (e.k2Only && !acc::game::IsKotor2()) return false;
+    switch (e.dev) {
+        case Dev::Keyboard: return !ControllerWording();
+        case Dev::Pad:      return ControllerWording();
+        case Dev::Both:     return true;
+    }
     return true;
 }
 

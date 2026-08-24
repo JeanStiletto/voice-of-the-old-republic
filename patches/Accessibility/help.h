@@ -16,10 +16,23 @@
 //                         announcement the Pazaak board already does on open.
 //
 // The catalog (kEntries in help.cpp) is the single source of truth. Each
-// entry carries a `grp` (which F1 section it lives under — every entry is
-// listed) and a curated `ctx` bitmask (which screens speak it on Ctrl+F1 —
-// kept short so a context summary stays digestible). F1 is exhaustive;
+// entry carries a `grp` (which F1 section it lives under), a curated `ctx`
+// bitmask (which screens speak it on Ctrl+F1 — kept short so a context summary
+// stays digestible), and a `dev` tag. F1 is exhaustive within its device;
 // Ctrl+F1 is the essentials, ending with a "press F1 for the full list" hint.
+//
+// Both surfaces answer for ONE device at a time. With a gamepad present the
+// list is the controller vocabulary, and the keyboard rows it duplicates are
+// not read out; without one it is the keyboard's, and the controller rows are
+// absent. That is the console convention, and it is the same predicate every
+// tutorial hint switches on (binding_hints::ControllerActive), so the F1 list
+// and a tutorial popup two seconds later can never name different controls.
+//
+// It is also a promise the catalog has to keep: a keyboard row is HIDDEN once
+// a pad is connected, so every one of them needs a controller row that answers
+// the same question, or a pad player never learns the feature exists. The one
+// exception is `Dev::Both` — a row that names no control at all and is
+// therefore true on either device.
 //
 // Localised strings live in strings.h (HelpGroup* / HelpKey* / HelpContext*).
 

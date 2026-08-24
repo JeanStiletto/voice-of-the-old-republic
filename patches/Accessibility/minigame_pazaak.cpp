@@ -541,6 +541,44 @@ void PlayAndAnnounce(void* panel, void* player, int slot) {
     acclog::Write("Pazaak", "play slot=%d index=%d flip=%d", slot, c.index, c.flip);
 }
 
+// The opponent's remaining hand cards, count only — the same public information
+// a sighted player reads off the face-down cards, never the values. Shared by
+// the keyboard's Shift+C and the pad's left-stick press.
+void SpeakOppHandCount(void* model) {
+    using namespace acc::strings;
+    void* e = EnemyOf(model);
+    int n = 0;
+    for (int i = 0; i < kHandSlots; ++i) {
+        if (ReadCard(e, kPlayerHandOffset, i).index >= 0) ++n;
+    }
+    char msg[96];
+    snprintf(msg, sizeof(msg), Get(Id::PazaakFmtOppHand), n);
+    Say(msg, true);
+}
+
+// The board's two turn actions, with their one turn gate. Three surfaces reach
+// them — the S / E shortcuts, Enter in the actions zone, and the pad's Y / X —
+// and the gate has to answer the same way on all three, including the spoken
+// refusal: a press that lands out of turn must say so, not go quiet.
+void ActStand(void* panel, int state) {
+    using namespace acc::strings;
+    if (state == kStatePlayerInteractive || state == kStatePlayerPlayed) {
+        DoStand(panel);
+    } else {
+        Say(Get(Id::PazaakNotYourTurn), true);
+    }
+}
+
+void ActEndTurn(void* panel, int state) {
+    using namespace acc::strings;
+    if (state == kStatePlayerInteractive || state == kStatePlayerPlayed) {
+        DoEndTurn(panel);
+        Say(Get(Id::PazaakTurnEnded), true);
+    } else {
+        Say(Get(Id::PazaakNotYourTurn), true);
+    }
+}
+
 // ---- Arrow-zone navigation helpers ---------------------------------------
 int ZoneLen(void* model, int zone) {
     if (zone == 0) return kHandSlots;                  // your hand (4 slots)
@@ -644,29 +682,12 @@ void PollShortcuts(void* panel) {
 
     // Shift+C — opponent's remaining hand cards (count only — the same public
     // info a sighted player reads off the face-down cards, never the values).
-    if (Pressed(Action::PazaakOppHand)) {
-        void* e = EnemyOf(model);
-        int n = 0;
-        for (int i = 0; i < kHandSlots; ++i)
-            if (ReadCard(e, kPlayerHandOffset, i).index >= 0) ++n;
-        char msg[96];
-        snprintf(msg, sizeof(msg), Get(Id::PazaakFmtOppHand), n);
-        Say(msg, true);
-    }
+    if (Pressed(Action::PazaakOppHand)) SpeakOppHandCount(model);
 
     // s / e quick shortcuts for Stand / End turn (also reachable in the
-    // actions zone via arrows + Enter).
-    if (Pressed(Action::PazaakStand)) {
-        if (state == kStatePlayerInteractive || state == kStatePlayerPlayed) DoStand(panel);
-        else Say(Get(Id::PazaakNotYourTurn), true);
-    }
-    if (Pressed(Action::PazaakEndTurn)) {
-        if (state == kStatePlayerInteractive || state == kStatePlayerPlayed) {
-            DoEndTurn(panel); Say(Get(Id::PazaakTurnEnded), true);
-        } else {
-            Say(Get(Id::PazaakNotYourTurn), true);
-        }
-    }
+    // actions zone via arrows + Enter, and on the pad's Y / X).
+    if (Pressed(Action::PazaakStand))   ActStand(panel, state);
+    if (Pressed(Action::PazaakEndTurn)) ActEndTurn(panel, state);
 }
 
 // Enter on the focused zone element (driven from TryHandleInput).
@@ -695,12 +716,8 @@ void HandleEnter(void* panel, void* model, int state) {
             PlayAndAnnounce(panel, player, g_col);
         }
     } else if (g_zone == 3) {  // actions
-        if (state == kStatePlayerInteractive || state == kStatePlayerPlayed) {
-            if (g_col == 0) DoStand(panel);
-            else { DoEndTurn(panel); Say(Get(Id::PazaakTurnEnded), true); }
-        } else {
-            Say(Get(Id::PazaakNotYourTurn), true);
-        }
+        if (g_col == 0) ActStand(panel, state);
+        else            ActEndTurn(panel, state);
     }
     // zones 1 / 2 (boards) are read-only — Enter does nothing.
 }
@@ -911,6 +928,64 @@ void FormatCardLabel(int index, int flip, CardContext ctx, char* out, size_t n,
     }
     // 23..32 main deck, printed as its face value 1..10.
     snprintf(out, n, Get(Id::PazaakFmtPlain), index - FirstMainDeckIndex() + 1);
+}
+
+// The pad's two board bindings. The D-Pad, A and B need nothing here: the pad
+// layer already synthesises the arrows, Enter and Escape a menu surface expects,
+// so they arrive at TryHandleInput as the board's own navigator keys. Y and X
+// are the pair that has no keyboard twin to synthesise — the keyboard reaches
+// Stand and End turn through the letters S and E, which the engine drops before
+// any hook and which no pad button stands in for — so the board claims them
+// itself. See docs/pazaak-investigation.md.
+bool TryHandlePadAction(PadAction a) {
+    using namespace acc::strings;
+    if (!g_boardForeground || !g_panel) return false;
+    void* panel = g_panel;
+
+    // The three readers first: they change nothing, so they answer in any state
+    // — including the opponent's turn and a half-made sign choice, which are
+    // exactly the moments a player wants to re-read the table.
+    void* model = GetModel(panel);
+    if (!model) return true;
+    switch (a) {
+        case PadAction::ReviewHand:
+            acclog::Write("Pazaak", "pad left shoulder -> your hand");
+            SpeakHand(PlayerOf(model));
+            return true;
+        case PadAction::ReviewTable:
+            acclog::Write("Pazaak", "pad right shoulder -> both boards");
+            SpeakTable(model);
+            return true;
+        case PadAction::OppHand:
+            acclog::Write("Pazaak", "pad left stick press -> opponent card count");
+            SpeakOppHandCount(model);
+            return true;
+        default:
+            break;
+    }
+
+    // Mid-sign-choice the card owns the surface: standing or ending the turn out
+    // from under a half-played card would strand it. Claim the press so nothing
+    // else acts on it, and re-read the prompt rather than going silent — an
+    // ignored button that says nothing reads as a dead pad.
+    if (g_optMode) {
+        void* player = PlayerOf(model);
+        if (player) {
+            SpeakSignOption(ReadCard(player, kPlayerHandOffset, g_optSlot).index,
+                            /*interrupt=*/true);
+        }
+        return true;
+    }
+
+    const int state = GetState(panel);
+    if (a == PadAction::Stand) {
+        acclog::Write("Pazaak", "pad Y -> stand");
+        ActStand(panel, state);
+    } else {
+        acclog::Write("Pazaak", "pad X -> end turn");
+        ActEndTurn(panel, state);
+    }
+    return true;
 }
 
 // Arrow + Enter navigator, driven from the manager input hook so the generic

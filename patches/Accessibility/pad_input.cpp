@@ -24,6 +24,7 @@
 #include "log.h"
 #include "map_ui_cursor.h"   // IsActive — the map screen owns the left stick
 #include "menus_chain.h"     // g_chain* — which Quick Menu entry is focused
+#include "minigame_pazaak.h" // TryHandlePadAction — the board owns Y and X
 #include "narrated_target.h" // TryGet — is there a target to open the menu on?
 #include "pad_quickmenu.h"   // the KOTOR 1 Y menu (K2 uses the engine's own)
 #include "peek_description.h" // OnShiftReleased — Y is the pad's peek modifier
@@ -115,12 +116,98 @@ bool g_pendingLtSolo = false;
 bool g_pendingRtSolo = false;
 bool g_pendingHelp   = false;
 
-// Sticky: once a pad has been seen this session we keep advertising it. The
-// engine enumerates game controllers exactly once at input init, so a pad that
-// was present at launch stays the relevant one even if XInput briefly stops
-// answering; and a pad that never reaches XInput at all still announces itself
-// through the manager events (see NoteSeen).
-bool g_padSeen = false;
+// Presence has two sources, and they answer with different lifetimes because
+// the evidence behind them differs in kind.
+//
+//   XInput — polled every tick and rescanned every 2 s, so it is a LIVE fact.
+//            It can say "a pad is plugged in right now", and — the part that
+//            matters here — it can stop saying it when the player unplugs one.
+//            Held as a timestamp with a forget window rather than as a bool, so
+//            one failed read, or the gap between two throttled rescans, cannot
+//            flap the answer.
+//
+//   Engine — KOTOR 2 only, and only ever an EDGE: a pad-shaped event arrived.
+//   events   There is no "is it still there" question to ask of it, and the
+//            engine enumerates game controllers exactly once at input init, so
+//            a pad that announced itself this way stays the relevant one for
+//            the session. Sticky by necessity, not by choice.
+//
+// Connected() is the OR of the two, and it now reaches past the pad's own code:
+// it is the device signal the help and tutorial wording switches on (see
+// binding_hints.h), so "the player unplugged the pad" has to become visible,
+// and a DirectInput-only pad on KOTOR 2 — which XInput never reports at all —
+// still has to count.
+ULONGLONG g_xinputSeenMs = 0;   // last successful XInputGetState; 0 = never
+bool      g_padEventSeen = false;
+
+// Three rescans' worth. Long enough that a hiccup or a slot change is invisible
+// to the wording switch, short enough that a player who unplugs the pad and
+// reaches for the keyboard gets keyboard hints on their next tutorial popup.
+constexpr ULONGLONG kPadForgetMs = 6000;
+
+// ---------------------------------------------------------------------------
+// Is the ENGINE's own gamepad path alive?
+// ---------------------------------------------------------------------------
+// KOTOR 2 ships gamepad support, but it enumerates game controllers exactly
+// ONCE, at input init. A pad switched on a few seconds after the game starts is
+// invisible to the engine for the rest of the session: its D-Pad, its face
+// buttons, its shoulders, the stick that walks and the stick that turns the
+// camera are all dead — while the mod's own trigger layer, read from XInput
+// which rescans every 2 s, keeps working perfectly. Half a controller, and
+// nothing in the game says which half or why.
+//
+// KOTOR 1 has no engine pad path at all, so the mod already IS the pad driver
+// there. This is what lets KOTOR 2 fall back to that same driver when its
+// engine's half turns out to be missing, and it is why "plug the pad in before
+// launching" stops being a rule the player has to know.
+//
+// Deciding it without double-firing on a healthy session
+// ------------------------------------------------------
+// We cannot simply drive from XInput and see: on a session where the engine IS
+// delivering, every press would then fire twice. And we cannot wait for
+// evidence of absence, because absence produces no events to wait for.
+//
+// So the first D-Pad press of the session is the probe. XInput sees it at once;
+// the engine, if it is alive, delivers its own event for the same press within
+// a frame or two. Hold the press for a beat — if the engine's event arrives,
+// its pad is live and we never ask again; if the beat passes in silence, its
+// pad is dead, we dispatch the press ourselves and latch the fallback for every
+// binding.
+//
+// The D-Pad is the probe because it is the one surface that reaches the manager
+// hook from EVERY screen on a healthy KOTOR 2 (in the world it drives the
+// engine's own action menu, in a menu it navigates), and because its codes are
+// among the two event shapes NoteSeen can tell apart from a real keyboard
+// press. The whole cost is one barely perceptible delay, once, on the first
+// D-Pad press of a session whose engine pad is dead.
+//
+// Dead is not permanent. An engine pad event arriving after we latched Dead is
+// proof the probe was wrong — a press swallowed by a loading screen would do
+// it — and we flip back at once, because two dispatches of every press is a far
+// worse failure than one delayed press.
+enum class EnginePad { Unknown, Live, Dead };
+EnginePad g_enginePad = EnginePad::Unknown;
+
+// Several frames at 30 fps, and still short enough that a press held for it
+// reads as instant.
+constexpr ULONGLONG kEnginePadProbeMs = 150;
+
+int       g_probeCode     = 0;   // D-Pad code the probe is holding; 0 = idle
+int       g_probeSlot     = -1;  // its kDpadBits index
+ULONGLONG g_probeDeadline = 0;
+
+void NoteEnginePadLive(const char* why) {
+    if (g_enginePad == EnginePad::Live) return;
+    const bool correcting = (g_enginePad == EnginePad::Dead);
+    g_enginePad     = EnginePad::Live;
+    g_probeCode     = 0;
+    g_probeSlot     = -1;
+    g_probeDeadline = 0;
+    acclog::Write("Pad", "engine gamepad path is LIVE (%s)%s", why,
+                  correcting ? " — correcting an earlier probe that read it as "
+                               "dead; the engine owns its bindings again"
+                             : " — the engine owns its own bindings");
+}
 
 // Only the two engine-native-discriminated event shapes are allowed to set
 // this: a stick axis carrying val = +/-1 (the engine's own preamble keys on
@@ -129,7 +216,13 @@ bool g_padSeen = false;
 // the function keys — codes an ordinary keyboard-only KOTOR 2 session really
 // does produce — and letting those claim a controller would put a Controller
 // section in the F1 help of a player who has no controller.
-void NoteSeen() { g_padSeen = true; }
+void NoteSeen() {
+    g_padEventSeen = true;
+    // The same two discriminated shapes that prove a pad exists also prove the
+    // ENGINE is delivering for it — which is the whole question the probe below
+    // is asking.
+    NoteEnginePadLive("a pad-shaped engine event arrived");
+}
 
 void EnsureXInput() {
     if (g_xinputTried) return;
@@ -391,47 +484,148 @@ void ToggleActionMenu() {
     OpenActionMenu();
 }
 
-// The action queue's clear-all, as a chord: LT + A while the queue is open.
+// The action queue's clear-all: a BARE Y while the queue is open.
 //
 // The keyboard clears the whole queue with Shift+Enter, and the queue's own
 // handler tells that press from a plain Enter by reading the physical Shift. A
-// pad holds no Shift, so the gesture is claimed here and calls the queue
-// directly — LT being the pad's Shift, this IS Shift+Enter. Returns true when
-// it fired and the caller must consume; a bare A still removes one entry.
+// pad holds no Shift, so the gesture has to be claimed here and call the queue
+// directly.
+//
+// It used to be LT + A, which spent one of the eight trigger chords on a
+// binding that could only ever fire on a single screen. The queue overlay is
+// its own surface with its own vocabulary, and Y does nothing there — so Y is
+// free, and taking it costs only the quick menu while the queue happens to be
+// up. The result reads better too: inside the queue, A removes the entry you
+// are on and Y removes them all.
+//
+// Returns true when it fired and the caller must consume; off the queue it
+// declines instantly and Y keeps its ordinary job.
 bool ClaimQueueClearAll() {
-    if (!g_ltHeld) return false;
     if (!acc::combat::queue::IsActive()) return false;
-    // Mark the hold chorded so the trigger's own release job (toggling the
-    // action menu) does not also fire on the way out.
-    g_ltChorded = true;
-    acclog::Write("Pad", "LT + A -> clear the action queue");
+    acclog::Write("Pad", "Y -> clear the action queue");
     acc::combat::queue::ClearAllAndClose();
     return true;
 }
 
-// X with a trigger held — the pad's H key. LT + X is the self-status readout,
-// RT + X the action queue: exactly the keyboard's H and Shift+H.
+// ---------------------------------------------------------------------------
+// The face-button chord grid
+// ---------------------------------------------------------------------------
+// A trigger held turns each of the four face buttons into a second binding.
+// That is eight slots, and they are what closed the last of the gaps between
+// what a keyboard player can reach and what a pad player can:
 //
-// Returns true when a chord fired, which is also the caller's signal that bare
-// X (Switch Party Leader) must NOT run. Marks the trigger chorded so its own
-// solo job — the action menu on LT, the degrees announcement on RT — does not
-// also fire when the player lets go.
+//   LT + A   announce the focused object (the minus key)
+//   LT + B   open the action queue       (Shift+H)
+//   LT + X   your own status             (H)
+//   LT + Y   cancel combat               (F)
+//   RT + A   look-around mode            (B)
+//   RT + B   copy the last spoken text   (Ctrl+R)
+//   RT + X   — free —
+//   RT + Y   the level-up screen         (Shift+L)
 //
-// Routed as synthetic presses of those two keyboard actions rather than as calls
-// into their handlers, so the world gate, the combat gate and the announcements
-// each stay in the one place they already live.
-bool DispatchXChord() {
-    if (g_ltHeld) {
-        g_ltChorded = true;
-        acclog::Write("Pad", "LT + X -> own status");
-        acc::hotkeys::PadPress(acc::hotkeys::Action::SelfStatusAnnounce);
-        return true;
-    }
-    if (g_rtHeld) {
-        g_rtChorded = true;
-        acclog::Write("Pad", "RT + X -> action queue");
-        acc::hotkeys::PadPress(acc::hotkeys::Action::CombatQueueOpen);
-        return true;
+// The grid is the point: "hold a trigger and press a face button" is one thing
+// to remember instead of eight.
+//
+// What decides which half a binding lands in is ERGONOMICS, not category. The
+// left trigger is the comfortable side — left index finger, right thumb, two
+// hands working independently — so the bindings reached for often live there.
+// The right trigger is the same-hand stretch: index tensed on the trigger while
+// the thumb travels, which is fine for A and increasingly awkward toward X and
+// Y. So the right half carries only what is rare and unhurried, and RT + X is
+// deliberately left empty rather than filled with something that would then be
+// hard to press.
+//
+// The queue's clear-all used to sit at LT + A. It is a bare Y inside the queue
+// overlay now (ClaimQueueClearAll above), which freed the grid's single best
+// slot for the readout a player uses most.
+//
+// Read from XInput on BOTH games rather than from the engine's own button
+// events, because a chord has to be decided from the TRIGGER STATE and only
+// XInput reports that (the engine never reads the trigger axis at all) — and
+// because these have to answer on every screen, including the ones a given
+// button's engine event does not reach. On KOTOR 2 the matching engine event is
+// consumed while a trigger is held so the button's bare job does not also run.
+//
+// Every binding is routed as a synthetic press of the keyboard action it
+// mirrors, never as a call into a handler: the world gate, the combat gate and
+// the announcement each stay in the one place they already live.
+//
+// Returns true when a chord fired, which is also the caller's signal that the
+// button's BARE job must not run. Marks the trigger chorded so its own solo job
+// — the action menu on LT, the degrees announcement on RT — does not also fire
+// when the player lets go.
+
+// Defined further down, with the rest of the engine-action plumbing.
+void FireGameAction(int actionId, int defaultDik, const char* what);
+
+// Cancel Combat is the engine's own [Keymapping] action, not a mod hotkey, so
+// it is fired the way the quick menu fires its entries: synthesise whatever key
+// the player has bound to it. Row 40 + 200; the ini's Action240 carries
+// InputIndex 56, which is the letter F — the default this falls back to.
+constexpr int kActCancelCombat = 240;
+constexpr int kDikF            = 0x21;
+
+bool DispatchFaceChord(WORD button) {
+    using A = acc::hotkeys::Action;
+    const bool lt = g_ltHeld;
+    const bool rt = g_rtHeld;
+    if (!lt && !rt) return false;
+
+    // One place decides which trigger is being held, so a chord can never mark
+    // the wrong one and leave a stray solo job armed.
+    bool& chorded = lt ? g_ltChorded : g_rtChorded;
+    const char* side = lt ? "LT" : "RT";
+
+    switch (button) {
+        case kBtnA:
+            chorded = true;
+            if (lt) {
+                acclog::Write("Pad", "LT + A -> announce the focused object");
+                acc::cycle_input::DispatchPadAction(
+                    acc::cycle_input::PadAction::AnnounceFocus);
+            } else {
+                acclog::Write("Pad", "RT + A -> look-around mode");
+                acc::hotkeys::PadPress(A::ViewModeToggle);
+            }
+            return true;
+
+        case kBtnB:
+            chorded = true;
+            if (lt) {
+                acclog::Write("Pad", "LT + B -> the action queue");
+                acc::hotkeys::PadPress(A::CombatQueueOpen);
+            } else {
+                acclog::Write("Pad", "RT + B -> copy the last spoken text");
+                acc::hotkeys::PadPress(A::CopyLastSpoken);
+            }
+            return true;
+
+        case kBtnX:
+            // RT + X is deliberately empty — the grid's hardest reach, kept in
+            // reserve rather than given a binding nobody would want there. It
+            // is still claimed, so the engine cannot switch the party leader
+            // under a held trigger.
+            if (!lt) {
+                chorded = true;
+                acclog::Trace("Pad", "RT + X is unbound — claimed so bare X "
+                                     "cannot fire under the trigger");
+                return true;
+            }
+            chorded = true;
+            acclog::Write("Pad", "LT + X -> own status");
+            acc::hotkeys::PadPress(A::SelfStatusAnnounce);
+            return true;
+
+        case kBtnY:
+            chorded = true;
+            if (lt) {
+                acclog::Write("Pad", "LT + Y -> cancel combat");
+                FireGameAction(kActCancelCombat, kDikF, "LT + Y (cancel combat)");
+            } else {
+                acclog::Write("Pad", "RT + Y -> the level-up screen");
+                acc::hotkeys::PadPress(A::LevelUpOpen);
+            }
+            return true;
     }
     return false;
 }
@@ -524,6 +718,8 @@ constexpr int kDikUp     = 0x48;   // extended
 constexpr int kDikDown   = 0x50;   // extended
 constexpr int kDikLeft   = 0x4B;   // extended
 constexpr int kDikRight  = 0x4D;   // extended
+constexpr int kDikHome   = 0x47;   // extended
+constexpr int kDikEnd    = 0x4F;   // extended
 
 // Fire a [Keymapping] game action by synthesising the key it is bound to.
 void FireGameAction(int actionId, int defaultDik, const char* what) {
@@ -550,6 +746,8 @@ void InjectMenuKey(int logical) {
         case kInputNavDown:  acc::key_inject::Tap(kDikDown,  true); break;
         case kInputNavLeft:  acc::key_inject::Tap(kDikLeft,  true); break;
         case kInputNavRight: acc::key_inject::Tap(kDikRight, true); break;
+        case kInputHome:     acc::key_inject::Tap(kDikHome,  true); break;
+        case kInputEnd:      acc::key_inject::Tap(kDikEnd,   true); break;
         case kInputEnter1:   acc::key_inject::Tap(kDikReturn);      break;
         case kInputEsc1:     acc::key_inject::Tap(kDikEscape);      break;
         default: return;
@@ -600,9 +798,6 @@ void DispatchDpad(int code) {
 }
 
 void DispatchA() {
-    // The chord first — with the queue open, LT + A clears it rather than
-    // removing the one focused entry.
-    if (ClaimQueueClearAll()) return;
     NoteNavPress();
     if (RouteToOverlay(kInputEnter1)) {
         acclog::Write("Pad", "A -> overlay activate");
@@ -638,6 +833,14 @@ void DispatchB() {
 }
 
 void DispatchShoulder(bool right) {
+    // The Pazaak board first. The shoulders are idle there — the engine's
+    // sub-screen step has no sub-screens to reach — so they carry the board's
+    // two readers, the keyboard's C and T.
+    if (acc::pazaak::TryHandlePadAction(right ? acc::pazaak::PadAction::ReviewTable
+                                              : acc::pazaak::PadAction::ReviewHand)) {
+        return;
+    }
+
     // The chords come first — a shoulder taken during a trigger hold is the
     // chord, and marking the trigger chorded is what stops its own solo job
     // firing on release.
@@ -705,17 +908,112 @@ constexpr DpadBit kDpadBits[4] = {
 };
 ULONGLONG g_dpadNextMs[4] = {0, 0, 0, 0};
 
+// ---------------------------------------------------------------------------
+// The D-Pad's second gesture: hold a direction to jump to the end
+// ---------------------------------------------------------------------------
+// The keyboard reaches the ends of a run in one press — Ctrl + comma / period
+// for the nearest and farthest object, Home / End for the ends of a list. The
+// pad had neither, and spending two more chords on them would have put the two
+// commonest "get me out of this long list" gestures behind a modifier.
+//
+// So the D-Pad direction the player is ALREADY pressing carries it: keep
+// holding past a second and the step becomes the jump. Nothing new to find and
+// nothing to learn — a player who over-holds discovers it, and a player who
+// taps never meets it.
+//
+// The jump fires once and then latches the direction until it is released, so
+// the repeat that ran on the way there stops rather than walking back off the
+// end. Both games consult that latch, at the two places their repeats come
+// from: KOTOR 1's own repeat loop in PollButtons, and the engine's D-Pad events
+// at TranslateManagerEvent on KOTOR 2.
+constexpr ULONGLONG kDpadHoldJumpMs = 1000;
+
+ULONGLONG g_dpadHoldSince[4] = {0, 0, 0, 0};
+bool      g_dpadJumped[4]    = {false, false, false, false};
+
+int DpadSlotForCode(int code) {
+    switch (code) {
+        case kPadDpadUp:    return 0;
+        case kPadDpadDown:  return 1;
+        case kPadDpadLeft:  return 2;
+        case kPadDpadRight: return 3;
+        default:            return -1;
+    }
+}
+
+// True while this direction's hold has already spent its jump. The step paths
+// skip the direction entirely until the player lets go.
+bool DpadHoldSpent(int code) {
+    const int slot = DpadSlotForCode(code);
+    return slot >= 0 && g_dpadJumped[slot];
+}
+
+// Pay the hold. Which jump it is depends on what the D-Pad is driving, and
+// that is the same two-way split every other D-Pad path here already makes.
+void DispatchDpadHold(int code) {
+    using PA = acc::cycle_input::PadAction;
+
+    // The object cycle — in the world, and on the map screen, which runs the
+    // same cycle over its hints. Left is the nearest object and right the
+    // farthest: the two ends of the very run the taps were stepping through,
+    // and exactly what Ctrl + comma / period reach on the keyboard. Up and
+    // down step the CATEGORY, a short ring with no end worth jumping to, so
+    // they keep their repeat and nothing more.
+    if (InWorldSurface() || acc::engine::HasActiveMapPanel()) {
+        if (code == kPadDpadLeft) {
+            acclog::Write("Pad", "D-Pad left held -> nearest object");
+            acc::cycle_input::DispatchPadAction(PA::ItemFirst);
+        } else if (code == kPadDpadRight) {
+            acclog::Write("Pad", "D-Pad right held -> farthest object");
+            acc::cycle_input::DispatchPadAction(PA::ItemLast);
+        }
+        return;
+    }
+
+    // A list: up is its first row, down its last — the keyboard's Home and End.
+    //
+    // Injected as the real key rather than routed as a synthetic action press,
+    // because a list can have more than one reader in a single tick (the F1
+    // overlay standing over an engine panel is the ordinary case) and a
+    // synthetic press is taken by whichever of them polls first. A real Home /
+    // End reaches every one of them, exactly as the player's own key would.
+    if (code == kPadDpadUp) {
+        acclog::Write("Pad", "D-Pad up held -> first entry");
+        NoteNavPress();
+        InjectMenuKey(kInputHome);
+    } else if (code == kPadDpadDown) {
+        acclog::Write("Pad", "D-Pad down held -> last entry");
+        NoteNavPress();
+        InjectMenuKey(kInputEnd);
+    }
+}
+
 }  // namespace
 
 // ---------------------------------------------------------------------------
 // Public surface
 // ---------------------------------------------------------------------------
 
+bool EnginePadDead() { return g_enginePad == EnginePad::Dead; }
+
 bool LeftTriggerHeld()  { return g_ltHeld; }
 bool RightTriggerHeld() { return g_rtHeld; }
-bool Connected()        { return g_padSeen; }
+bool Connected() {
+    if (g_padEventSeen) return true;
+    if (g_xinputSeenMs == 0) return false;
+    return GetTickCount64() - g_xinputSeenMs <= kPadForgetMs;
+}
 
 void Tick() {
+    // KOTOR 1's answer is not a probe result, it is a fact about the binary:
+    // its raw-input layer creates a keyboard and a mouse and nothing else, so
+    // the mod is the pad driver there from the first frame.
+    if (g_enginePad == EnginePad::Unknown && acc::game::IsKotor1()) {
+        g_enginePad = EnginePad::Dead;
+        acclog::Write("Pad", "KOTOR 1 has no engine gamepad path — the mod is "
+                             "the driver");
+    }
+
     // Both games. KOTOR 2 reads the pad here only for the triggers, the stick
     // magnitude and pad presence — the engine delivers its presses. KOTOR 1
     // has no engine pad path at all, so this sample is the ONLY thing that
@@ -735,7 +1033,6 @@ void Tick() {
             XiState st = {};
             if (g_xinputGet(i, &st) == ERROR_SUCCESS) {
                 g_padSlot = static_cast<int>(i);
-                NoteSeen();
                 acclog::Write("Pad", "XInput controller found in slot %u", i);
                 break;
             }
@@ -759,6 +1056,10 @@ void Tick() {
         g_yHeld   = false;
         return;
     }
+
+    // The live half of Connected(): a slot that answered this tick. Stamped
+    // here rather than at discovery so an unplug stops refreshing it.
+    g_xinputSeenMs = now;
 
     g_btnNow = st.Gamepad.wButtons;
 
@@ -914,17 +1215,21 @@ bool RightStickVector(float& outX, float& outY) {
 }
 
 void PollButtons() {
-    // KOTOR 2's presses arrive as engine events at the two Translate* seams;
-    // dispatching them a second time from here would double every binding.
-    if (!acc::game::IsKotor1()) return;
-
     const WORD now  = g_btnNow;
     const WORD last = g_btnLast;
     // Update the edge baseline BEFORE any gate below can return: a button held
-    // across an alt-tab must not read as a fresh press on the way back.
+    // across an alt-tab must not read as a fresh press on the way back — and,
+    // now, so that a press made while the engine-pad question was still open
+    // does not read as a fresh one the moment it is settled.
     g_btnLast = now;
 
-    if (!g_padSeen) return;
+    // KOTOR 2's presses normally arrive as engine events at the two Translate*
+    // seams, and dispatching them a second time from here would double every
+    // binding. When its engine never saw the pad there are no such events, and
+    // the mod is the driver on both games — see the EnginePad notes above.
+    if (g_enginePad != EnginePad::Dead) return;
+
+    if (!Connected()) return;
     if (!acc::hotkeys::IsForegroundGame()) {
         for (ULONGLONG& t : g_dpadNextMs) t = 0;
         return;
@@ -941,6 +1246,9 @@ void PollButtons() {
             g_dpadNextMs[i] = 0;
             continue;
         }
+        // The hold already jumped to the end on this direction. Stop stepping
+        // until it is released, or the repeat would walk straight back off it.
+        if (g_dpadJumped[i]) continue;
         if (!(last & m)) {
             g_dpadNextMs[i] = nowMs + kDpadRepeatFirstMs;
             DispatchDpad(kDpadBits[i].code);
@@ -952,16 +1260,35 @@ void PollButtons() {
         }
     }
 
-    if (rising(kBtnA)) DispatchA();
-    if (rising(kBtnB)) DispatchB();
+    // A face button under a trigger is the chord grid's, dispatched from
+    // PollXInputButtons. Its bare job must not also run. LT + A is the
+    // exception DispatchA already handles: it claims the queue's clear-all
+    // first and falls back to the ordinary interact when the queue is closed.
+    const bool triggerHeld = g_ltHeld || g_rtHeld;
+
+    if (rising(kBtnA) && !g_rtHeld) DispatchA();
+    if (rising(kBtnB) && !triggerHeld) DispatchB();
     if (rising(kBtnShoulderL)) DispatchShoulder(/*right=*/false);
     if (rising(kBtnShoulderR)) DispatchShoulder(/*right=*/true);
 
-    // Y — the quick menu. Open only from the world (it acts on the world), but
-    // closable from wherever it happens to be up.
-    if (rising(kBtnY) &&
-        (acc::pad::quickmenu::IsOpen() || InWorldSurface())) {
-        acc::pad::quickmenu::Toggle();
+    // The Pazaak board claims Y and X ahead of both of their ordinary jobs. It
+    // is a foreground panel, so the world-only gate further down would drop
+    // both presses on the floor there, and Y's quick menu acts on a world the
+    // player has stepped away from. Declines instantly off the board.
+    if (rising(kBtnY) && !triggerHeld) {
+        // Y is claimed in order by the two surfaces that own it while they are
+        // up — the action queue clears itself, the Pazaak board stands — and is
+        // the quick menu everywhere else. That menu opens only from the world
+        // (it acts on the world) but closes from wherever it happens to be up.
+        if (!ClaimQueueClearAll() &&
+            !acc::pazaak::TryHandlePadAction(acc::pazaak::PadAction::Stand) &&
+            (acc::pad::quickmenu::IsOpen() || InWorldSurface())) {
+            acc::pad::quickmenu::Toggle();
+        }
+    }
+    if (rising(kBtnX) &&
+        acc::pazaak::TryHandlePadAction(acc::pazaak::PadAction::EndTurn)) {
+        return;   // the board took it; nothing below applies on a panel
     }
 
     // The remaining buttons are engine actions with no mod surface of their
@@ -971,7 +1298,7 @@ void PollButtons() {
 
     // X only switches the leader BARE — with a trigger held it is the mod's H
     // key, dispatched by PollXInputButtons.
-    if (rising(kBtnX) && !g_ltHeld && !g_rtHeld) {
+    if (rising(kBtnX) && !triggerHeld) {
         FireGameAction(kActChangeChar, kDikTab, "X (switch party leader)");
     }
     if (rising(kBtnBack))    FireGameAction(kActOptions, kDikO,
@@ -979,7 +1306,7 @@ void PollButtons() {
     if (rising(kBtnStart))   FireGameAction(kActPauseSpace, kDikSpace,
                                             "Start (pause)");
     if (rising(kBtnThumbL))  FireGameAction(kActFlourish, kDikX,
-                                            "L3 (flourish)");
+                                            "left stick press (flourish)");
     if (rising(kBtnThumbR)) {
         // No MOUSE_BUTTON1 hazard here — that trap is K2's, where the engine
         // hands R3 to us as the same InputIndex the right mouse button uses.
@@ -989,7 +1316,7 @@ void PollButtons() {
     }
 }
 
-bool PeekModifierHeld() { return g_padSeen && g_yHeld; }
+bool PeekModifierHeld() { return Connected() && g_yHeld; }
 
 void PollXInputButtons() {
     // Both games — see the header for why the engine's own L3 event cannot
@@ -1000,16 +1327,106 @@ void PollXInputButtons() {
     const WORD last = g_xiBtnLast;
     g_xiBtnLast = now;
 
-    if (!g_padSeen) return;
-    if (!acc::hotkeys::IsForegroundGame()) return;
+    if (!Connected()) return;
+    if (!acc::hotkeys::IsForegroundGame()) {
+        // A direction held when focus was lost must not read as a continuing
+        // hold on the way back, or alt-tabbing mid-press would jump. The
+        // engine-pad probe goes with it: a deadline that expires while the game
+        // is not foreground proves nothing about the engine, which is not being
+        // sent events either.
+        for (int i = 0; i < 4; ++i) { g_dpadHoldSince[i] = 0; g_dpadJumped[i] = false; }
+        g_probeCode     = 0;
+        g_probeSlot     = -1;
+        g_probeDeadline = 0;
+        return;
+    }
 
-    // X with a trigger held. Claimed here rather than from the engine's X event
-    // because only XInput knows whether a trigger is down, and because this runs
-    // on every surface — the status readout is as useful in the inventory as in
-    // the world. Bare X falls through untouched.
-    bool xClaimed = false;
-    if ((now & kBtnX) != 0 && (last & kBtnX) == 0) {
-        xClaimed = DispatchXChord();
+    const ULONGLONG nowMs = GetTickCount64();
+
+    // The engine-pad probe. Runs only while the question is open, which on
+    // KOTOR 1 is never and on a healthy KOTOR 2 is until the first D-Pad press.
+    if (g_enginePad == EnginePad::Unknown) {
+        if (g_probeCode == 0) {
+            for (int i = 0; i < 4; ++i) {
+                if ((now & kDpadBits[i].mask) == 0 ||
+                    (last & kDpadBits[i].mask) != 0) {
+                    continue;
+                }
+                g_probeCode     = kDpadBits[i].code;
+                g_probeSlot     = i;
+                g_probeDeadline = nowMs + kEnginePadProbeMs;
+                acclog::Write("Pad", "probing the engine's gamepad path with "
+                                     "D-Pad(%d) — holding %llu ms for its event",
+                              g_probeCode,
+                              static_cast<unsigned long long>(kEnginePadProbeMs));
+                break;
+            }
+        } else if (nowMs >= g_probeDeadline) {
+            // Silence. The engine never saw this pad — almost always because it
+            // was switched on after the game's one enumeration at input init.
+            g_enginePad = EnginePad::Dead;
+            acclog::Write("Pad", "engine gamepad path is DEAD (no event for "
+                                 "D-Pad(%d)) — the mod drives the pad from here, "
+                                 "as it does on KOTOR 1", g_probeCode);
+            // Pay the probed press, and stamp the repeat clock so PollButtons
+            // does not immediately fire it a second time on its own baseline.
+            if (g_probeSlot >= 0) g_dpadNextMs[g_probeSlot] = nowMs + kDpadRepeatFirstMs;
+            DispatchDpad(g_probeCode);
+            g_probeCode = 0;
+            g_probeSlot = -1;
+        }
+    }
+
+    // The D-Pad hold. Sampled here rather than in Tick() because what it fires
+    // is a DISPATCH, and every dispatch the pad makes belongs in the input-poll
+    // slot — the same rule the trigger layer follows.
+    for (int i = 0; i < 4; ++i) {
+        if (!(now & kDpadBits[i].mask)) {
+            g_dpadHoldSince[i] = 0;
+            g_dpadJumped[i]    = false;
+            continue;
+        }
+        if (g_dpadHoldSince[i] == 0) { g_dpadHoldSince[i] = nowMs; continue; }
+        if (g_dpadJumped[i]) continue;
+        if (nowMs - g_dpadHoldSince[i] < kDpadHoldJumpMs) continue;
+        g_dpadJumped[i] = true;
+        DispatchDpadHold(kDpadBits[i].code);
+    }
+
+    // Press the right stick on the map screen — drop a marker at the cursor,
+    // the keyboard's Shift + N. In the world that press is the camera orient,
+    // and both of those are "point me at something": one turns the camera to
+    // the next waypoint, the other plants the waypoint. Claimed from XInput
+    // because neither game delivers a stick press on a menu surface at all —
+    // KOTOR 1's own R3 handling sits behind a world-only gate and KOTOR 2's
+    // arrives on the in-world client route, so there is nothing to collide
+    // with here.
+    if ((now & kBtnThumbR) != 0 && (last & kBtnThumbR) == 0 &&
+        acc::engine::HasActiveMapPanel()) {
+        acclog::Write("Pad", "press right stick on the map -> drop marker");
+        acc::hotkeys::PadPress(acc::hotkeys::Action::SaveMarkerAtCursor);
+    }
+
+    // The left stick press is the engine's Flourish Weapon in the world, and
+    // idle on the Pazaak board — where it reads how many cards the opponent
+    // still holds, the keyboard's Shift+C. Claimed from XInput because neither
+    // game delivers that press on a menu surface: KOTOR 1 gates its own handling
+    // on the world and KOTOR 2 receives it on the in-world client route.
+    bool stickLClaimed = false;
+    if ((now & kBtnThumbL) != 0 && (last & kBtnThumbL) == 0) {
+        stickLClaimed =
+            acc::pazaak::TryHandlePadAction(acc::pazaak::PadAction::OppHand);
+    }
+
+    // The face-button chord grid. Claimed here rather than from the engine's own
+    // button events because only XInput knows whether a trigger is down, and
+    // because these run on every surface — the status readout is as useful in
+    // the inventory as in the world. A bare face button falls through untouched.
+    static const WORD kFaceButtons[] = {kBtnA, kBtnB, kBtnX, kBtnY};
+    WORD chordClaimed = 0;
+    for (const WORD b : kFaceButtons) {
+        if ((now & b) == 0 || (last & b) != 0) continue;
+        if (DispatchFaceChord(b)) chordClaimed |= b;
     }
 
     // Name the presses this layer does NOT claim, one line per press.
@@ -1030,7 +1447,8 @@ void PollXInputButtons() {
         {kBtnThumbL, "left stick press"},
     };
     for (const Named& b : kUnclaimed) {
-        if (b.mask == kBtnX && xClaimed) continue;   // the chord above took it
+        if ((b.mask & chordClaimed) != 0) continue;   // the chord above took it
+        if (b.mask == kBtnThumbL && stickLClaimed) continue;   // the board's
         if ((now & b.mask) != 0 && (last & b.mask) == 0) {
             acclog::Write("Pad", "%s pressed (XInput bit 0x%04x) — this button "
                                  "is the game's, not the mod's", b.name,
@@ -1051,8 +1469,19 @@ void PollTriggers() {
     if (!acc::hotkeys::IsForegroundGame()) return;
 
     if (help) {
-        acclog::Write("Pad", "LT + RT -> context help");
-        acc::help::SpeakContextHelp();
+        // In a dialogue the screen's keys are not the question — the line that
+        // just went past is, and a pad has no R to ask with. Same chord, the
+        // answer the surface actually owes. Routed as a synthetic press so the
+        // repeat keeps its one implementation in dialog_speech, which polls
+        // ahead of the other two readers of this action and, with a dialog
+        // panel foreground, is the only one whose gate passes.
+        if (acc::engine::HasActiveDialogPanel()) {
+            acclog::Write("Pad", "LT + RT in dialogue -> repeat the line");
+            acc::hotkeys::PadPress(acc::hotkeys::Action::DialogRepeatLine);
+        } else {
+            acclog::Write("Pad", "LT + RT -> context help");
+            acc::help::SpeakContextHelp();
+        }
     }
     // LT is the action menu's open AND close, so it is world-only in both
     // directions: in a menu the pad is simply the keyboard, and there is no
@@ -1075,7 +1504,7 @@ bool TranslateClientEvent(int code, int value) {
     // These three codes are ordinary engine InputIndices that a keyboard and a
     // mouse also produce. Nothing here may fire in a session that has never
     // seen a controller.
-    if (!g_padSeen) return false;
+    if (!Connected()) return false;
     if (value == 0) return false;
 
     switch (code) {
@@ -1183,6 +1612,10 @@ Verdict TranslateManagerEvent(int& code, int& value) {
     if (dpadLogical != 0) {
         NoteSeen();
         if (value == 0) return Verdict::NotPad;   // no release is ever sent
+        // The hold gesture already jumped to the end on this direction, and
+        // the engine keeps sending its repeat. Swallow it until release —
+        // KOTOR 1 skips the same direction in its own repeat loop.
+        if (DpadHoldSpent(code)) return Verdict::Consumed;
         NoteNavPress();
         if (RouteToOverlay(dpadLogical)) {
             acclog::Write("Pad", "D-Pad(%d) -> overlay logical %d",
@@ -1201,12 +1634,23 @@ Verdict TranslateManagerEvent(int& code, int& value) {
         return Verdict::Rewritten;
     }
 
+    // ---- The chord grid gets first refusal on every face button ------------
+    // A face button pressed while a trigger is held belongs to the grid, which
+    // is dispatched from the XInput sample — the only reader that can see a
+    // trigger at all. All this route has to do is stop the engine, and the bare
+    // handlers below, acting on the same press.
+    //
+    if (value != 0 && (g_ltHeld || g_rtHeld) &&
+        (code == kPadButtonA || code == kPadButtonB ||
+         code == kPadButtonX || code == kPadButtonY)) {
+        acclog::Trace("Pad", "face button %d consumed — trigger held, the "
+                             "chord grid owns it", code);
+        return Verdict::Consumed;
+    }
+
     // ---- A ----------------------------------------------------------------
     if (code == kPadButtonA) {
         if (value == 0) return Verdict::NotPad;
-        // The chord first — with the queue open, LT + A clears the whole queue
-        // rather than removing the one focused entry.
-        if (ClaimQueueClearAll()) return Verdict::Consumed;
         NoteNavPress();
         if (QuickMenuHelpFocused()) {
             acclog::Write("Pad", "A on Quick Menu Help -> mod key list");
@@ -1268,6 +1712,12 @@ Verdict TranslateManagerEvent(int& code, int& value) {
     // in their one place (menus_listbox / menus_store).
     if (code == kPadShoulderL || code == kPadShoulderR) {
         if (value == 0) return Verdict::NotPad;
+        // The Pazaak board's two readers, same as KOTOR 1's.
+        if (acc::pazaak::TryHandlePadAction(
+                code == kPadShoulderR ? acc::pazaak::PadAction::ReviewTable
+                                      : acc::pazaak::PadAction::ReviewHand)) {
+            return Verdict::Consumed;
+        }
         acc::engine::UiBlockState blk;
         acc::engine::IsForegroundUiBlocking(&blk);
         const bool container =
@@ -1293,6 +1743,14 @@ Verdict TranslateManagerEvent(int& code, int& value) {
     // meant to be the keyboard.
     if (code == kPadButtonY) {
         if (value == 0) return Verdict::NotPad;
+        // The two surfaces that own Y while they are up, in the same order the
+        // KOTOR 1 poll takes them: the action queue clears itself, the Pazaak
+        // board stands. On the board the peek modifier has nothing to peek at
+        // either — that navigator owns the D-Pad.
+        if (ClaimQueueClearAll()) return Verdict::Consumed;
+        if (acc::pazaak::TryHandlePadAction(acc::pazaak::PadAction::Stand)) {
+            return Verdict::Consumed;
+        }
         if (InWorldSurface()) return Verdict::NotPad;
         acclog::Trace("Pad", "Y consumed in a menu — it is the peek modifier there");
         return Verdict::Consumed;
@@ -1303,8 +1761,10 @@ Verdict TranslateManagerEvent(int& code, int& value) {
     // the mod's H key — dispatched from the XInput sample (PollXInputButtons,
     // which is the only reader that can see a trigger at all), so all this
     // branch has to do is stop the engine acting on the same press.
-    if (code == kPadButtonX && value != 0 && (g_ltHeld || g_rtHeld)) {
-        acclog::Trace("Pad", "X consumed — trigger held, the chord owns it");
+    // On the Pazaak board bare X is End turn. Switching the party leader there
+    // is meaningless — the board is the whole game while it is up.
+    if (code == kPadButtonX && value != 0 &&
+        acc::pazaak::TryHandlePadAction(acc::pazaak::PadAction::EndTurn)) {
         return Verdict::Consumed;
     }
 

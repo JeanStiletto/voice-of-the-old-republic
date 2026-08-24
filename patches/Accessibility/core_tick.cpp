@@ -905,12 +905,14 @@ void Dispatch() {
     // modifier-space reservation this shares keys with).
     PHASE("interact", acc::input_poll::PollHotkey());
 
-    // KOTOR 1 gamepad buttons. Deliberately HERE and not in pad_input's early
-    // sample phase: these presses open the unified action menu and dispatch
-    // interactions, which is exactly what the keyboard poll above does from
-    // exactly this point. Arming that menu from the early tick is what
-    // produced the phantom-confirm bug the K2 action-menu watcher records.
-    // No-op on KOTOR 2, whose engine delivers the same presses as events.
+    // Gamepad buttons, read from XInput. Deliberately HERE and not in
+    // pad_input's early sample phase: these presses open the unified action
+    // menu and dispatch interactions, which is exactly what the keyboard poll
+    // above does from exactly this point. Arming that menu from the early tick
+    // is what produced the phantom-confirm bug the K2 action-menu watcher
+    // records. Self-gated on pad::EnginePadDead() — always on KOTOR 1, and on
+    // KOTOR 2 only when its engine never enumerated the pad, where these are
+    // the only presses that will ever arrive.
     PHASE("pad_buttons", acc::pad::PollButtons());
 
     // The one button the engine's pad path cannot deliver in a menu: Start,
@@ -930,13 +932,15 @@ void Dispatch() {
     // counted; the watch itself only speaks once its window has expired.
     PHASE("queue_noop", acc::combat::queue::TickNoOpWatch());
 
-    // KOTOR 1 gamepad sticks -> movement and camera. After the buttons so a
-    // press that just opened a menu has already stood the stick down this
-    // tick, rather than walking one frame into it.
+    // Gamepad sticks -> movement and camera, on whichever game the mod is
+    // driving the pad for. After the buttons so a press that just opened a menu
+    // has already stood the stick down this tick, rather than walking one frame
+    // into it.
     PHASE("pad_movement", acc::pad::movement::Tick());
 
-    // KOTOR 1 quick menu (Y): self-disarm only — its navigation comes from the
-    // pad seam. Cheap when closed.
+    // The mod's own quick menu (Y): self-disarm only — its navigation comes
+    // from the pad seam. Cheap when closed. Opens on KOTOR 1, and on a KOTOR 2
+    // whose engine pad is dead, where its own panel is unreachable.
     PHASE("pad_quickmenu", acc::pad::quickmenu::Tick());
 
     // Release the level-up wizard's overlay pause once the panel closes
