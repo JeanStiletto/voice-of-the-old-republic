@@ -68,6 +68,11 @@ public class Decompile extends GhidraScript {
                             .getDefaultAddressSpace().getAddress(addrLong);
                     Function fn = currentProgram.getFunctionManager().getFunctionAt(a);
                     if (fn == null) {
+                        // Mid-function address (crash EIP, stack return addr):
+                        // fall back to the containing function.
+                        fn = currentProgram.getFunctionManager().getFunctionContaining(a);
+                    }
+                    if (fn == null) {
                         emit(out, outFile, "DECOMP_ERROR no function at " + arg);
                         continue;
                     }
