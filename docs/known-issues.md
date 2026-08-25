@@ -12,6 +12,39 @@ When an entry is closed, move it out of this file (the corresponding fix or comm
 
 ## Bugs
 
+### KOTOR 2 crash entering the Peragus Fuel Depot — third-party item, engine null-deref (diagnosed 2026-08-24, no code change yet)
+
+Kenny's game died on the area transition into the Fuel Depot
+(`userlogs/kennycrashfuel0782208.7z`, `k2-patch-20260821-231904.log` ends
+23:40:00, dump `k2-swkotor2.exe.17344.dmp`). Read of `[NULL+0x70]` on the main
+thread, inside the engine's item loader — decompile of the K2 fault site
+(`FUN_006014f0`, called from the GFF item loader `FUN_00601740`, kotor2 Ghidra
+project) shows it calling `GetBaseItem(item+0xc)` and dereferencing the row
+without a null check (it null-checks the row's *field* at +0x70, one
+instruction too late).
+
+The dump still holds the GFF being loaded: `heavymininglaser.uti`, tag
+`HeavyMiningLaser`, `BaseItem=106`. Every baseitems.2da we ship stops at row
+105 (verified against the local install with the same source pins), and no
+bundled mod carries that template — it is a third-party mod on Kenny's machine
+(likely a Steam Workshop subscription or a mod installed outside our
+pipeline) whose accompanying baseitems.2da row never made it into the
+effective Override. Recurs on every entry to that module — potentially
+progress-blocking for Kenny.
+
+Follow-ups to decide:
+- Ask Kenny for their mod list / Workshop subscriptions; the mod that ships
+  `heavymininglaser` needs its baseitems.2da row restored (reinstall after our
+  bundle) or the mod removed.
+- Check whether our bundled-mods install can clobber a pre-existing modded
+  baseitems.2da (install-order conflict) — if yes, this class of crash is
+  partly ours to prevent.
+- Candidate defensive patch: hook K2 `GetBaseItem` (`0x006d5200`) to log and
+  return a fallback row instead of NULL for out-of-range ids — one hook would
+  convert every "modded item without its 2da row" crash into a log line plus a
+  misbehaving item. Needs a decompile pass over callers first to confirm
+  no legitimate null-check consumers.
+
 ### Galaxy-map travel never loaded the destination — fix built 2026-08-20, awaiting test
 
 A tester finished KOTOR 2's prologue, flew to Peragus, watched the movie and
