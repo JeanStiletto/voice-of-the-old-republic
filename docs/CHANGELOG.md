@@ -92,6 +92,15 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h3>Bug fixes:</h3>
 
+- Fixed a rare freeze during game startup, before the main menu appears
+  (both games). Since v0.5.1 the mod has been listening for focus changes on
+  every game window, and for a microsecond during that setup a window's
+  messages could be dropped instead of passed through. One of those windows
+  belongs to DirectInput itself; if the dropped message was DirectInput's
+  own mouse-grab handshake, the game waited forever for an answer that
+  never came. It only triggered when the game started in the foreground and
+  the timing lined up, which is why it could appear out of nowhere after an
+  update and vanish again. The setup now never drops messages.
 - KOTOR 2's save screen works with more than one character. The Steam
   version groups saves by character: the list shows one character's saves
   at a time, and the Switch Characters button cycles to the next

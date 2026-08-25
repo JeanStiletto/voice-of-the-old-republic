@@ -368,7 +368,38 @@ BOOL CALLBACK ScanProc(HWND hwnd, LPARAM lp) {
     SubclassedWindow& slot = g_subclassed[n];
     slot.hwnd = hwnd;
     strncpy_s(slot.tag, cls, _TRUNCATE);
-    slot.origWndProc = nullptr;
+
+    // Publish the fully populated entry BEFORE swapping the wndproc. From
+    // the instant SetWindowLongPtr installs SubclassProc, the window's owner
+    // thread dispatches messages into it concurrently. The old order (swap
+    // first, publish origWndProc after) left a gap where SubclassProc found
+    // no entry and fell through to DefWindowProc — the message was EATEN
+    // instead of reaching the window's real proc. DirectInput's DIEmWin
+    // worker window lost its exclusive-mouse-acquire handshake to exactly
+    // that gap: the acquiring thread (engine input init, or our reacquire
+    // cycle) then waits forever on a completion the swallowed message was
+    // supposed to produce — the pre-main-menu KOTOR 2 startup hang of
+    // 2026-08-25 (k2hang.dmp: main thread parked in dinput8's internal
+    // wait, DIEmWin's thread idle in GetMessage). Only a FOREGROUND launch
+    // arms it — a background Acquire fails fast with no handshake — which
+    // is why every background test launch survived while the desktop-
+    // shortcut launch hung three times in a row.
+    //
+    // A window always has a wndproc, so read it up front; SetWindowLongPtr
+    // returns the same value unless another injector swapped procs in the
+    // microseconds between (handled below).
+    WNDPROC current = reinterpret_cast<WNDPROC>(
+        GetWindowLongPtrW(hwnd, GWLP_WNDPROC));
+    if (!current) {
+        acclog::Write("Focus",
+            "FocusPoll: GetWindowLongPtr failed hwnd=%p class=\"%s\" err=%lu",
+            hwnd, cls, GetLastError());
+        slot.hwnd = nullptr;  // unpublished — count stays unincremented
+        return TRUE;
+    }
+    slot.origWndProc = current;
+    // Release-store publishes the complete entry to readers.
+    g_subclassedCount.store(n + 1, std::memory_order_release);
 
     LONG_PTR prev = SetWindowLongPtrW(
         hwnd, GWLP_WNDPROC,
@@ -377,12 +408,19 @@ BOOL CALLBACK ScanProc(HWND hwnd, LPARAM lp) {
         acclog::Write("Focus",
             "FocusPoll: SetWindowLongPtr failed hwnd=%p class=\"%s\" err=%lu",
             hwnd, cls, GetLastError());
-        slot.hwnd = nullptr;  // unpublished — count stays unincremented
+        // The entry stays published but SubclassProc was never installed,
+        // so it is never consulted for this hwnd; the slot is spent and the
+        // window keeps its original proc. (The old code retried on the next
+        // poll pass; this failure mode has never been observed in a log.)
         return TRUE;
     }
-    slot.origWndProc = reinterpret_cast<WNDPROC>(prev);
-    // Release-store publishes the new entry to readers.
-    g_subclassedCount.store(n + 1, std::memory_order_release);
+    if (reinterpret_cast<WNDPROC>(prev) != current) {
+        // Someone re-subclassed between our read and our install: forward to
+        // what we actually displaced. A dispatch racing this store forwards
+        // once to `current` — a valid proc one step stale, which is still a
+        // forward, never a swallow.
+        slot.origWndProc = reinterpret_cast<WNDPROC>(prev);
+    }
     ++state->newlySubclassed;
     acclog::Write("Focus",
         "FocusPoll: subclassed hwnd=%p class=\"%s\" origWndProc=%p",
