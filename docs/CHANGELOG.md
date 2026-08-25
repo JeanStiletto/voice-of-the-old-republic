@@ -120,6 +120,13 @@ and add the German in parentheses if it genuinely aids clarity.
   address the camera screen doesn't have, walking garbage memory until the
   game fell over. The terminal-output reader now runs only on the real
   terminal screen and verifies the list is one before trusting it.
+- Multi-option consoles stay navigable past the first choice (reported on the
+  Peragus work assignment console: after picking an option, the selection sat
+  pinned on "Log out" and Up, Down and Home all snapped back to it). When the
+  mouse cursor rests over the reply list, the game's hover-select re-asserts
+  that row every frame and beats any keyboard move. The mod already parks the
+  cursor out of the way when a dialogue opens; it now re-parks it on every new
+  set of replies, since the game can bring the cursor back between nodes.
 
 <h2>v0.7.8.1</h2>
 

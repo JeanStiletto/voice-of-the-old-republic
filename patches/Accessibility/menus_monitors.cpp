@@ -1080,6 +1080,18 @@ void MonitorDialogReplies() {
         // set has been seen and must not re-fire on every following tick.
         s_dialogReplyState.lastSetSignature = setSig;
     }
+    if (newSet) {
+        // Re-park on every new reply set, not just on dialogue open: the engine
+        // can put the cursor back over the reply list between nodes, and a
+        // resting cursor pins the selection to its row via hover-select — every
+        // keyboard move snaps straight back before it can be spoken. Seen on
+        // the Peragus work assignment console: from the second node on, the
+        // selection arrived pinned to "Log out" and Up/Down/Home were all
+        // reverted within a tick (userlogs/078multioptionconsole, 17:17:06+).
+        // The park lands on the next monitor tick, same deferred path as the
+        // open-time park above.
+        s_dialogReplyParkPending = true;
+    }
 
     if (selIdx == s_dialogReplyState.lastSelection && !newSet) return;
     short prev = s_dialogReplyState.lastSelection;
