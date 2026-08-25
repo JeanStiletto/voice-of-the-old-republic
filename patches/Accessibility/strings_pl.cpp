@@ -912,6 +912,58 @@ const char* Get(Id id) {
         case Id::DialogRepeatLineHint:
             return "Naci\x9Cnij R, aby powt\xF3rzy\xE6 ostatni\xB9 kwesti\xEA dialogu.";
 
+        // ---- KOTOR 2 tutorial hints (tutorial_hints.cpp K2 tables). The
+        //      shared rows 0-42 reuse the TutHint* wordings above; these
+        //      cover KOTOR 2's own popups and the Ebon Hawk prologue lines.
+        case Id::TutK2SwoopRace:
+            return "Zmieniaj bieg spacj\xB9, gdy us\xB3yszysz sygna\xB3 d\x9Fwi\xEAkowy. Steruj klawiszami A i D, omijaj przeszkody i naje\xBF""d\xBF""aj na przyspieszacze.";
+        case Id::TutK2ActionQueue:
+            return "Naci\x9Cnij Enter, aby doda\xE6 domy\x9Cln\xB9 akcj\xEA do kolejki polece\xF1; pozycje z menu akcji trafiaj\xB9 tam tak samo. Kilka akcji wykonuje si\xEA w kolejno\x9C""ci dodania.";
+        case Id::TutK2ActionRemove:
+            return "Akcje mo\xBFna usuwa\xE6 z kolejki polece\xF1 tylko w walce; ostatnio dodana akcja jest usuwana pierwsza.";
+        case Id::TutK2PlasmaTorch:
+            return "Uszkodzone drzwi najlepiej wywa\xBF""a\xE6 narz\xEA""dziem takim jak palnik plazmowy. Otw\xF3rz ekran wyposa\xBF""enia klawiszem U i za\xB3\xF3\xBF go. Potem wybierz drzwi, otw\xF3rz menu akcji klawiszami Shift i Enter i wybierz Wywa\xBF.";
+        case Id::TutK2FirstPerson:
+            return "Caps Lock prze\xB3\xB9""cza widok pierwszoosobowy. Przy grze z czytnikiem ekranu nie jest potrzebny.";
+        case Id::TutK2SpaceSuit:
+            return "Wybierz skafander przecinkiem i kropk\xB9 i naci\x9Cnij Enter, aby go za\xB3o\xBFy\xE6 lub zdj\xB9\xE6.";
+        case Id::TutK2CommRoom:
+            return "Wybierz konsol\xEA przecinkiem i kropk\xB9 i uruchom j\xB9 Enterem. Do komputer\xF3w potrzebujesz sondy programuj\xB9""cej z pojemnika w kokpicie.";
+        case Id::TutK2Mines:
+            return "Miny i pu\xB3""apki wykrywasz Spostrzegawczo\x9C""ci\xB9, stoj\xB9""c w miejscu. Wybierz wykryt\xB9 min\xEA przecinkiem i kropk\xB9, otw\xF3rz menu akcji klawiszami Shift i Enter i wybierz Rozbr\xF3j lub Zabierz. Teraz rozbr\xF3j lub zabierz trzy od\xB3""amki torpedy protonowej wok\xF3\xB3 rakiety.";
+        case Id::TutK2Vibrocutter:
+            return "To narz\xEA""dzie g\xF3rnicze jest broni\xB9 do walki wr\xEA""cz, z bliska lepsz\xB9 od blaster\xF3w. Otw\xF3rz ekran wyposa\xBF""enia klawiszem U i umie\x9C\xE6 je w gnie\x9F""dzie broni. Gniazda zapasowe tworz\xB9 drug\xB9 konfiguracj\xEA.";
+        case Id::TutK2DialogueChoice:
+            return "Odpowiedzi wybierasz strza\xB3kami w g\xF3r\xEA i w d\xF3\xB3 i zatwierdzasz Enterem. Naci\x9Cnij R, aby powt\xF3rzy\xE6 ostatni\xB9 kwesti\xEA dialogu.";
+        case Id::TutK2Pause:
+            return "Spacja wstrzymuje i wznawia gr\xEA. W trakcie pauzy spokojnie zaplanujesz dzia\xB3""ania.";
+        case Id::TutK2EquipWeapon:
+            return "Otw\xF3rz ekran wyposa\xBF""enia klawiszem U, wybierz gniazdo broni strza\xB3kami i Enterem i wybierz bro\xF1 z listy.";
+        case Id::TutK2WeaponConfig:
+            return "Ekran wyposa\xBF""enia ma dwie konfiguracje broni, aktywn\xB9 i zapasow\xB9, na przyk\xB3""ad do walki wr\xEA""cz i na dystans. Wype\xB3niaj gniazda strza\xB3kami i Enterem.";
+        case Id::TutK2TakeItem:
+            return "Wybierz pojemnik przecinkiem i kropk\xB9 i otw\xF3rz go Enterem. Zabierz sond\xEA programuj\xB9""c\xB9 i u\xBFyj jej na terminalu komputera.";
+        case Id::TutK2GalaxyMap:
+            return "Obierz kurs na Peragus: na mapie galaktyki wybierz Peragus strza\xB3kami w lewo i w prawo; Enter rozpoczyna podr\xF3\xBF.";
+        case Id::TutK2SoloMode:
+            return "Przez te drzwi przejdziesz tylko w trybie solo: naci\x9Cnij V, a porusza\xE6 si\xEA b\xEA""dzie tylko kontrolowana posta\xE6. Zaprowad\x9F samego 3C-FD do komputera zabezpiecze\xF1, aby otworzy\xB3 drzwi.";
+        case Id::TutK2RepairKit:
+            return "Zestawy naprawcze lecz\xB9 droidy. U\xBFywaj ich z menu akcji: otw\xF3rz Medycyn\xEA klawiszami Shift i 5 i zatwierd\x9F Enterem.";
+        case Id::TutK2SecuritySpike:
+            return "Ten zamek przerasta twoje umiej\xEAtno\x9C""ci; u\xBFyj prze\xB3""amywacza zabezpiecze\xF1. Wybierz pojemnik, otw\xF3rz menu akcji klawiszami Shift i Enter i wybierz Zabezpieczenia.";
+
+        // ---- KOTOR 2 J/L swap: KOTOR 2's default keymap puts Quests on J
+        //      and Messages on L, the mirror image of KOTOR 1 (its keymap.2da
+        //      rows 13/14). Same texts as the TutHint* twins above with the two
+        //      letters exchanged; the pad wordings name no letter keys, so
+        //      kTwins points these at the existing *Pad ids.
+        case Id::TutK2OpenScreens:
+            return "Ekrany gry otwierasz bezpo\x9Crednio: M mapa, L wiadomo\x9C""ci, J zadania, K umiej\xEAtno\x9C""ci, P posta\xE6, I ekwipunek, U wyposa\xBF""enie, O opcje. Escape wraca.";
+        case Id::TutK2Messages:
+            return "Ekran wiadomo\x9C""ci pokazuje warto\x9C""ci takie jak punkty do\x9Cwiadczenia, rzuty na atak i obra\xBF""enia oraz zmiany w twojej postaci. Otw\xF3rz go klawiszem L.";
+        case Id::TutK2Journal:
+            return "Ekran zada\xF1 pokazuje twoje post\xEApy i podpowiedzi, co robi\xE6 dalej. Otw\xF3rz go klawiszem J. Wybierz pozycj\xEA strza\xB3kami i odczytaj szczeg\xF3\xB3y Shiftem ze strza\xB3k\xB9.";
+
         // ---- Controller wording for the tutorial hints above. Selected by
         //      binding_hints::Text() when a gamepad is present; see strings.h.
 
@@ -1000,6 +1052,38 @@ const char* Get(Id id) {
             return "Naci\x9Cnij Y, aby otworzy\xE6 szybkie menu, i wybierz Ukrycie, aby w\xB3\xB9" "czy\xE6 lub wy\xB3\xB9" "czy\xE6 tryb ukrycia. Musisz mie\xE6 za\xB3o\xBFony generator pola maskuj\xB9" "cego.";
         case Id::DialogRepeatLineHintPad:
             return "Poci\xB9gnij oba spusty naraz, aby powt\xF3rzy\xE6 ostatni\xB9 kwesti\xEA dialogu.";
+
+        // ---- KOTOR 2 controller twins (deliberate omissions: see strings.h).
+        case Id::TutK2SwoopRacePad:
+            return "Naciskaj A, aby przyspiesza\xE6 i zmienia\xE6 bieg przy sygnale d\x9Fwi\xEAkowym. Lew\xB9 ga\xB3k\xB9 omijaj przeszkody i naje\xBF""d\xBF""aj na przyspieszacze.";
+        case Id::TutK2ActionQueuePad:
+            return "Naci\x9Cnij A, aby doda\xE6 domy\x9Cln\xB9 akcj\xEA do kolejki polece\xF1; pozycje z menu akcji trafiaj\xB9 tam tak samo. Kilka akcji wykonuje si\xEA w kolejno\x9C""ci dodania.";
+        case Id::TutK2PlasmaTorchPad:
+            return "Uszkodzone drzwi wywa\xBF""a si\xEA narz\xEA""dziem takim jak palnik plazmowy. Otw\xF3rz ekran wyposa\xBF""enia z szybkiego menu na Y, pozycja Menu, przejd\x9F do niego bumperami i za\xB3\xF3\xBF palnik. Potem wybierz drzwi, poci\xB9gnij lewy spust i wybierz Wywa\xBF.";
+        case Id::TutK2SpaceSuitPad:
+            return "Wybierz skafander krzy\xBF""akiem w lewo i w prawo i naci\x9Cnij A, aby go za\xB3o\xBFy\xE6 lub zdj\xB9\xE6.";
+        case Id::TutK2CommRoomPad:
+            return "Wybierz konsol\xEA krzy\xBF""akiem w lewo i w prawo i uruchom j\xB9 przyciskiem A. Do komputer\xF3w potrzebujesz sondy programuj\xB9""cej z pojemnika w kokpicie.";
+        case Id::TutK2MinesPad:
+            return "Miny i pu\xB3""apki wykrywasz Spostrzegawczo\x9C""ci\xB9, stoj\xB9""c w miejscu. Wybierz wykryt\xB9 min\xEA krzy\xBF""akiem w lewo i w prawo, poci\xB9gnij lewy spust, aby otworzy\xE6 menu akcji, i wybierz Rozbr\xF3j lub Zabierz. Teraz rozbr\xF3j lub zabierz trzy od\xB3""amki torpedy protonowej wok\xF3\xB3 rakiety.";
+        case Id::TutK2VibrocutterPad:
+            return "To narz\xEA""dzie g\xF3rnicze jest broni\xB9 do walki wr\xEA""cz, z bliska lepsz\xB9 od blaster\xF3w. Otw\xF3rz ekran wyposa\xBF""enia z szybkiego menu na Y, pozycja Menu, i umie\x9C\xE6 je w gnie\x9F""dzie broni. Gniazda zapasowe tworz\xB9 drug\xB9 konfiguracj\xEA.";
+        case Id::TutK2DialogueChoicePad:
+            return "Odpowiedzi wybierasz krzy\xBF""akiem w g\xF3r\xEA i w d\xF3\xB3 i zatwierdzasz przyciskiem A. Poci\xB9gnij oba spusty naraz, aby powt\xF3rzy\xE6 ostatni\xB9 kwesti\xEA dialogu.";
+        case Id::TutK2EquipWeaponPad:
+            return "Otw\xF3rz ekran wyposa\xBF""enia z szybkiego menu na Y, pozycja Menu, i przejd\x9F do niego bumperami. Wybierz gniazdo broni krzy\xBF""akiem i A i wybierz bro\xF1 z listy.";
+        case Id::TutK2WeaponConfigPad:
+            return "Ekran wyposa\xBF""enia ma dwie konfiguracje broni, aktywn\xB9 i zapasow\xB9, na przyk\xB3""ad do walki wr\xEA""cz i na dystans. Wype\xB3niaj gniazda krzy\xBF""akiem i A.";
+        case Id::TutK2TakeItemPad:
+            return "Wybierz pojemnik krzy\xBF""akiem w lewo i w prawo i otw\xF3rz go przyciskiem A. Zabierz sond\xEA programuj\xB9""c\xB9 i u\xBFyj jej na terminalu komputera.";
+        case Id::TutK2GalaxyMapPad:
+            return "Obierz kurs na Peragus: na mapie galaktyki wybierz Peragus krzy\xBF""akiem w lewo i w prawo; A rozpoczyna podr\xF3\xBF.";
+        case Id::TutK2SoloModePad:
+            return "Przez te drzwi przejdziesz tylko w trybie solo: w\xB3\xB9""cz go z szybkiego menu na Y, pozycja tryb solo; porusza\xE6 si\xEA b\xEA""dzie tylko kontrolowana posta\xE6. Zaprowad\x9F samego 3C-FD do komputera zabezpiecze\xF1, aby otworzy\xB3 drzwi.";
+        case Id::TutK2RepairKitPad:
+            return "Zestawy naprawcze lecz\xB9 droidy. Poci\xB9gnij lewy spust, przejd\x9F krzy\xBF""akiem w lewo i w prawo do Medycyny i naci\x9Cnij A.";
+        case Id::TutK2SecuritySpikePad:
+            return "Ten zamek przerasta twoje umiej\xEAtno\x9C""ci; u\xBFyj prze\xB3""amywacza zabezpiecze\xF1. Wybierz pojemnik, poci\xB9gnij lewy spust, aby otworzy\xE6 menu akcji, i wybierz Zabezpieczenia.";
 
         case Id::FloorPuzzleIntro:
             return "Zagadka p\xB3yt pod\xB3ogowych: dziewi\xEA\xE6 p\xB3yt w siatce trzy na trzy, "

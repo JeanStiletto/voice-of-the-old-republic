@@ -913,6 +913,90 @@ const char* Get(Id id) {
         case Id::DialogRepeatLineHintPad:
             return "Pull both triggers together to repeat the last dialogue line.";
 
+        // ---- KOTOR 2 tutorial hints (tutorial_hints.cpp K2 tables). The
+        //      shared rows 0-42 reuse the TutHint* wordings above; these
+        //      cover KOTOR 2's own popups and the Ebon Hawk prologue lines.
+        case Id::TutK2SwoopRace:
+            return "Shift up with the Space bar when you hear the audio cue. Steer with A and D to dodge obstacles and hit the accelerator pads.";
+        case Id::TutK2ActionQueue:
+            return "Press Enter to add the default action to the command queue; entries from the action menu queue up the same way. Multiple actions run in the order you added them.";
+        case Id::TutK2ActionRemove:
+            return "Actions can only be removed from the command queue during combat; the most recently added action is removed first.";
+        case Id::TutK2PlasmaTorch:
+            return "Damaged doors are best bashed open with a tool like the plasma torch. Press U to open the equip screen and equip it. Then target the door, open the action menu with Shift and Enter, and choose Bash.";
+        case Id::TutK2FirstPerson:
+            return "Caps Lock toggles first-person view. You do not need it when playing with a screen reader.";
+        case Id::TutK2SpaceSuit:
+            return "Target the space suit with comma and period and press Enter to put it on or take it off.";
+        case Id::TutK2CommRoom:
+            return "Choose a console with comma and period and activate it with Enter. To use the computers you need the programming spike from the container in the cockpit.";
+        case Id::TutK2Mines:
+            return "You detect mines and traps with your Awareness skill while standing still. Target a detected mine with comma and period, open the action menu with Shift and Enter, and choose Disable or Recover. Now disable or recover three proton torpedo fragments around the rocket.";
+        case Id::TutK2Vibrocutter:
+            return "The vibrocutter is a melee weapon and beats blasters up close. Press U to open the equip screen and place it in a weapon slot. The secondary weapon slots hold a second configuration.";
+        case Id::TutK2DialogueChoice:
+            return "Choose replies with arrow up and down and confirm with Enter. Press R to repeat the last dialogue line.";
+        case Id::TutK2Pause:
+            return "The Space bar pauses and resumes the game. While paused you can plan your actions calmly.";
+        case Id::TutK2EquipWeapon:
+            return "Press U to open the equip screen, choose a weapon slot with the arrow keys and Enter, and pick the weapon from the list.";
+        case Id::TutK2WeaponConfig:
+            return "The equip screen has two weapon configurations, active and secondary, for example for melee and ranged weapons. Fill the slots with the arrow keys and Enter.";
+        case Id::TutK2TakeItem:
+            return "Target the container with comma and period and open it with Enter. Take the programming spike and use it on the computer terminal.";
+        case Id::TutK2GalaxyMap:
+            return "Set course for Peragus: on the galaxy map, choose Peragus with arrow left and right; Enter starts the journey.";
+        case Id::TutK2SoloMode:
+            return "You can only get through this door in solo mode: press V, and only the controlled party member moves. Bring 3C-FD alone to the security computer so it opens the door.";
+        case Id::TutK2RepairKit:
+            return "Repair kits heal droids. Use them from the action menu: open Medical with Shift and 5 and activate with Enter.";
+        case Id::TutK2SecuritySpike:
+            return "This lock is beyond your skill; use a security spike. Target the container, open the action menu with Shift and Enter, and choose Security.";
+
+        // ---- KOTOR 2 J/L swap: KOTOR 2's default keymap puts Quests on J
+        //      and Messages on L, the mirror image of KOTOR 1 (its keymap.2da
+        //      rows 13/14). Same texts as the TutHint* twins above with the two
+        //      letters exchanged; the pad wordings name no letter keys, so
+        //      kTwins points these at the existing *Pad ids.
+        case Id::TutK2OpenScreens:
+            return "Open game screens directly: M map, L messages, J quests, K abilities, P character, I inventory, U equip, O options. Escape returns.";
+        case Id::TutK2Messages:
+            return "The messages screen shows values such as experience points, attack and damage rolls, and changes to your character. Open it with L.";
+        case Id::TutK2Journal:
+            return "The quest screen shows your progress and hints on what to do next. Open it with J. Choose an entry with the arrows and read its details with Shift and an arrow.";
+
+        // ---- KOTOR 2 controller twins (deliberate omissions: see strings.h).
+        case Id::TutK2SwoopRacePad:
+            return "Press A to accelerate and shift up when you hear the audio cue. Dodge obstacles and hit the accelerator pads with the left stick.";
+        case Id::TutK2ActionQueuePad:
+            return "Press A to add the default action to the command queue; entries from the action menu queue up the same way. Multiple actions run in the order you added them.";
+        case Id::TutK2PlasmaTorchPad:
+            return "Damaged doors are bashed open with a tool like the plasma torch. Open the equip screen from the quick menu on Y, entry Menus, step to it with the shoulder buttons and equip it. Then focus the door, pull the left trigger, and choose Bash.";
+        case Id::TutK2SpaceSuitPad:
+            return "Focus the space suit with the D-pad left and right and press A to put it on or take it off.";
+        case Id::TutK2CommRoomPad:
+            return "Focus a console with the D-pad left and right and activate it with A. To use the computers you need the programming spike from the container in the cockpit.";
+        case Id::TutK2MinesPad:
+            return "You detect mines and traps with your Awareness skill while standing still. Focus a detected mine with the D-pad left and right, pull the left trigger for the action menu, and choose Disable or Recover. Now disable or recover three proton torpedo fragments around the rocket.";
+        case Id::TutK2VibrocutterPad:
+            return "The vibrocutter is a melee weapon and beats blasters up close. Open the equip screen from the quick menu on Y, entry Menus, and place it in a weapon slot. The secondary weapon slots hold a second configuration.";
+        case Id::TutK2DialogueChoicePad:
+            return "Choose replies with the D-pad up and down and confirm with A. Pull both triggers together to repeat the last dialogue line.";
+        case Id::TutK2EquipWeaponPad:
+            return "Open the equip screen from the quick menu on Y, entry Menus, and step to it with the shoulder buttons. Choose a weapon slot with the D-pad and A and pick the weapon from the list.";
+        case Id::TutK2WeaponConfigPad:
+            return "The equip screen has two weapon configurations, active and secondary, for example for melee and ranged weapons. Fill the slots with the D-pad and A.";
+        case Id::TutK2TakeItemPad:
+            return "Focus the container with the D-pad left and right and open it with A. Take the programming spike and use it on the computer terminal.";
+        case Id::TutK2GalaxyMapPad:
+            return "Set course for Peragus: on the galaxy map, choose Peragus with the D-pad left and right; A starts the journey.";
+        case Id::TutK2SoloModePad:
+            return "You can only get through this door in solo mode: toggle it from the quick menu on Y, entry solo mode, and only the controlled party member moves. Bring 3C-FD alone to the security computer so it opens the door.";
+        case Id::TutK2RepairKitPad:
+            return "Repair kits heal droids. Pull the left trigger, step to Medical with the D-pad left and right, and press A.";
+        case Id::TutK2SecuritySpikePad:
+            return "This lock is beyond your skill; use a security spike. Focus the container, pull the left trigger for the action menu, and choose Security.";
+
         // ---- Controller wording for the tutorial hints above. Selected by
         //      binding_hints::Text() when a gamepad is present; see strings.h.
 

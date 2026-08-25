@@ -2159,6 +2159,44 @@ enum class Id : int {
     //      that R re-speaks it — the only other way to hear it.
     DialogRepeatLineHint,    // "Press R to repeat the last dialogue line."
 
+    // ---- KOTOR 2 tutorial hints. Same two surfaces, retargeted at KOTOR 2's
+    //      content: its tutorial.2da rows 0-42 mirror KOTOR 1's and reuse the
+    //      TutHint* ids above 1:1 (only the strref tables differ, see
+    //      tutorial_hints.cpp); the ids below cover what KOTOR 2 adds — the
+    //      extra tutorial.2da rows (prologue / Peragus hints, several worded
+    //      for the Xbox pad even in the PC column) and the Ebon Hawk
+    //      prologue's T3-M4 instruction lines (module 001EBO), KOTOR 2's
+    //      Trask equivalent. Row / strref tables live in tutorial_hints.cpp.
+    TutK2SwoopRace,      // row 9  Start_Swoop_Race (49017)
+    TutK2ActionQueue,    // rows 29/30 X-button queue popups (49021/49022)
+    TutK2ActionRemove,   // rows 31/32 Y-button remove popups (49023) — info
+                         //   only: the vanilla control is mouse-only and the
+                         //   vanilla Y key is the mod's camera-turn key
+    TutK2PlasmaTorch,    // row 43 Bash_Plasma_Torch (48221)
+    TutK2FirstPerson,    // row 44 First_Person_Hint (48222; Caps Lock)
+    TutK2SpaceSuit,      // row 45 K2_Temp3 (48223)
+    TutK2CommRoom,       // rows 48+57 K2_Temp6/15 (48226)
+    TutK2Mines,          // row 49 K2_Temp7 (48227)
+    TutK2Vibrocutter,    // row 52 Vibrocutter_Hint (48230; no swap-key claim:
+                         //   vanilla H collides with the mod's status key)
+    TutK2DialogueChoice, // 124183/124184 — how to choose replies
+    TutK2Pause,          // 124786 — pausing combat
+    TutK2EquipWeapon,    // 124793/130047/126827 (+Xbox variants) — equip a weapon via U
+    TutK2WeaponConfig,   // 124783/124784 — the two weapon configurations
+    TutK2TakeItem,       // 123746/123747 — take the programming probe
+    TutK2GalaxyMap,      // 130030/132456 — set course for Peragus
+    TutK2SoloMode,       // 124804 — the solo-mode door
+    TutK2RepairKit,      // 128196/128197 — repair kits heal droids
+    TutK2SecuritySpike,  // 127843/126838 — security spike on the metal box
+    //      KOTOR 2's default keymap puts Quests on J and Messages on L — the
+    //      mirror image of KOTOR 1 (K2 keymap.2da rows 13/14). These three
+    //      repeat their TutHint* twins' texts with the two letters swapped.
+    //      Keyboard only: the pad wordings name no letter keys, so kTwins
+    //      maps them onto the existing TutHint*Pad ids.
+    TutK2OpenScreens,    // row 7  — the screen-key overview, J/L swapped
+    TutK2Messages,       // row 12 — Messages opens with L on KOTOR 2
+    TutK2Journal,        // row 14 + 123744/123743 — Quests opens with J
+
     //      Controller wording. Every id above names KEYBOARD keys, because a
     //      keyboard is the one input device a KOTOR install always has. When a
     //      gamepad is present the same hint has to name buttons instead, so
@@ -2217,6 +2255,26 @@ enum class Id : int {
     TutLevelUpPad,
     TutStealthModePad,
     DialogRepeatLineHintPad,
+    //      KOTOR 2 block, mirroring the TutK2* keyboard ids. Three ids have
+    //      no twin ON PURPOSE and keep their keyboard wording with a pad
+    //      connected: TutK2FirstPerson (Caps Lock stays the only first-person
+    //      control), TutK2Pause (no established pad pause control) and
+    //      TutK2ActionRemove (names no control at all).
+    TutK2SwoopRacePad,
+    TutK2ActionQueuePad,
+    TutK2PlasmaTorchPad,
+    TutK2SpaceSuitPad,
+    TutK2CommRoomPad,
+    TutK2MinesPad,
+    TutK2VibrocutterPad,
+    TutK2DialogueChoicePad,
+    TutK2EquipWeaponPad,
+    TutK2WeaponConfigPad,
+    TutK2TakeItemPad,
+    TutK2GalaxyMapPad,
+    TutK2SoloModePad,
+    TutK2RepairKitPad,
+    TutK2SecuritySpikePad,
 
     // ---- Rakatan temple floor-plate puzzle (floor_puzzle.cpp; Unknown
     //      World Temple Main Floor, module unk_m44ab). A 3x3 lights-out

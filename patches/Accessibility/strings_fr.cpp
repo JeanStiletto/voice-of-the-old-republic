@@ -935,6 +935,58 @@ const char* Get(Id id) {
         case Id::DialogRepeatLineHint:
             return "Appuyez sur R pour r\xE9p\xE9ter la derni\xE8re ligne de dialogue.";
 
+        // ---- KOTOR 2 tutorial hints (tutorial_hints.cpp K2 tables). The
+        //      shared rows 0-42 reuse the TutHint* wordings above; these
+        //      cover KOTOR 2's own popups and the Ebon Hawk prologue lines.
+        case Id::TutK2SwoopRace:
+            return "Passez la vitesse sup\xE9rieure avec la barre d'espace au signal sonore. Dirigez avec A et D pour \xE9viter les obstacles et toucher les acc\xE9l\xE9rateurs.";
+        case Id::TutK2ActionQueue:
+            return "Appuyez sur Entr\xE9""e pour ajouter l'action par d\xE9""faut \xE0 la file de commandes ; les entr\xE9""es du menu d'action s'y ajoutent de la m\xEAme fa\xE7on. Plusieurs actions s'ex\xE9""cutent dans l'ordre d'ajout.";
+        case Id::TutK2ActionRemove:
+            return "Les actions ne peuvent \xEAtre retir\xE9""es de la file de commandes que pendant un combat ; la derni\xE8re action ajout\xE9""e est retir\xE9""e en premier.";
+        case Id::TutK2PlasmaTorch:
+            return "Les portes endommag\xE9""es se forcent au mieux avec un outil comme la torche \xE0 plasma. Ouvrez l'\xE9""cran d'\xE9quipement avec U et \xE9quipez-la. S\xE9lectionnez ensuite la porte, ouvrez le menu d'action avec Maj et Entr\xE9""e, et choisissez Forcer.";
+        case Id::TutK2FirstPerson:
+            return "Verr Maj bascule la vue \xE0 la premi\xE8re personne. Elle n'est pas n\xE9""cessaire avec un lecteur d'\xE9""cran.";
+        case Id::TutK2SpaceSuit:
+            return "S\xE9lectionnez la combinaison spatiale avec virgule et point et appuyez sur Entr\xE9""e pour l'enfiler ou la retirer.";
+        case Id::TutK2CommRoom:
+            return "Choisissez une console avec virgule et point et activez-la avec Entr\xE9""e. Pour utiliser les ordinateurs, il vous faut la sonde de programmation du conteneur du cockpit.";
+        case Id::TutK2Mines:
+            return "Vous d\xE9tectez mines et pi\xE8ges gr\xE2""ce \xE0 votre Vigilance en restant immobile. S\xE9lectionnez une mine d\xE9tect\xE9""e avec virgule et point, ouvrez le menu d'action avec Maj et Entr\xE9""e, et choisissez D\xE9samorcer ou R\xE9""cup\xE9rer. D\xE9samorcez ou r\xE9""cup\xE9rez maintenant trois fragments de torpille \xE0 protons autour de la roquette.";
+        case Id::TutK2Vibrocutter:
+            return "Le vibrocoupeur est une arme de m\xEAl\xE9""e, sup\xE9rieure aux blasters au corps \xE0 corps. Ouvrez l'\xE9""cran d'\xE9quipement avec U et placez-le dans un emplacement d'arme. Les emplacements secondaires forment une seconde configuration.";
+        case Id::TutK2DialogueChoice:
+            return "Choisissez vos r\xE9ponses avec les fl\xE8""ches haut et bas et confirmez avec Entr\xE9""e. Appuyez sur R pour r\xE9p\xE9ter la derni\xE8re ligne de dialogue.";
+        case Id::TutK2Pause:
+            return "La barre d'espace met le jeu en pause et le reprend. En pause, vous planifiez vos actions calmement.";
+        case Id::TutK2EquipWeapon:
+            return "Ouvrez l'\xE9""cran d'\xE9quipement avec U, choisissez un emplacement d'arme avec les fl\xE8""ches et Entr\xE9""e, puis choisissez l'arme dans la liste.";
+        case Id::TutK2WeaponConfig:
+            return "L'\xE9""cran d'\xE9quipement a deux configurations d'armes, active et secondaire, par exemple pour la m\xEAl\xE9""e et le tir. Remplissez les emplacements avec les fl\xE8""ches et Entr\xE9""e.";
+        case Id::TutK2TakeItem:
+            return "S\xE9lectionnez le conteneur avec virgule et point et ouvrez-le avec Entr\xE9""e. Prenez la sonde de programmation et utilisez-la sur le terminal informatique.";
+        case Id::TutK2GalaxyMap:
+            return "Mettez le cap sur Peragus : sur la carte de la galaxie, choisissez Peragus avec les fl\xE8""ches gauche et droite ; Entr\xE9""e lance le voyage.";
+        case Id::TutK2SoloMode:
+            return "Cette porte ne se franchit qu'en mode solo : appuyez sur V, et seul le personnage contr\xF4l\xE9 se d\xE9place. Amenez 3C-FD seul \xE0 l'ordinateur de s\xE9""curit\xE9 pour qu'il ouvre la porte.";
+        case Id::TutK2RepairKit:
+            return "Les kits de r\xE9paration soignent les dro\xEF""des. Utilisez-les depuis le menu d'action : ouvrez M\xE9""dical avec Maj et 5 et activez avec Entr\xE9""e.";
+        case Id::TutK2SecuritySpike:
+            return "Cette serrure d\xE9passe vos comp\xE9tences ; utilisez une sonde de s\xE9""curit\xE9. S\xE9lectionnez le conteneur, ouvrez le menu d'action avec Maj et Entr\xE9""e, et choisissez S\xE9""curit\xE9.";
+
+        // ---- KOTOR 2 J/L swap: KOTOR 2's default keymap puts Quests on J
+        //      and Messages on L, the mirror image of KOTOR 1 (its keymap.2da
+        //      rows 13/14). Same texts as the TutHint* twins above with the two
+        //      letters exchanged; the pad wordings name no letter keys, so
+        //      kTwins points these at the existing *Pad ids.
+        case Id::TutK2OpenScreens:
+            return "Ouvrez les \xE9""crans de jeu directement : M carte, L messages, J qu\xEAtes, K aptitudes, P personnage, I inventaire, U \xE9quipement, O options. \xC9""chap revient.";
+        case Id::TutK2Messages:
+            return "L'\xE9""cran des messages affiche des valeurs comme les points d'exp\xE9rience, les jets d'attaque et de d\xE9g\xE2ts, et les changements de votre personnage. Ouvrez-le avec L.";
+        case Id::TutK2Journal:
+            return "L'\xE9""cran des qu\xEAtes montre votre progression et des indices sur la suite. Ouvrez-le avec J. Choisissez une entr\xE9""e avec les fl\xE8""ches et lisez ses d\xE9tails avec Maj et une fl\xE8""che.";
+
         // ---- Controller wording for the tutorial hints above. Selected by
         //      binding_hints::Text() when a gamepad is present; see strings.h.
 
@@ -1023,6 +1075,38 @@ const char* Get(Id id) {
             return "Appuyez sur Y pour le menu rapide et choisissez Camouflage pour activer ou d\xE9sactiver le mode furtif. Vous devez avoir un g\xE9n\xE9rateur de champ de camouflage \xE9quip\xE9.";
         case Id::DialogRepeatLineHintPad:
             return "Tirez les deux g\xE2" "chettes ensemble pour r\xE9p\xE9ter la derni\xE8re ligne de dialogue.";
+
+        // ---- KOTOR 2 controller twins (deliberate omissions: see strings.h).
+        case Id::TutK2SwoopRacePad:
+            return "Appuyez sur A pour acc\xE9l\xE9rer et passer la vitesse au signal sonore. \xC9vitez les obstacles et touchez les acc\xE9l\xE9rateurs avec le stick gauche.";
+        case Id::TutK2ActionQueuePad:
+            return "Appuyez sur A pour ajouter l'action par d\xE9""faut \xE0 la file de commandes ; les entr\xE9""es du menu d'actions s'y ajoutent de la m\xEAme fa\xE7on. Plusieurs actions s'ex\xE9""cutent dans l'ordre d'ajout.";
+        case Id::TutK2PlasmaTorchPad:
+            return "Les portes endommag\xE9""es se forcent avec un outil comme la torche \xE0 plasma. Ouvrez l'\xE9""cran d'\xE9quipement depuis le menu rapide sur Y, entr\xE9""e Menus, rejoignez-le avec les boutons de tranche et \xE9quipez-la. Ciblez ensuite la porte, tirez la g\xE2""chette gauche et choisissez Forcer.";
+        case Id::TutK2SpaceSuitPad:
+            return "Ciblez la combinaison spatiale avec la croix gauche et droite et appuyez sur A pour l'enfiler ou la retirer.";
+        case Id::TutK2CommRoomPad:
+            return "Ciblez une console avec la croix gauche et droite et activez-la avec A. Pour utiliser les ordinateurs, il vous faut la sonde de programmation du conteneur du cockpit.";
+        case Id::TutK2MinesPad:
+            return "Vous d\xE9tectez mines et pi\xE8ges gr\xE2""ce \xE0 votre Vigilance en restant immobile. Ciblez une mine d\xE9tect\xE9""e avec la croix gauche et droite, tirez la g\xE2""chette gauche pour le menu d'actions, et choisissez D\xE9samorcer ou R\xE9""cup\xE9rer. D\xE9samorcez ou r\xE9""cup\xE9rez maintenant trois fragments de torpille \xE0 protons autour de la roquette.";
+        case Id::TutK2VibrocutterPad:
+            return "Le vibrocoupeur est une arme de m\xEAl\xE9""e, sup\xE9rieure aux blasters au corps \xE0 corps. Ouvrez l'\xE9""cran d'\xE9quipement depuis le menu rapide sur Y, entr\xE9""e Menus, et placez-le dans un emplacement d'arme. Les emplacements secondaires forment une seconde configuration.";
+        case Id::TutK2DialogueChoicePad:
+            return "Choisissez vos r\xE9ponses avec la croix haut et bas et confirmez avec A. Tirez les deux g\xE2""chettes ensemble pour r\xE9p\xE9ter la derni\xE8re ligne de dialogue.";
+        case Id::TutK2EquipWeaponPad:
+            return "Ouvrez l'\xE9""cran d'\xE9quipement depuis le menu rapide sur Y, entr\xE9""e Menus, et rejoignez-le avec les boutons de tranche. Choisissez un emplacement d'arme avec la croix et A, puis choisissez l'arme dans la liste.";
+        case Id::TutK2WeaponConfigPad:
+            return "L'\xE9""cran d'\xE9quipement a deux configurations d'armes, active et secondaire, par exemple pour la m\xEAl\xE9""e et le tir. Remplissez les emplacements avec la croix et A.";
+        case Id::TutK2TakeItemPad:
+            return "Ciblez le conteneur avec la croix gauche et droite et ouvrez-le avec A. Prenez la sonde de programmation et utilisez-la sur le terminal informatique.";
+        case Id::TutK2GalaxyMapPad:
+            return "Mettez le cap sur Peragus : sur la carte de la galaxie, choisissez Peragus avec la croix gauche et droite ; A lance le voyage.";
+        case Id::TutK2SoloModePad:
+            return "Cette porte ne se franchit qu'en mode solo : activez-le depuis le menu rapide sur Y, entr\xE9""e mode solo ; seul le personnage contr\xF4l\xE9 se d\xE9place alors. Amenez 3C-FD seul \xE0 l'ordinateur de s\xE9""curit\xE9 pour qu'il ouvre la porte.";
+        case Id::TutK2RepairKitPad:
+            return "Les kits de r\xE9paration soignent les dro\xEF""des. Tirez la g\xE2""chette gauche, allez sur M\xE9""dical avec la croix gauche et droite, puis appuyez sur A.";
+        case Id::TutK2SecuritySpikePad:
+            return "Cette serrure d\xE9passe vos comp\xE9tences ; utilisez une sonde de s\xE9""curit\xE9. Ciblez le conteneur, tirez la g\xE2""chette gauche pour le menu d'actions, et choisissez S\xE9""curit\xE9.";
 
         case Id::FmtModLoadedVersion:   return "Voice of the Old Republic charg�, version %s";
         case Id::FmtChargenFeatUnnamed: return "Don %u";

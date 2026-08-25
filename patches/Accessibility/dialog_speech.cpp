@@ -662,9 +662,11 @@ void Tick() {
             // the reply-prompt monitor can pop a real tutorial window with it
             // once he's finished speaking. Recorded regardless of suppression.
             uint32_t tutStrref = 0;
+            bool tutorialLine = false;
             if (const char* tutHint =
                     acc::tutorial_hints::HintForDialogLine(npc, &tutStrref)) {
                 acc::tutorial_popup::RecordPendingHint(tutStrref, tutHint);
+                tutorialLine = true;
             }
 
             // Per-line speaker classification: log race + appearance even
@@ -673,12 +675,29 @@ void Tick() {
             SpeakerInfo info;
             bool resolved     = ResolveDialogSpeaker(info);
             bool suppressible = resolved && IsSuppressibleSpeaker(info);
+            // KOTOR 2's tutorial lines are spoken by T3-M4 — a droid, whose
+            // subtitles are normally force-spoken — so the human-VO
+            // suppression that keeps Trask's rewritten lines quiet on KOTOR 1
+            // never fires for them. Suppress a matched tutorial line
+            // explicitly there: the popup at the reply break carries the
+            // rewritten content. (On KOTOR 1 the Trask set is human-voiced
+            // and already suppressible; adding the term there would only
+            // change behaviour with the HumanSubtitles toggle on, so K1 keeps
+            // its shipped semantics.)
+            bool tutorialManaged = tutorialLine && acc::game::IsKotor2();
             // A curated VO-less subtitle line (e.g. Trask's Endar Spire level-up
             // gate, strref 39454) ships with no voice-over, so the human-subtitle
             // suppression would silence it entirely. Force those specific lines
             // back into the spoken channel regardless of the toggle.
             bool forcedSpoken = acc::tutorial_hints::IsForcedSpokenDialogLine(npc);
-            bool suppress = suppressible && !forcedSpoken &&
+            // The inverse curation: a line with real recorded VO whose speaker
+            // the classifier cannot resolve (the K2 prologue narrator renders
+            // as cinematic-copy panels with no speaker object), so the
+            // human-VO suppression never fires and the subtitle would talk
+            // over the actor.
+            bool voicedLine = acc::tutorial_hints::IsVoicedSuppressedLine(npc);
+            bool suppress = (suppressible || tutorialManaged || voicedLine) &&
+                !forcedSpoken &&
                 !acc::menus::modsettings::GetToggle(
                     acc::menus::modsettings::Option::HumanSubtitles);
 
@@ -708,11 +727,13 @@ void Tick() {
             acclog::Write("Dialog.Speech",
                           "NPC line panel=%p kind=%s speaker=[%s] "
                           "appearance=%d race=%d suppressible=%d forced=%d "
-                          "suppress=%d marker=[%s] -> [%.300s]",
+                          "tutorial=%d voiced=%d suppress=%d marker=[%s] "
+                          "-> [%.300s]",
                           m.panel, acc::engine::PanelKindName(m.kind),
                           resolved ? info.tag : "?",
                           info.appearance, info.raceEnum,
                           suppressible ? 1 : 0, forcedSpoken ? 1 : 0,
+                          tutorialManaged ? 1 : 0, voicedLine ? 1 : 0,
                           suppress ? 1 : 0,
                           spokeMarker ? marker : "", npc);
             std::strncpy(s_lastNpcLine, npc, sizeof(s_lastNpcLine) - 1);
@@ -805,11 +826,29 @@ void Tick() {
             acclog::Write("Dialog.Speech", "bark closed");
             s_lastBark = nullptr;
             s_lastBarkText[0] = '\0';
+            // KOTOR 2's prologue delivers several tutorial lines as narrator
+            // barks (fl_bash, map, blast, ...). Their hints are recorded
+            // below; a bark has no reply break, so its close is the "VO has
+            // finished" moment — flush the pending popup here, mirroring the
+            // dialogue-close flush above. Idempotent: no-ops when nothing is
+            // pending or a popup is already up.
+            acc::tutorial_popup::FirePendingAtReplyBreak();
         }
     } else {
         char text[512] = "";
         ReadFirstVisibleText(bark, text, sizeof(text));
         if (text[0] != '\0' && std::strcmp(text, s_lastBarkText) != 0) {
+            // Tutorial line delivered as a bark (KOTOR 2 prologue): record its
+            // hint for the popup fired at bark close, and keep the raw
+            // mouse/pad wording out of the spoken channel — the popup carries
+            // the rewritten content.
+            uint32_t tutStrref = 0;
+            const char* tutHint =
+                acc::tutorial_hints::HintForDialogLine(text, &tutStrref);
+            if (tutHint) {
+                acc::tutorial_popup::RecordPendingHint(tutStrref, tutHint);
+            }
+            bool tutorialManaged = (tutHint != nullptr) && acc::game::IsKotor2();
             // Barks carry their own speaker: CSWGuiBarkBubble.object_id names
             // the owning creature (client id). Ownerless barks (system /
             // loudspeaker feedback) resolve false and stay spoken; a human or
@@ -818,8 +857,13 @@ void Tick() {
             SpeakerInfo info;
             bool resolved     = ResolveBarkSpeaker(bark, info);
             bool suppressible = resolved && IsSuppressibleSpeaker(info);
-            bool suppress = suppressible && !acc::menus::modsettings::GetToggle(
-                acc::menus::modsettings::Option::HumanSubtitles);
+            // Curated voiced lines whose speaker cannot be resolved (the K2
+            // prologue narrator barks ownerless) — suppress like any voiced
+            // speaker so the subtitle doesn't talk over the actor.
+            bool voicedLine = acc::tutorial_hints::IsVoicedSuppressedLine(text);
+            bool suppress = (suppressible || tutorialManaged || voicedLine) &&
+                !acc::menus::modsettings::GetToggle(
+                    acc::menus::modsettings::Option::HumanSubtitles);
 
             if (!suppress) {
                 prism::Speak(text, /*interrupt=*/false);
@@ -831,10 +875,12 @@ void Tick() {
             acc::locked_recall::MaybeCapture(text, /*ownerless=*/!resolved);
             acclog::Write("Dialog.Speech",
                           "bark panel=%p speaker=[%s] appearance=%d race=%d "
-                          "suppressible=%d suppress=%d -> [%.300s]",
+                          "suppressible=%d tutorial=%d voiced=%d suppress=%d "
+                          "-> [%.300s]",
                           bark, resolved ? info.tag : "?",
                           info.appearance, info.raceEnum,
-                          suppressible ? 1 : 0, suppress ? 1 : 0, text);
+                          suppressible ? 1 : 0, tutorialManaged ? 1 : 0,
+                          voicedLine ? 1 : 0, suppress ? 1 : 0, text);
             std::strncpy(s_lastBarkText, text, sizeof(s_lastBarkText) - 1);
             s_lastBarkText[sizeof(s_lastBarkText) - 1] = '\0';
         }

@@ -934,6 +934,58 @@ const char* Get(Id id) {
         case Id::DialogRepeatLineHint:
             return "Premi R per ripetere l'ultima battuta di dialogo.";
 
+        // ---- KOTOR 2 tutorial hints (tutorial_hints.cpp K2 tables). The
+        //      shared rows 0-42 reuse the TutHint* wordings above; these
+        //      cover KOTOR 2's own popups and the Ebon Hawk prologue lines.
+        case Id::TutK2SwoopRace:
+            return "Cambia marcia con la barra spaziatrice al segnale acustico. Sterza con A e D per evitare gli ostacoli e prendere le piastre di accelerazione.";
+        case Id::TutK2ActionQueue:
+            return "Premi Invio per aggiungere l'azione predefinita alla coda dei comandi; le voci del menu azioni si accodano allo stesso modo. Pi\xF9 azioni vengono eseguite nell'ordine in cui le hai aggiunte.";
+        case Id::TutK2ActionRemove:
+            return "Le azioni possono essere rimosse dalla coda dei comandi solo in combattimento; l'ultima azione aggiunta viene rimossa per prima.";
+        case Id::TutK2PlasmaTorch:
+            return "Le porte danneggiate si sfondano al meglio con uno strumento come la torcia al plasma. Apri la schermata dell'equipaggiamento con U ed equipaggiala. Poi seleziona la porta, apri il menu azioni con Maiusc e Invio e scegli Sfonda.";
+        case Id::TutK2FirstPerson:
+            return "Bloc Maiusc attiva e disattiva la visuale in prima persona. Non ti serve giocando con uno screen reader.";
+        case Id::TutK2SpaceSuit:
+            return "Seleziona la tuta spaziale con virgola e punto e premi Invio per indossarla o toglierla.";
+        case Id::TutK2CommRoom:
+            return "Scegli una console con virgola e punto e attivala con Invio. Per usare i computer ti serve la sonda di programmazione del contenitore nella cabina di pilotaggio.";
+        case Id::TutK2Mines:
+            return "Individui mine e trappole con la tua Percezione restando fermo. Seleziona una mina individuata con virgola e punto, apri il menu azioni con Maiusc e Invio e scegli Disinnesca o Recupera. Ora disinnesca o recupera tre frammenti di siluro protonico intorno al razzo.";
+        case Id::TutK2Vibrocutter:
+            return "Il vibrotagliatore \xE8 un'arma da mischia, superiore ai blaster da vicino. Apri la schermata dell'equipaggiamento con U e mettilo in uno slot per armi. Gli slot secondari formano una seconda configurazione.";
+        case Id::TutK2DialogueChoice:
+            return "Scegli le risposte con freccia su e gi\xF9 e conferma con Invio. Premi R per ripetere l'ultima battuta di dialogo.";
+        case Id::TutK2Pause:
+            return "La barra spaziatrice mette in pausa e riprende il gioco. In pausa puoi pianificare le tue azioni con calma.";
+        case Id::TutK2EquipWeapon:
+            return "Apri la schermata dell'equipaggiamento con U, scegli uno slot per armi con le frecce e Invio e scegli l'arma dalla lista.";
+        case Id::TutK2WeaponConfig:
+            return "La schermata dell'equipaggiamento ha due configurazioni di armi, attiva e secondaria, ad esempio per mischia e tiro. Riempi gli slot con le frecce e Invio.";
+        case Id::TutK2TakeItem:
+            return "Seleziona il contenitore con virgola e punto e aprilo con Invio. Prendi la sonda di programmazione e usala sul terminale del computer.";
+        case Id::TutK2GalaxyMap:
+            return "Fai rotta su Peragus: sulla mappa della galassia scegli Peragus con freccia sinistra e destra; Invio avvia il viaggio.";
+        case Id::TutK2SoloMode:
+            return "Questa porta si supera solo in modalit\xE0 solitaria: premi V e si muove solo il personaggio controllato. Porta 3C-FD da solo al computer di sicurezza perch\xE9 apra la porta.";
+        case Id::TutK2RepairKit:
+            return "I kit di riparazione curano i droidi. Usali dal menu azioni: apri Medico con Maiusc e 5 e attiva con Invio.";
+        case Id::TutK2SecuritySpike:
+            return "Questa serratura supera le tue capacit\xE0; usa una sonda di sicurezza. Seleziona il contenitore, apri il menu azioni con Maiusc e Invio e scegli Sicurezza.";
+
+        // ---- KOTOR 2 J/L swap: KOTOR 2's default keymap puts Quests on J
+        //      and Messages on L, the mirror image of KOTOR 1 (its keymap.2da
+        //      rows 13/14). Same texts as the TutHint* twins above with the two
+        //      letters exchanged; the pad wordings name no letter keys, so
+        //      kTwins points these at the existing *Pad ids.
+        case Id::TutK2OpenScreens:
+            return "Apri le schermate di gioco direttamente: M mappa, L messaggi, J missioni, K abilit\xE0, P personaggio, I inventario, U equipaggiamento, O opzioni. Esc torna indietro.";
+        case Id::TutK2Messages:
+            return "La schermata dei messaggi mostra valori come i punti esperienza, i tiri di attacco e danno e i cambiamenti al tuo personaggio. Aprila con L.";
+        case Id::TutK2Journal:
+            return "La schermata delle missioni mostra i tuoi progressi e suggerimenti su cosa fare dopo. Aprila con J. Scegli una voce con le frecce e leggi i dettagli con Maiusc e una freccia.";
+
         // ---- Controller wording for the tutorial hints above. Selected by
         //      binding_hints::Text() when a gamepad is present; see strings.h.
 
@@ -1022,6 +1074,38 @@ const char* Get(Id id) {
             return "Premi Y per il menu rapido e scegli Furtivit\xE0 per attivare o disattivare la modalit\xE0 furtiva. Devi avere equipaggiato un generatore di campo occultante.";
         case Id::DialogRepeatLineHintPad:
             return "Tira entrambi i grilletti insieme per ripetere l'ultima battuta di dialogo.";
+
+        // ---- KOTOR 2 controller twins (deliberate omissions: see strings.h).
+        case Id::TutK2SwoopRacePad:
+            return "Premi A per accelerare e cambiare marcia al segnale acustico. Con lo stick sinistro eviti gli ostacoli e prendi le piastre di accelerazione.";
+        case Id::TutK2ActionQueuePad:
+            return "Premi A per aggiungere l'azione predefinita alla coda dei comandi; le voci del menu delle azioni si accodano allo stesso modo. Pi\xF9 azioni vengono eseguite nell'ordine in cui le hai aggiunte.";
+        case Id::TutK2PlasmaTorchPad:
+            return "Le porte danneggiate si sfondano con uno strumento come la torcia al plasma. Apri la schermata equipaggiamento dal menu rapido su Y, voce Menu, raggiungila con i dorsali ed equipaggiala. Poi seleziona la porta, tira il grilletto sinistro e scegli Sfonda.";
+        case Id::TutK2SpaceSuitPad:
+            return "Seleziona la tuta spaziale con la croce sinistra e destra e premi A per indossarla o toglierla.";
+        case Id::TutK2CommRoomPad:
+            return "Seleziona una console con la croce sinistra e destra e attivala con A. Per usare i computer ti serve la sonda di programmazione del contenitore nella cabina di pilotaggio.";
+        case Id::TutK2MinesPad:
+            return "Individui mine e trappole con la tua Percezione restando fermo. Seleziona una mina individuata con la croce sinistra e destra, tira il grilletto sinistro per il menu delle azioni e scegli Disinnesca o Recupera. Ora disinnesca o recupera tre frammenti di siluro protonico intorno al razzo.";
+        case Id::TutK2VibrocutterPad:
+            return "Il vibrotagliatore \xE8 un'arma da mischia, superiore ai blaster da vicino. Apri la schermata equipaggiamento dal menu rapido su Y, voce Menu, e mettilo in uno slot per armi. Gli slot secondari formano una seconda configurazione.";
+        case Id::TutK2DialogueChoicePad:
+            return "Scegli le risposte con la croce su e gi\xF9 e conferma con A. Tira entrambi i grilletti insieme per ripetere l'ultima battuta di dialogo.";
+        case Id::TutK2EquipWeaponPad:
+            return "Apri la schermata equipaggiamento dal menu rapido su Y, voce Menu, e raggiungila con i dorsali. Scegli uno slot per armi con la croce e A e scegli l'arma dalla lista.";
+        case Id::TutK2WeaponConfigPad:
+            return "La schermata dell'equipaggiamento ha due configurazioni di armi, attiva e secondaria, ad esempio per mischia e tiro. Riempi gli slot con la croce e A.";
+        case Id::TutK2TakeItemPad:
+            return "Seleziona il contenitore con la croce sinistra e destra e aprilo con A. Prendi la sonda di programmazione e usala sul terminale del computer.";
+        case Id::TutK2GalaxyMapPad:
+            return "Fai rotta su Peragus: sulla mappa della galassia scegli Peragus con la croce sinistra e destra; A avvia il viaggio.";
+        case Id::TutK2SoloModePad:
+            return "Questa porta si supera solo in modalit\xE0 solitaria: attivala dal menu rapido su Y, voce modalit\xE0 solitaria; si muove solo il personaggio controllato. Porta 3C-FD da solo al computer di sicurezza perch\xE9 apra la porta.";
+        case Id::TutK2RepairKitPad:
+            return "I kit di riparazione curano i droidi. Tira il grilletto sinistro, vai su Medico con la croce sinistra e destra e premi A.";
+        case Id::TutK2SecuritySpikePad:
+            return "Questa serratura supera le tue capacit\xE0; usa una sonda di sicurezza. Seleziona il contenitore, tira il grilletto sinistro per il menu delle azioni e scegli Sicurezza.";
 
         case Id::FmtModLoadedVersion:   return "Voice of the Old Republic caricato, versione %s";
         case Id::FmtChargenFeatUnnamed: return "Talento %u";

@@ -60,4 +60,15 @@ bool IsSuppressedTutorialText(const char* text);
 // resolved through the engine's own TLK, so it stays language-independent.
 bool IsForcedSpokenDialogLine(const char* renderedLine);
 
+// The inverse curation: true iff `renderedLine` is a curated line that HAS
+// real recorded voice-over but whose speaker the classifier cannot resolve
+// (ownerless barks / cinematic-copy panels, speaker unresolvable), so the
+// human-VO suppression never fires and the subtitle would be spoken over the
+// actor. dialog_speech suppresses these like any voiced line, honouring the
+// HumanSubtitles toggle. First entries: the KOTOR 2 Ebon Hawk prologue
+// narrator ("the voice of the Ebon Hawk"). Keyed by source strref, resolved
+// through the engine TLK; token-substituted lines (<FullName>) are matched
+// segment-wise.
+bool IsVoicedSuppressedLine(const char* renderedLine);
+
 }  // namespace acc::tutorial_hints

@@ -4,7 +4,8 @@ How the accessibility mod drives the engine's **own** tutorial popup with custom
 text, on demand, so it pauses/dismisses exactly like a stock game tutorial.
 Implemented in `patches/Accessibility/tutorial_popup.cpp`; this doc consolidates
 the RE so future UI/popup work doesn't have to re-derive it. Addresses are
-GoG/Steam-identical.
+GoG/Steam-identical. **KOTOR 2 (Steam/Aspyr) is fully ported — its addresses
+and the flow differences are in the "KOTOR 2" section at the bottom.**
 
 ## Two delivery surfaces (both shipped, DE+EN)
 - **Surface 1 — silent `tutorial.2da` popups (game-wide).** The engine already
@@ -80,3 +81,64 @@ Match/resolve everything through the engine's own TLK — `acc::engine::LookupTl
 suppression and dialogue-line detection work in the user's language without
 per-language text tables. The keyboard-hint *content* is authored in the mod's
 `acc::strings` table (DE+EN done; FR/IT/ES fall back to the vanilla mouse popups).
+
+## KOTOR 2 (ported 2026-08-25; addresses are Steam/Aspyr swkotor2.exe)
+The same two surfaces exist; content differs — the K2 "Trask" is the Ebon Hawk
+prologue (module 001EBO), where T3-M4 delivers ~20 bracketed instruction lines
+(each with a PC and an Xbox strref variant in the same .dlg; both are mapped).
+KOTOR 2's tutorial.2da rows 0-42 mirror KOTOR 1's labels; rows 43-73 are
+K2-only (prologue/Peragus hints, several worded for the pad even in the PC
+column). Tables in `tutorial_hints.cpp`; strref mining record in the 2026-08-25
+session scratchpad (`k2tut/`).
+
+Engine surface (all Pick()ed in `tutorial_popup.cpp` / `tutorial_hints.cpp`):
+- `CSWGuiTutorialBox` ctor 0x00898ca0, object size 0x9dc, stored at
+  **CGuiInGame+0xb0** by the panel creator 0x007be4c0.
+- **Row byte +0x9d8** (K1 +0x994), page counter +0x9d9.
+- `SetTutorialReason` = **0x00898f60** (writes row byte, zeroes page counter,
+  loads the first `Message_PC%i` page via SetNextMessage 0x00899630, installs
+  the per-reason OK callback). The engine reads the message_pc columns
+  unconditionally on PC.
+- `SetMessage(strref)` = 0x0040FFB0 (established earlier, shared constant).
+- **Once-shown bitfield base = CGuiInGame+0xf88** (K1 +0xba8); bit test
+  0x007cfa10, bit set/clear 0x007cfa70. Same (reason>>3)/(reason&7) scheme.
+- **Direct mount = 0x007cfb10** (the K1-0x0062f4a0 twin): checks the
+  Tutorial-Popups gameplay option bit (options+0x1c bit1 via
+  CClientExoApp::GetClientOptions 0x0072fb00) and the once-shown bit — returns
+  0 on either refusal, so clearing the bit first stays mandatory — then sets
+  the bit and AddPanels (0x00410530) the box. It does NOT check the
+  in-dialogue busy flag ([gui+0xcc]; only the will-show gate 0x007cf960
+  checks it), so it mounts mid-dialogue, and it does NOT set reason/message.
+  p2/p3 take the "default position" sentinel 0x7f000000 on K2 (the engine's
+  idle caller 0x0079b700 passes exactly that); K1 ships zeros.
+- Funnel chain for reference: public `CClientExoApp::ShowTutorialWindow` =
+  0x00740a20 → 0x0079e9d0 (gate 0x007cf960 → configure-wrapper 0x007cf9e0 →
+  stash pending request at gui+0x3ac/0x3b0/0x3b4/+0x3b8).
+
+Flow difference vs KOTOR 1: none for the mod — the same recipe (clear bit →
+direct mount → SetTutorialReason → SetMessage(strref) → pause) works. One K2
+behaviour to know: if the player disabled Tutorial-Popups in the gameplay
+options, the mount refuses; PollDismiss then immediately clears state and
+unpauses on the next tick (visible in the log as fired-then-dismissed).
+
+Suppression difference: T3-M4 is a droid, so K1's human-VO suppression never
+covers the K2 tutorial lines — `dialog_speech.cpp` suppresses a matched
+tutorial line explicitly on KOTOR 2 (`tutorialManaged`), and the popup at the
+reply break carries the rewritten content.
+
+### Delivery paths the first K2 test round exposed (2026-08-25)
+- Many prologue instruction lines render as **bark bubbles**, not dialogue
+  panels. The bark path in dialog_speech.cpp runs the same
+  `HintForDialogLine` match: matched bark → raw line suppressed, hint
+  recorded, popup fired at bark CLOSE (barks have no reply break; close =
+  VO finished). Unmatched instruction variants (PC + Xbox wordings of the
+  same .dlg node) are all in kDialogHintsK2 so either render is caught.
+- The prologue narrator ("the voice of the Ebon Hawk") is REAL human VO on
+  ownerless barks / cinematic-copy panels — the speaker classifier cannot
+  see her, so subtitles were spoken over the actor. Curated
+  `kVoicedSuppressedK2` (tutorial_hints.cpp, `IsVoicedSuppressedLine`)
+  suppresses those lines on both the NPC and bark paths, HumanSubtitles
+  toggle respected. Inclusion criterion: the line's VO audio EXISTS under
+  StreamVoice/001/ — the security consoles have VO resrefs whose files were
+  never shipped and must stay spoken. Token-substituted lines (<FullName>)
+  match via MatchesWithTokens (segment-wise, token = wildcard).

@@ -936,6 +936,58 @@ const char* Get(Id id) {
         case Id::DialogRepeatLineHint:
             return "Pulsa R para repetir la \xFAltima l\xEDnea de di\xE1logo.";
 
+        // ---- KOTOR 2 tutorial hints (tutorial_hints.cpp K2 tables). The
+        //      shared rows 0-42 reuse the TutHint* wordings above; these
+        //      cover KOTOR 2's own popups and the Ebon Hawk prologue lines.
+        case Id::TutK2SwoopRace:
+            return "Cambia de marcha con la barra espaciadora al o\xEDr la se\xF1""al sonora. Conduce con A y D para esquivar los obst\xE1""culos y pisar los aceleradores.";
+        case Id::TutK2ActionQueue:
+            return "Pulsa Intro para a\xF1""adir la acci\xF3n predeterminada a la cola de \xF3rdenes; las entradas del men\xFA de acciones se a\xF1""aden igual. Varias acciones se ejecutan en el orden en que las a\xF1""adiste.";
+        case Id::TutK2ActionRemove:
+            return "Las acciones solo pueden quitarse de la cola de \xF3rdenes durante el combate; la \xFAltima acci\xF3n a\xF1""adida se quita primero.";
+        case Id::TutK2PlasmaTorch:
+            return "Las puertas da\xF1""adas se fuerzan mejor con una herramienta como el soplete de plasma. Abre la pantalla de equipo con U y equ\xEDpalo. Despu\xE9s selecciona la puerta, abre el men\xFA de acciones con May\xFAs e Intro y elige Forzar.";
+        case Id::TutK2FirstPerson:
+            return "Bloq May\xFAs alterna la vista en primera persona. No la necesitas al jugar con un lector de pantalla.";
+        case Id::TutK2SpaceSuit:
+            return "Selecciona el traje espacial con coma y punto y pulsa Intro para pon\xE9rtelo o quit\xE1rtelo.";
+        case Id::TutK2CommRoom:
+            return "Elige una consola con coma y punto y act\xEDvala con Intro. Para usar los ordenadores necesitas la sonda de programaci\xF3n del contenedor de la cabina.";
+        case Id::TutK2Mines:
+            return "Detectas minas y trampas con tu Percepci\xF3n si te quedas quieto. Selecciona una mina detectada con coma y punto, abre el men\xFA de acciones con May\xFAs e Intro y elige Desactivar o Recuperar. Ahora desactiva o recupera tres fragmentos de torpedo de protones alrededor del cohete.";
+        case Id::TutK2Vibrocutter:
+            return "El vibrocortador es un arma cuerpo a cuerpo, superior a los bl\xE1steres de cerca. Abre la pantalla de equipo con U y col\xF3""calo en una ranura de arma. Las ranuras secundarias forman una segunda configuraci\xF3n.";
+        case Id::TutK2DialogueChoice:
+            return "Elige las respuestas con flecha arriba y abajo y confirma con Intro. Pulsa R para repetir la \xFAltima l\xEDnea de di\xE1logo.";
+        case Id::TutK2Pause:
+            return "La barra espaciadora pausa y reanuda el juego. En pausa puedes planear tus acciones con calma.";
+        case Id::TutK2EquipWeapon:
+            return "Abre la pantalla de equipo con U, elige una ranura de arma con las flechas e Intro y elige el arma de la lista.";
+        case Id::TutK2WeaponConfig:
+            return "La pantalla de equipo tiene dos configuraciones de armas, activa y secundaria, por ejemplo para cuerpo a cuerpo y a distancia. Rellena las ranuras con las flechas e Intro.";
+        case Id::TutK2TakeItem:
+            return "Selecciona el contenedor con coma y punto y \xE1""brelo con Intro. Coge la sonda de programaci\xF3n y \xFAsala en el terminal del ordenador.";
+        case Id::TutK2GalaxyMap:
+            return "Pon rumbo a Peragus: en el mapa de la galaxia elige Peragus con flecha izquierda y derecha; Intro inicia el viaje.";
+        case Id::TutK2SoloMode:
+            return "Esta puerta solo se cruza en modo en solitario: pulsa V y solo se mueve el personaje controlado. Lleva a 3C-FD solo al ordenador de seguridad para que abra la puerta.";
+        case Id::TutK2RepairKit:
+            return "Los kits de reparaci\xF3n curan a los droides. \xDAsalos desde el men\xFA de acciones: abre M\xE9""dico con May\xFAs y 5 y activa con Intro.";
+        case Id::TutK2SecuritySpike:
+            return "Esta cerradura supera tus habilidades; usa una ganz\xFA""a electr\xF3nica. Selecciona el contenedor, abre el men\xFA de acciones con May\xFAs e Intro y elige Seguridad.";
+
+        // ---- KOTOR 2 J/L swap: KOTOR 2's default keymap puts Quests on J
+        //      and Messages on L, the mirror image of KOTOR 1 (its keymap.2da
+        //      rows 13/14). Same texts as the TutHint* twins above with the two
+        //      letters exchanged; the pad wordings name no letter keys, so
+        //      kTwins points these at the existing *Pad ids.
+        case Id::TutK2OpenScreens:
+            return "Abre las pantallas del juego directamente: M mapa, L mensajes, J misiones, K habilidades, P personaje, I inventario, U equipo, O opciones. Esc vuelve.";
+        case Id::TutK2Messages:
+            return "La pantalla de mensajes muestra valores como los puntos de experiencia, las tiradas de ataque y da\xF1o, y los cambios en tu personaje. \xC1""brela con L.";
+        case Id::TutK2Journal:
+            return "La pantalla de misiones muestra tu progreso y pistas sobre qu\xE9 hacer a continuaci\xF3n. \xC1""brela con J. Elige una entrada con las flechas y lee sus detalles con May\xFAs y una flecha.";
+
         // ---- Controller wording for the tutorial hints above. Selected by
         //      binding_hints::Text() when a gamepad is present; see strings.h.
 
@@ -1024,6 +1076,38 @@ const char* Get(Id id) {
             return "Pulsa Y para el men\xFA r\xE1pido y elige Sigilo para activar o desactivar el modo sigiloso. Debes llevar equipado un generador de campo de sigilo.";
         case Id::DialogRepeatLineHintPad:
             return "Tira de ambos gatillos a la vez para repetir la \xFAltima l\xEDnea de di\xE1logo.";
+
+        // ---- KOTOR 2 controller twins (deliberate omissions: see strings.h).
+        case Id::TutK2SwoopRacePad:
+            return "Pulsa A para acelerar y cambiar de marcha al o\xEDr la se\xF1""al. Con el stick izquierdo esquivas los obst\xE1""culos y pisas los aceleradores.";
+        case Id::TutK2ActionQueuePad:
+            return "Pulsa A para a\xF1""adir la acci\xF3n predeterminada a la cola de \xF3rdenes; las entradas del men\xFA de acciones se a\xF1""aden igual. Varias acciones se ejecutan en el orden en que las a\xF1""adiste.";
+        case Id::TutK2PlasmaTorchPad:
+            return "Las puertas da\xF1""adas se fuerzan con una herramienta como el soplete de plasma. Abre la pantalla de equipo desde el men\xFA r\xE1pido en Y, entrada Men\xFAs, llega a ella con los botones superiores y equ\xEDpalo. Despu\xE9s enfoca la puerta, tira del gatillo izquierdo y elige Forzar.";
+        case Id::TutK2SpaceSuitPad:
+            return "Enfoca el traje espacial con la cruceta izquierda y derecha y pulsa A para pon\xE9rtelo o quit\xE1rtelo.";
+        case Id::TutK2CommRoomPad:
+            return "Enfoca una consola con la cruceta izquierda y derecha y act\xEDvala con A. Para usar los ordenadores necesitas la sonda de programaci\xF3n del contenedor de la cabina.";
+        case Id::TutK2MinesPad:
+            return "Detectas minas y trampas con tu Percepci\xF3n si te quedas quieto. Enfoca una mina detectada con la cruceta izquierda y derecha, tira del gatillo izquierdo para el men\xFA de acciones y elige Desactivar o Recuperar. Ahora desactiva o recupera tres fragmentos de torpedo de protones alrededor del cohete.";
+        case Id::TutK2VibrocutterPad:
+            return "El vibrocortador es un arma cuerpo a cuerpo, superior a los bl\xE1steres de cerca. Abre la pantalla de equipo desde el men\xFA r\xE1pido en Y, entrada Men\xFAs, y col\xF3""calo en una ranura de arma. Las ranuras secundarias forman una segunda configuraci\xF3n.";
+        case Id::TutK2DialogueChoicePad:
+            return "Elige las respuestas con la cruceta arriba y abajo y confirma con A. Tira de ambos gatillos a la vez para repetir la \xFAltima l\xEDnea de di\xE1logo.";
+        case Id::TutK2EquipWeaponPad:
+            return "Abre la pantalla de equipo desde el men\xFA r\xE1pido en Y, entrada Men\xFAs, y llega a ella con los botones superiores. Elige una ranura de arma con la cruceta y A y elige el arma de la lista.";
+        case Id::TutK2WeaponConfigPad:
+            return "La pantalla de equipo tiene dos configuraciones de armas, activa y secundaria, por ejemplo para cuerpo a cuerpo y a distancia. Rellena las ranuras con la cruceta y A.";
+        case Id::TutK2TakeItemPad:
+            return "Enfoca el contenedor con la cruceta izquierda y derecha y \xE1""brelo con A. Coge la sonda de programaci\xF3n y \xFAsala en el terminal del ordenador.";
+        case Id::TutK2GalaxyMapPad:
+            return "Pon rumbo a Peragus: en el mapa de la galaxia elige Peragus con la cruceta izquierda y derecha; A inicia el viaje.";
+        case Id::TutK2SoloModePad:
+            return "Esta puerta solo se cruza en modo en solitario: act\xEDvalo desde el men\xFA r\xE1pido en Y, entrada modo en solitario; solo se mueve el personaje controlado. Lleva a 3C-FD solo al ordenador de seguridad para que abra la puerta.";
+        case Id::TutK2RepairKitPad:
+            return "Los kits de reparaci\xF3n curan a los droides. Tira del gatillo izquierdo, ve a M\xE9""dico con la cruceta izquierda y derecha y pulsa A.";
+        case Id::TutK2SecuritySpikePad:
+            return "Esta cerradura supera tus habilidades; usa una ganz\xFA""a electr\xF3nica. Enfoca el contenedor, tira del gatillo izquierdo para el men\xFA de acciones y elige Seguridad.";
 
         case Id::FmtModLoadedVersion:   return "Voice of the Old Republic cargado, versi�n %s";
         case Id::FmtChargenFeatUnnamed: return "Dote %u";

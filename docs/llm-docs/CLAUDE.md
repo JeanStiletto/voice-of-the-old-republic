@@ -69,8 +69,11 @@ addresses — dominate the port cost. See `docs/kotor2-port-feasibility.md`.
 
 **Will not port — K1 story content.** These encode specific K1 areas,
 quests or scripted moments and have no K2 counterpart:
-`floor_puzzle`, `spectator_scene`, `endar_softlock`, `tutorial_hints`,
-`map_shipped_hints`.
+`floor_puzzle`, `spectator_scene`, `endar_softlock`, `map_shipped_hints`.
+(`tutorial_hints` was on this list until 2026-08-25 — wrongly: only its
+STRREF TABLES are per-game story content. The mechanism ported whole; KOTOR 2
+now has its own row/strref tables (the Ebon Hawk prologue is its Trask) and
+the popup machinery is Pick()ed. See `tutorial-popup-mechanics.md`.)
 
 **Minigames — the ENGINE is a family, the content is not.** Superseded
 2026-08-15 by the minigame port; the earlier per-module guesses here were

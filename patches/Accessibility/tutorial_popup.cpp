@@ -19,9 +19,20 @@ namespace {
 // CGuiInGame::ShowTutorialWindow @0x0062f4a0 — mounts tutorial_box for a reason.
 // Does NOT check field45_0xb4 (the funnel does), so it works mid-dialogue. Does
 // NOT populate the message; we set it ourselves.
+// KOTOR 2: 0x007cfb10, the same direct mount — checks the Tutorial-Popups
+// gameplay option and the once-shown bit (returns 0 if either refuses, which
+// is why clearing the bit first stays mandatory), sets the bit, and AddPanels
+// the box at [gui+0xb0]. Crucially it does NOT check the funnel's in-dialogue
+// busy flag ([gui+0xcc], checked only by the will-show gate 0x007cf960), so
+// it mounts mid-dialogue like the K1 twin. Also like K1 it does not set the
+// reason/message. p2..p4 are position/flag defaults: the engine's own idle
+// caller (0x0079b700) passes 0x7f000000, 0x7f000000, 0 — mirrored below.
 using PFN_ShowTutorial =
     void(__thiscall*)(void* gui, int reason, uint32_t p2, uint32_t p3, uint32_t p4);
-const uintptr_t kAddrShowTutorialWindow = acc::addr::R(0x0062f4a0);
+const uintptr_t kAddrShowTutorialWindow = acc::addr::Pick(0x0062f4a0, 0x007cfb10);
+// The engine's "use the default" sentinel for the mount's p2/p3 on KOTOR 2;
+// KOTOR 1 shipped (and was tested) with plain zeros.
+constexpr uint32_t kMountDefaultK2 = 0x7f000000u;
 
 // CSWGuiMessageBox::SetMessage(strref) @0x006249d0 — resolves the strref via the
 // TLK and sets the box text. (The CExoString overload @0x006271a0 destroys its
@@ -32,24 +43,34 @@ const uintptr_t kAddrSetMessageStrref = acc::addr::Pick(0x006249d0, 0x0040FFB0);
 // CSWGuiTutorialBox::SetTutorialReason @0x006aa900 — configures the box as a
 // TUTORIAL (single "Weiter"/OK prompt, page state) for a row, the way the funnel
 // does. Without it the box renders as a generic two-button message box.
+// KOTOR 2: 0x00898f60 — writes the row byte (+0x9d8), zeroes the page counter
+// (+0x9d9), loads the first "Message_PC%i" page and installs the per-reason OK
+// callback; the K2 funnel 0x0079e9d0 reaches it via the thin CGuiInGame
+// wrapper 0x007cf9e0.
 using PFN_SetTutorialReason = void(__thiscall*)(void* box, int reason);
-const uintptr_t kAddrSetTutorialReason = acc::addr::R(0x006aa900);
+const uintptr_t kAddrSetTutorialReason = acc::addr::Pick(0x006aa900, 0x00898f60);
 
-// CGuiInGame member: tutorial_box pointer @+0xa0.
-const size_t kGuiTutorialBoxOffset = acc::off::Todo(0xa0);
+// CGuiInGame member: tutorial_box pointer @+0xa0. KOTOR 2: +0xb0, same
+// witness as engine_panels' slot table (creator 0x007be4c0 stores the
+// CSWGuiTutorialBox ctor 0x00898ca0 result there).
+const size_t kGuiTutorialBoxOffset = acc::off::Pick(0xa0, 0xb0);
 // CSWGuiTutorialBox source-row byte @+0x994 (we set it to our reason so the
 // fingerprint's row lookup lands on an unmapped row; the synthetic flag wins
-// regardless, but keeps things tidy).
-const size_t kTutorialBoxRowOffset = acc::off::Todo(0x994);
-// Tutorial once-shown bitfield: byte at CGuiInGame + 0xba8 + (reason>>3),
+// regardless, but keeps things tidy). KOTOR 2: +0x9d8 (SetTutorialReason
+// writes it, SetNextMessage 0x00899630 reads it back — see tutorial_hints).
+const size_t kTutorialBoxRowOffset = acc::off::Pick(0x994, 0x9d8);
+// Tutorial once-shown bitfield: byte at CGuiInGame + base + (reason>>3),
 // bit (reason & 7). Clear before mounting so it fires every time.
-constexpr size_t kShownBitsBase = 0xba8;
+// KOTOR 1 base 0xba8; KOTOR 2 base 0xf88 (bit test 0x007cfa10 reads
+// [this + 0xf88 + (reason>>3)] with the same bit scheme).
+const size_t kShownBitsBase = acc::off::Pick(0xba8, 0xf88);
 
-// Fixed reason we repurpose for our on-demand popup. 0x2a = 42 = Movement_Keys,
-// the last tutorial.2da row: shown once at game start, never again. Row 42 IS
-// mapped to a keyboard hint (the game-start walking popup), but every announce
-// path checks SyntheticActive() first and speaks SyntheticHint() when we own the
-// box, so the row-keyed hint never fires for our synthetic popups.
+// Fixed reason we repurpose for our on-demand popup. 0x2a = 42 = Movement_Keys
+// in BOTH games' tutorial.2da (KOTOR 1's last row; KOTOR 2 appends more rows
+// after it but keeps 42's label): shown once at game start, never again. Row
+// 42 IS mapped to a keyboard hint (the game-start walking popup), but every
+// announce path checks SyntheticActive() first and speaks SyntheticHint() when
+// we own the box, so the row-keyed hint never fires for our synthetic popups.
 constexpr int kSyntheticReason = 0x2a;
 
 // ---- Pause (mirrors engine_subscreen; kept self-contained here — keep
@@ -129,8 +150,9 @@ void FirePopup(uint32_t strref, const char* hint) {
             g + kShownBitsBase + (kSyntheticReason >> 3));
         *bits &= static_cast<uint8_t>(~(1u << (kSyntheticReason & 7)));
         // Mount the tutorial box.
+        const uint32_t p23 = acc::game::IsKotor2() ? kMountDefaultK2 : 0u;
         reinterpret_cast<PFN_ShowTutorial>(kAddrShowTutorialWindow)(
-            gui, kSyntheticReason, 0, 0, 0);
+            gui, kSyntheticReason, p23, p23, 0);
         // Point the box at our reason row and set its visible text to the
         // line's original (mouse-worded) strref.
         void* box = *reinterpret_cast<void**>(g + kGuiTutorialBoxOffset);

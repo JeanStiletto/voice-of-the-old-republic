@@ -63,6 +63,29 @@ constexpr Twin kTwins[] = {
     { S::TutLevelUp, S::TutLevelUpPad },
     { S::TutStealthMode, S::TutStealthModePad },
     { S::DialogRepeatLineHint, S::DialogRepeatLineHintPad },
+    // KOTOR 2 hints. TutK2FirstPerson, TutK2Pause and TutK2ActionRemove have
+    // no twin on purpose (see strings.h) — absent here means Text() keeps the
+    // keyboard wording, which stays truthful with a pad connected.
+    { S::TutK2SwoopRace, S::TutK2SwoopRacePad },
+    { S::TutK2ActionQueue, S::TutK2ActionQueuePad },
+    { S::TutK2PlasmaTorch, S::TutK2PlasmaTorchPad },
+    { S::TutK2SpaceSuit, S::TutK2SpaceSuitPad },
+    { S::TutK2CommRoom, S::TutK2CommRoomPad },
+    { S::TutK2Mines, S::TutK2MinesPad },
+    { S::TutK2Vibrocutter, S::TutK2VibrocutterPad },
+    { S::TutK2DialogueChoice, S::TutK2DialogueChoicePad },
+    { S::TutK2EquipWeapon, S::TutK2EquipWeaponPad },
+    { S::TutK2WeaponConfig, S::TutK2WeaponConfigPad },
+    { S::TutK2TakeItem, S::TutK2TakeItemPad },
+    { S::TutK2GalaxyMap, S::TutK2GalaxyMapPad },
+    { S::TutK2SoloMode, S::TutK2SoloModePad },
+    { S::TutK2RepairKit, S::TutK2RepairKitPad },
+    { S::TutK2SecuritySpike, S::TutK2SecuritySpikePad },
+    // The J/L-swap ids share their pad wording with the K1 twins — the pad
+    // texts name no letter keys, so one pad id serves both games.
+    { S::TutK2OpenScreens, S::TutHintOpenScreensPad },
+    { S::TutK2Messages, S::TutHintMessagesPad },
+    { S::TutK2Journal, S::TutHintJournalPad },
 };
 constexpr int kTwinCount = static_cast<int>(sizeof(kTwins) / sizeof(kTwins[0]));
 

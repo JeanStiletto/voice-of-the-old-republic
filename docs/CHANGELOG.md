@@ -35,6 +35,38 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h2>v0.7.9</h2>
 
+<h3>KOTOR 2:</h3>
+
+- KOTOR 2's tutorials get the same accessible treatment KOTOR 1's have had
+  since v0.5.9, in both keyboard and controller wording. The game's silent
+  tutorial popups — worded for the mouse, and on several prologue popups even
+  for the Xbox pad ("move the right ministick") — now speak instructions for
+  the mod's actual controls while the on-screen text stays vanilla; popups
+  whose vanilla text is fine (kolto tanks, Kreia's abilities, light/dark side
+  shifts and the like) are left untouched. The Ebon Hawk prologue's T3-M4
+  instruction lines — KOTOR 2's equivalent of Trask's guided tutorial — are
+  rewritten the same way KOTOR 1's are: the original line stays on screen, and
+  a real tutorial popup with the rewritten instructions opens at the reply
+  break, pausing the game until dismissed with Enter. Covered along the way:
+  movement, using and cycling objects, dialogue replies, party switching,
+  combat and grenades, equipping weapons, the two weapon configurations,
+  taking the programming probe, repair kits, security spikes, bashing locks,
+  solo mode, the galaxy map, mines, the space suit, the vibrocutter and the
+  medpac. All seven supported languages are covered from the start. The hints
+  respect that KOTOR 2 swaps two screen keys relative to KOTOR 1 — Quests
+  opens with J and Messages with L there — so the journal, messages and
+  screen-overview hints name the right keys in each game.
+- The Ebon Hawk's narrator — the computer voice that reads the prologue's
+  tutorials and area descriptions aloud — is no longer talked over. Her lines
+  arrive as ownerless bark bubbles and cinematic panels, so the speaker check
+  that keeps voiced humans from being double-spoken could never identify her,
+  and the mod read every subtitle on top of the actual voice acting. Her
+  voiced lines (every one verified against the audio files on disk) are now
+  suppressed like any voiced speaker; the prologue's silent lines — the
+  security-console screens, whose recorded files were never shipped — still
+  speak, because there the subtitle is the only channel. The mechanism is a
+  curated list, ready for future entries of the same kind.
+
 <h3>Controller:</h3>
 
 - Help and tutorial text now names controller buttons when a controller is

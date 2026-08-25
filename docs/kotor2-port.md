@@ -14,6 +14,68 @@ plan.
 
 ## WHERE TO RESUME (read this first)
 
+**Tutorial hints + custom tutorial popups — PORTED 2026-08-25, first K2 test
+round PASSED 2026-08-25 (patch-20260825-231201.log; Surface 1 popups
+confirmed), round-2 fixes + all-language translations built 2026-08-26 —
+awaiting the second test round, NOT committed.** The K1 "will not port —
+story content" verdict on `tutorial_hints` was wrong: only the strref tables
+are per-game. Both surfaces run on KOTOR 2 — Surface 1 substitutes the spoken
+text of the silent tutorial.2da popups (rows 0-42 mirror K1 and reuse the
+same hint ids; K2-only rows 9/29-32/43-58 got new `TutK2*` ids), Surface 2
+rewrites the Ebon Hawk prologue's T3-M4 instruction lines (001EBO — K2's
+Trask) into a real tutorial popup, suppressing the vanilla spoken line
+(`tutorialManaged` in dialog_speech.cpp). Engine constants all Pick()ed: row
+byte +0x9d8, shown-bits base +0xf88, SetTutorialReason 0x00898f60, direct
+mount 0x007cfb10. Full RE ledger in
+`docs/llm-docs/tutorial-popup-mechanics.md` (KOTOR 2 section).
+
+What the first round exposed and what changed for round 2:
+- **The prologue delivers many instruction lines as BARK BUBBLES, not
+  dialogue panels** (fl_bash, map, blast, ... — ownerless, speaker=[?]), so
+  the Surface-2 machinery never saw them. The bark path in dialog_speech.cpp
+  now runs the same hint match: matched bark → raw line suppressed + hint
+  recorded → popup fired at bark CLOSE (a bark has no reply break; its close
+  is the VO-done moment).
+- **The prologue narrator is VOICED** ("the voice of the Ebon Hawk", strref
+  134048) — real human VO on nearly every prologue line, but ownerless
+  barks/cinematic panels defeat the speaker classifier, so subtitles were
+  spoken over the actor. New curated list `kVoicedSuppressedK2` in
+  tutorial_hints.cpp (`IsVoicedSuppressedLine`, honoured on both the NPC and
+  bark paths, HumanSubtitles toggle respected): ~120 strrefs, every one
+  verified to have its VO audio present under StreamVoice/001/. The
+  security-console lines (VO resrefs exist but the audio files were never
+  shipped) are deliberately NOT listed — there the subtitle is the only
+  channel. Token-bearing lines (<FullName>, the treatinj set) match via the
+  new segment-wise MatchesWithTokens.
+- Xbox-worded duplicate variants of mapped instruction lines (journal, map,
+  solo door, equip, pause, sens_drd, flameth, minecntr, fl_bash, sectun) were
+  moved INTO kDialogHintsK2, and the dropped weapon-config pair 124783/124784
+  got its own id (TutK2WeaponConfig).
+- **All seven languages authored** for the 18 `TutK2*` ids + pad twins
+  (FR/IT/ES/RU/PL generated via the escape-aware script in the session
+  scratchpad `k2tut/gen_translations.py`; cp1251/cp1250 split rule applied).
+- **J/L key swap (user-reported after round 2's popups were confirmed):**
+  KOTOR 2's keymap.2da puts Quests on J and Messages on L — the mirror image
+  of KOTOR 1 — so the reused journal/messages/open-screens hints named the
+  wrong keys. Three keyboard-only ids (`TutK2OpenScreens` / `TutK2Messages` /
+  `TutK2Journal`, all 7 languages, letters swapped mechanically with an
+  apostrophe-safe replacer — French "L'écran" must not become "J'écran")
+  now cover rows 7/12/14 and the journal dialogue lines on K2; their kTwins
+  entries point at the existing K1 pad ids, whose wording names no letter
+  keys. All other keys the reused hints name were verified identical against
+  K2's keymap.2da (Q/E, Tab, U, I, P, K, M, O, V, Space, Caps Lock).
+
+**Test items for round 2:** (1) prologue barks (footlocker bash, map hint,
+mine-on-door) now produce a popup at bark close and their raw text is not
+spoken; (2) narrator lines WITHOUT a mapping (area descriptions "Das ist
+...", workbench asides, treatinj medbay lines with the player's name
+substituted) are no longer double-spoken — VO only; (3) the security-console
+screens still speak their text; (4) log shows `voiced=1 suppress=1` on
+narrator lines and `tutorial=1` on mapped ones (both paths log the flags);
+(5) a non-German/English install (or forced language) speaks translated
+hints; (6) K1 regression: Trask flow + one voiced-human dialogue (suppression
+formula extended by two OR-terms, K1 semantics preserved).**
+
 **Minigames — pazaak + swoop race PORTED 2026-08-15, offline (six kotor2 Ghidra
 rounds, two kotor1, plus capstone/PE scans and a GFF/NCS mine of both games'
 minigame areas; zero test rounds). Built green, NOT tested in game.** Both

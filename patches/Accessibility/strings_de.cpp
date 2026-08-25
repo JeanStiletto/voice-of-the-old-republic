@@ -932,6 +932,58 @@ const char* Get(Id id) {
         case Id::DialogRepeatLineHint:
             return "Dr\xFC""cke R, um die letzte Dialogzeile zu wiederholen.";
 
+        // ---- KOTOR 2 tutorial hints (tutorial_hints.cpp K2 tables). The
+        //      shared rows 0-42 reuse the TutHint* wordings above; these
+        //      cover KOTOR 2's own popups and the Ebon Hawk prologue lines.
+        case Id::TutK2SwoopRace:
+            return "Schalte mit der Leertaste hoch, wenn das Audiosignal ert\xF6nt. Mit A und D lenkst du, weichst Hindernissen aus und triffst die Beschleunigerfelder.";
+        case Id::TutK2ActionQueue:
+            return "Mit der Eingabetaste f\xFC""gst du die Standardaktion in die Befehlsliste ein; auch Eintr\xE4ge aus dem Aktionsmen\xFC reihen sich dort ein. Mehrere Aktionen werden der Reihe nach ausgef\xFChrt.";
+        case Id::TutK2ActionRemove:
+            return "Aktionen lassen sich nur w\xE4hrend eines Kampfes aus der Befehlsliste l\xF6schen; die zuletzt hinzugef\xFC""gte Aktion wird zuerst entfernt.";
+        case Id::TutK2PlasmaTorch:
+            return "Besch\xE4""digte T\xFCren schl\xE4gst du am besten mit einem Werkzeug wie dem Plasmabrenner ein. \xD6""ffne mit U den Ausr\xFCstungsbildschirm und r\xFCste ihn aus. Anvisiere dann die T\xFCr, \xF6""ffne mit Umschalt und Eingabetaste das Aktionsmen\xFC und w\xE4hle Schlagen.";
+        case Id::TutK2FirstPerson:
+            return "Mit der Feststelltaste wechselst du in die Ich-Perspektive und zur\xFC""ck. F\xFCr das Spielen mit Bildschirmleser brauchst du sie nicht.";
+        case Id::TutK2SpaceSuit:
+            return "Anvisiere den Raumanzug mit Komma und Punkt und dr\xFC""cke die Eingabetaste, um ihn an- oder abzulegen.";
+        case Id::TutK2CommRoom:
+            return "W\xE4hle eine Konsole mit Komma und Punkt und aktiviere sie mit der Eingabetaste. F\xFCr die Computer brauchst du die Programmiersonde aus dem Beh\xE4lter im Cockpit.";
+        case Id::TutK2Mines:
+            return "Minen und Fallen entdeckst du mit deiner Bewusstseinsf\xE4higkeit, wenn du stehen bleibst. Anvisiere eine entdeckte Mine mit Komma und Punkt, \xF6""ffne mit Umschalt und Eingabetaste das Aktionsmen\xFC und w\xE4hle Entsch\xE4rfen oder Bergen. Entsch\xE4rfe oder berge jetzt drei Splitter des Photonentorpedos im Umkreis der Rakete.";
+        case Id::TutK2Vibrocutter:
+            return "Der Vibroschneider ist eine Nahkampfwaffe; im Nahkampf ist er Blastern \xFC""berlegen. \xD6""ffne mit U den Ausr\xFCstungsbildschirm und lege ihn in einen Waffenplatz. Die sekund\xE4ren Waffenpl\xE4tze halten eine zweite Konfiguration bereit.";
+        case Id::TutK2DialogueChoice:
+            return "Antworten w\xE4hlst du mit Pfeil hoch und runter und best\xE4tigst mit der Eingabetaste. Mit R wiederholst du die letzte Dialogzeile.";
+        case Id::TutK2Pause:
+            return "Mit der Leertaste h\xE4ltst du das Spiel an und setzt es fort. In der Pause planst du deine Aktionen in Ruhe.";
+        case Id::TutK2EquipWeapon:
+            return "\xD6""ffne mit U den Ausr\xFCstungsbildschirm, w\xE4hle einen Waffenplatz mit den Pfeiltasten und der Eingabetaste und w\xE4hle die Waffe aus der Liste.";
+        case Id::TutK2WeaponConfig:
+            return "Im Ausr\xFCstungsbildschirm gibt es zwei Waffen-Konfigurationen, aktiv und sekund\xE4r, etwa f\xFCr Nahkampf- und Fernwaffen. Belege die Pl\xE4tze mit den Pfeiltasten und der Eingabetaste.";
+        case Id::TutK2TakeItem:
+            return "Anvisiere den Beh\xE4lter mit Komma und Punkt und \xF6""ffne ihn mit der Eingabetaste. Nimm die Programmiersonde und greife damit auf das Computerterminal zu.";
+        case Id::TutK2GalaxyMap:
+            return "Nimm Kurs auf Peragus: W\xE4hle auf der Sternkarte mit Pfeil links und rechts Peragus aus; die Eingabetaste startet die Reise.";
+        case Id::TutK2SoloMode:
+            return "Hinter diese T\xFCr kommst du nur im Solo-Modus: Dr\xFC""cke V, dann bewegt sich nur das gesteuerte Mitglied. Bringe 3C-FD allein zum Sicherheitscomputer, damit er die T\xFCr \xF6""ffnet.";
+        case Id::TutK2RepairKit:
+            return "Mit Reparatur-Kits reparierst du Droiden. Benutze sie \xFC""ber das Aktionsmen\xFC: \xD6""ffne Medizin mit Umschalt und 5 und l\xF6se mit der Eingabetaste aus.";
+        case Id::TutK2SecuritySpike:
+            return "Dieses Schloss \xFC""bersteigt deine F\xE4higkeiten; benutze einen System\xFC""berbr\xFC""cker. Anvisiere die Kiste, \xF6""ffne mit Umschalt und Eingabetaste das Aktionsmen\xFC und w\xE4hle Sicherheit.";
+
+        // ---- KOTOR 2 J/L swap: KOTOR 2's default keymap puts Quests on J
+        //      and Messages on L, the mirror image of KOTOR 1 (its keymap.2da
+        //      rows 13/14). Same texts as the TutHint* twins above with the two
+        //      letters exchanged; the pad wordings name no letter keys, so
+        //      kTwins points these at the existing *Pad ids.
+        case Id::TutK2OpenScreens:
+            return "Spielmen\xFCs \xF6""ffnest du direkt: M Karte, L Nachrichten, J Auftr\xE4ge, K F\xE4higkeiten, P Charakter, I Inventar, U Ausr\xFCstung, O Optionen. Mit Escape zur\xFC""ck.";
+        case Id::TutK2Messages:
+            return "Im Nachrichtenbildschirm siehst du Werte wie Erfahrungspunkte, Angriffs- und Schadenswerte sowie \xC4nderungen an deinem Charakter. \xD6""ffne ihn mit L.";
+        case Id::TutK2Journal:
+            return "Im Auftragsbildschirm findest du Informationen \xFC""ber deine Fortschritte und Tipps zur weiteren Vorgehensweise. \xD6""ffne ihn mit J. W\xE4hle einen Eintrag mit den Pfeiltasten und lies seine Einzelheiten mit Umschalt und einer Pfeiltaste.";
+
         // ---- Controller wording for the tutorial hints above. Selected by
         //      binding_hints::Text() when a gamepad is present; see strings.h.
 
@@ -1020,6 +1072,38 @@ const char* Get(Id id) {
             return "Dr\xFC" "cke Y f\xFCr das Schnellmen\xFC und w\xE4hle Tarnung, um den Tarnmodus ein- oder auszuschalten. Dazu musst du einen Tarnfeldgenerator ausger\xFCstet haben.";
         case Id::DialogRepeatLineHintPad:
             return "Ziehe beide Trigger zusammen, um die letzte Dialogzeile zu wiederholen.";
+
+        // ---- KOTOR 2 controller twins (deliberate omissions: see strings.h).
+        case Id::TutK2SwoopRacePad:
+            return "Dr\xFC""cke A, um zu beschleunigen und hochzuschalten, wenn das Audiosignal ert\xF6nt. Mit dem linken Stick weichst du Hindernissen aus und triffst die Beschleunigerfelder.";
+        case Id::TutK2ActionQueuePad:
+            return "Mit A f\xFC""gst du die Standardaktion in die Befehlsliste ein; auch Eintr\xE4ge aus dem Aktionsmen\xFC reihen sich dort ein. Mehrere Aktionen werden der Reihe nach ausgef\xFChrt.";
+        case Id::TutK2PlasmaTorchPad:
+            return "Besch\xE4""digte T\xFCren schl\xE4gst du mit einem Werkzeug wie dem Plasmabrenner ein. \xD6""ffne den Ausr\xFCstungsbildschirm \xFC""ber das Schnellmen\xFC auf Y, Eintrag Men\xFCs, wechsle mit den Schultertasten dorthin und r\xFCste ihn aus. Fokussiere dann die T\xFCr, ziehe den linken Trigger und w\xE4hle Aufbrechen.";
+        case Id::TutK2SpaceSuitPad:
+            return "Fokussiere den Raumanzug mit dem Steuerkreuz links und rechts und dr\xFC""cke A, um ihn an- oder abzulegen.";
+        case Id::TutK2CommRoomPad:
+            return "Fokussiere eine Konsole mit dem Steuerkreuz links und rechts und aktiviere sie mit A. F\xFCr die Computer brauchst du die Programmiersonde aus dem Beh\xE4lter im Cockpit.";
+        case Id::TutK2MinesPad:
+            return "Minen und Fallen entdeckst du mit deiner Bewusstseinsf\xE4higkeit, wenn du stehen bleibst. Fokussiere eine entdeckte Mine mit dem Steuerkreuz links und rechts, ziehe den linken Trigger f\xFCr das Aktionsmen\xFC und w\xE4hle Entsch\xE4rfen oder Bergen. Entsch\xE4rfe oder berge jetzt drei Splitter des Photonentorpedos im Umkreis der Rakete.";
+        case Id::TutK2VibrocutterPad:
+            return "Der Vibroschneider ist eine Nahkampfwaffe; im Nahkampf ist er Blastern \xFC""berlegen. \xD6""ffne den Ausr\xFCstungsbildschirm \xFC""ber das Schnellmen\xFC auf Y, Eintrag Men\xFCs, und lege ihn in einen Waffenplatz. Die sekund\xE4ren Waffenpl\xE4tze halten eine zweite Konfiguration bereit.";
+        case Id::TutK2DialogueChoicePad:
+            return "Antworten w\xE4hlst du mit dem Steuerkreuz hoch und runter und best\xE4tigst mit A. Ziehe beide Trigger zusammen, um die letzte Dialogzeile zu wiederholen.";
+        case Id::TutK2EquipWeaponPad:
+            return "\xD6""ffne den Ausr\xFCstungsbildschirm \xFC""ber das Schnellmen\xFC auf Y, Eintrag Men\xFCs, und wechsle mit den Schultertasten dorthin. W\xE4hle einen Waffenplatz mit dem Steuerkreuz und A und suche die Waffe aus der Liste.";
+        case Id::TutK2WeaponConfigPad:
+            return "Im Ausr\xFCstungsbildschirm gibt es zwei Waffen-Konfigurationen, aktiv und sekund\xE4r, etwa f\xFCr Nahkampf- und Fernwaffen. Belege die Pl\xE4tze mit dem Steuerkreuz und A.";
+        case Id::TutK2TakeItemPad:
+            return "Fokussiere den Beh\xE4lter mit dem Steuerkreuz links und rechts und \xF6""ffne ihn mit A. Nimm die Programmiersonde und greife damit auf das Computerterminal zu.";
+        case Id::TutK2GalaxyMapPad:
+            return "Nimm Kurs auf Peragus: W\xE4hle auf der Sternkarte mit dem Steuerkreuz links und rechts Peragus aus; A startet die Reise.";
+        case Id::TutK2SoloModePad:
+            return "Hinter diese T\xFCr kommst du nur im Solo-Modus: Schalte ihn \xFC""ber das Schnellmen\xFC auf Y um, Eintrag Solo-Modus; dann bewegt sich nur das gesteuerte Mitglied. Bringe 3C-FD allein zum Sicherheitscomputer, damit er die T\xFCr \xF6""ffnet.";
+        case Id::TutK2RepairKitPad:
+            return "Mit Reparatur-Kits reparierst du Droiden. Ziehe den linken Trigger, gehe mit dem Steuerkreuz links und rechts zu Medizin und dr\xFC""cke A.";
+        case Id::TutK2SecuritySpikePad:
+            return "Dieses Schloss \xFC""bersteigt deine F\xE4higkeiten; benutze einen System\xFC""berbr\xFC""cker. Fokussiere die Kiste, ziehe den linken Trigger f\xFCr das Aktionsmen\xFC und w\xE4hle Sicherheit.";
 
         case Id::FloorPuzzleIntro:
             return "Bodenplatten-R\xE4tsel: neun Platten in drei mal drei Anordnung, "
