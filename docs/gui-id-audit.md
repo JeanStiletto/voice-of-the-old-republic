@@ -272,15 +272,30 @@ s_LB_GAMES strings, tags dumped the same way; layouts mirror exactly):
   0x6cc0e0, K2 0x8578b0/0x8528b0); K2 also binds gamepad 'a' to it.
 - back button EMBEDDED ("BTN_BACK"): K1 +0xdd8 / K2 +0x1390 (K2 gamepad
   'b' bind corroborates).
-- delete button EMBEDDED ("BTN_DELETE"): K1 +0xf9c / K2 +0x1730 ('d'
+- delete button EMBEDDED ("BTN_DELETE"): K1 +0xf9c / K2 +0x1560 ('x'
   bind). Recorded but unused — no consumer activates Delete directly
   (it stays an ordinary chain button).
+  CORRECTION 2026-08-25: this row originally recorded K2 +0x1730 with a
+  'd' bind — both belong to BTN_FILTER ("Switch Characters", K2-only,
+  +0x1730, onClick FUN_008591d0). The 'd'-for-delete reading was hotkey
+  inference; the ctor decompile's tag→InitControl sequence (FUN_00850770,
+  all 12 other members matching the original audit) is the direct
+  witness. Lesson for future rounds: a gamepad-bind letter is a
+  corroborating witness only when the letter's meaning is itself
+  witnessed, not guessed from English.
 - K2 info labels EMBEDDED: LBL_PLANETNAME +0x308, LBL_AREANAME +0x450,
   LBL_TIMEPLAYED +0xda8 (K1 twins +0x2f4/+0x434 recorded; K1 has no
   time label). AnnounceK2SaveLoadInfo reads these members now — the
   Tier-2 id reads (3/5/9) came along for free with direct witnesses.
 - Full member tables (labels, K2-only CB_CLOUDSAVE/BTN_FILTER/LBL_BAR*)
   in engine_offsets_fields.h at kSaveLoadPanel*Offset.
+- K2 Switch-Characters state (added 2026-08-25, decompile round on
+  FUN_008591d0 / FUN_008519f0 / FUN_00852380): LBL_PCNAME +0xc60 is
+  written with the active character's name on every list rebuild;
+  character filter index +0x1e2c, unique-PCNAME count +0x1e34
+  (kSaveLoadPanelPcNameLabel/CharFilterIndex/CharCountOffset). The
+  screen keeps one visible list filtered to one character's saves;
+  BTN_FILTER cycles the index and rebuilds every row control.
 
 K2 crafting trio (mined 2026-08-18; all K2-only consumers, offsets poison
 on K1). Panel identity was ALREADY vtable-based for all three — this round

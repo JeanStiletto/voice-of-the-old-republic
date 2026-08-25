@@ -228,6 +228,38 @@ Flow: tab level = flat list [Move,Game,Mini,OK,Cancel,Default]; Enter on categor
 
 ---
 
+## k2_saveload_character_grouping
+_K2 (Aspyr) save screen: ONE visible list filtered to a single character; BTN_FILTER cycles, every row control is destroyed and rebuilt on swap_
+
+Decompiled 2026-08-25 (kotor2 project): populate `FUN_008519f0`, BTN_FILTER
+onClick `FUN_008591d0`, filtered rebuild `FUN_00852380`. K1 has none of this —
+its `CSWGuiSaveLoad::PopulateGameList` (0x006cc160) lists every save dir flat.
+
+- Grouping key = savenfo.res `PCNAME` (each K2 save stores the player
+  character's name; K2 row entries carry a copy at entry+0x264, size 0x270).
+- Populate builds a hidden master array of ALL saves (panel dword +0x1e20
+  region: entries at +0x1e20/count +0x1e24 — verified via idx array walk),
+  selection-sorts it newest-first by the savenfo TIMESTAMP (entry +0x25c/+0x260),
+  then derives a unique-PCNAME character array (+0x1e30, count +0x1e34) and a
+  current filter index (+0x1e2c). Default index: name-match against the live
+  player; from the main menu (no player) index 0 = character with newest save.
+- `FUN_00852380` (rebuild): clears the listbox, writes the active character's
+  name into LBL_PCNAME (+0xc60), blanks planet/area/time preview labels and
+  party portraits, then re-adds a fresh copy of each master entry whose PCNAME
+  matches the filter (empty-PCNAME legacy saves show in EVERY view), and
+  re-selects row 0. Old row controls are FREED — any cached row pointer
+  (chain entries!) dangles after a swap or delete.
+- BTN_FILTER onClick: `idx = (idx + 1) % charCount`, then rebuild. Gamepad
+  binds from the ctor: 'a'=BTN_SAVELOAD, 'b'=BTN_BACK, 'x'=BTN_DELETE,
+  'd'=BTN_FILTER, 'y'=CB_CLOUDSAVE.
+- Mod side: `MonitorK2SaveLoadCharacterSwap` (menus_listbox.cpp) watches the
+  filter index per tick; on change RebindChain + announce LBL_PCNAME text and
+  row count; on a row-count delta without an index change (Delete)
+  RebindChainPreserveIndex. Offsets in engine_offsets_fields.h
+  (kSaveLoadPanelPcNameLabel/CharFilterIndex/CharCountOffset).
+
+---
+
 ## save_popup_teardown_uaf
 _Save commit frees the SaveLoad panel synchronously; downstream handlers that cached g_currentPanel must validate panels[] membership before dereferencing_
 

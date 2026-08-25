@@ -676,8 +676,15 @@ enum class Id : int {
     //                              and lastmodule are both empty (e.g. an
     //                              unused slot). Args: row_text (`%s`),
     //                              index_one_based (`%d`), total (`%d`).
+    //      `FmtSaveLoadCharacter` — K2 only: spoken when the Switch
+    //                              Characters button re-filters the list to
+    //                              another character's saves. Args:
+    //                              character_name (`%s`), save_count (`%d`).
+    //                              Count phrasing is label-style ("saves: N")
+    //                              so PL/RU need no plural forms.
     FmtSaveLoadRow,
     FmtSaveLoadRowNoLoc,
+    FmtSaveLoadCharacter,
 
     // ---- Level-up hotkey (Shift+L). Speaks an opener cue when the user
     //      triggers `CGuiInGame::ShowLevelUpGUI` so the screen-reader

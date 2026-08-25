@@ -1925,10 +1925,109 @@ void AnnounceK2SaveLoadInfo() {
     acclog::Write("SaveLoad", "K2 slot info -> \"%s\"", msg);
 }
 
+// KOTOR 2 save/load: follow the Switch Characters button.
+//
+// Aspyr's screen keeps ONE visible list, filtered to a single character's
+// saves (grouped by the savenfo PCNAME field). BTN_FILTER's engine handler
+// advances a character index, destroys every row control, and rebuilds the
+// list for the next character — which leaves the chain the user walks full
+// of freed rows ("randomly one save per character", reported 2026-08-25).
+// Nothing on the panel is per-row about WHO was switched to either; the
+// engine writes the active character's name into LBL_PCNAME.
+//
+// So: watch the panel's character-filter index each tick. On a change,
+// rebind the chain over the fresh rows and speak the new character's name
+// plus how many saves the filtered list now holds. The engine has already
+// re-selected the top (newest) row itself, so no selection sync is needed
+// here — arrowing announces rows as normal afterwards.
+//
+// A row-set size change WITHOUT an index change is the Delete path — same
+// stale-chain hazard, no announcement needed (the engine's own flow covers
+// it); rebind preserving the cursor, same as the store monitor does on its
+// list deltas.
+
+// One SEH block for every raw engine read this monitor needs. Fills the
+// filter index and the visible row count; false on fault or nonsense.
+bool ReadK2SaveLoadSwapState(void* panel, void* lb, int* outIdx, int* outRows) {
+    if (!panel || !lb) return false;
+    __try {
+        auto* base = reinterpret_cast<unsigned char*>(panel);
+        int idx = *reinterpret_cast<int*>(
+            base + kSaveLoadPanelCharFilterIndexOffset);
+        int charCount = *reinterpret_cast<int*>(
+            base + kSaveLoadPanelCharCountOffset);
+        if (idx < 0 || charCount < 0 || charCount > 256 ||
+            (charCount > 0 && idx >= charCount)) {
+            return false;
+        }
+        auto* list = reinterpret_cast<CExoArrayList*>(
+            reinterpret_cast<unsigned char*>(lb) + kListBoxControlsOffset);
+        if (list->size < 0 || list->size > 4096) return false;
+        *outIdx  = idx;
+        *outRows = list->size;
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+void MonitorK2SaveLoadCharacterSwap() {
+    if (!acc::game::IsKotor2()) return;
+
+    static void* s_lastPanel = nullptr;
+    static int   s_lastIdx   = -1;
+    static int   s_lastRows  = -1;
+
+    void* panel = acc::menus::chain::g_chainPanel;
+    if (!panel || !IsSaveLoadPanel(panel)) {
+        s_lastPanel = nullptr;
+        return;
+    }
+    void* lb = SaveLoadFindLb(panel);
+    int idx = -1, rows = -1;
+    if (!lb || !ReadK2SaveLoadSwapState(panel, lb, &idx, &rows)) return;
+
+    if (panel != s_lastPanel) {
+        // First sight of this panel visit: prime only. Entry speech stays
+        // title + focus; the default character is not announced.
+        s_lastPanel = panel;
+        s_lastIdx   = idx;
+        s_lastRows  = rows;
+        return;
+    }
+
+    if (idx != s_lastIdx) {
+        s_lastIdx  = idx;
+        s_lastRows = rows;
+        acc::menus::chain::RebindChain(panel);
+        char name[128] = "";
+        void* c = acc::off::Ptr(panel, kSaveLoadPanelPcNameLabelOffset);
+        if (c) acc::menus::extract::FromControl(c, name, sizeof(name), panel);
+        char msg[192];
+        snprintf(msg, sizeof(msg),
+                 acc::strings::Get(acc::strings::Id::FmtSaveLoadCharacter),
+                 name, rows);
+        prism::Speak(msg, /*interrupt=*/false);
+        acclog::Write("SaveLoad",
+                      "K2 character swap -> idx=%d rows=%d name=\"%s\"; chain rebound",
+                      idx, rows, name);
+        return;
+    }
+
+    if (rows != s_lastRows) {
+        acclog::Write("SaveLoad",
+                      "K2 row set %d -> %d (same character); chain rebind preserving idx",
+                      s_lastRows, rows);
+        s_lastRows = rows;
+        acc::menus::chain::RebindChainPreserveIndex(panel);
+    }
+}
+
 void TickListboxMonitors() {
     MonitorContainerSelection();
     TickPickerMonitors();  // menus_listbox_picker.cpp — equip + workbench upgrade
     PollContainerGiveModeKey();
+    MonitorK2SaveLoadCharacterSwap();  // rebind a swap-staled chain before the two below read it
     AnnounceK2SaveLoadInfo();     // consumes last tick's sync
     MonitorK2SaveLoadSelection();
 }

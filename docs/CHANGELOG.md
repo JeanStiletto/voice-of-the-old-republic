@@ -92,6 +92,17 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h3>Bug fixes:</h3>
 
+- KOTOR 2's save screen works with more than one character. The Steam
+  version groups saves by character: the list shows one character's saves
+  at a time, and the Switch Characters button cycles to the next
+  character's full list, newest first. Pressing it used to leave the mod's
+  navigation walking rows that no longer existed — a seemingly random
+  handful of saves — and nothing said whose saves you were now on. The
+  swap now announces the character's name and how many saves they have
+  (the game shows the name on screen; the mod reads the same label), and
+  arrow navigation is rebuilt over the fresh list, so Up and Down walk
+  every save of that character. Deleting a save re-syncs the list the
+  same way. KOTOR 1 has no character grouping and is unchanged.
 - Travelling from the galaxy map arrives. Picking a planet and pressing
   Enter played the departure movie and then put you back where you
   started, star map open, as if nothing had happened — repeatable, and in

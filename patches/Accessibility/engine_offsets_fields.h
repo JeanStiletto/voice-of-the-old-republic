@@ -927,19 +927,24 @@ const size_t kSaveLoadEntryLastModuleOffset    = acc::off::Todo(0x1f0);
 //   games listbox   LB_GAMES        +0x934   +0x970
 //   action button   BTN_SAVELOAD    +0xc14   +0x11c0
 //   back button     BTN_BACK        +0xdd8   +0x1390
-//   delete button   BTN_DELETE      +0xf9c   +0x1730
+//   delete button   BTN_DELETE      +0xf9c   +0x1560
+//   filter button   BTN_FILTER      (none)   +0x1730
 //
 // The action button carries a second witness in both games: the ctor
 // registers its onClick to a SAVE or LOAD handler depending on the mode
 // parameter (K1 0x6cbb60/0x6cc0e0, K2 0x8578b0/0x8528b0), and on K2 it
 // also gets the gamepad 'a' accept hotkey (BTN_BACK gets 'b', BTN_DELETE
-// 'd'). K2-only extras between the buttons: LBL_PCNAME +0xc60,
-// LBL_TIMEPLAYED +0xda8, CB_CLOUDSAVE +0xef0, BTN_FILTER +0x1560,
-// LBL_BAR1..4 +0x1900 (×0x148).
+// 'x', BTN_FILTER 'd', CB_CLOUDSAVE 'y'). The 2026-08-18 audit recorded
+// BTN_DELETE at K2 +0x1730 from the 'd' bind — that bind belongs to
+// BTN_FILTER; the K2 ctor decompile (FUN_00850770, tag→InitControl pairs
+// in strict sequence) puts BTN_DELETE at +0x1560 and BTN_FILTER
+// ("Switch Characters", onClick FUN_008591d0) at +0x1730. K2-only extras
+// between the buttons: LBL_PCNAME +0xc60, LBL_TIMEPLAYED +0xda8,
+// CB_CLOUDSAVE +0xef0, LBL_BAR1..4 +0x1900 (×0x148).
 const size_t kSaveLoadPanelGamesListBoxOffset = acc::off::Pick(0x934, 0x970);
 const size_t kSaveLoadPanelActionButtonOffset = acc::off::Pick(0xc14, 0x11c0);
 const size_t kSaveLoadPanelBackButtonOffset   = acc::off::Pick(0xdd8, 0x1390);
-const size_t kSaveLoadPanelDeleteButtonOffset = acc::off::Pick(0xf9c, 0x1730);
+const size_t kSaveLoadPanelDeleteButtonOffset = acc::off::Pick(0xf9c, 0x1560);
 // The K2 per-slot info labels AnnounceK2SaveLoadInfo reads (K1 gets the
 // same data from the row entry's CExoStrings instead). The planet/area
 // members exist on K1 too (table above); the time-played label is
@@ -947,6 +952,21 @@ const size_t kSaveLoadPanelDeleteButtonOffset = acc::off::Pick(0xf9c, 0x1730);
 const size_t kSaveLoadPanelPlanetLabelOffset  = acc::off::Pick(0x2f4, 0x308);
 const size_t kSaveLoadPanelAreaLabelOffset    = acc::off::Pick(0x434, 0x450);
 const size_t kSaveLoadPanelTimeLabelOffset    = acc::off::Kotor2Only(0xda8);
+// K2 Switch-Characters machinery (Aspyr addition; K1 has none of it).
+// The screen keeps ONE visible list, filtered to a single character's
+// saves at a time (plus legacy saves whose PCNAME is empty); pressing
+// BTN_FILTER advances a character index and rebuilds every row control.
+//
+// LBL_PCNAME is the label the rebuild writes the active character's name
+// into (ctor tag witness, FUN_00850770). The two state fields are
+// witnessed by BTN_FILTER's onClick (FUN_008591d0):
+//   `++*(this+0x1e2c); if (*(this+0x1e34) <= *(this+0x1e2c)) idx = 0;`
+// and by the list populate (FUN_008519f0), which zeroes the index, builds
+// the unique-PCNAME array counted by +0x1e34, and defaults the index to
+// the character currently being played.
+const size_t kSaveLoadPanelPcNameLabelOffset     = acc::off::Kotor2Only(0xc60);
+const size_t kSaveLoadPanelCharFilterIndexOffset = acc::off::Kotor2Only(0x1e2c);
+const size_t kSaveLoadPanelCharCountOffset       = acc::off::Kotor2Only(0x1e34);
 
 // K2 workbench/crafting ctor-bound EMBEDDED members (gui-id audit,
 // 2026-08-18 — docs/gui-id-audit.md). Every offset has a DIRECT witness:

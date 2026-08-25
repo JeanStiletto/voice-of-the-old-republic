@@ -201,6 +201,7 @@ const char* Get(Id id) {
 
         case Id::FmtSaveLoadRow:       return "%s, %s, %s, %d z %d";
         case Id::FmtSaveLoadRowNoLoc:  return "%s, %d z %d";
+        case Id::FmtSaveLoadCharacter: return "%s, zapisy: %d";
 
         case Id::LevelUpOpen:          return "Awans";
         case Id::LevelUpFailed:        return "Awans nie powi\xF3""d\xB3 si\xEA";

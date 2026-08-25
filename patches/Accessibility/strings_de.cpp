@@ -191,6 +191,7 @@ const char* Get(Id id) {
 
         case Id::FmtSaveLoadRow:       return "%s, %s, %s, %d von %d";
         case Id::FmtSaveLoadRowNoLoc:  return "%s, %d von %d";
+        case Id::FmtSaveLoadCharacter: return "%s, Spielst\xE4nde: %d";
 
         case Id::LevelUpOpen:          return "Stufenaufstieg";
         case Id::LevelUpFailed:        return "Stufenaufstieg fehlgeschlagen";

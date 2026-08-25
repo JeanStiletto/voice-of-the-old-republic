@@ -188,6 +188,7 @@ const char* Get(Id id) {
 
         case Id::FmtSaveLoadRow:       return "%s, %s, %s, %d sur %d";
         case Id::FmtSaveLoadRowNoLoc:  return "%s, %d sur %d";
+        case Id::FmtSaveLoadCharacter: return "%s, sauvegardes : %d";
 
         case Id::LevelUpOpen:          return "Mont\xE9""e de niveau";
         case Id::LevelUpFailed:        return "Mont\xE9""e de niveau \xE9""chou\xE9""e";

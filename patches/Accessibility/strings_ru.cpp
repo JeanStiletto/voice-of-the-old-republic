@@ -208,6 +208,7 @@ const char* Get(Id id) {
 
         case Id::FmtSaveLoadRow:       return "%s, %s, %s, %d \xE8\xE7 %d";
         case Id::FmtSaveLoadRowNoLoc:  return "%s, %d \xE8\xE7 %d";
+        case Id::FmtSaveLoadCharacter: return "%s, \xF1\xEE\xF5\xF0\xE0\xED\xE5\xED\xE8\xFF: %d";
 
         case Id::LevelUpOpen:          return "\xCF\xEE\xE2\xFB\xF8\xE5\xED\xE8\xE5 \xF3\xF0\xEE\xE2\xED\xFF";
         case Id::LevelUpFailed:        return "\xCD\xE5 \xF3\xE4\xE0\xEB\xEE\xF1\xFC \xEF\xEE\xE2\xFB\xF1\xE8\xF2\xFC \xF3\xF0\xEE\xE2\xE5\xED\xFC";
