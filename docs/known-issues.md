@@ -39,11 +39,19 @@ Follow-ups to decide:
 - Check whether our bundled-mods install can clobber a pre-existing modded
   baseitems.2da (install-order conflict) — if yes, this class of crash is
   partly ours to prevent.
-- Candidate defensive patch: hook K2 `GetBaseItem` (`0x006d5200`) to log and
-  return a fallback row instead of NULL for out-of-range ids — one hook would
-  convert every "modded item without its 2da row" crash into a log line plus a
-  misbehaving item. Needs a decompile pass over callers first to confirm
-  no legitimate null-check consumers.
+- Defensive patch APPROVED 2026-08-25 (both games, fallback row 0), not yet
+  implemented. Target: the baseitems-ARRAY accessor `CSWBaseItemArray::
+  GetBaseItem(int id)` — K2 `0x006d5200` (152 call sites, FindCallers run
+  2026-08-25; decompile: returns NULL for table-not-loaded / id<0 /
+  id>=count, row stride 200 bytes). K1 twin candidate from Lane's DB:
+  `0x005b31a0` (NOT `0x005b4790` — that is the CSWItem-level WRAPPER we
+  already call as kAddrCSWItemGetBaseItem). Design: hook entry; only when
+  the table is loaded and id is out of range, log id+context once and
+  substitute id 0; leave the table-not-loaded NULL untouched (startup
+  callers may probe). TODO before building: decompile K1 `0x005b31a0` to
+  confirm it is the array accessor twin; pick the hook mechanics from an
+  existing behavior-modifying hook in hooks.toml (param rewrite at entry —
+  mind the KPatchManager esp+X LEA bug, use register sources).
 
 ### Galaxy-map travel never loaded the destination — fix built 2026-08-20, awaiting test
 
