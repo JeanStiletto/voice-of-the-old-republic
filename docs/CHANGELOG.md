@@ -112,6 +112,14 @@ and add the German in parentheses if it genuinely aids clarity.
 - View mode no longer toggles while the galaxy map is open. It switches the
   game's input handling, which is why it already stood back for every other
   screen; the star map was missing from that list.
+- KOTOR 2 no longer crashes on security-camera consoles (reported on the
+  Peragus dormitory terminal: pick "Access remote camera controls" and the
+  game died within seconds, sometimes after speaking a stray engine error
+  string). The camera view is a different screen object than the ordinary
+  computer terminal, and the mod was reading the terminal's output list at an
+  address the camera screen doesn't have, walking garbage memory until the
+  game fell over. The terminal-output reader now runs only on the real
+  terminal screen and verifies the list is one before trusting it.
 
 <h2>v0.7.8.1</h2>
 

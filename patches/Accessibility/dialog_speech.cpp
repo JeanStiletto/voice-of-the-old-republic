@@ -719,11 +719,31 @@ void Tick() {
             s_lastNpcLine[sizeof(s_lastNpcLine) - 1] = '\0';
         }
 
-        // For Computer dialog variant, also speak the message_listbox
-        // (terminal output) when its row count grows.
-        if (m.kind == acc::engine::PanelKind::DialogComputer ||
-            m.kind == acc::engine::PanelKind::DialogComputerCamera) {
-            static int s_lastComputerRows = 0;
+        // For the Computer dialog variant, also speak the message_listbox
+        // (terminal output) when its row count grows. DialogComputer ONLY:
+        // kDialogComputerMessageListBoxOffset is witnessed solely in the
+        // CSWGuiDialogComputer constructor (both games), and the
+        // CSWGuiDialogComputerCamera object does not extend that far. Reading
+        // the same offset off a camera panel walked garbage "row" pointers
+        // into engine code bytes — a multi-second SEH storm that spoke a TLK
+        // compiler-error string and ended in a dead process
+        // (userlogs/kennycrash0782408: K2 Peragus dormitory console,
+        // patch-20260823-195331.log 00:35:38, WER dump EIP=0xFFFFFFFE at
+        // 00:35:44). The IsListBox vtable check is the same gate the reply
+        // monitor applies before trusting its fixed offset, so a future
+        // layout drift degrades to silence instead of a garbage walk.
+        if (m.kind == acc::engine::PanelKind::DialogComputer &&
+            acc::engine::IsListBox(
+                reinterpret_cast<unsigned char*>(m.panel) +
+                kDialogComputerMessageListBoxOffset)) {
+            // Baseline is per panel: carrying a stale high-water mark into
+            // the next terminal would swallow its first rows.
+            static void* s_lastComputerPanel = nullptr;
+            static int   s_lastComputerRows = 0;
+            if (s_lastComputerPanel != m.panel) {
+                s_lastComputerPanel = m.panel;
+                s_lastComputerRows  = 0;
+            }
             int rows = ReadListBoxRowCount(m.panel,
                                            kDialogComputerMessageListBoxOffset);
             if (rows > s_lastComputerRows) {

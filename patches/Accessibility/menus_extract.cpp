@@ -1199,7 +1199,12 @@ const char* TrySpeculativeVtableRead(void* control, char* outBuf,
         // Table stays reference-build and compile-time: giving it a runtime
         // initialiser would make this function need object unwinding, which
         // its __try blocks below forbid (C2712). Map at the comparison.
-        if (acc::addr::R(ov.vtable) != vta) continue;
+        // R() returns 0 for a vtable with no KOTOR 2 mapping — without the
+        // null guard, every garbage control whose first dword reads 0
+        // "matches" both overrides and eats two SEH faults per visit (the
+        // vtable=0x0 storm in userlogs/kennycrash0782408).
+        uintptr_t ovMapped = acc::addr::R(ov.vtable);
+        if (!ovMapped || ovMapped != vta) continue;
         char text[256];
         bool got = false;
         if (ov.tryLabel) {
