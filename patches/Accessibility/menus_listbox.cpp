@@ -194,6 +194,20 @@ struct ListBoxPanelSpec {
     // upgrade and equipment pickers use it; everything else keeps the raw write.
     // false = raw write (default).
     bool useEngineSelect;
+
+    // Optional liveness gate for nav keys. When non-null and returning
+    // false, Up/Down/Home/End neither drive the listbox nor leak to the
+    // engine; the dispatcher speaks emptyStateId instead (same dedup
+    // channel as the empty-list case). Dialog specs use it to refuse
+    // navigation while the engine's reply store for the current node is
+    // still empty — i.e. the NPC line is playing and the replies are not
+    // up yet. Without the gate the rows navigated were the PREVIOUS
+    // node's stale row objects (the panel and listbox live for the whole
+    // conversation): the selection moved and clicked but no reply text
+    // existed anywhere to speak, which read as "dialogue options are
+    // broken" (userlogs/zack078dialoguesnotspeaking, 2026-08-24).
+    // nullptr = always live (every non-dialog spec).
+    bool (*navLive)(void* panel);
 };
 
 // ============================================================================
@@ -923,16 +937,39 @@ void* DialogFindRepliesLb(void* p) {
     return acc::off::Ptr(p, kDialogRepliesListBoxOffset);
 }
 
-// Dialogue reply panels intentionally have NO announce callback: the engine
-// does not navigate the reply listbox by keyboard, so the dialog specs exist
-// only to DRIVE the listbox cursor (DriveListBoxSelection) and CONSUME the nav
-// keys. The actual speech is owned solely by MonitorDialogReplies (a per-tick
-// poll), which catches both engine-driven changes (the first reply when a node
-// opens) and our cursor moves. Having a second announce here read every nav
-// keypress was the "options read twice" bug; its is_active@+0x4c "unavailable"
-// gate also mis-fired on selectable replies (the field tracks highlight state
-// on a reply row, not selectability), which was the "shown disabled but
-// actually available" bug. Both are gone now that the poll is the only speaker.
+// Dialogue reply panels intentionally have NO announce callback: the specs
+// exist to DRIVE the listbox cursor (DriveListBoxSelection) and CONSUME the
+// nav keys when the dialog panel is the routed panel. The actual speech is
+// owned solely by MonitorDialogReplies (a per-tick poll), which catches both
+// engine-driven changes (the first reply when a node opens) and our cursor
+// moves. Having a second announce here read every nav keypress was the
+// "options read twice" bug; its is_active@+0x4c "unavailable" gate also
+// mis-fired on selectable replies (the field tracks highlight state on a
+// reply row, not selectability), which was the "shown disabled but actually
+// available" bug. Both are gone now that the poll is the only speaker.
+//
+// IMPORTANT scope note (2026-08-25): in CINEMATIC dialogs these specs only
+// ever see nav keys while the NPC line is playing (the dialog panel is
+// foreground then). Once the replies are live, the entry-text overlay panel
+// is foreground, the chain declines it, and the keys fall through to the
+// ENGINE, whose native CSWGuiListBox keyboard handler moves the selection —
+// that is the path that navigates the live reply list. It only works while
+// the cursor stays parked off the list; the engine repositions the cursor
+// between dialogue nodes, which is why MonitorDialogReplies re-parks on
+// every new reply set (see docs/known-issues.md "K1 dialogue replies",
+// userlogs/zack078dialoguesnotspeaking). The earlier claim here that "the
+// engine does not navigate the reply listbox by keyboard" was true only for
+// the droid/computer interfaces.
+
+// The engine populates the CGuiInGame reply store (SetReplyData) only at the
+// reply break — when the entry's VO ends and the choices actually appear. A
+// press before that has nothing readable to land on: the listbox rows that
+// exist mid-VO are the previous node's leftovers whose labels are already
+// cleared, and ReadDialogReplyText misses for every index. Gate nav on the
+// store instead of the row count.
+bool DialogRepliesLive(void* /*panel*/) {
+    return acc::engine::ReadDialogReplyCount() > 0;
+}
 
 // All four dialog variants take the identical spec — same reply-listbox
 // locator, no announce (see above), no Enter/Esc/title handling. Only the
@@ -953,8 +990,11 @@ constexpr ListBoxPanelSpec MakeDialogSpec(const char* logTag,
         /*onEnter*/                 nullptr,
         /*onEsc*/                   nullptr,
         /*titleOverride*/           nullptr,
-        /*emptyStateId*/            acc::strings::Id::Count_,
+        /*emptyStateId*/            acc::strings::Id::DialogRepliesPending,
         /*alwaysReturnFromHandler*/ false,
+        /*minSelFn*/                nullptr,
+        /*useEngineSelect*/         false,
+        /*navLive*/                 DialogRepliesLive,
     };
 }
 
@@ -1535,6 +1575,22 @@ bool DispatchKeyDownEdge(const ListBoxPanelSpec& spec, void* panel,
 
     if (dirTag) {
         void* lb = spec.findListBox(panel);
+        // Liveness gate (dialog specs): the rows currently in the listbox
+        // may be the previous node's leftovers with no readable text behind
+        // them. Refuse to move the cursor over them — consume the key (so
+        // the engine can't act on it either) and tell the user the replies
+        // aren't up yet instead of clicking through unreadable rows.
+        if (lb && spec.navLive && !spec.navLive(panel)) {
+            acclog::Write(spec.logTag, "%s lb=%p gated: reply set not live; "
+                          "nav refused", dirTag, lb);
+            if (spec.emptyStateId != acc::strings::Id::Count_) {
+                const char* phrase = acc::strings::Get(spec.emptyStateId);
+                if (phrase && phrase[0] != '\0') {
+                    acc::menus::SpeakIfChanged(/*channel=*/1, phrase);
+                }
+            }
+            return true;
+        }
         int effMinSel = spec.minSelFn ? spec.minSelFn(panel) : spec.minSel;
         ListBoxNavResult r;
         bool moved = lb && (spec.useEngineSelect

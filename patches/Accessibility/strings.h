@@ -1190,6 +1190,16 @@ enum class Id : int {
     // (`%d`). Separate from FmtContainerItemAt so the localised "von" /
     // "of" stays in the table.
 
+    // ---- Dialog screen — replies-not-live cue. Spoken (deduped on the
+    //      generic empty-state channel) when the user presses Up/Down on
+    //      the reply list before the engine has populated the reply store
+    //      for the current node — i.e. while the NPC line is still
+    //      playing. Without it the press either drove stale rows from the
+    //      previous node (click, then silence: no reply text exists
+    //      anywhere yet — userlogs/zack078dialoguesnotspeaking) or was
+    //      silently ignored on a first-time empty list.
+    DialogRepliesPending,
+
     // ---- Messages-panel review titles. Spoken when the InGameMessages
     //      panel becomes foreground (titleOverride). Two channels — the
     //      combat log and the dialog history.

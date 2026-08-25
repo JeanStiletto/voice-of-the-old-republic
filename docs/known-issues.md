@@ -12,6 +12,51 @@ When an entry is closed, move it out of this file (the corresponding fix or comm
 
 ## Bugs
 
+### K1 dialogue replies unnavigable for zack on 0.7.8.1 — cursor-state dependent; expected fixed by the v0.7.9 re-park (diagnosed 2026-08-25, awaiting zack's confirmation on the next release)
+
+Zack's report (`userlogs/zack078dialoguesnotspeaking.7z`, 0.7.8.1, English,
+`k1-patch-20260824-212526.log`): arrows in conversation click but never speak,
+number keys select blind. Log forensics established TWO separate defects:
+
+1. **During the NPC voice line** (reply store empty): our dialog listbox spec
+   consumed Up/Down and drove the PREVIOUS node's stale rows — click, then
+   silence, `Menus.DialogReply: selected (src=none)` (11× in zack's session).
+   **FIXED 2026-08-25** (nav liveness gate + "Reply options not yet available"
+   phrase, `navLive` in menus_listbox.cpp) — awaiting in-game test.
+
+2. **After the reply break** (replies live): arrows did nothing on zack's
+   machine — ~35 presses across 4 conversations, one exception. Mechanics,
+   established from his log + dev logs + a live dev test 2026-08-25:
+   - The mod never drove the live cinematic reply list: at the reply break the
+     entry-text overlay panel is foreground, our chain declines it, and the
+     keys fall through to the ENGINE, whose native CSWGuiListBox keyboard
+     handler (`HandleInputEvent @0x0041ce20`, InputIndex 61/62 = the
+     `KEYBOARD_K`/`KEYBOARD_L` log lines) moves the selection; our monitor
+     speaks the change. The in-code claim "the engine does not navigate the
+     reply listbox by keyboard" was true only for the droid/computer
+     interfaces it came from.
+   - That native path is CURSOR-STATE dependent. Zack's `CameraSpinDiag`
+     mouseX trace correlates 1:1: cursor parked at 24 → his single working
+     arrow press (21:31:36, inside the 21:31:16–36 parked window); cursor
+     re-centered to 400 → every other press dead. The engine repositions the
+     cursor between dialogue nodes (the same behaviour the K2 Peragus console
+     fix documented — "the game can bring the cursor back between nodes"),
+     and 0.7.8.1 parks only once per conversation, so from the first node
+     transition on his cursor sat at screen centre and keyboard nav was dead.
+   - The v0.7.9 re-park on every new reply set (7f3d919, written for the K2
+     consoles) closes exactly this: live dev test 2026-08-25 13:35 shows the
+     re-park firing at the break, mouseX pinned at 24 across it, and five
+     arrow navigations all spoken (`patch-20260825-133518.log`).
+   - Why most 0.7.8.1 players are fine: per-node cursor repositioning killing
+     the native nav evidently depends on machine/session state not fully
+     pinned down (zack: windowed 800x600, cursor never touched by hand; but
+     the dev box is windowed too and July logs navigated fine with the same
+     one-park-per-conversation code). The re-park makes the whole question
+     moot by re-asserting the parked state at every node, so pinning the
+     exact engine trigger is not planned unless it resurfaces post-0.7.9.
+   - Follow-up: ship v0.7.9 to zack (or a test build) and have him confirm
+     arrows speak replies after each voice line.
+
 ### KOTOR 2 crash entering the Peragus Fuel Depot — third-party item, engine null-deref (diagnosed 2026-08-24, no code change yet)
 
 Kenny's game died on the area transition into the Fuel Depot

@@ -339,6 +339,7 @@ const char* Get(Id id) {
 
 
 
+        case Id::DialogRepliesPending:       return "Options de r\xE9ponse pas encore disponibles";
         case Id::MessagesTitleCombatLog:     return "Journal de combat.";
 
         case Id::MapPrevNote:                return "Note pr\xE9""c\xE9""dente";

@@ -340,6 +340,7 @@ const char* Get(Id id) {
 
 
 
+        case Id::DialogRepliesPending:       return "Opciones de respuesta a\xFAn no disponibles";
         case Id::MessagesTitleCombatLog:     return "Registro de combate.";
 
         case Id::MapPrevNote:                return "Nota anterior";

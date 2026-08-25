@@ -328,7 +328,24 @@ disambiguate a row); the sub-dialog is still the real interaction surface.
 ## dialog_reply_hover_select
 _Why the mod parks the cursor during dialogue. Decompiled 2026-07-20 (droid repair-menu field report)._
 
-The `CSWGuiDialog` reply listbox (`+0x19c4`) has **no native keyboard reply navigation** — vanilla only ever selects a reply by mouse. Its selection is slaved to the cursor:
+**Correction (2026-08-25, zack078 investigation):** the "no native keyboard
+reply navigation" claim below is true for the droid/computer interfaces it was
+derived from, but the CINEMATIC dialog reply listbox IS keyboard-navigated by
+the engine — the generic `CSWGuiListBox::HandleInputEvent @0x0041ce20` handler
+(InputIndex 0x3d/0x3e = 61/62, the `KEYBOARD_K`/`KEYBOARD_L` lines in our
+input logs) moves `selection_index` whenever the listbox is the focused
+control. The mod never drove the live cinematic reply list: at the reply break
+the entry-text overlay panel is foreground, our chain declines, the keys fall
+through, the ENGINE moves the selection, and `MonitorDialogReplies` speaks the
+change. That native path is CURSOR-STATE dependent: with the cursor parked in
+the empty corner it works; with the cursor re-centred by the engine's
+between-node repositioning it goes dead (zack078's mouseX trace correlates
+1:1; single working press inside his one parked window). The v0.7.9 re-park
+on every new reply set re-asserts the parked state per node and restores it —
+live-verified on the dev box 2026-08-25 (`patch-20260825-133518.log`). See
+docs/known-issues.md "K1 dialogue replies".
+
+The `CSWGuiDialog` reply listbox (`+0x19c4`) has **no native keyboard reply navigation in the droid/computer interfaces** — there vanilla only ever selects a reply by mouse. Its selection is slaved to the cursor:
 
 - `CSWGuiListBox::HandleMouseMove @0x0041c400` — `HitCheckMouseLocal` finds the row under the cursor and, if it differs from `selection_index` (and `bit_flags & 1` is clear), calls `SetSelectedControl(this, hitRow, 1)`. So every mouse move the manager processes forces `selection_index` onto the hovered row.
 - `CSWGuiManager::HandleMouseMove @0x0040c1e0` tail-calls the listbox's `HandleMouseMove` for the listbox under the cursor.

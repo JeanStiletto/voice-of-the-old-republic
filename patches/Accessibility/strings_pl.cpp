@@ -343,6 +343,7 @@ const char* Get(Id id) {
         case Id::QueueVerbUseTalent:         return "U\xBFyj atutu";
         case Id::QueueVerbUnknown:           return "Akcja";
 
+        case Id::DialogRepliesPending:       return "Opcje odpowiedzi nie s\xB9 jeszcze dost\xEApne";  // są, dostępne
         case Id::MessagesTitleCombatLog:     return "Dziennik walki.";
 
         case Id::MapPrevNote:                return "Poprzedni znacznik mapy";

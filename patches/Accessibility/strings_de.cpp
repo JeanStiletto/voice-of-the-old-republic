@@ -342,6 +342,7 @@ const char* Get(Id id) {
 
 
 
+        case Id::DialogRepliesPending:       return "Antwortoptionen noch nicht verf\xFCgbar";  // verfügbar
         case Id::MessagesTitleCombatLog:     return "Kampfprotokoll.";
 
         case Id::MapPrevNote:                return "Vorheriger Hinweis";

@@ -92,6 +92,16 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h3>Bug fixes:</h3>
 
+- Pressing Up or Down in a conversation while the character is still speaking
+  now says "Reply options not yet available" instead of clicking through
+  unreadable entries. The reply list on screen keeps the previous node's rows
+  alive while a line plays, so an arrow press moved a highlight over entries
+  that had no text behind them yet — you heard the navigation click and then
+  nothing, which read as dialogue options being completely broken (reported by
+  a beta tester who navigated during voice lines and never got a single option
+  spoken). The mod now refuses to move the highlight until the game has
+  actually published the node's replies, and tells you why.
+
 - A broken third-party item no longer crashes the game on area load (both
   games). When another mod's item refers to a base-item type the game's item
   table doesn't have — typically because the mod's table edit was lost to an
@@ -156,6 +166,12 @@ and add the German in parentheses if it genuinely aids clarity.
   that row every frame and beats any keyboard move. The mod already parks the
   cursor out of the way when a dialogue opens; it now re-parks it on every new
   set of replies, since the game can bring the cursor back between nodes.
+  This also fixes ordinary KOTOR 1 conversations for players whose cursor got
+  repositioned that way: with the cursor off its parked spot, arrow keys over
+  the reply choices could go completely dead — a click at most, no speech, no
+  highlight movement — leaving number keys as the only blind way to pick a
+  line (reported by a beta tester on 0.7.8.1, confirmed by matching their
+  log's cursor positions against every dead and working keypress).
 
 <h2>v0.7.8.1</h2>
 
