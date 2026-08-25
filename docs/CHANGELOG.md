@@ -92,6 +92,15 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h3>Bug fixes:</h3>
 
+- A broken third-party item no longer crashes the game on area load (both
+  games). When another mod's item refers to a base-item type the game's item
+  table doesn't have — typically because the mod's table edit was lost to an
+  install-order conflict — the engine used to follow a null pointer and crash
+  every time the area containing the item loaded (reported on KOTOR 2's
+  Peragus Fuel Depot as a progression blocker). The engine now substitutes the
+  first base-item type instead, and logs the out-of-range id: the item appears
+  strange, but the game keeps running.
+
 - Fixed a rare freeze during game startup, before the main menu appears
   (both games). Since v0.5.1 the mod has been listening for focus changes on
   every game window, and for a microsecond during that setup a window's

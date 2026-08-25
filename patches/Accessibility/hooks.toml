@@ -1322,3 +1322,132 @@ type = "pointer"
 [[hooks.parameters]]
 source = "edi"
 type = "int"
+
+# ============================================================================
+# Out-of-range BaseItem guard
+#
+# Robustness against third-party item templates whose baseitems.2da row is
+# missing from the effective Override: substitute row 0 (strange item instead
+# of a crash). Handler in baseitem_guard.cpp; design record in
+# docs/known-issues.md (Peragus Fuel Depot crash).
+# ============================================================================
+# CSWBaseItemArray::GetBaseItem(int id) @0x005b31a0 — the single funnel every
+# BaseItem row lookup goes through. Decompile (Lane's DB, 2026-08-25):
+# returns NULL when the table is not loaded, id < 0, or id >= count; count at
+# this+0, row array at this+4, 200-byte stride. Several engine callers
+# dereference the returned row without a null check, so an out-of-range id
+# from a broken third-party .uti crashes on area load.
+#
+# Full listing (PrintListing.java):
+#   005b31a0  8b 51 04     MOV  EDX,[ECX+4]     ; row array
+#   005b31a3  85 d2        TEST EDX,EDX
+#   005b31a5  74 17        JZ   005b31be        ; table not loaded -> NULL
+#   005b31a7  8b 44 24 04  MOV  EAX,[ESP+4]     ; id
+#   005b31ab  85 c0        TEST EAX,EAX         ; <- hook here, 8 bytes
+#   005b31ad  7c 0f        JL   005b31be        ;    id < 0 -> NULL
+#   005b31af  3b 01        CMP  EAX,[ECX]       ;    vs count
+#   005b31b1  7d 0b        JGE  005b31be        ;    id >= count -> NULL
+#   005b31b3  69 c0 c8 00 00 00  IMUL EAX,EAX,0xc8
+#   005b31b9  03 c2        ADD  EAX,EDX
+#   005b31bb  c2 04 00     RET  4
+#   005b31be  33 c0        XOR  EAX,EAX
+#   005b31c0  c2 04 00     RET  4
+#
+# The hook sits AFTER the table-loaded JZ on purpose: the not-loaded NULL
+# return stays untouched (startup callers may probe before the 2DA is read).
+# The 8-byte cut is the engine's entire bounds check. Its two relative jumps
+# (JL/JGE) cannot be relocated into the trampoline, so skip_original_bytes:
+# the handler IS the bounds check — it returns the id unchanged when in
+# range, else logs and returns 0. `eax` is excluded from the register
+# restore so that return value is the id the engine resumes with at the row
+# computation (IMUL EAX,EAX,0xc8 at 0x005b31b3, the natural fall-through);
+# EDX (row array) and ECX (this) are restored by the wrapper. No
+# consumed_exit — both outcomes continue at the same resume point, and the
+# resume code writes its own flags (IMUL), so the wrapper's POPFD-restored
+# entry flags are never consumed.
+#
+# Register sources per the house rule (esp+X emits LEA —
+# project_kpatchmanager_lea_bug): ECX = this, EAX = id, both live at the cut.
+# 0x005b31ab is not a jump target (the JZ above lands at 0x005b31be).
+[[hooks]]
+address = 0x005b31ab
+type = "detour"
+function = "OnGetBaseItem"
+
+# 85 c0                 TEST EAX,EAX
+# 7c 0f                 JL   +0x0f
+# 3b 01                 CMP  EAX,[ECX]
+# 7d 0b                 JGE  +0x0b
+original_bytes = [0x85, 0xc0, 0x7c, 0x0f, 0x3b, 0x01, 0x7d, 0x0b]
+
+skip_original_bytes = true
+exclude_from_restore = ["eax"]
+
+# CSWBaseItemArray* this — count at +0.
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+# id — the requested baseitems.2da row.
+[[hooks.parameters]]
+source = "eax"
+type = "int"
+
+# CSWItem::GetBaseItem(void) @0x005b4790 — the item-level WRAPPER
+# (kAddrCSWItemGetBaseItem). KOTOR 1's optimised build INLINED the array
+# accessor into it (decompile: identical loaded/id<0/id>=count check on
+# item->base_item_id), so the accessor hook above never runs for wrapper
+# callers. Proven live 2026-08-25: the CreateItemOnObject test crashed at
+# CSWSItem::LoadDataFromGff's `CALL 0x005b4790` + CMP [EAX+0x18] with the
+# accessor hook installed and firing (dump swkotor.exe.3576.dmp). An
+# IMUL-by-200 sweep over the whole .text found exactly three sites: the
+# accessor, this inline copy, and the 2DA loader's allocation multiply
+# (count*200, not a lookup) — so accessor + wrapper is complete coverage.
+# KOTOR 2's unoptimised wrapper CALLs the accessor (byte-verified E8 ->
+# 0x006d5200) and needs no second hook.
+#
+# Listing (DumpBytes + scan context):
+#   005b4790  8b 41 0c        MOV  EAX,[ECX+0xC]     ; item->base_item_id
+#   005b4793  8b 0d 28 3a 7a 00  MOV ECX,[Rules]
+#   005b4799  8b 49 34        MOV  ECX,[ECX+0x34]    ; CSWBaseItemArray*
+#   005b479c  8b 51 04        MOV  EDX,[ECX+4]       ; row array
+#   005b479f  85 d2           TEST EDX,EDX
+#   005b47a1  74 11           JZ   005b47b4          ; not loaded -> NULL
+#   005b47a3  85 c0           TEST EAX,EAX           ; <- hook here, 8 bytes
+#   005b47a5  7c 0d           JL   005b47b4
+#   005b47a7  3b 01           CMP  EAX,[ECX]
+#   005b47a9  7d 09           JGE  005b47b4
+#   005b47ab  69 c0 c8 00 00 00  IMUL EAX,EAX,0xc8
+#   005b47b1  03 c2           ADD  EAX,EDX
+#   005b47b3  c3              RET
+#   005b47b4  33 c0           XOR  EAX,EAX
+#   005b47b6  c3              RET
+#
+# Identical mechanics and the SAME handler as the accessor hook: cut the
+# bounds check (relative jumps -> skip_original_bytes), ECX =
+# CSWBaseItemArray* (count at +0), EAX = id, clamped id returned in EAX,
+# resume at the IMUL. 0x005b47a3 is not a jump target (all three branches
+# land at 0x005b47b4).
+[[hooks]]
+address = 0x005b47a3
+type = "detour"
+function = "OnGetBaseItem"
+
+# 85 c0                 TEST EAX,EAX
+# 7c 0d                 JL   +0x0d
+# 3b 01                 CMP  EAX,[ECX]
+# 7d 09                 JGE  +0x09
+original_bytes = [0x85, 0xc0, 0x7c, 0x0d, 0x3b, 0x01, 0x7d, 0x09]
+
+skip_original_bytes = true
+exclude_from_restore = ["eax"]
+
+# CSWBaseItemArray* — count at +0 (loaded from Rules by the wrapper).
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+# id — item->base_item_id.
+[[hooks.parameters]]
+source = "eax"
+type = "int"

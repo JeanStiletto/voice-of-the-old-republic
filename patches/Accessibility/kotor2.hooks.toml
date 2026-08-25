@@ -899,3 +899,69 @@ type = "pointer"
 [[hooks.parameters]]
 source = "ebp"
 type = "pointer"
+
+# ============================================================================
+# Out-of-range BaseItem guard
+#
+# Robustness against third-party item templates whose baseitems.2da row is
+# missing from the effective Override: substitute row 0 (strange item instead
+# of a crash). This is the hook that neutralises Kenny's Peragus Fuel Depot
+# crash (docs/known-issues.md): the GFF item loader FUN_00601740 ->
+# FUN_006014f0 dereferences the row GetBaseItem returns without a null check
+# (it null-checks the row's field at +0x70 one instruction too late), so a
+# heavymininglaser.uti with BaseItem=106 against a 106-row (0..105) table
+# crashed on every entry to the area. Handler in baseitem_guard.cpp; the
+# design rationale shared with KOTOR 1 lives in hooks.toml.
+# ============================================================================
+# CSWBaseItemArray::GetBaseItem(int id) @0x006d5200 (152 call sites,
+# FindCallers 2026-08-25). Same shape as KOTOR 1's 0x005b31a0: NULL when the
+# table is not loaded / id < 0 / id >= count; count at this+0, row array at
+# this+4, 200-byte stride. Compiled UNOPTIMISED (real frame pointer, args
+# reloaded from the frame at every use), so the rewrite mechanics differ
+# from KOTOR 1's register-based hook:
+#
+#   006d5200  55           PUSH EBP
+#   006d5201  8b ec        MOV  EBP,ESP
+#   006d5203  51           PUSH ECX
+#   006d5204  89 4d fc     MOV  [EBP-4],ECX     ; this stored
+#   006d5207  8b 45 fc     MOV  EAX,[EBP-4]
+#   006d520a  83 78 04 00  CMP  dword [EAX+4],0 ; row array
+#   006d520e  74 21        JZ   006d5231        ; table not loaded -> NULL
+#   006d5210  83 7d 08 00  CMP  dword [EBP+8],0 ; <- hook here, 6 bytes
+#   006d5214  7c 1b        JL   006d5231        ;    id < 0 -> NULL
+#   006d5216  8b 4d fc     MOV  ECX,[EBP-4]
+#   006d5219  8b 55 08     MOV  EDX,[EBP+8]     ; id reloaded from frame
+#   006d521c  3b 11        CMP  EDX,[ECX]       ;    vs count
+#   006d521e  7d 11        JGE  006d5231        ;    id >= count -> NULL
+#   006d5220  8b 45 08     MOV  EAX,[EBP+8]     ; id reloaded again
+#   ...
+#
+# Hooked AFTER the table-loaded JZ on purpose (the not-loaded NULL return
+# stays untouched). The 6-byte cut is the engine's id<0 check; its JL is a
+# relative jump and cannot be relocated, so skip_original_bytes — the
+# handler's clamp covers id<0. Because this build reloads the id from
+# [EBP+8] at every use, the handler rewrites that single frame slot to 0
+# when the id is out of range and the engine's own id>=count check plus the
+# row computation then run against the substituted value; when the id is in
+# range it writes nothing. Resume at 0x006d5216 starts with MOV/MOV/CMP, so
+# no flag state from the cut is consumed.
+#
+# Single EBP parameter, handler does the frame arithmetic itself (esp+X
+# parameter sources emit LEA — project_kpatchmanager_lea_bug):
+#   [EBP-4] = this (CSWBaseItemArray*), [EBP+8] = id.
+# 0x006d5210 is not a jump target (the JZ above lands at 0x006d5231).
+[[hooks]]
+address = 0x006d5210
+type = "detour"
+function = "OnGetBaseItemK2"
+
+# 83 7d 08 00           CMP dword ptr [EBP+8], 0
+# 7c 1b                 JL  +0x1b
+original_bytes = [0x83, 0x7d, 0x08, 0x00, 0x7c, 0x1b]
+
+skip_original_bytes = true
+exclude_from_restore = []
+
+[[hooks.parameters]]
+source = "ebp"
+type = "pointer"

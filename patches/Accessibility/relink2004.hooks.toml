@@ -450,3 +450,41 @@ type = "pointer"
 [[hooks.parameters]]
 source = "edi"
 type = "int"
+
+[[hooks]]
+# OnGetBaseItem -- was 0x005b31ab (+608 bytes). Whole function byte-identical
+# at the rebased site (verified against the Allard exe 2026-08-25, including
+# the intra-function JL/JGE displacements the sigscan signature wildcards).
+address = 0x005b340b
+type = "detour"
+function = "OnGetBaseItem"
+original_bytes = [0x85, 0xc0, 0x7c, 0x0f, 0x3b, 0x01, 0x7d, 0x0b]
+skip_original_bytes = true
+exclude_from_restore = ["eax"]
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "eax"
+type = "int"
+
+[[hooks]]
+# OnGetBaseItem (CSWItem wrapper's inlined copy) -- was 0x005b47a3 (+608
+# bytes). Bytes at the rebased site verified identical against the Allard
+# exe 2026-08-25, including the JL/JGE displacements.
+address = 0x005b4a03
+type = "detour"
+function = "OnGetBaseItem"
+original_bytes = [0x85, 0xc0, 0x7c, 0x0d, 0x3b, 0x01, 0x7d, 0x09]
+skip_original_bytes = true
+exclude_from_restore = ["eax"]
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"
+
+[[hooks.parameters]]
+source = "eax"
+type = "int"

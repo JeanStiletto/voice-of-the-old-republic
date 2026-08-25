@@ -39,19 +39,40 @@ Follow-ups to decide:
 - Check whether our bundled-mods install can clobber a pre-existing modded
   baseitems.2da (install-order conflict) — if yes, this class of crash is
   partly ours to prevent.
-- Defensive patch APPROVED 2026-08-25 (both games, fallback row 0), not yet
-  implemented. Target: the baseitems-ARRAY accessor `CSWBaseItemArray::
-  GetBaseItem(int id)` — K2 `0x006d5200` (152 call sites, FindCallers run
-  2026-08-25; decompile: returns NULL for table-not-loaded / id<0 /
-  id>=count, row stride 200 bytes). K1 twin candidate from Lane's DB:
-  `0x005b31a0` (NOT `0x005b4790` — that is the CSWItem-level WRAPPER we
-  already call as kAddrCSWItemGetBaseItem). Design: hook entry; only when
-  the table is loaded and id is out of range, log id+context once and
-  substitute id 0; leave the table-not-loaded NULL untouched (startup
-  callers may probe). TODO before building: decompile K1 `0x005b31a0` to
-  confirm it is the array accessor twin; pick the hook mechanics from an
-  existing behavior-modifying hook in hooks.toml (param rewrite at entry —
-  mind the KPatchManager esp+X LEA bug, use register sources).
+- Defensive patch SHIPPED 2026-08-25 (both games + the 2004 relink, fallback
+  row 0), live-tested in BOTH games the same day: CLI-injected
+  CreateItemOnObject of a BaseItem=200 item survived, item usable in
+  inventory, `BaseItemGuard` log lines present (K1: id=200/92 rows,
+  ~28k dedup-collapsed wrapper hits; K2: id=200/106 rows — the same
+  106-row table Kenny's id=106 item overruns). What remains open here is
+  only Kenny-side confirmation that the Fuel Depot now loads. Target
+  confirmed by decompile in both games: the baseitems-ARRAY accessor
+  `CSWBaseItemArray::GetBaseItem(int id)` — K1 `0x005b31a0` (Lane's DB names
+  it; identical shape to K2's `0x006d5200`: NULL for table-not-loaded / id<0
+  / id>=count, count at this+0, array at this+4, 200-byte stride). Hooks
+  land AFTER the engine's table-loaded check, so the startup-probe NULL
+  stays untouched; out-of-range ids clamp to row 0 and log under the
+  `BaseItemGuard` tag. Handlers in `baseitem_guard.cpp`.
+- First live test (CLI-injected CreateItemOnObject of a BaseItem=200 .uti,
+  2026-08-25) CAUGHT A HOLE: K1 still crashed in CSWSItem::LoadDataFromGff
+  — its `CALL CSWItem::GetBaseItem` returned NULL despite the accessor hook
+  firing, because K1's optimised build INLINED the accessor into that
+  wrapper (`0x005b4790`). Fixed with a second K1 hook on the wrapper's
+  inlined bounds check (`0x005b47a3`), same handler. An IMUL-by-200 sweep
+  over K1's whole .text found exactly three sites (accessor, wrapper copy,
+  loader's count*200 allocation) — coverage now complete. K2's unoptimised
+  wrapper CALLs the accessor (byte-verified) — one hook suffices there.
+  Relink addresses `0x005b340b` + `0x005b4a03` via sigscan, cut bytes
+  verified against the Allard exe.
+- Test tooling (all in place): `Override\acc_test_baditem.uti` (BaseItem=200)
+  + `Override\acc_givebaditem.ncs` in both games,
+  `build\runscript\runscript.exe <script>` injects the engine's runscript
+  cheat via KotorMessageInjector (no console needed — the console key is
+  broken on non-US layouts anyway). Verification: run
+  `runscript.exe acc_givebaditem` with a save loaded → no crash, item in
+  inventory, `BaseItemGuard` line in the patch log. On Kenny's save the
+  Fuel Depot should load with the id=106 line. Remove the two test files
+  from both Overrides before release.
 
 ### Galaxy-map travel never loaded the destination — fix built 2026-08-20, awaiting test
 
