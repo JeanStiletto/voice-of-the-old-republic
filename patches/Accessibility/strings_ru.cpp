@@ -376,6 +376,7 @@ const char* Get(Id id) {
         case Id::FmtMapCursorDoorTransition: return "%s %s \xE2 %s";
         case Id::FmtMapCursorDoorLandmark:   return "%s %s, %s";
         case Id::FmtMapCursorJunctionDeadEndExit: return "\xF2\xF3\xEF\xE8\xEA %s";
+        case Id::FmtRampExit:                return "\xEF\xE0\xED\xE4\xF3\xF1 %s";  // "пандус %s" (cp1251)
         case Id::AxisNorthSouth:             return "\xF1\xE5\xE2\xE5\xF0-\xFE\xE3";
         case Id::AxisEastWest:               return "\xE2\xEE\xF1\xF2\xEE\xEA-\xE7\xE0\xEF\xE0\xE4";
         case Id::AreaNoun:                   return "\xD3\xF7\xE0\xF1\xF2\xEE\xEA";

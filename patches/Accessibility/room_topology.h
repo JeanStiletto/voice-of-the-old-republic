@@ -41,8 +41,12 @@ enum Kind {
 //              "No fact yet, do nothing."
 //   OpenArea — synthetic neutral-"Bereich" fallback label. Stable
 //              identity so the entry transition fires exactly once.
-constexpr int kClusterIdNone     = -1;
-constexpr int kClusterIdOpenArea = -2;
+// (A runtime coverage-gap probe with its own sentinel ids lived here
+// briefly in 2026-08; replaced by build-time walkmesh seeding — see
+// SeedCoverageGapNodes in room_topology.cpp — which gives gap regions
+// real nodes and real cluster ids instead of a parallel announce path.)
+constexpr int kClusterIdNone      = -1;
+constexpr int kClusterIdOpenArea  = -2;
 
 // Idempotent on same area pointer. Requires the wall cache to be
 // populated; no-ops with empty graph until then.
@@ -92,6 +96,21 @@ void Reset();
 // a wall between cursor and road cluster, so LOS wrongly rejects every
 // nearby node. Map cursor wants distance-only snap.
 //
+// zTrusted: worldPos.z is a real in-world height (player position).
+// Enables the vertical filters: candidates whose calibrated floor
+// height differs from worldPos.z by more than the same-floor tolerance
+// (kWallCrossZToleranceM) are rejected like wall-blocked ones, and the
+// wall test runs with the node lifted to its floor height so the
+// z-guard inside SegmentCrossesWalkmesh sees the ledge walls between
+// levels (Ebon-Hawk hull: the raised spine corridor's label leaked to
+// a notch 3m below through a ledge the z=0 endpoint made invisible).
+// Callers with synthetic / possibly-stale z (map cursor inverse
+// projection, view-mode cursor) leave it false and keep pure-2D snap.
+// NOTE: distance stays 2D in all cases — putting dz into the DISTANCE
+// against the always-zero node z is the variant that broke Taris
+// Sewers; the veto compares against per-node calibrated floor heights
+// instead.
+//
 // False on no-graph / outside bounding box / no matching region.
 //
 // outLabel receives the full region label — never truncated. It is
@@ -101,7 +120,8 @@ bool LookupAt(void* area, const Vector& worldPos,
               std::string& outLabel, int& outSig,
               int& outClusterId,
               bool allowDiagLog = true,
-              bool requireWallReachable = true);
+              bool requireWallReachable = true,
+              bool zTrusted = false);
 
 // Kind + footprint extent (longest bounding-box side of the member
 // nodes, metres) for a real cluster id returned by LookupAt. Lets

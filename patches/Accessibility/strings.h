@@ -1272,6 +1272,14 @@ enum class Id : int {
     // is wrapped to flag the dead-end so the user doesn't waste a
     // walk attempting it. Single `%s` (the direction word).
     FmtMapCursorJunctionDeadEndExit, // "Sackgasse %s" / "dead end %s" — prefix-style, matches "Tür %s" so junction list reads NOUN-then-direction
+    // Exit-level-change annotation: when every real exit in a direction
+    // crosses a floor-height step larger than the same-floor tolerance
+    // (kWallCrossZToleranceM), the direction word is wrapped so the user
+    // knows this exit is a ramp between hull/storey levels — the one cue
+    // that distinguishes "walk west" from "walk west UP onto the spine"
+    // (Ebon-Hawk-hull session 2026-08-25). Single `%s` (direction word).
+    // Dead-end and door annotations win over this one.
+    FmtRampExit,                     // "Rampe %s" / "ramp %s"
     AxisNorthSouth,
     AxisEastWest,
     // Unified neutral area vocabulary. Open spaces, merged rooms and

@@ -349,6 +349,13 @@ void CommitSpokenLabel(const std::string& text, const Vector& pos,
     g_last_spoken_room_text = text;
 }
 
+// (A runtime coverage-gap probe fallback lived here briefly in 2026-08 —
+// synthetic sentinel ids + a walkmesh shape probe for regions without
+// path points. Replaced by build-time walkmesh seeding in room_topology
+// (SeedCoverageGapNodes), which gives those regions real nodes, real
+// cluster ids and the normal announce path; the parallel machinery was
+// removed rather than kept as a dead safety net.)
+
 // Platz delayed-announce state. When a multi-node Path 3 cluster
 // resolves (kind == KindPlatz) we defer the SAPI announce for
 // kPlatzDelayMs ms so the player has time to walk further into the
@@ -507,7 +514,10 @@ bool ResolveRoomSpeech(void* area, const Vector& worldPos,
             int  scratchSig = 0;
             acc::room_topology::LookupAt(area, worldPos,
                                          scratch,
-                                         scratchSig, *outClusterIdOpt);
+                                         scratchSig, *outClusterIdOpt,
+                                         /*allowDiagLog=*/true,
+                                         /*requireWallReachable=*/true,
+                                         /*zTrusted=*/true);
         }
         return true;
     }
@@ -528,7 +538,10 @@ bool ResolveRoomSpeech(void* area, const Vector& worldPos,
     int  clusterId   = acc::room_topology::kClusterIdNone;
     if (acc::room_topology::LookupAt(area, worldPos,
                                      path3Buf,
-                                     path3Sig, clusterId) &&
+                                     path3Sig, clusterId,
+                                     /*allowDiagLog=*/true,
+                                     /*requireWallReachable=*/true,
+                                     /*zTrusted=*/true) &&
         !path3Buf.empty()) {
         outBuf = path3Buf;
         outSource = "shape";
@@ -550,7 +563,10 @@ void LogWallTopoComparison(void* area, int roomIndex,
     int  path3Sig    = 0;
     int  path3Cid    = acc::room_topology::kClusterIdNone;
     bool havePath3 = acc::room_topology::LookupAt(
-        area, worldPos, path3, path3Sig, path3Cid);
+        area, worldPos, path3, path3Sig, path3Cid,
+        /*allowDiagLog=*/true,
+        /*requireWallReachable=*/true,
+        /*zTrusted=*/true);
     const int path3Kind = havePath3 ? (path3Sig & 0xff) : -1;
 
     acclog::Write("WallTopo.Compare",
@@ -630,7 +646,10 @@ void SpeakRoomChange(void* area, int clusterId, const Vector& worldPos) {
     int    peekKind     = -1;
     if (acc::room_topology::LookupAt(area, worldPos,
                                      peekBuf,
-                                     peekSig, peekCid)) {
+                                     peekSig, peekCid,
+                                     /*allowDiagLog=*/true,
+                                     /*requireWallReachable=*/true,
+                                     /*zTrusted=*/true)) {
         peekKind = peekSig & 0xff;
     }
 
@@ -1276,7 +1295,9 @@ void Tick() {
     acc::room_topology::LookupAt(area, pos,
                                  shapeBuf,
                                  shapeSig, clusterId,
-                                 /*allowDiagLog=*/false);
+                                 /*allowDiagLog=*/false,
+                                 /*requireWallReachable=*/true,
+                                 /*zTrusted=*/true);
 
     // Resolve the friendly room name (if any) for the player's current
     // .lyt-room. Empty / resref-style names normalise to "".

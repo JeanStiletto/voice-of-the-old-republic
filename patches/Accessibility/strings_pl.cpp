@@ -360,6 +360,7 @@ const char* Get(Id id) {
         case Id::FmtMapCursorDoorTransition: return "%s %s do %s";
         case Id::FmtMapCursorDoorLandmark:   return "%s %s, %s";
         case Id::FmtMapCursorJunctionDeadEndExit: return "\x9Clepy zau\xB3""ek %s";
+        case Id::FmtRampExit:                return "rampa %s";
         case Id::AxisNorthSouth:             return "p\xF3\xB3noc-po\xB3udnie";
         case Id::AxisEastWest:               return "wsch\xF3""d-zach\xF3""d";
         case Id::AreaNoun:                   return "Obszar";

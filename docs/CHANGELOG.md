@@ -122,6 +122,42 @@ and add the German in parentheses if it genuinely aids clarity.
   announces itself through KOTOR 2's engine events still counts for the
   session — that route is an edge with nothing to re-ask.
 
+<h3>Room shape descriptions:</h3>
+
+- Room labels no longer describe a space on a different level. Deciding "which
+  region am I in" compared positions in two dimensions only, so on a multi-level
+  map a label could be borrowed from a walkway metres overhead or below — on the
+  Ebon Hawk's outer hull, a dead-end notch beside the raised central spine kept
+  announcing the spine's corridor label, naming a route not walkable from there.
+  Candidates on another floor are now rejected the same way ones behind a wall
+  already were.
+- Exits that climb or drop to another level are called ramps ("ramp north-west"
+  rather than "north-west"). Only a real level change earns the word, so
+  ordinary slopes and steps don't lengthen exit lists.
+- A passage with one blocked end names the open end first: "south, dead end
+  north". It used to read "dead end north, south", which by ear is barely
+  distinguishable from the standalone "dead end, north" — yet one means the
+  north end is closed and the other means you are standing in a cul-de-sac
+  facing north. A label that begins with "dead end" now always means the region
+  you are in is one.
+- Large open spaces are no longer announced as corridors or cul-de-sacs. A space
+  that is big in both dimensions is described as an area with its exits listed,
+  however many ways out it has. The Ebon Hawk's port hull deck is a field you
+  cross to reach the proton missiles; calling it a dead end hid that.
+- Branches the walkmesh contradicts now fold into the space they belong to.
+  Where the engine's navigation data marks a branch as ending but the floor
+  plainly continues — parallel maintenance lanes that rejoin at the far end, for
+  instance — the branch used to stand as its own region, labelled "dead end",
+  suppressed for being wrong, and therefore never spoken at all. A junction
+  would advertise a route that merely loops back, and walking it produced
+  silence. One honest label now covers the whole space and the phantom exit is
+  gone. Genuine alcoves keep their own label, as do branches too far from any
+  neighbour to be part of it.
+- Fixed: a region could end up with no label and fall silent. When both ends of
+  a run pointed the same way there was no axis to name, and the empty result
+  went unnoticed — the region became invisible to the lookup and you heard the
+  generic "area" fallback while standing in it.
+
 <h3>Bug fixes:</h3>
 
 - Pressing Up or Down in a conversation while the character is still speaking

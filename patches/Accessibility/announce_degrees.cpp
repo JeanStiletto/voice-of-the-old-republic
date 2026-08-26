@@ -68,7 +68,10 @@ bool ResolveClusterLabelForPlayer(std::string& outBuf) {
     std::string buf;
     int sig = 0;
     int cid = acc::room_topology::kClusterIdNone;
-    if (!acc::room_topology::LookupAt(area, pos, buf, sig, cid)) {
+    if (!acc::room_topology::LookupAt(area, pos, buf, sig, cid,
+                                      /*allowDiagLog=*/true,
+                                      /*requireWallReachable=*/true,
+                                      /*zTrusted=*/true)) {
         return false;
     }
     if (cid == acc::room_topology::kClusterIdNone ||
