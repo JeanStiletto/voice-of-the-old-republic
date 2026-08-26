@@ -161,14 +161,61 @@ and add the German in parentheses if it genuinely aids clarity.
 <h3>Bug fixes:</h3>
 
 - Pressing Up or Down in a conversation while the character is still speaking
-  now says "Reply options not yet available" instead of clicking through
-  unreadable entries. The reply list on screen keeps the previous node's rows
-  alive while a line plays, so an arrow press moved a highlight over entries
-  that had no text behind them yet — you heard the navigation click and then
-  nothing, which read as dialogue options being completely broken (reported by
-  a beta tester who navigated during voice lines and never got a single option
-  spoken). The mod now refuses to move the highlight until the game has
-  actually published the node's replies, and tells you why.
+  now says "No reply options" instead of clicking through unreadable entries,
+  and says it again every time you ask. The reply list on screen keeps the
+  previous node's rows alive while a line plays, so an arrow press moved a
+  highlight over entries that had no text behind them yet — you heard the
+  navigation click and then nothing, which read as dialogue options being
+  completely broken (reported by a beta tester who navigated during voice
+  lines and never got a single option spoken). The mod now refuses to move
+  the highlight until the game has actually published the node's replies.
+  The message repeats because a tester sitting through a KOTOR 2 cinematic
+  pressed keys for 44 seconds and heard the answer only on the first press:
+  the mod suppresses a repeated announcement so the game's own echoes don't
+  stutter, and that rule was silencing a fresh answer to a fresh question.
+  Its wording is deliberately plain — a cinematic may offer no choices at
+  all, so promising that options are coming would be wrong, and the key that
+  moves things along differs by situation, so it names none.
+
+- KOTOR 2's tutorial popups all speak, not just the first one of a session
+  (reported by a beta tester on the Russian build). After the first popup the
+  mod could no longer read the message box, and since the announce had been
+  handed to the routine that re-reads it, every later popup passed in complete
+  silence — an entire playthrough's tutorials, with nothing in the log to say
+  so. It sat in fourteen of our own test sessions unnoticed because they were
+  too short to reach a second popup. The announce now comes from the hook that
+  already holds the text instead of being promised to one that has to look it
+  up again, so no path can go quiet waiting on another.
+
+- KOTOR 2's tutorial popups speak the mod's keyboard instructions again
+  rather than the game's mouse wording ("left-click the slot on the EQUIPMENT
+  screen"). Suppressing the vanilla text and choosing the replacement were
+  looking the popup up two different ways, and only one of them worked on
+  KOTOR 2.
+
+- Long popups and prompts are no longer cut off mid-word. Anything a screen
+  delivers as a single-row list — tutorial popups, confirmation prompts, the
+  party behaviour descriptions — was clipped at 255 characters, which stopped
+  the longest tutorials mid-sentence. Clipping also cost those popups their
+  keyboard instructions, because the shortened text no longer matched the
+  entry the instructions were filed under.
+
+- Journal and combat messages say your character's name instead of
+  "&lt;FullName&gt;". The game fills that placeholder in when it draws the
+  message; the mod reads the message before that happens, so KOTOR 2's
+  Peragus bonus quest announced as "&lt;FullName&gt; Needs Medical Attention"
+  on every update. The substitution already existed for object names — the
+  kolto tank in the same area — and had simply never been wired into the
+  message path.
+
+- Restored 17 translated lines that had been shipping as unreadable
+  placeholder characters. Russian was worst hit, losing every Cyrillic
+  character in the affected lines: the mod's own startup announcement, the
+  character-creation buttons (Recommended, Accept, Back), the workbench cost
+  and yield labels, the medical-item picker and one keybinding label. French,
+  Spanish and Polish lost accented letters in the same lines. The damage was
+  in our source rather than the build, and the oldest of it had been shipping
+  since v0.7.5.
 
 - A broken third-party item no longer crashes the game on area load (both
   games). When another mod's item refers to a base-item type the game's item
@@ -240,6 +287,29 @@ and add the German in parentheses if it genuinely aids clarity.
   highlight movement — leaving number keys as the only blind way to pick a
   line (reported by a beta tester on 0.7.8.1, confirmed by matching their
   log's cursor positions against every dead and working keypress).
+
+<h3>Under the hood:</h3>
+
+- A report of the camera spinning on its own is now something a log can
+  answer. The guard against that only knew one cause — the mouse cursor
+  resting in the strip along the screen edge that makes the game turn — and
+  it only wrote to the log when it acted, so a spin from any other cause
+  left no record at all. A second watch now reports the symptom instead of
+  the cause: the camera turning through a full revolution while you are
+  commanding nothing, with the surrounding state attached. It reads the
+  rotation two independent ways, so a fault in either reading cannot hide a
+  spin from it. It only writes to the log — there is nothing to hear, and it
+  corrects nothing, because correcting a cause we cannot yet name is how you
+  end up fighting the game over something it was entitled to do.
+- The camera logs are worth reading again. A check meant to catch one
+  specific reading going wrong compared the camera's facing against the
+  direction from the camera to your character — two numbers that only agree
+  while the camera sits in its ordinary place behind you. Cutscenes, combat
+  and the camera's lag as you turn all part them legitimately, so the check
+  fired hundreds of times a session on a healthy game, in our own logs as
+  much as anyone's, and read like a fault that was not there. It now runs
+  only when the comparison means something, and only reports a disagreement
+  that persists.
 
 <h2>v0.7.8.1</h2>
 

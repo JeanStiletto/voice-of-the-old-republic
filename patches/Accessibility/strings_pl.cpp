@@ -343,7 +343,7 @@ const char* Get(Id id) {
         case Id::QueueVerbUseTalent:         return "U\xBFyj atutu";
         case Id::QueueVerbUnknown:           return "Akcja";
 
-        case Id::DialogRepliesPending:       return "Opcje odpowiedzi nie s\xB9 jeszcze dost\xEApne";  // są, dostępne
+        case Id::DialogNoReplyOptions:          return "Brak opcji odpowiedzi";
         case Id::MessagesTitleCombatLog:     return "Dziennik walki.";
 
         case Id::MapPrevNote:                return "Poprzedni znacznik mapy";
@@ -793,7 +793,7 @@ const char* Get(Id id) {
         case Id::KbNameQueueClearAll:       return "Wyczy\x9C\xE6 kolejk\xEA";
         case Id::KbNameContainerGiveMode:   return "Tryb oddawania do pojemnika";
         case Id::KbNameStoreModeToggle:     return "Sklep: kupno lub sprzeda\xBF";
-        case Id::KbNameCraftViewToggle:     return "Warsztat: tworzenie lub rozk�""ad";
+        case Id::KbNameCraftViewToggle:     return "Warsztat: tworzenie lub rozk\xB3""ad";
         case Id::KbNameEditboxReReadUp:     return "Pole edycji: czytaj w g\xF3r\xEA";
         case Id::KbNameEditboxReReadDown:   return "Pole edycji: czytaj w d\xF3\xB3";
         case Id::KbNameEditboxSubmit:       return "Zatwierd\x9F wpis";

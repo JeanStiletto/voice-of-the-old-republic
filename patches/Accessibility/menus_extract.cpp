@@ -962,7 +962,15 @@ const char* TrySingleRowListBox(void* control, char* outBuf, size_t bufSize) {
             for (int i = 0; i < n; ++i) {
                 void* row = lb->data[i];
                 if (!row) continue;
-                char rowText[256];
+                // kAnnounceTextMax, not 256: the single row IS the whole
+                // message on every modal that routes its text through a
+                // listbox, and tutorial popups run well past 256 bytes
+                // (K2's mine tutorial is ~850). At 256 they were cut
+                // mid-word at exactly 255 characters — 19 times in one K1
+                // session — and, worse, the truncated string no longer
+                // matched the full-length TLK copy in tutorial_hints, so
+                // long popups silently lost their keyboard hint as well.
+                char rowText[kAnnounceTextMax];
                 bool got = false;
                 if (void* btn = CallDowncast(row, kVtableAsButton)) {
                     got = ExtractTextOrStrRef(btn, kButtonTextOffset,

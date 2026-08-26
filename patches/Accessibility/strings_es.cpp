@@ -340,7 +340,7 @@ const char* Get(Id id) {
 
 
 
-        case Id::DialogRepliesPending:       return "Opciones de respuesta a\xFAn no disponibles";
+        case Id::DialogNoReplyOptions:          return "Sin opciones de respuesta";
         case Id::MessagesTitleCombatLog:     return "Registro de combate.";
 
         case Id::MapPrevNote:                return "Nota anterior";
@@ -1110,11 +1110,11 @@ const char* Get(Id id) {
         case Id::TutK2SecuritySpikePad:
             return "Esta cerradura supera tus habilidades; usa una ganz\xFA""a electr\xF3nica. Enfoca el contenedor, tira del gatillo izquierdo para el men\xFA de acciones y elige Seguridad.";
 
-        case Id::FmtModLoadedVersion:   return "Voice of the Old Republic cargado, versi�n %s";
+        case Id::FmtModLoadedVersion:   return "Voice of the Old Republic cargado, versi\xF3n %s";
         case Id::FmtChargenFeatUnnamed: return "Dote %u";
         case Id::ChargenBtnRecommended: return "Recomendado";
         case Id::ChargenBtnAccept:      return "Aceptar";
-        case Id::ChargenBtnBack:        return "Atr�s";
+        case Id::ChargenBtnBack:        return "Atr\xE1s";
         case Id::Count_:               return "";
     }
     return "";

@@ -990,7 +990,7 @@ constexpr ListBoxPanelSpec MakeDialogSpec(const char* logTag,
         /*onEnter*/                 nullptr,
         /*onEsc*/                   nullptr,
         /*titleOverride*/           nullptr,
-        /*emptyStateId*/            acc::strings::Id::DialogRepliesPending,
+        /*emptyStateId*/            acc::strings::Id::DialogNoReplyOptions,
         /*alwaysReturnFromHandler*/ false,
         /*minSelFn*/                nullptr,
         /*useEngineSelect*/         false,
@@ -1558,6 +1558,13 @@ constexpr int kNumSpecs = static_cast<int>(sizeof(kSpecs) / sizeof(kSpecs[0]));
 // original three inline blocks in menus.cpp's OnHandleInputEvent.
 // ============================================================================
 
+// How long a nav refusal stays deduped. Long enough that holding the key down
+// (auto-repeat is far faster) yields one line rather than a machine-gun, short
+// enough that a deliberate second press always gets an answer. A refusal is a
+// reply to a question the user just asked; answering only the first time reads
+// as the mod having gone deaf.
+constexpr unsigned kRefusalRepeatMs = 1500;
+
 bool DispatchKeyDownEdge(const ListBoxPanelSpec& spec, void* panel,
                          int param_1)
 {
@@ -1578,15 +1585,23 @@ bool DispatchKeyDownEdge(const ListBoxPanelSpec& spec, void* panel,
         // Liveness gate (dialog specs): the rows currently in the listbox
         // may be the previous node's leftovers with no readable text behind
         // them. Refuse to move the cursor over them — consume the key (so
-        // the engine can't act on it either) and tell the user the replies
-        // aren't up yet instead of clicking through unreadable rows.
+        // the engine can't act on it either) and report the state instead of
+        // clicking through unreadable rows.
+        //
+        // The phrase is deliberately neutral ("no reply options") rather than
+        // "not yet available": this same gate covers a cinematic that never
+        // offers a choice at all, so a wording that promises replies are
+        // coming would be wrong there. It also carries no hint about which
+        // key to press — the right key differs per situation, and a wrong
+        // hint is worse than none.
         if (lb && spec.navLive && !spec.navLive(panel)) {
             acclog::Write(spec.logTag, "%s lb=%p gated: reply set not live; "
                           "nav refused", dirTag, lb);
             if (spec.emptyStateId != acc::strings::Id::Count_) {
                 const char* phrase = acc::strings::Get(spec.emptyStateId);
                 if (phrase && phrase[0] != '\0') {
-                    acc::menus::SpeakIfChanged(/*channel=*/1, phrase);
+                    acc::menus::SpeakIfChanged(/*channel=*/1, phrase,
+                                               kRefusalRepeatMs);
                 }
             }
             return true;
@@ -1610,13 +1625,14 @@ bool DispatchKeyDownEdge(const ListBoxPanelSpec& spec, void* panel,
         } else if (lb) {
             acclog::Write(spec.logTag, "%s lb=%p empty; nav ignored",
                           dirTag, lb);
-            // Announce the empty state if the spec provided one. The
-            // generic dedup channel collapses repeated arrow presses so
-            // the user doesn't hear the same phrase on every keystroke.
+            // Announce the empty state if the spec provided one, re-speaking
+            // it when the user asks again after a pause — same reasoning as
+            // the liveness refusal above.
             if (spec.emptyStateId != acc::strings::Id::Count_) {
                 const char* phrase = acc::strings::Get(spec.emptyStateId);
                 if (phrase && phrase[0] != '\0') {
-                    acc::menus::SpeakIfChanged(/*channel=*/1, phrase);
+                    acc::menus::SpeakIfChanged(/*channel=*/1, phrase,
+                                               kRefusalRepeatMs);
                 }
             }
         }

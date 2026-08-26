@@ -204,6 +204,18 @@ int ReadGlobalNumber(const char* name);
 // on no server app / fault.
 bool IsLoadingSaveGame();
 
+// Replace the engine's "<FullName>" player-name token in `buf` with the PC's
+// name, in place. The engine expands this token when it RENDERS a string; we
+// read strings before that happens, so any raw read can carry it — placed-
+// object names ("<FullName>'s Kolto Tank"), journal-update lines ("<FullName>
+// Needs Medical Attention"), and anything else authored with the token.
+//
+// No-op when the name can't be resolved: substituting an empty string leaves
+// dangling grammar that sounds like a finished sentence, whereas the raw token
+// at least tells the listener a name is missing. Safe on any NUL-terminated
+// buffer; never grows past bufSize.
+void SubstitutePlayerNameToken(char* buf, size_t bufSize);
+
 // Wraps CClientExoApp::GetObjectName(ulong, CExoString*) — the engine's
 // universal accessor. Better than GetObjectName(obj,...) from a handle
 // because it handles empty first_name with the template + appearance.2da

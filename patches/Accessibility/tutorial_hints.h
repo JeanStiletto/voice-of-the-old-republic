@@ -47,11 +47,6 @@ const char* HintForDialogLine(const char* renderedLine, uint32_t* outStrref = nu
 // arrow-navigates onto the popup's message in the chain.
 const char* HintForMouseText(const char* text);
 
-// Convenience predicate over HintForMouseText — used to suppress the single-row
-// message-listbox monitor on the popup's first-sight so the content-fingerprint
-// keyboard hint is the sole speaker there.
-bool IsSuppressedTutorialText(const char* text);
-
 // True iff `renderedLine` is one of the curated VO-less subtitle lines that must
 // be spoken even though its speaker classifies as a voiced human (and would
 // otherwise be silenced by the human-subtitle suppression). A tiny hand-picked

@@ -413,10 +413,6 @@ const char* HintForMouseText(const char* text) {
     return nullptr;
 }
 
-bool IsSuppressedTutorialText(const char* text) {
-    return HintForMouseText(text) != nullptr;
-}
-
 // ---- Forced-spoken VO-less subtitle lines --------------------------------
 //
 // Curated strrefs whose dialogue node ships as subtitle text with no VO. The

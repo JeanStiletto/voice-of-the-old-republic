@@ -338,7 +338,7 @@ const char* Get(Id id) {
 
 
 
-        case Id::DialogRepliesPending:       return "Opzioni di risposta non ancora disponibili";
+        case Id::DialogNoReplyOptions:          return "Nessuna opzione di risposta";
         case Id::MessagesTitleCombatLog:     return "Registro di combattimento.";
 
         case Id::MapPrevNote:                return "Nota precedente";

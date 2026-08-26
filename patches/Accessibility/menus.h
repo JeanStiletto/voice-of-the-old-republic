@@ -34,7 +34,18 @@ void ClearPendingAnnounce();
 // hook (ch 1). Non-static so the focus monitor's voluntary
 // AnnounceControl can prime ch 0's cache via MarkSpoken — stops the
 // engine's post-nav SetActive echo from re-announcing.
-void SpeakIfChanged(int channel, const char* text);
+//
+// repeatAfterMs = 0 (default) never expires the dedup: correct for echo
+// suppression, where the duplicate arrives milliseconds later and the user
+// did nothing to ask for it. Pass a window for announcements that ANSWER A
+// KEYPRESS — there the same text is a fresh answer to a fresh question, and
+// suppressing it forever means the user presses a key and hears nothing.
+// (The dialogue "reply options not yet available" refusal did exactly that:
+// spoken once at 16:07:36, then silent through eight more presses over the
+// next 44 seconds while the player sat in a cutscene with no idea whether
+// anything was waiting for them.)
+void SpeakIfChanged(int channel, const char* text,
+                    unsigned repeatAfterMs = 0);
 void MarkSpoken(int channel, const char* text);
 
 // True when `text` is what was last spoken on EITHER channel. For announce

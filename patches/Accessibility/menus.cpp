@@ -24,6 +24,7 @@
 #include <cstring>
 
 #include "log.h"
+#include "core_tick.h"
 #include "prism.h"
 #include "menus.h"           // public surface — Step 1 mod-wide tick split
 #include "menus_chargen_attr.h" // Chargen "Attribute" panel label + selected_ability sync
@@ -131,18 +132,26 @@ namespace {
 // string, so a snapshot shorter than the text it guards would report two
 // different lines as identical whenever they share a long prefix.
 char s_lastSpoken[2][acc::menus::detail::kAnnounceTextMax] = {{0}, {0}};
+DWORD s_lastSpokenAt[2] = {0, 0};
 }
 
 void MarkSpoken(int channel, const char* text) {
     if (channel < 0 || channel >= 2 || !text) return;
     strncpy_s(s_lastSpoken[channel], text, _TRUNCATE);
+    s_lastSpokenAt[channel] = acc::tick::NowMs();
 }
 
-void SpeakIfChanged(int channel, const char* text) {
+void SpeakIfChanged(int channel, const char* text, unsigned repeatAfterMs) {
     if (channel < 0 || channel >= 2 || !text) return;
     if (strncmp(s_lastSpoken[channel], text,
-                sizeof(s_lastSpoken[channel])) == 0) return;
+                sizeof(s_lastSpoken[channel])) == 0) {
+        // Same text. Suppress unless the caller declared it re-speakable and
+        // enough time has passed — see the repeatAfterMs note in menus.h.
+        if (repeatAfterMs == 0) return;
+        if (acc::tick::NowMs() - s_lastSpokenAt[channel] < repeatAfterMs) return;
+    }
     strncpy_s(s_lastSpoken[channel], text, _TRUNCATE);
+    s_lastSpokenAt[channel] = acc::tick::NowMs();
     prism::Speak(text, /*interrupt=*/false);
 }
 
@@ -681,20 +690,33 @@ extern "C" void __cdecl OnListBoxSetActiveControl(void* listBox, void* newRow,
                               "sub-screen description listbox silenced "
                               "(panel kind=%s)",
                               PanelKindName(IdentifyPanel(livePanel)));
-            } else if (acc::tutorial_hints::IsSuppressedTutorialText(text) ||
-                       acc::tutorial_popup::SyntheticActive()) {
-                // The tutorial popup's single-row message listbox: the keyboard
-                // hint is spoken by the content-fingerprint monitor. Suppress
-                // the raw (mouse-worded) row text here so it isn't also read.
+            } else {
+                // The tutorial popup's single-row message listbox. The vanilla
+                // wording is mouse-centric, so speak the keyboard hint in its
+                // place when the row maps to one; otherwise the row's own text.
                 // Matched on text (not panel identity) because this fires before
                 // the popup registers in panels[]. See tutorial_hints.cpp.
                 // The synthetic Trask popup (SyntheticActive) shows the original
-                // mouse strref as its visible text — suppress that row too.
-                acclog::Write("Menus.ListBox",
-                              "tutorial mouse message suppressed "
-                              "(keyboard hint owns the announce)");
-            } else {
-                SpeakIfChanged(/*channel=*/1, text);
+                // mouse strref as its visible text, so its hint comes from the
+                // popup module instead of the strref map.
+                //
+                // Speaking HERE rather than deferring to the content-fingerprint
+                // monitor is deliberate. This hook already holds the text; the
+                // monitor has to re-extract it from the panel, and on KOTOR 2
+                // that extraction returns nothing for every popup after the
+                // first (the message listbox reads as src=none). The old
+                // "suppress, the monitor owns the announce" hand-off then
+                // silenced the popup outright — the monitor stored the empty
+                // fingerprint and every later popup compared equal to it and
+                // was skipped, so a whole session's tutorials went unspoken
+                // (K2 field logs, and 14 of our own sessions). Both paths now
+                // resolve the same hint string, so the announce dedup collapses
+                // them to one line instead of one path promising for the other.
+                const char* hint =
+                    acc::tutorial_popup::SyntheticActive()
+                        ? acc::tutorial_popup::SyntheticHint()
+                        : acc::tutorial_hints::HintForMouseText(text);
+                SpeakIfChanged(/*channel=*/1, (hint && hint[0]) ? hint : text);
             }
         }
     } else {

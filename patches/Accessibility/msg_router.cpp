@@ -5,7 +5,7 @@
 #include <cstring>
 
 #include "engine_offsets.h"   // CExoString, Vector
-#include "engine_area.h"      // IsLoadingSaveGame — engine save-load flag
+#include "engine_area.h"      // IsLoadingSaveGame, SubstitutePlayerNameToken
 #include "engine_player.h"    // GetPlayerPosition — world-live replay gate
 #include "log.h"
 #include "menus_listbox.h"    // RegisterPickerMsgRules — equip-preview suppression
@@ -135,6 +135,15 @@ extern "C" void __cdecl OnAppendToMsgBuffer(void* /*guiInGame*/,
         return;
     }
     text[n] = '\0';
+
+    // Expand the engine's <FullName> player-name token before anything reads
+    // the line. The engine substitutes it when it RENDERS the message window;
+    // this hook fires on the raw append, so the token is still in the string —
+    // K2's Peragus bonus quest spoke as "Journal updated: (Prologue)
+    // <FullName> Needs Medical Attention" every time it fired. Done here, not
+    // in a rule, so the rules and the raw-speech fallback all see the same
+    // finished text.
+    acc::engine::SubstitutePlayerNameToken(text, sizeof(text));
 
     // Suppress the message-buffer REPLAY that floods on save-load. When the
     // engine restores a saved game it re-appends the entire persisted

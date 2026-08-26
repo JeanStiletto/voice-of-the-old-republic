@@ -86,7 +86,7 @@ const char* Get(Id id) {
         case Id::FmtInteractFailed:    return "Interaction avec %s \xE9""chou\xE9""e";
         case Id::FmtInteractEngine:    return "%s %s";
         case Id::FmtInteractRadial:    return "Menu d'action, %s";
-        case Id::FmtMedPickerApplyTo:  return "Appliquer � : %s";
+        case Id::FmtMedPickerApplyTo:  return "Appliquer \xE0 : %s";
         case Id::FmtInteractNoActionsRedirect: return "Aucune action disponible pour %s. Appuyez sur Entr\xE9""e pour activer.";
         case Id::FmtInteractNoActions: return "Aucune action disponible pour %s.";
         case Id::DoorSealedNoOpen: return "Scell\xE9""e. Elle ne s'ouvre pas.";
@@ -339,7 +339,7 @@ const char* Get(Id id) {
 
 
 
-        case Id::DialogRepliesPending:       return "Options de r\xE9ponse pas encore disponibles";
+        case Id::DialogNoReplyOptions:          return "Aucune option de r\xE9ponse";  // Aucune option de réponse
         case Id::MessagesTitleCombatLog:     return "Journal de combat.";
 
         case Id::MapPrevNote:                return "Note pr\xE9""c\xE9""dente";
@@ -374,7 +374,7 @@ const char* Get(Id id) {
         case Id::FmtStorePriceSell:         return "Prix %d cr\xE9""dits, vous en avez %d";
         case Id::StoreModeBuy:              return "Mode achat";
         case Id::StoreModeSell:             return "Mode vente";
-        case Id::FmtCraftCost:              return "Co�t %d";
+        case Id::FmtCraftCost:              return "Co\xFBt %d";
         case Id::FmtCraftYield:             return "Rapporte %d";
         case Id::StoreCannotSell:           return "Ne peut \xEAtre vendu";
         case Id::StoreCannotBuy:            return "Ne peut \xEAtre achet\xE9";
@@ -794,7 +794,7 @@ const char* Get(Id id) {
         case Id::KbNameQueueClearAll:       return "Vider la file";
         case Id::KbNameContainerGiveMode:   return "Conteneur mode donner";
         case Id::KbNameStoreModeToggle:     return "Boutique acheter ou vendre";
-        case Id::KbNameCraftViewToggle:     return "�tabli cr�""er ou d�""composer";
+        case Id::KbNameCraftViewToggle:     return "\xC9tabli cr\xE9""er ou d\xE9""composer";
         case Id::KbNameEditboxReReadUp:     return "Relire le champ vers le haut";
         case Id::KbNameEditboxReReadDown:   return "Relire le champ vers le bas";
         case Id::KbNameEditboxSubmit:       return "Valider la saisie";
@@ -1109,9 +1109,9 @@ const char* Get(Id id) {
         case Id::TutK2SecuritySpikePad:
             return "Cette serrure d\xE9passe vos comp\xE9tences ; utilisez une sonde de s\xE9""curit\xE9. Ciblez le conteneur, tirez la g\xE2""chette gauche pour le menu d'actions, et choisissez S\xE9""curit\xE9.";
 
-        case Id::FmtModLoadedVersion:   return "Voice of the Old Republic charg�, version %s";
+        case Id::FmtModLoadedVersion:   return "Voice of the Old Republic charg\xE9, version %s";
         case Id::FmtChargenFeatUnnamed: return "Don %u";
-        case Id::ChargenBtnRecommended: return "Recommand�";
+        case Id::ChargenBtnRecommended: return "Recommand\xE9";
         case Id::ChargenBtnAccept:      return "Accepter";
         case Id::ChargenBtnBack:        return "Retour";
         case Id::Count_:               return "";

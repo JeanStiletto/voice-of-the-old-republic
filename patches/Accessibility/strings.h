@@ -1198,7 +1198,7 @@ enum class Id : int {
     //      previous node (click, then silence: no reply text exists
     //      anywhere yet — userlogs/zack078dialoguesnotspeaking) or was
     //      silently ignored on a first-time empty list.
-    DialogRepliesPending,
+    DialogNoReplyOptions,
 
     // ---- Messages-panel review titles. Spoken when the InGameMessages
     //      panel becomes foreground (titleOverride). Two channels — the
