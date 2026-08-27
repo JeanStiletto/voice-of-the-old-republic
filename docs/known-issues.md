@@ -12,6 +12,62 @@ When an entry is closed, move it out of this file (the corresponding fix or comm
 
 ## Bugs
 
+### Controller misbehaves on the ROG Ally, both games — diagnostics built 2026-08-27, awaiting a tester log
+
+Several testers play on an ROG Ally (integrated controller) and report the pad
+"not working properly" on K1 and K2 alike. No log yet: the diagnostic layer
+below was built first, deliberately, so the tester's one session produces an
+answer instead of another round of guesses.
+
+**The first hypothesis — that a handheld sends "different keycodes" — is wrong
+and should not be re-raised.** `pad_input` reads the pad through XInput, whose
+button mask is fixed by the API: A is `0x1000` on every device that speaks it.
+A pad visible to XInput at all is already fully bound. The failure therefore has
+to be one of:
+
+- The controller is not in XInput mode. Its vendor layer can put it in a
+  desktop / keyboard-and-mouse emulation mode, where buttons arrive as real
+  keystrokes. Nothing to bind, AND the emulated keys feed the mod's own keyboard
+  detectors — so it misbehaves rather than merely going quiet.
+- We bound the wrong XInput slot. A vendor layer can present a controller of its
+  own beside the physical one; the old code took the first slot that answered
+  and never re-evaluated, so a phantom in slot 0 killed the pad permanently
+  while every log line still looked healthy.
+- KOTOR 2 only: its engine enumerates game controllers once, at input init, and
+  a multi-interface handheld gives it more devices to choose among.
+
+**What now goes into every session log** (all of it in `Pad.Devices`, plus two
+`Pad` lines):
+
+- A `controller census` at session start and again whenever the device picture
+  changes: all four XInput slots whether or not we chose them, each with
+  capabilities, sub-type and — via the undocumented ordinal-108
+  `XInputGetCapabilitiesEx` — its USB vendor/product ids, plus a live sample.
+- The DirectInput half: the same `DI8DEVCLASS_GAMECTRL` / attached-only
+  enumeration KOTOR 2's engine runs at input init, through the same `dinput8`
+  module the process already has. Its payload is device NAMES, which XInput
+  cannot give and which is the fastest way to tell a physical pad from a virtual
+  one in someone else's log.
+- A `READING:` line that states what the two counts together mean, so the
+  no-controller-at-either-API case is not mistaken for a mod bug.
+- `slot N has not changed state in … ms while slot M is producing input` — the
+  idle-slot guard correcting a wrong bind. Its ABSENCE alongside a silent pad is
+  itself a finding.
+- K2: `engine code N ignored — its keyboard twin … is physically down`. This is
+  the correct answer when the keyboard really sent the event, but it is also
+  precisely what keyboard-emulation mode produces, and it used to be silent.
+
+Implementation: `patches/Accessibility/pad_diag.{h,cpp}` (census; no input
+driving, never acquires a device) and the slot-selection + idle-guard changes in
+`pad_input.cpp`. Slot selection now prefers a slot whose capabilities report a
+gamepad over the first that merely answers.
+
+**Status: built and cleanly compiled; the empty-machine path and the DirectInput
+struct/vtable decoding are verified by a standalone harness on the dev box (real
+product names and vendor ids decoded correctly). The device-present XInput
+branch is unverified — no controller was attached.** Next step is one tester
+session on an Ally.
+
 ### K1 dialogue replies unnavigable for zack on 0.7.8.1 — cursor-state dependent; expected fixed by the v0.7.9 re-park (diagnosed 2026-08-25, awaiting zack's confirmation on the next release)
 
 Zack's report (`userlogs/zack078dialoguesnotspeaking.7z`, 0.7.8.1, English,

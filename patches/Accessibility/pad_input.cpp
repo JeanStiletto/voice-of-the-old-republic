@@ -26,6 +26,8 @@
 #include "menus_chain.h"     // g_chain* — which Quick Menu entry is focused
 #include "minigame_pazaak.h" // TryHandlePadAction — the board owns Y and X
 #include "narrated_target.h" // TryGet — is there a target to open the menu on?
+#include "pad_diag.h"        // the device census — what the machine actually
+                             // has, as opposed to what we managed to bind
 #include "pad_quickmenu.h"   // the KOTOR 1 Y menu (K2 uses the engine's own)
 #include "peek_description.h" // OnShiftReleased — Y is the pad's peek modifier
 #include "prism.h"           // Silence — the cancel a pad press has no
@@ -87,11 +89,45 @@ constexpr BYTE kTriggerHeld = 60;
 // XInputGetState on an empty slot is a comparatively expensive call.
 constexpr ULONGLONG kScanIntervalMs = 2000;
 
+// The idle-slot guard. More than one XInput device is ordinary on a handheld:
+// the vendor layer (Armoury Crate on the ROG Ally, and its equivalents) can
+// present a controller of its own beside the physical one, and from inside
+// Tick() a slot bound to that is indistinguishable from everything working —
+// it answers every poll, so the rescan below never fires, and the player's real
+// pad is never read. XInput's packet number is the discriminator: it moves on
+// every state change, so a bound slot whose packet is frozen this long while
+// another connected slot's is moving is proof we bound the wrong device.
+//
+// Long enough that a player who has simply put the pad down does not trip it —
+// and tripping it is harmless anyway, because the guard only ever switches TO a
+// slot that demonstrably changed.
+//
+// The guard is NOT gated on how many devices answered when we bound, because
+// that count goes stale the moment a device appears afterwards — which is
+// exactly what a vendor layer switching modes mid-session does, and exactly the
+// case the guard exists for. It discovers the alternates itself instead, and
+// pays for that at the same cadence the unbound rescan already pays: four slot
+// polls per interval, and only while the bound pad has been perfectly still for
+// the idle window.
+constexpr ULONGLONG kLatchIdleMs = 8000;
+constexpr ULONGLONG kAltPollMs   = 2000;   // cadence while the guard is armed
+
 HMODULE            g_xinputDll   = nullptr;
 PFN_XInputGetState g_xinputGet   = nullptr;
+const wchar_t*     g_xinputName  = nullptr;   // for the census line
 bool               g_xinputTried = false;
 int                g_padSlot     = -1;   // last slot that answered
 ULONGLONG          g_lastScanMs  = 0;
+bool               g_censusDone  = false;
+
+// Idle-slot guard state. g_altSeen distinguishes "this alternate's packet
+// differs from its baseline" from "we have no baseline for it yet" — without
+// that, first sight of any alternate would read as movement.
+DWORD     g_lastPacket     = 0;
+ULONGLONG g_packetMovedMs  = 0;
+ULONGLONG g_lastAltPollMs  = 0;
+DWORD     g_altPacket[4]   = {};
+bool      g_altSeen[4]     = {};
 
 bool g_ltHeld = false;
 bool g_rtHeld = false;
@@ -238,8 +274,9 @@ void EnsureXInput() {
         auto fn = reinterpret_cast<PFN_XInputGetState>(
             GetProcAddress(h, "XInputGetState"));
         if (fn) {
-            g_xinputDll = h;
-            g_xinputGet = fn;
+            g_xinputDll  = h;
+            g_xinputGet  = fn;
+            g_xinputName = name;   // static storage — the census prints it later
             acclog::Write("Pad", "XInput bound via %ls", name);
             return;
         }
@@ -988,6 +1025,65 @@ void DispatchDpadHold(int code) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// The idle-slot guard — see kLatchIdleMs for what it is defending against.
+// ---------------------------------------------------------------------------
+// Called only while the bound slot has stood perfectly still for the idle
+// window AND more than one device answered at bind time. Polls the slots we did
+// NOT bind and switches to any that moved since its own baseline. Two samples
+// are needed per alternate, which is why the first sight of one only records a
+// baseline: a packet number read once says nothing about whether it is moving.
+//
+// Returns true when it switched, which the caller must treat as "this tick's
+// sample belongs to a device we no longer read" and abandon.
+bool AdoptLivelierSlot(ULONGLONG now) {
+    if (g_lastAltPollMs != 0 && now - g_lastAltPollMs < kAltPollMs) return false;
+    g_lastAltPollMs = now;
+
+    for (DWORD i = 0; i < 4; ++i) {
+        if (static_cast<int>(i) == g_padSlot) continue;
+        XiState alt = {};
+        if (g_xinputGet(i, &alt) != ERROR_SUCCESS) {
+            g_altSeen[i] = false;   // gone; any baseline we had is meaningless
+            continue;
+        }
+        if (!g_altSeen[i]) {
+            g_altSeen[i]   = true;
+            g_altPacket[i] = alt.dwPacketNumber;
+            continue;
+        }
+        if (alt.dwPacketNumber == g_altPacket[i]) continue;
+
+        acclog::Write("Pad",
+                      "slot %d has not changed state in %llu ms while slot %u "
+                      "is producing input — switching to slot %u. The first "
+                      "slot that answered was not the pad the player is holding "
+                      "(a second XInput device, most often a handheld's vendor "
+                      "layer, was sitting in front of it).",
+                      g_padSlot,
+                      static_cast<unsigned long long>(now - g_packetMovedMs),
+                      i, i);
+
+        g_padSlot       = static_cast<int>(i);
+        g_lastPacket    = alt.dwPacketNumber;
+        g_packetMovedMs = now;
+
+        // Everything the old slot left behind describes a device we no longer
+        // read. Cleared exactly as the unplug path clears it, or the first read
+        // of the new slot fires phantom edges against a stale baseline.
+        g_ltHeld = g_rtHeld = false;
+        g_ltChorded = g_rtChorded = false;
+        g_stickMoving  = false;
+        g_rstickActive = false;
+        g_rstickX = g_rstickY = 0.0f;
+        g_btnNow  = 0;
+        g_yHeld   = false;
+        for (int s = 0; s < 4; ++s) g_altSeen[s] = false;
+        return true;
+    }
+    return false;
+}
+
 }  // namespace
 
 // ---------------------------------------------------------------------------
@@ -1020,31 +1116,77 @@ void Tick() {
     // knows a controller was touched; PollButtons() and pad_movement read what
     // it leaves behind.
     EnsureXInput();
+
+    // The device census, once per session. Deliberately ahead of the no-XInput
+    // early-out: "the mod resolved no XInput runtime" and "this machine has no
+    // controller attached" are different findings with the same symptom, and a
+    // tester's log has to tell them apart even when nothing works at all. The
+    // census also reaches DirectInput, which is the only half that can name a
+    // device — and on KOTOR 2 it is the same enumeration the engine itself ran
+    // at input init.
+    if (!g_censusDone) {
+        g_censusDone = true;
+        acc::pad::diag::LogDeviceCensus(g_xinputDll, g_xinputName,
+                                        "session start");
+    }
+
     if (!g_xinputGet) return;
 
     const ULONGLONG now = GetTickCount64();
 
-    // Slot search, throttled. Once a slot answers we stay on it; a pad that
-    // stops answering drops us back into the throttled search.
+    // Slot search, throttled. The first slot that ANSWERS is not automatically
+    // the pad the player is holding — see kLatchIdleMs — so prefer one whose
+    // capabilities report a gamepad, fall back to the first that answers, and
+    // leave the rest to the idle-slot guard.
     if (g_padSlot < 0) {
         if (g_lastScanMs != 0 && now - g_lastScanMs < kScanIntervalMs) return;
         g_lastScanMs = now;
+
+        // A pad plugged in mid-session changes the device picture, and the
+        // census is the only line that says WHICH device appeared. Costs
+        // nothing while nothing changes: the fingerprint it compares is
+        // XInput-only, and the DirectInput walk runs only when it prints.
+        acc::pad::diag::LogDeviceCensusIfChanged(g_xinputDll, g_xinputName,
+                                                 "the device picture changed");
+
+        int firstAnswering = -1;
+        int firstGamepad   = -1;
+        int connected      = 0;
         for (DWORD i = 0; i < 4; ++i) {
-            XiState st = {};
-            if (g_xinputGet(i, &st) == ERROR_SUCCESS) {
-                g_padSlot = static_cast<int>(i);
-                acclog::Write("Pad", "XInput controller found in slot %u", i);
-                break;
+            XiState probe = {};
+            if (g_xinputGet(i, &probe) != ERROR_SUCCESS) continue;
+            ++connected;
+            if (firstAnswering < 0) firstAnswering = static_cast<int>(i);
+            if (firstGamepad < 0 &&
+                acc::pad::diag::SlotSubType(g_xinputDll, i) ==
+                    acc::pad::diag::kSubTypeGamepad) {
+                firstGamepad = static_cast<int>(i);
             }
         }
-        if (g_padSlot < 0) return;
+        if (firstAnswering < 0) return;
+
+        g_padSlot   = (firstGamepad >= 0) ? firstGamepad : firstAnswering;
+        acclog::Write("Pad",
+                      "XInput controller found in slot %d — %d device(s) "
+                      "connected, chosen because %s",
+                      g_padSlot, connected,
+                      (firstGamepad >= 0)
+                          ? "its capabilities report a gamepad"
+                          : "it is the first slot that answered");
+
+        // Baseline for the idle-slot guard. Started here so it never inherits
+        // the clock of whatever was bound before.
+        g_lastPacket    = 0;
+        g_packetMovedMs = now;
+        g_lastAltPollMs = 0;
+        for (int s = 0; s < 4; ++s) g_altSeen[s] = false;
     }
 
     XiState st = {};
     if (g_xinputGet(static_cast<DWORD>(g_padSlot), &st) != ERROR_SUCCESS) {
         acclog::Write("Pad", "XInput slot %d stopped answering — rescanning",
                       g_padSlot);
-        g_padSlot = -1;
+        g_padSlot   = -1;
         g_ltHeld = g_rtHeld = false;
         g_stickMoving = false;
         // A pad that vanishes mid-hold must read as "everything released", or
@@ -1060,6 +1202,21 @@ void Tick() {
     // The live half of Connected(): a slot that answered this tick. Stamped
     // here rather than at discovery so an unplug stops refreshing it.
     g_xinputSeenMs = now;
+
+    // The idle-slot guard. A bound slot that answers but never CHANGES is the
+    // fingerprint of a device nobody is holding — which is either a pad the
+    // player has put down, or the wrong device entirely. Only the alternates
+    // can tell those apart, so the decision is deferred to AdoptLivelierSlot.
+    if (st.dwPacketNumber != g_lastPacket) {
+        g_lastPacket    = st.dwPacketNumber;
+        g_packetMovedMs = now;
+    } else if (g_packetMovedMs != 0 &&
+               now - g_packetMovedMs >= kLatchIdleMs) {
+        // The sample in hand came from the slot we just abandoned. Drop the
+        // rest of this tick rather than feed it downstream — the cleared state
+        // the switch left behind is the correct baseline for the next one.
+        if (AdoptLivelierSlot(now)) return;
+    }
 
     g_btnNow = st.Gamepad.wButtons;
 
@@ -1551,7 +1708,21 @@ Verdict TranslateManagerEvent(int& code, int& value) {
     // pad's. Runs before anything else so a bound F9..F12 / A / B / F1 / F2
     // keeps its vanilla meaning.
     const int twinVk = KeyboardTwinVk(code);
-    if (twinVk != 0 && PhysDown(twinVk)) return Verdict::NotPad;
+    if (twinVk != 0 && PhysDown(twinVk)) {
+        // Traced, not silent. This is the correct answer whenever the keyboard
+        // really did send the event — but it is ALSO what a handheld in desktop
+        // / keyboard-emulation mode produces: its buttons arrive as genuine
+        // keystrokes, the twin is therefore genuinely down, and every pad event
+        // gets rejected here. Without a line, that failure reads as "the
+        // controller does nothing" with nothing in the log to say why. Trace
+        // rather than Write: on a keyboard-only session this fires on ordinary
+        // typing, and the dedup collapses it.
+        acclog::Trace("Pad",
+                      "engine code %d ignored — its keyboard twin (VK 0x%02X) "
+                      "is physically down, so this is the keyboard's event",
+                      code, twinVk);
+        return Verdict::NotPad;
+    }
 
     const int raw = code;
 

@@ -121,6 +121,23 @@ and add the German in parentheses if it genuinely aids clarity.
   window that absorbs a missed read, so unplugging is noticed. A pad that
   announces itself through KOTOR 2's engine events still counts for the
   session — that route is an edge with nothing to re-ask.
+- The mod no longer binds to the wrong controller on a machine that has more
+  than one. Handhelds and their vendor software can present a controller of
+  their own beside the physical one, and the mod used to read whichever
+  answered first and never reconsider — so landing on the wrong one left every
+  button dead. It now prefers a device that identifies itself as a gamepad, and
+  if the one it is reading stays completely still while another is producing
+  input, it switches across.
+- A controller that misbehaves now leaves a diagnosis in the log instead of
+  silence. Every session records what the machine actually has: all four
+  controller slots whether or not the mod uses them, each with its capabilities
+  and USB ids, plus the full device list with product names — and a line
+  saying what that combination means. A pad that is invisible to the system
+  entirely is reported as exactly that, which is the signature of a handheld
+  left in its desktop mode, where the sticks and buttons are sent as keystrokes
+  and mouse movement and no controller exists for anything to bind to; that one
+  is fixed on the device, not in the mod. If your controller misbehaves, send
+  the log with the report — the answer is usually already in it.
 
 <h3>Room shape descriptions:</h3>
 
