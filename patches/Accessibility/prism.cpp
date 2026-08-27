@@ -113,6 +113,8 @@ typedef PrismError     (__cdecl* PFN_prism_backend_set_rate)(PrismBackend*, floa
 typedef PrismError     (__cdecl* PFN_prism_backend_set_volume)(PrismBackend*, float);
 typedef PrismError     (__cdecl* PFN_prism_backend_set_voice)(PrismBackend*, size_t);
 typedef PrismError     (__cdecl* PFN_prism_backend_count_voices)(PrismBackend*, size_t*);
+typedef PrismError     (__cdecl* PFN_prism_backend_get_voice_name)(PrismBackend*, size_t, const char**);
+typedef PrismError     (__cdecl* PFN_prism_backend_get_voice)(PrismBackend*, size_t*);
 typedef const char*    (__cdecl* PFN_prism_backend_name)(PrismBackend*);
 
 HMODULE       g_prismLib       = nullptr;
@@ -137,6 +139,25 @@ size_t g_sapiVoiceCurrent = static_cast<size_t>(-1);
 // Cached voice count so out-of-range requests fall back silently instead of
 // asking SAPI for a voice it doesn't have. 0 = not enumerated / no voices.
 size_t g_sapiVoiceCount   = 0;
+
+// The urgent channel's voice, persisted BY NAME rather than by index: SAPI
+// numbers voices in enumeration order, so installing or removing any voice
+// renumbers the rest and a saved index would land the user on a different
+// voice — quite possibly one speaking a different language. The name is
+// stored in Prism's own encoding (UTF-8), which is what the id lookup
+// compares against. Empty = never chosen; the channel keeps SAPI's default.
+constexpr const char* kSapiVoiceKey = "UrgentVoiceName";
+char g_sapiVoiceName[160] = {0};
+bool g_sapiVoiceLoaded    = false;
+
+void EnsureSapiVoiceLoaded() {
+    if (g_sapiVoiceLoaded) return;
+    g_sapiVoiceLoaded = true;
+    if (!acc::settings::GetStr(kSapiVoiceKey, g_sapiVoiceName,
+                               static_cast<int>(sizeof(g_sapiVoiceName)))) {
+        g_sapiVoiceName[0] = '\0';
+    }
+}
 
 // User-facing SAPI urgent-channel volume, percent [0,100]; 100 = SAPI full.
 // Backed by the persistent store (acc_settings.ini) so it survives relaunch,
@@ -180,6 +201,8 @@ PFN_prism_backend_set_rate      pPrism_backend_set_rate       = nullptr;
 PFN_prism_backend_set_volume    pPrism_backend_set_volume     = nullptr;
 PFN_prism_backend_set_voice     pPrism_backend_set_voice      = nullptr;
 PFN_prism_backend_count_voices  pPrism_backend_count_voices   = nullptr;
+PFN_prism_backend_get_voice_name pPrism_backend_get_voice_name = nullptr;
+PFN_prism_backend_get_voice     pPrism_backend_get_voice      = nullptr;
 PFN_prism_backend_name          pPrism_backend_name           = nullptr;
 
 // Push g_sapiVolumePercent to the live SAPI backend. Safe to call any time;
@@ -200,6 +223,75 @@ void ApplySapiVolume() {
         acclog::Write("Speech",
                       "SAPI urgent volume set to %d%% (%.2f, 0.0=mute, "
                       "1.0=full)", g_sapiVolumePercent, vol);
+    }
+}
+
+// Make the SAPI backend speak with voice `voiceId`. Cached so consecutive
+// calls with the same id are free. Out-of-range / unsupported silently no-op
+// and leave the current voice in place. Returns false only on a hard set_voice
+// error so the caller can log; the speak still proceeds with whatever voice
+// SAPI currently has. Gated on g_prismSapi rather than g_sapiReady, like
+// ApplySapiVolume, so the persisted choice can be applied mid-acquire.
+bool EnsureSapiVoice(size_t voiceId) {
+    if (!g_prismSapi || !pPrism_backend_set_voice) return false;
+    if (g_sapiVoiceCount != 0 && voiceId >= g_sapiVoiceCount) return false;
+    if (voiceId == g_sapiVoiceCurrent) return true;
+    PrismError rc = pPrism_backend_set_voice(g_prismSapi, voiceId);
+    if (rc != kPrismOk) {
+        acclog::Trace("Speech",
+                      "prism_backend_set_voice(SAPI, %zu) rc=%d "
+                      "(staying on voice %zu)", voiceId, rc, g_sapiVoiceCurrent);
+        return false;
+    }
+    g_sapiVoiceCurrent = voiceId;
+    return true;
+}
+
+// Copy voice `voiceId`'s name into outBuf as UTF-8 — Prism's own encoding,
+// and what the persisted setting stores. The pointer Prism hands back aliases
+// a backend-owned string that the NEXT get_voice_name call overwrites, so the
+// copy has to happen before anything else asks for a name.
+bool FetchSapiVoiceNameUtf8(size_t voiceId, char* outBuf, size_t bufSize) {
+    if (!g_prismSapi || !pPrism_backend_get_voice_name) return false;
+    if (!outBuf || bufSize == 0) return false;
+    if (g_sapiVoiceCount != 0 && voiceId >= g_sapiVoiceCount) return false;
+    const char* name = nullptr;
+    PrismError rc = pPrism_backend_get_voice_name(g_prismSapi, voiceId, &name);
+    if (rc != kPrismOk || !name) return false;
+    snprintf(outBuf, bufSize, "%s", name);
+    return outBuf[0] != '\0';
+}
+
+// Index of the voice named `utf8Name`, or SIZE_MAX when the machine no longer
+// has it (uninstalled voice, moved save file, language pack removed).
+size_t FindSapiVoiceByNameUtf8(const char* utf8Name) {
+    if (!utf8Name || !*utf8Name) return static_cast<size_t>(-1);
+    char probe[sizeof(g_sapiVoiceName)];
+    for (size_t i = 0; i < g_sapiVoiceCount; ++i) {
+        if (!FetchSapiVoiceNameUtf8(i, probe, sizeof(probe))) continue;
+        if (strcmp(probe, utf8Name) == 0) return i;
+    }
+    return static_cast<size_t>(-1);
+}
+
+// Apply the persisted voice choice to the freshly-acquired backend. Runs once
+// per launch from TryAcquireSapi, after the voice count is known. A name that
+// no longer resolves is left in the store rather than cleared — the voice may
+// come back on the next launch, and silently forgetting the user's choice is
+// worse than one log line.
+void ApplySapiVoice() {
+    EnsureSapiVoiceLoaded();
+    if (!g_sapiVoiceName[0]) return;
+    size_t id = FindSapiVoiceByNameUtf8(g_sapiVoiceName);
+    if (id == static_cast<size_t>(-1)) {
+        acclog::Write("Speech",
+                      "persisted SAPI voice [%s] not installed; "
+                      "staying on the default voice", g_sapiVoiceName);
+        return;
+    }
+    if (EnsureSapiVoice(id)) {
+        acclog::Write("Speech", "SAPI urgent voice set to [%s] (id %zu)",
+                      g_sapiVoiceName, id);
     }
 }
 
@@ -255,6 +347,38 @@ bool ReencodeAcpToUtf8(const char* in, char* outBuf, size_t outBufSize) {
     int got = WideCharToMultiByte(CP_UTF8, 0, w, -1, outBuf,
                                   static_cast<int>(outBufSize),
                                   nullptr, nullptr);
+    if (wHeap) free(wHeap);
+    return got > 0;
+}
+
+// Mirror of the above: Prism hands voice names back in UTF-8, and everything
+// downstream of us (speech dispatch, the composed UI line) works in the game
+// codepage. Fails rather than truncating, same contract as ReencodeAcpToUtf8.
+bool ReencodeUtf8ToGameCodepage(const char* in, char* outBuf, size_t outBufSize) {
+    if (!in || !outBuf || outBufSize == 0) return false;
+    int wideLen = MultiByteToWideChar(CP_UTF8, 0, in, -1, nullptr, 0);
+    if (wideLen <= 0) return false;
+    wchar_t wStack[256];
+    wchar_t* w = wStack;
+    wchar_t* wHeap = nullptr;
+    if (static_cast<size_t>(wideLen) > sizeof(wStack) / sizeof(wStack[0])) {
+        wHeap = (wchar_t*)malloc(static_cast<size_t>(wideLen) * sizeof(wchar_t));
+        if (!wHeap) return false;
+        w = wHeap;
+    }
+    int gotWide = MultiByteToWideChar(CP_UTF8, 0, in, -1, w, wideLen);
+    if (gotWide <= 0) {
+        if (wHeap) free(wHeap);
+        return false;
+    }
+    int needed = WideCharToMultiByte(g_speechCodepage, 0, w, -1, nullptr, 0,
+                                     nullptr, nullptr);
+    if (needed <= 0 || static_cast<size_t>(needed) > outBufSize) {
+        if (wHeap) free(wHeap);
+        return false;
+    }
+    int got = WideCharToMultiByte(g_speechCodepage, 0, w, -1, outBuf,
+                                  static_cast<int>(outBufSize), nullptr, nullptr);
     if (wHeap) free(wHeap);
     return got > 0;
 }
@@ -419,8 +543,8 @@ bool TryAcquireSapi() {
     // so the user's last choice carries across launches.
     ApplySapiVolume();
 
-    // Cache voice count so SpeakUrgent(text, voiceId) can range-check before
-    // calling set_voice — cheaper than the round trip on every utterance.
+    // Cache voice count so the voice picker and every range check can work
+    // off it — cheaper than a round trip per query.
     if (pPrism_backend_count_voices) {
         size_t count = 0;
         PrismError vrc = pPrism_backend_count_voices(g_prismSapi, &count);
@@ -430,10 +554,23 @@ bool TryAcquireSapi() {
         } else {
             acclog::Write("Speech",
                           "prism_backend_count_voices(SAPI) rc=%d "
-                          "(voice-id requests will fall back to default)",
+                          "(voice selection unavailable)",
                           vrc);
         }
     }
+
+    // Seed the cached index from whatever voice SAPI is already on, so the
+    // picker opens on the real current voice instead of guessing 0 — and so
+    // EnsureSapiVoice's "already there" short-circuit tells the truth.
+    if (pPrism_backend_get_voice) {
+        size_t cur = 0;
+        if (pPrism_backend_get_voice(g_prismSapi, &cur) == kPrismOk) {
+            g_sapiVoiceCurrent = cur;
+        }
+    }
+
+    // Then honour the user's persisted choice, if they have made one.
+    ApplySapiVoice();
     return true;
 }
 
@@ -606,26 +743,6 @@ bool TryAcquireNormal() {
     return false;
 }
 
-// Make the SAPI backend speak with voice `voiceId`. Cached so consecutive
-// calls with the same id are free. Out-of-range / unsupported silently no-op
-// and leave the current voice in place. Returns false only on a hard set_voice
-// error so the caller can log; the speak still proceeds with whatever voice
-// SAPI currently has.
-bool EnsureSapiVoice(size_t voiceId) {
-    if (!g_sapiReady || !pPrism_backend_set_voice) return false;
-    if (g_sapiVoiceCount != 0 && voiceId >= g_sapiVoiceCount) return false;
-    if (voiceId == g_sapiVoiceCurrent) return true;
-    PrismError rc = pPrism_backend_set_voice(g_prismSapi, voiceId);
-    if (rc != kPrismOk) {
-        acclog::Trace("Speech",
-                      "prism_backend_set_voice(SAPI, %zu) rc=%d "
-                      "(staying on voice %zu)", voiceId, rc, g_sapiVoiceCurrent);
-        return false;
-    }
-    g_sapiVoiceCurrent = voiceId;
-    return true;
-}
-
 }  // namespace
 
 bool Init() {
@@ -685,6 +802,10 @@ bool Init() {
     (void)Resolve(g_prismLib, pPrism_backend_set_voice,    "prism_backend_set_voice",
                   /*required=*/false);
     (void)Resolve(g_prismLib, pPrism_backend_count_voices, "prism_backend_count_voices",
+                  /*required=*/false);
+    (void)Resolve(g_prismLib, pPrism_backend_get_voice_name, "prism_backend_get_voice_name",
+                  /*required=*/false);
+    (void)Resolve(g_prismLib, pPrism_backend_get_voice,    "prism_backend_get_voice",
                   /*required=*/false);
     // Braille entry points — optional so an older prism.dll (pre-0.17.x)
     // still loads and speaks; DispatchNormal falls back to plain speak when
@@ -808,13 +929,12 @@ void Speak(const char* text, bool interrupt) {
     if (heap_buf) free(heap_buf);
 }
 
-// SpeakUrgent core. `applyVoice == true` means EnsureSapiVoice(voiceId) runs
-// before the speak; the no-arg public overload skips it so the default 0-voice
-// path doesn't pay for set_voice on every utterance. `interrupt` is true for
-// every cross-cancel announce (the original callers); SpeakOnUrgentChannel
-// passes it through so a caller that emits consecutive lines keeps them queued.
-static void SpeakUrgentImpl(const char* text, size_t voiceId, bool applyVoice,
-                            bool interrupt) {
+// SpeakUrgent core. The voice is backend state, set once from the user's
+// persisted choice (ApplySapiVoice / SetUrgentVoiceId) rather than per
+// utterance, so nothing here touches it. `interrupt` is true for every
+// cross-cancel announce (the original callers); SpeakOnUrgentChannel passes
+// it through so a caller that emits consecutive lines keeps them queued.
+static void SpeakUrgentImpl(const char* text, bool interrupt) {
     if (!g_normalReady || !text || !*text) return;
 
     // Capture before the dispatch, not inside the rc==kPrismOk branch: the
@@ -857,7 +977,6 @@ static void SpeakUrgentImpl(const char* text, size_t voiceId, bool applyVoice,
 
     PrismError rc;
     if (g_sapiReady) {
-        if (applyVoice) EnsureSapiVoice(voiceId);
         rc = pPrism_backend_speak(g_prismSapi, speakText, interrupt);
         // SAPI has no braille display, so mirror the alert through the normal
         // backend's braille channel — braille() makes no sound, so unlike a
@@ -886,16 +1005,11 @@ static void SpeakUrgentImpl(const char* text, size_t voiceId, bool applyVoice,
 }
 
 void SpeakUrgent(const char* text) {
-    SpeakUrgentImpl(text, /*voiceId=*/0, /*applyVoice=*/false,
-                    /*interrupt=*/true);
-}
-
-void SpeakUrgent(const char* text, size_t voiceId) {
-    SpeakUrgentImpl(text, voiceId, /*applyVoice=*/true, /*interrupt=*/true);
+    SpeakUrgentImpl(text, /*interrupt=*/true);
 }
 
 void SpeakOnUrgentChannel(const char* text, bool interrupt) {
-    SpeakUrgentImpl(text, /*voiceId=*/0, /*applyVoice=*/false, interrupt);
+    SpeakUrgentImpl(text, interrupt);
 }
 
 void SetUrgentVolumePercent(int percent) {
@@ -910,6 +1024,50 @@ void SetUrgentVolumePercent(int percent) {
 int GetUrgentVolumePercent() {
     EnsureSapiVolumeLoaded();
     return g_sapiVolumePercent;
+}
+
+size_t UrgentVoiceCount() {
+    return g_sapiVoiceCount;
+}
+
+bool GetUrgentVoiceName(size_t voiceId, char* outBuf, size_t bufSize) {
+    if (!outBuf || bufSize == 0) return false;
+    outBuf[0] = '\0';
+    char utf8[sizeof(g_sapiVoiceName)];
+    if (!FetchSapiVoiceNameUtf8(voiceId, utf8, sizeof(utf8))) return false;
+    if (!ReencodeUtf8ToGameCodepage(utf8, outBuf, bufSize)) {
+        // Non-representable characters in the player's codepage — the raw
+        // UTF-8 still names the voice recognisably for anything ASCII, which
+        // every shipped Microsoft voice name is.
+        snprintf(outBuf, bufSize, "%s", utf8);
+    }
+    return outBuf[0] != '\0';
+}
+
+size_t GetUrgentVoiceId() {
+    if (g_sapiVoiceCount == 0) return 0;
+    if (g_sapiVoiceCurrent >= g_sapiVoiceCount) return 0;
+    return g_sapiVoiceCurrent;
+}
+
+void SetUrgentVoiceId(size_t voiceId) {
+    if (voiceId >= g_sapiVoiceCount) return;
+    // Cut any sample still playing before the swap. SAPI re-queries the
+    // output format as part of SetVoice, and doing that against a device
+    // mid-utterance is the one way this call fails — which would leave the
+    // picker reading the old voice back and looking stuck under a fast
+    // Left/Right walk. The caller speaks a fresh sample straight after, so
+    // there is nothing worth preserving.
+    if (g_prismSapi && pPrism_backend_stop) pPrism_backend_stop(g_prismSapi);
+    if (!EnsureSapiVoice(voiceId)) return;
+    // Persist by name, not by index — see kSapiVoiceKey.
+    EnsureSapiVoiceLoaded();
+    char utf8[sizeof(g_sapiVoiceName)];
+    if (!FetchSapiVoiceNameUtf8(voiceId, utf8, sizeof(utf8))) return;
+    snprintf(g_sapiVoiceName, sizeof(g_sapiVoiceName), "%s", utf8);
+    acc::settings::SetStr(kSapiVoiceKey, g_sapiVoiceName);
+    acclog::Write("Speech", "SAPI urgent voice -> [%s] (id %zu)",
+                  g_sapiVoiceName, voiceId);
 }
 
 void Silence() {

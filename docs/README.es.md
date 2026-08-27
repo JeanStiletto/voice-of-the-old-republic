@@ -256,6 +256,7 @@ Casi todos los sistemas que añade el mod se pueden ajustar o activar y desactiv
 - Apuntado automático — la ayuda de puntería del minijuego de la torreta
 - Omitir vídeos de introducción — surte efecto en el siguiente arranque
 - Volumen de los sonidos de aviso y Volumen de los anuncios hablados — deslizadores de volumen para los sonidos y la voz del mod
+- Voz de los anuncios — cuál de las voces SAPI instaladas en tu PC pronuncia los anuncios del mod
 - Asignación de teclas — reasignar las teclas que añade el mod
 - Glosario de audio — reproduce cada señal sonora del mod, una a una y con su nombre, para que aprendas qué significa cada sonido
 

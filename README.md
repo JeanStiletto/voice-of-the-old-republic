@@ -256,6 +256,7 @@ Nearly every system the mod adds can be adjusted or turned on and off while you 
 - Autoaiming — the aim assist in the turret minigame
 - Skip launch intro movies — takes effect on the next launch
 - Hint sound volume and Spoken announcement volume — volume sliders for the mod's own sounds and speech
+- Announcement voice — which of the SAPI voices installed on your PC speaks the mod's announcements
 - Key bindings — re-bind the keys the mod adds
 - Audio glossary — plays every sound cue the mod uses, one at a time with its name, so you can learn what each sound means
 

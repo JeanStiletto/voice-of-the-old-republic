@@ -517,6 +517,8 @@ const char* Get(Id id) {
         case Id::ModSettingCueVolume:         return "Volume dei segnali sonori";
         case Id::FmtModSettingSlider:         return "%s: %d percento";
         case Id::ModSettingUrgentVolume:      return "Volume degli annunci vocali";
+        case Id::ModSettingUrgentVoice:       return "Voce degli annunci";
+        case Id::ModSettingUrgentVoiceUnavailable: return "non disponibile";
         case Id::ModSettingUrgentVolumePreview: return "Annuncio di esempio";
         case Id::ModSettingSupportModder:           return "Sostieni il modder";
         case Id::ModSettingLatestChanges:           return "Ultime modifiche";

@@ -86,6 +86,9 @@ bool s_toggles[static_cast<int>(Option::Count)] = {
                                   // audio_bus (Get/SetGlobalCueVolumePercent).
     /* UrgentVolume    */ false,  // unused — RowKind::Slider; value lives in
                                   // prism (Get/SetUrgentVolumePercent).
+    /* UrgentVoice     */ false,  // unused — RowKind::Choice; value lives in
+                                  // prism (Get/SetUrgentVoiceId), persisted
+                                  // there by voice name.
     /* Keybindings     */ false,  // unused — RowKind::Submenu (configurator pivot)
     /* AudioGlossary   */ false,  // unused — RowKind::Submenu
     /* SupportModder   */ false,  // unused — RowKind::Link
@@ -145,6 +148,7 @@ enum class RowKind {
     Toggle,    // Enter flips s_toggles[idx]; speech reads "Name: state"
     Submenu,   // Enter opens a nested view; speech reads "Name" only
     Slider,    // Left/Right adjust a percent; speech reads "Name: N Prozent"
+    Choice,    // Left/Right walk a named list; speech reads "Name: value"
     Link,      // Enter opens a URL in the browser; speech reads "Name" only
 };
 
@@ -237,6 +241,7 @@ constexpr OptionSpec k_options[] = {
     { Option::SkipIntros,      acc::strings::Id::ModSettingSkipIntros,      RowKind::Toggle  },
     { Option::CueVolume,       acc::strings::Id::ModSettingCueVolume,       RowKind::Slider  },
     { Option::UrgentVolume,    acc::strings::Id::ModSettingUrgentVolume,    RowKind::Slider  },
+    { Option::UrgentVoice,     acc::strings::Id::ModSettingUrgentVoice,     RowKind::Choice  },
     { Option::Keybindings,     acc::strings::Id::KeybindsRootLabel,         RowKind::Submenu },
     { Option::AudioGlossary,   acc::strings::Id::ModSettingAudioGlossary,   RowKind::Submenu },
     { Option::SupportModder,   acc::strings::Id::ModSettingSupportModder,   RowKind::Link    },
@@ -315,6 +320,23 @@ constexpr GlossaryEntry k_glossary[] = {
 constexpr int k_glossaryCount = static_cast<int>(
     sizeof(k_glossary) / sizeof(k_glossary[0]));
 
+// Value text for the UrgentVoice row: the name of the SAPI voice the
+// announcement channel currently speaks with. Held in a static so StateText
+// can hand back a plain const char* like every other row; the buffer is only
+// ever read on the same turn it is written. "not available" covers a machine
+// with no SAPI voices, a prism.dll too old to enumerate them, and SAPI
+// failing to acquire — all cases where the row cannot do anything.
+const char* UrgentVoiceText() {
+    static char s_voiceName[128];
+    if (prism::UrgentVoiceCount() == 0 ||
+        !prism::GetUrgentVoiceName(prism::GetUrgentVoiceId(), s_voiceName,
+                                   sizeof(s_voiceName))) {
+        return acc::strings::Get(
+            acc::strings::Id::ModSettingUrgentVoiceUnavailable);
+    }
+    return s_voiceName;
+}
+
 const char* StateText(int optionIdx) {
     // SkipIntros: state is the filesystem (biologo.bik vs .disabled),
     // not s_toggles. Read the canonical state every call so the UI
@@ -329,13 +351,18 @@ const char* StateText(int optionIdx) {
         return acc::strings::Get(on ? acc::strings::Id::ModSettingStateOn
                                     : acc::strings::Id::ModSettingStateOff);
     }
+    if (optionIdx >= 0 && optionIdx < static_cast<int>(Option::Count) &&
+        k_options[optionIdx].option == Option::UrgentVoice) {
+        return UrgentVoiceText();
+    }
     bool on = s_toggles[optionIdx];
     return acc::strings::Get(on ? acc::strings::Id::ModSettingStateOn
                                 : acc::strings::Id::ModSettingStateOff);
 }
 
-// Speak the current focused option. Toggle rows read as "Name: state";
-// Submenu and Link rows read just "Name" (no state to compose with).
+// Speak the current focused option. Toggle and Choice rows read as
+// "Name: value"; Submenu and Link rows read just "Name" (nothing to compose
+// with).
 // Always uses Speak(interrupt=true) — normal NVDA / screen-reader speech
 // with previous-utterance interrupt, NOT SAPI urgent. Per-feedback
 // 2026-05-26: SpeakUrgent is reserved for cross-cancel events
@@ -347,7 +374,7 @@ void SpeakFocusedOption() {
     const auto& row = k_options[s_focused];
     const char* name = acc::strings::Get(row.label);
     char line[160];
-    if (row.kind == RowKind::Toggle) {
+    if (row.kind == RowKind::Toggle || row.kind == RowKind::Choice) {
         const char* st = StateText(s_focused);
         snprintf(line, sizeof(line),
                  acc::strings::Get(acc::strings::Id::FmtModSettingOption),
@@ -665,16 +692,51 @@ void AdjustSlider(int delta) {
     }
 }
 
+// Step the announcement voice by `delta` places in Prism's SAPI voice list,
+// clamped at both ends (no wrap — same rule as the row ladder, and the
+// repeated name is the boundary cue). Announces the new row on the screen
+// reader, then plays the same sample phrase the volume slider previews with,
+// which now comes out in the newly chosen voice: the screen reader tells you
+// which voice you are on, the sample tells you what it sounds like.
+// No-op when SAPI has no voices to offer.
+void AdjustVoice(int delta) {
+    size_t count = prism::UrgentVoiceCount();
+    if (count == 0) {
+        SpeakFocusedOption();  // reads "not available"
+        return;
+    }
+    size_t cur  = prism::GetUrgentVoiceId();
+    size_t next = cur;
+    if (delta < 0) {
+        if (cur > 0) next = cur - 1;
+    } else if (delta > 0) {
+        if (cur + 1 < count) next = cur + 1;
+    }
+    if (next != cur) prism::SetUrgentVoiceId(next);
+    acclog::Write("ModSettings", "voice adjust delta=%+d -> %zu/%zu",
+                  delta, next, count);
+    SpeakFocusedOption();
+    prism::SpeakUrgent(
+        acc::strings::Get(acc::strings::Id::ModSettingUrgentVolumePreview));
+}
+
 bool HandleInputRoot(int keyCode) {
-    // Left / Right: adjust the focused Slider row; ignored on non-slider
-    // rows (they fall through to the parent-input block in HandleInput,
-    // which consumes them so they don't leak to the engine).
+    // Left / Right: adjust the focused Slider row or step the Choice row;
+    // ignored on every other kind (they fall through to the parent-input
+    // block in HandleInput, which consumes them so they don't leak to the
+    // engine).
     if (keyCode == kInputNavLeft || keyCode == kInputNavRight) {
-        if (s_focused >= 0 && s_focused < k_optionCount &&
-            k_options[s_focused].kind == RowKind::Slider) {
-            AdjustSlider(keyCode == kInputNavRight ? kCueVolumeStep
-                                                   : -kCueVolumeStep);
-            return true;
+        if (s_focused >= 0 && s_focused < k_optionCount) {
+            const RowKind kind = k_options[s_focused].kind;
+            if (kind == RowKind::Slider) {
+                AdjustSlider(keyCode == kInputNavRight ? kCueVolumeStep
+                                                       : -kCueVolumeStep);
+                return true;
+            }
+            if (kind == RowKind::Choice) {
+                AdjustVoice(keyCode == kInputNavRight ? 1 : -1);
+                return true;
+            }
         }
         return false;
     }
@@ -717,6 +779,12 @@ bool HandleInputRoot(int keyCode) {
         // Right do the actual adjusting). delta=0 keeps the value put.
         if (row.kind == RowKind::Slider) {
             AdjustSlider(0);
+            return true;
+        }
+        // Choice: same contract — Enter re-auditions the current voice
+        // without moving the selection.
+        if (row.kind == RowKind::Choice) {
+            AdjustVoice(0);
             return true;
         }
         // SkipIntros: filesystem rename instead of s_toggles flip.

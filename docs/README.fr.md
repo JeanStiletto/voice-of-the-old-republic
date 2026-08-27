@@ -256,6 +256,7 @@ Presque tous les systèmes ajoutés par le mod peuvent être ajustés, activés 
 - Visée automatique — l'aide à la visée du mini-jeu de tourelle
 - Ignorer les vidéos d'introduction — prend effet au prochain lancement
 - Volume des indices sonores et Volume des annonces vocales — curseurs de volume pour les sons et la parole du mod
+- Voix des annonces — laquelle des voix SAPI installées sur votre PC prononce les annonces du mod
 - Raccourcis clavier — réassigner les touches ajoutées par le mod
 - Glossaire audio — joue chaque repère sonore du mod, un par un avec son nom, pour que vous appreniez ce que chaque son signifie
 

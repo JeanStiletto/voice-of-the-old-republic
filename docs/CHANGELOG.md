@@ -169,6 +169,15 @@ and add the German in parentheses if it genuinely aids clarity.
   conversation is where that hurts most. Which lines are read at all does not
   change: voiced speakers stay suppressed unless "Read voiced-speaker
   subtitles" is on.
+- New setting "Announcement voice". Left and Right walk the SAPI voices
+  installed on your PC and switch the mod's announcement channel to the one you
+  land on; Enter replays the sample phrase in the current voice. That channel
+  carries everything the mod speaks past your screen reader — compass and camera
+  readouts, map-cursor names, area transitions, turret and swoop calls — plus
+  dialogue subtitles when the setting above is on. The choice is remembered by
+  voice name rather than by position in the list, so installing or removing a
+  voice cannot quietly move you onto a different one. Reads "not available"
+  when Windows reports no SAPI voices.
 
 <h3>Bug fixes:</h3>
 

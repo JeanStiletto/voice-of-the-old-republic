@@ -42,7 +42,9 @@ namespace acc::menus::modsettings {
 // submenu pivot (Enter opens a nested glossary view) and has no toggle
 // state; GetToggle() returns false for it. SupportModder / LatestChanges /
 // OpenReadme are link rows — Enter hands a URL to the default browser and
-// minimises the game; they hold no state either.
+// minimises the game; they hold no state either. UrgentVoice is a choice row
+// — Left/Right walk the installed SAPI voices, and it holds no toggle state
+// either (prism owns the selection).
 enum class Option {
     ExtendedCycling = 0,
     RoomShapes,
@@ -54,6 +56,8 @@ enum class Option {
     SkipIntros,        // filesystem-backed — state is biologo.bik vs biologo.bik.disabled
     CueVolume,         // slider — global hint-sound volume (audio_bus owns the value)
     UrgentVolume,      // slider — SAPI spoken-announcement volume (prism owns the value)
+    UrgentVoice,       // choice — which installed SAPI voice speaks the
+                       // announcements (prism owns the value + persistence)
     Keybindings,       // submenu pivot — the mod keybind configurator (menus_keybinds)
     AudioGlossary,
     SupportModder,     // link row — opens the Ko-fi page in the default browser

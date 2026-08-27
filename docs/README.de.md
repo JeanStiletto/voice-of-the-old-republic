@@ -256,6 +256,7 @@ Nahezu jedes System, das die Mod hinzufügt, lässt sich im laufenden Spiel anpa
 - Automatisches Zielen — die Zielhilfe im Geschützturm-Minispiel
 - Startvideos überspringen — wirkt beim nächsten Start
 - Lautstärke der Hinweistöne und Lautstärke der Sprachansagen — Regler für die Klänge und die Sprachausgabe der Mod
+- Ansagestimme — welche der auf dem PC installierten SAPI-Stimmen die Ansagen der Mod spricht
 - Tastenbelegung — die Tasten neu belegen, die die Mod hinzufügt
 - Audio-Glossar — spielt jedes Klangsignal der Mod einzeln mit seinem Namen ab, damit du lernst, was jeder Klang bedeutet
 

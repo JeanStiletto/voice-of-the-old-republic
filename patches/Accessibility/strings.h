@@ -1632,6 +1632,11 @@ enum class Id : int {
     // adjusting it speaks a short SAPI sample (UrgentVolumePreview) at the
     // new level so the user hears the resulting loudness.
     ModSettingUrgentVolume,
+    // Announcement-voice picker. Left/Right walk the SAPI voices installed on
+    // the machine; the row reads "Name: <voice>" through FmtModSettingOption,
+    // falling back to ModSettingUrgentVoiceUnavailable when SAPI offers none.
+    ModSettingUrgentVoice,
+    ModSettingUrgentVoiceUnavailable,
     ModSettingUrgentVolumePreview,
 
     // Side-effect cues for the SkipIntros toggle — spoken after the

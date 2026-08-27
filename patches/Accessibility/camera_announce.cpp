@@ -312,7 +312,7 @@ void Tick() {
     const char* phrase = acc::strings::Get(id);
     // Urgent SAPI: mid-turn a normal Speak gets eaten by NVDA's typed-char
     // cancel when the turn key is a typing key.
-    prism::SpeakUrgent(phrase, /*voiceId=*/0);
+    prism::SpeakUrgent(phrase);
     acclog::Write("CameraAnnounce", "sector %d -> %d (%s); camCompass=%.1f "
         "(rot=%.0f°/s %s fg=%d)",
         s_lastSpokenSector, sector, phrase, camCompass, rotDps, reason,
@@ -352,7 +352,7 @@ bool AnnounceCurrentFacing(unsigned int dedupMs) {
     // that opened the door trips NVDA's typed-char cancel (which ignores
     // priority), so route around it the same way the A/D-held turn announce
     // does.
-    prism::SpeakUrgent(phrase, /*voiceId=*/0);
+    prism::SpeakUrgent(phrase);
     acclog::Write("CameraAnnounce",
         "facing readout: sector %d (%s) camCompass=%.1f", sector, phrase,
         camCompass);

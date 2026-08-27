@@ -37,16 +37,14 @@ void SetSpeechCodepage(unsigned codepage);
 unsigned GetSpeechCodepage();
 
 // Urgent speech routes through SAPI to bypass NVDA's typed-character
-// cancel (which silences NORMAL-priority queued speech). voiceId picks
-// among Prism's enumerated SAPI voices (0 = first). Out-of-range falls
-// back silently.
+// cancel (which silences NORMAL-priority queued speech). Which SAPI voice
+// speaks is a persistent user setting — see the voice block below.
 //
 // Falls back to the normal channel when prism.dll didn't load, SAPI
 // isn't in Prism's registry, or SAPI init failed.
 //
 // interrupt is implicitly true.
 void SpeakUrgent(const char* text);
-void SpeakUrgent(const char* text, size_t voiceId);
 
 // Same urgent (SAPI) channel as SpeakUrgent, but honouring `interrupt` so a
 // caller that emits several lines in a row gets them queued instead of each
@@ -65,6 +63,34 @@ void SpeakOnUrgentChannel(const char* text, bool interrupt);
 // channel keeps the user's own NVDA/JAWS volume.
 void SetUrgentVolumePercent(int percent);
 int  GetUrgentVolumePercent();
+
+// ---- Urgent-channel voice selection --------------------------------------
+//
+// The urgent channel speaks with one of the SAPI voices installed on the
+// machine. The choice is persisted BY NAME (acc_settings.ini), not by index:
+// installing or removing a voice renumbers the list, and an index would
+// silently land the user on a different voice — or a different language.
+// Init re-resolves the saved name to an index and applies it.
+//
+// Count is 0 when SAPI is unavailable (no prism.dll, no SAPI backend, init
+// failed) or the running prism.dll predates the voice exports; the picker row
+// in Mod settings reads "not available" in that case and the channel keeps
+// whatever voice SAPI defaults to.
+size_t UrgentVoiceCount();
+
+// Name of voice `voiceId`, converted to the game codepage so it can go
+// straight to Speak / SpeakUrgent or into a composed UI line. False on an
+// out-of-range id, a degenerate buffer, or SAPI being unavailable.
+bool GetUrgentVoiceName(size_t voiceId, char* outBuf, size_t bufSize);
+
+// Index of the voice the urgent channel currently speaks with. Seeded at Init
+// from the persisted name, else from whatever voice SAPI is already on.
+// Returns 0 when SAPI is unavailable, so a picker can index safely.
+size_t GetUrgentVoiceId();
+
+// Switch the urgent channel to `voiceId` and persist it by name. Out-of-range
+// ids are ignored. Takes effect on the next urgent utterance.
+void SetUrgentVoiceId(size_t voiceId);
 
 // Cancel in-progress speech on both channels.
 void Silence();
