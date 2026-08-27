@@ -13,6 +13,12 @@
 //
 // Per-row reply nav + "(unavailable)" suffix come via the existing
 // ListBoxPanelSpec plumbing in menus_listbox.cpp.
+//
+// Everything this TU speaks is a subtitle, so it all leaves through one
+// router (SpeakSubtitle in the .cpp): the screen reader by default, or the
+// announcement/SAPI channel when the SubtitleSapi setting is on. Suppression
+// is decided before the router — the channel choice never makes a silent
+// line audible or the reverse.
 
 #pragma once
 

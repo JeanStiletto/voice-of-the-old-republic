@@ -48,6 +48,13 @@ unsigned GetSpeechCodepage();
 void SpeakUrgent(const char* text);
 void SpeakUrgent(const char* text, size_t voiceId);
 
+// Same urgent (SAPI) channel as SpeakUrgent, but honouring `interrupt` so a
+// caller that emits several lines in a row gets them queued instead of each
+// one cutting off the last. Written for the subtitle router in
+// dialog_speech.cpp, whose lines follow the engine's own queue/interrupt
+// rhythm; SpeakUrgent(text) is exactly this with interrupt=true.
+void SpeakOnUrgentChannel(const char* text, bool interrupt);
+
 // Urgent-channel (SAPI) volume as a user-facing percent [0,100].
 // 100 = SAPI full volume (the default). The setter clamps, persists the
 // value across launches (acc_settings.ini), and applies it immediately to

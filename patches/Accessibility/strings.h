@@ -1612,6 +1612,9 @@ enum class Id : int {
     ModSettingRoomShapes,
     ModSettingWallSounds,
     ModSettingHumanSubtitles,
+    ModSettingSubtitleSapi,               // toggle label — speak subtitles on the
+                                          // announcement voice (SAPI) instead of
+                                          // the screen reader
     ModSettingTurretAutoAim,              // toggle label — turret easy-mode auto-aim
     ModSettingSkipIntros,                 // toggle label — "Skip intro movies"
     ModSettingStateOn,

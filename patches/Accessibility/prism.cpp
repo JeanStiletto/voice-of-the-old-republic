@@ -11,6 +11,10 @@
 //   SpeakUrgent           → SAPI backend (always). Bypasses NVDA's typed-
 //                            character cancel — the bypass we rely on for
 //                            map-cursor / compass / walking cues.
+//   SpeakOnUrgentChannel  → the same SAPI backend, but the caller keeps
+//                            control of interrupt-vs-queue. Used by the
+//                            subtitle router (dialog_speech.cpp) when the
+//                            user has moved dialogue onto this channel.
 //
 // Braille: Tolk's Tolk_Output spoke and brailled in one call; Prism splits
 // those. The normal channel therefore dispatches through DispatchNormal —
@@ -806,8 +810,11 @@ void Speak(const char* text, bool interrupt) {
 
 // SpeakUrgent core. `applyVoice == true` means EnsureSapiVoice(voiceId) runs
 // before the speak; the no-arg public overload skips it so the default 0-voice
-// path doesn't pay for set_voice on every utterance.
-static void SpeakUrgentImpl(const char* text, size_t voiceId, bool applyVoice) {
+// path doesn't pay for set_voice on every utterance. `interrupt` is true for
+// every cross-cancel announce (the original callers); SpeakOnUrgentChannel
+// passes it through so a caller that emits consecutive lines keeps them queued.
+static void SpeakUrgentImpl(const char* text, size_t voiceId, bool applyVoice,
+                            bool interrupt) {
     if (!g_normalReady || !text || !*text) return;
 
     // Capture before the dispatch, not inside the rc==kPrismOk branch: the
@@ -818,9 +825,23 @@ static void SpeakUrgentImpl(const char* text, size_t voiceId, bool applyVoice) {
 
     // Re-encode CP_ACP → UTF-8 before dispatch. See ReencodeAcpToUtf8 doc
     // comment for the rc=13 (INVALID_UTF8) failure mode this guards.
-    char utf8Buf[512];
+    // Sized dynamically, like the normal channel: a dialogue subtitle routed
+    // here via SpeakOnUrgentChannel runs to ~500 narrow chars, which a fixed
+    // 512-byte buffer cannot hold once a non-ASCII line expands into UTF-8.
+    char utf8Stack[512];
+    char*  utf8Buf  = utf8Stack;
+    char*  utf8Heap = nullptr;
+    size_t utf8Cap  = sizeof(utf8Stack);
+    size_t utf8Need = strlen(text) * 4 + 1;
+    if (utf8Need > sizeof(utf8Stack)) {
+        utf8Heap = (char*)malloc(utf8Need);
+        if (utf8Heap) {
+            utf8Buf = utf8Heap;
+            utf8Cap = utf8Need;
+        }
+    }
     const char* speakText = text;
-    if (ReencodeAcpToUtf8(text, utf8Buf, sizeof(utf8Buf))) {
+    if (ReencodeAcpToUtf8(text, utf8Buf, utf8Cap)) {
         speakText = utf8Buf;
     }
     // If re-encode failed we still attempt the dispatch with the original
@@ -837,7 +858,7 @@ static void SpeakUrgentImpl(const char* text, size_t voiceId, bool applyVoice) {
     PrismError rc;
     if (g_sapiReady) {
         if (applyVoice) EnsureSapiVoice(voiceId);
-        rc = pPrism_backend_speak(g_prismSapi, speakText, /*interrupt=*/true);
+        rc = pPrism_backend_speak(g_prismSapi, speakText, interrupt);
         // SAPI has no braille display, so mirror the alert through the normal
         // backend's braille channel — braille() makes no sound, so unlike a
         // speech fallback this cannot say the text twice.
@@ -845,7 +866,7 @@ static void SpeakUrgentImpl(const char* text, size_t voiceId, bool applyVoice) {
     } else {
         // The normal-backend fallback goes through DispatchNormal so the
         // alert reaches a braille display the same way ordinary speech does.
-        rc = DispatchNormal(speakText, /*interrupt=*/true);
+        rc = DispatchNormal(speakText, interrupt);
     }
     if (rc == kPrismOk) {
         // Log the original CP_ACP text so the patch log stays readable
@@ -861,14 +882,20 @@ static void SpeakUrgentImpl(const char* text, size_t voiceId, bool applyVoice) {
                       "SpeakUrgent: %s dispatch rc=%d; "
                       "dropping utterance (no double-speak fallback)", tag, rc);
     }
+    if (utf8Heap) free(utf8Heap);
 }
 
 void SpeakUrgent(const char* text) {
-    SpeakUrgentImpl(text, /*voiceId=*/0, /*applyVoice=*/false);
+    SpeakUrgentImpl(text, /*voiceId=*/0, /*applyVoice=*/false,
+                    /*interrupt=*/true);
 }
 
 void SpeakUrgent(const char* text, size_t voiceId) {
-    SpeakUrgentImpl(text, voiceId, /*applyVoice=*/true);
+    SpeakUrgentImpl(text, voiceId, /*applyVoice=*/true, /*interrupt=*/true);
+}
+
+void SpeakOnUrgentChannel(const char* text, bool interrupt) {
+    SpeakUrgentImpl(text, /*voiceId=*/0, /*applyVoice=*/false, interrupt);
 }
 
 void SetUrgentVolumePercent(int percent) {

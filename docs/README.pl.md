@@ -252,6 +252,7 @@ Prawie każdy system dodany przez mod można dostosować albo włączyć i wył�
 - Opisy kształtu pomieszczeń — zapowiedź nazwy, kształtu i wyjść przy wejściu do pomieszczenia
 - Dźwięki ścian — ciągła warstwa przestrzennych sygnałów ścian
 - Czytaj napisy mówionych kwestii — odczytywanie napisów kwestii z podłożonym głosem
+- Czytaj napisy głosem komunikatów — czytanie dialogów głosem komunikatów moda zamiast czytnikiem ekranu
 - Automatyczne celowanie — pomoc w celowaniu w minigrze z działkiem
 - Pomijaj filmy wstępne — działa od następnego uruchomienia
 - Głośność dźwięków podpowiedzi i Głośność komunikatów mówionych — suwaki głośności dla dźwięków i mowy moda

@@ -252,6 +252,7 @@ Nahezu jedes System, das die Mod hinzufügt, lässt sich im laufenden Spiel anpa
 - Raumform-Beschreibungen — die Ansage von Raumname, Form und Ausgängen beim Betreten eines Raumes
 - Wandgeräusche — die kontinuierliche positionelle Wandcue-Schicht
 - Untertitel vertonter Sprecher vorlesen — die Untertitel vertonter Zeilen ansagen
+- Untertitel mit der Ansagestimme sprechen — Dialoge mit der eigenen Ansagestimme der Mod statt mit dem Screenreader vorlesen
 - Automatisches Zielen — die Zielhilfe im Geschützturm-Minispiel
 - Startvideos überspringen — wirkt beim nächsten Start
 - Lautstärke der Hinweistöne und Lautstärke der Sprachansagen — Regler für die Klänge und die Sprachausgabe der Mod

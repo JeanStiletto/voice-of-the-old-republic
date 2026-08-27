@@ -252,6 +252,7 @@ Nearly every system the mod adds can be adjusted or turned on and off while you 
 - Room shape descriptions — the spoken room name, shape, and exits when you enter a room
 - Wall sounds — the continuous positional wall-cue layer
 - Read voiced-speaker subtitles — speak the subtitles of lines that are voice-acted
+- Speak subtitles with the announcement voice — read dialogue with the mod's own announcement voice instead of your screen reader
 - Autoaiming — the aim assist in the turret minigame
 - Skip launch intro movies — takes effect on the next launch
 - Hint sound volume and Spoken announcement volume — volume sliders for the mod's own sounds and speech

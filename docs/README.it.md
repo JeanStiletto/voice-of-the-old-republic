@@ -252,6 +252,7 @@ Quasi ogni sistema aggiunto dalla mod può essere regolato o attivato e disattiv
 - Descrizioni della forma delle stanze — l'annuncio di nome, forma e uscite quando entri in una stanza
 - Suoni dei muri — il livello continuo di segnali sonori posizionali sui muri
 - Leggi i sottotitoli dei parlanti doppiati — annunciare i sottotitoli delle battute doppiate
+- Leggi i sottotitoli con la voce degli annunci — leggere i dialoghi con la voce degli annunci della mod invece che con lo screen reader
 - Mira automatica — l'aiuto alla mira nel minigioco della torretta
 - Salta i video introduttivi — ha effetto al prossimo avvio
 - Volume dei segnali sonori e Volume degli annunci vocali — cursori di volume per i suoni e la voce della mod

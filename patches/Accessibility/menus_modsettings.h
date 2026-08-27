@@ -48,6 +48,8 @@ enum class Option {
     RoomShapes,
     WallSounds,
     HumanSubtitles,
+    SubtitleSapi,      // route spoken subtitles through the announcement (SAPI)
+                       // voice instead of the screen reader (off by default)
     TurretAutoAim,     // easy-mode cheat — turret auto-tracks the locked fighter (off by default)
     SkipIntros,        // filesystem-backed — state is biologo.bik vs biologo.bik.disabled
     CueVolume,         // slider — global hint-sound volume (audio_bus owns the value)

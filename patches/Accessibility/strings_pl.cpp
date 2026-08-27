@@ -505,6 +505,7 @@ const char* Get(Id id) {
         case Id::ModSettingRoomShapes:        return "Opisy kszta\xB3tu pomieszcze\xF1";
         case Id::ModSettingWallSounds:        return "D\x9Fwi\xEAki \x9C""cian";
         case Id::ModSettingHumanSubtitles:    return "Czytaj napisy m\xF3wionych kwestii";
+        case Id::ModSettingSubtitleSapi:      return "Czytaj napisy g\xB3osem komunikat\xF3w";
         case Id::ModSettingTurretAutoAim:     return "Automatyczne celowanie";
         case Id::ModSettingSkipIntros:        return "Pomijaj filmy wst\xEApne";
         case Id::ModSettingSkipIntrosOnNextLaunch: return "Filmy wst\xEApne zostan\xB9 pomini\xEAte przy nast\xEApnym uruchomieniu.";

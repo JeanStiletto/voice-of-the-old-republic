@@ -252,6 +252,7 @@ Casi todos los sistemas que añade el mod se pueden ajustar o activar y desactiv
 - Descripciones de la forma de las habitaciones — el anuncio del nombre, la forma y las salidas al entrar en una sala
 - Sonidos de pared — la capa continua de señales sonoras posicionales de las paredes
 - Leer subtítulos de hablantes con voz — anunciar los subtítulos de las líneas dobladas
+- Leer los subtítulos con la voz de los anuncios — leer los diálogos con la voz de anuncios del mod en lugar de con tu lector de pantalla
 - Apuntado automático — la ayuda de puntería del minijuego de la torreta
 - Omitir vídeos de introducción — surte efecto en el siguiente arranque
 - Volumen de los sonidos de aviso y Volumen de los anuncios hablados — deslizadores de volumen para los sonidos y la voz del mod

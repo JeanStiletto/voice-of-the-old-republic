@@ -158,6 +158,18 @@ and add the German in parentheses if it genuinely aids clarity.
   went unnoticed — the region became invisible to the lookup and you heard the
   generic "area" fallback while standing in it.
 
+<h3>Mod settings:</h3>
+
+- New setting "Speak subtitles with the announcement voice", off by default.
+  With it on, dialogue lines, bark bubbles and computer-terminal output are
+  spoken by the mod's own announcement voice — the one the "Spoken announcement
+  volume" slider controls — instead of your screen reader. Worth turning on if
+  NVDA keeps cutting conversations off mid-line: NVDA cancels normal-priority
+  speech whenever you type a character or move the review cursor, and a long
+  conversation is where that hurts most. Which lines are read at all does not
+  change: voiced speakers stay suppressed unless "Read voiced-speaker
+  subtitles" is on.
+
 <h3>Bug fixes:</h3>
 
 - Pressing Up or Down in a conversation while the character is still speaking

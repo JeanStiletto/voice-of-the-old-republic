@@ -14,7 +14,7 @@
 #include "engine_reads.h"
 #include "log.h"
 #include "menus_extract.h"    // FromControl
-#include "menus_modsettings.h" // GetToggle(Option::HumanSubtitles)
+#include "menus_modsettings.h" // GetToggle(Option::HumanSubtitles/SubtitleSapi)
 #include "prism.h"
 #include "strings.h"          // DialogRepeatLineHint — R-repeat cue for forced lines
 #include "transitions.h"      // IsModuleLoadPending — gate during cutscene-load
@@ -527,6 +527,34 @@ bool ShouldSuppressNpcLine() {
     return IsSuppressibleSpeaker(info);
 }
 
+// ---- Channel decision ----------------------------------------------------
+//
+// Every line this TU speaks IS a subtitle — the NPC line, its skill-check
+// marker, the computer terminal's rows, the bark bubble, and the R re-speak.
+// They all go out through here so one toggle moves the whole set.
+//
+// Default (toggle off): the user's own screen reader, unchanged behaviour.
+// Toggle on: the announcement channel (prism's SAPI backend), the same one
+// the cross-cancel announces use. Requested by users whose screen reader
+// drops dialogue mid-line — NVDA cancels NORMAL-priority speech on any typed
+// character or review-cursor move, and a long conversation is exactly where
+// that happens. `interrupt` is passed through, not forced true as
+// prism::SpeakUrgent would: consecutive lines (a forced line plus its R hint,
+// the terminal's row batch, a bark) must queue or only the last survives.
+//
+// This is a routing choice only. Whether a line is spoken at all was already
+// decided by the suppression rules above (voiced human / droid speakers, the
+// HumanSubtitles toggle, the curated forced / voiced line lists) — every call
+// site below sits on the far side of that decision.
+void SpeakSubtitle(const char* text, bool interrupt) {
+    if (acc::menus::modsettings::GetToggle(
+            acc::menus::modsettings::Option::SubtitleSapi)) {
+        prism::SpeakOnUrgentChannel(text, interrupt);
+        return;
+    }
+    prism::Speak(text, interrupt);
+}
+
 // Find the foreground active dialog panel — first match for any of the
 // dialog kinds. Returns the panel pointer + which kind matched.
 struct DialogPanelMatch {
@@ -711,17 +739,17 @@ void Tick() {
                 // AFTER a cue already in flight from the same interaction — the
                 // "Dieses Objekt ist gesperrt" feedback that triggered this
                 // dialogue — instead of clobbering it. Normal lines interrupt.
-                prism::Speak(npc, /*interrupt=*/!forcedSpoken);
+                SpeakSubtitle(npc, /*interrupt=*/!forcedSpoken);
                 // The line is silent unless force-spoken, so tell the player once
                 // that R re-speaks it — their only other way to hear it. Queued
                 // after the line itself.
                 if (forcedSpoken) {
-                    prism::Speak(
+                    SpeakSubtitle(
                         acc::strings::Get(acc::strings::Id::DialogRepeatLineHint),
                         /*interrupt=*/false);
                 }
             } else if (ExtractSkillCheckMarker(npc, marker, sizeof(marker))) {
-                prism::Speak(marker, /*interrupt=*/true);
+                SpeakSubtitle(marker, /*interrupt=*/true);
                 spokeMarker = true;
             }
             acclog::Write("Dialog.Speech",
@@ -785,7 +813,7 @@ void Tick() {
                             if (acc::menus::extract::FromControl(
                                     row, text, sizeof(text)) &&
                                 text[0] != '\0') {
-                                prism::Speak(text, /*interrupt=*/false);
+                                SpeakSubtitle(text, /*interrupt=*/false);
                                 acclog::Write("Dialog.Speech",
                                               "computer row %d [%.200s]",
                                               i, text);
@@ -812,7 +840,7 @@ void Tick() {
         // so the suppression toggle doesn't apply here.
         if (acc::hotkeys::Pressed(acc::hotkeys::Action::DialogRepeatLine) &&
             s_lastNpcLine[0] != '\0') {
-            prism::Speak(s_lastNpcLine, /*interrupt=*/true);
+            SpeakSubtitle(s_lastNpcLine, /*interrupt=*/true);
             acclog::Write("Dialog.Speech", "R repeat -> [%.300s]", s_lastNpcLine);
         }
     }
@@ -866,7 +894,7 @@ void Tick() {
                     acc::menus::modsettings::Option::HumanSubtitles);
 
             if (!suppress) {
-                prism::Speak(text, /*interrupt=*/false);
+                SpeakSubtitle(text, /*interrupt=*/false);
             }
             // Story-locked doors/containers explain themselves via an ownerless
             // bark that fires once. Offer it for capture so a later locked

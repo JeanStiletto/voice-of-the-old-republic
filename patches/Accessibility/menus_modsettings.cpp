@@ -61,6 +61,14 @@ bool s_toggles[static_cast<int>(Option::Count)] = {
                                   // suppression filter gates on appearance /
                                   // race (see IsSuppressibleSpeaker), not on
                                   // this toggle alone.
+    /* SubtitleSapi    */ false,  // default off — subtitles keep going to the
+                                  // user's own screen reader. ON routes them to
+                                  // the announcement (SAPI) voice instead, so a
+                                  // typed character or a braille cursor move in
+                                  // NVDA can't cancel a dialogue line mid-word.
+                                  // Purely a channel choice: whether a line is
+                                  // spoken at all is still decided by the
+                                  // suppression rules in dialog_speech.cpp.
     /* TurretAutoAim   */ false,  // "Autoaiming" — OFF by default. When ON, the
                                   // turret PERMANENTLY locks aim onto the
                                   // selected fighter (full auto-track), so the
@@ -224,6 +232,7 @@ constexpr OptionSpec k_options[] = {
     { Option::RoomShapes,      acc::strings::Id::ModSettingRoomShapes,      RowKind::Toggle  },
     { Option::WallSounds,      acc::strings::Id::ModSettingWallSounds,      RowKind::Toggle  },
     { Option::HumanSubtitles,  acc::strings::Id::ModSettingHumanSubtitles,  RowKind::Toggle  },
+    { Option::SubtitleSapi,    acc::strings::Id::ModSettingSubtitleSapi,    RowKind::Toggle  },
     { Option::TurretAutoAim,   acc::strings::Id::ModSettingTurretAutoAim,   RowKind::Toggle  },
     { Option::SkipIntros,      acc::strings::Id::ModSettingSkipIntros,      RowKind::Toggle  },
     { Option::CueVolume,       acc::strings::Id::ModSettingCueVolume,       RowKind::Slider  },
@@ -249,6 +258,7 @@ const char* PersistKey(Option opt) {
         case Option::RoomShapes:      return "RoomShapes";
         case Option::WallSounds:      return "WallSounds";
         case Option::HumanSubtitles:  return "HumanSubtitles";
+        case Option::SubtitleSapi:    return "SubtitleSapi";
         case Option::TurretAutoAim:   return "TurretAutoAim";
         default:                      return nullptr;  // not persisted here
     }
