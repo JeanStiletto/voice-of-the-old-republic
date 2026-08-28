@@ -252,11 +252,10 @@ Nahezu jedes System, das die Mod hinzufügt, lässt sich im laufenden Spiel anpa
 - Raumform-Beschreibungen — die Ansage von Raumname, Form und Ausgängen beim Betreten eines Raumes
 - Wandgeräusche — die kontinuierliche positionelle Wandcue-Schicht
 - Untertitel vertonter Sprecher vorlesen — die Untertitel vertonter Zeilen ansagen
-- Untertitel mit der Ansagestimme sprechen — Dialoge mit der eigenen Ansagestimme der Mod statt mit dem Screenreader vorlesen
 - Automatisches Zielen — die Zielhilfe im Geschützturm-Minispiel
 - Startvideos überspringen — wirkt beim nächsten Start
-- Lautstärke der Hinweistöne und Lautstärke der Sprachansagen — Regler für die Klänge und die Sprachausgabe der Mod
-- Ansagestimme — welche der auf dem PC installierten SAPI-Stimmen die Ansagen der Mod spricht
+- Lautstärke der Hinweistöne — ein Regler für die Klänge der Mod
+- Einstellungen der Ansagestimme — ein Untermenü für die Stimme, mit der die Mod ihre eigenen Ansagen spricht: ihre Lautstärke, ihre Geschwindigkeit, welche der auf dem PC installierten SAPI-Stimmen sie benutzt, und ob Dialoguntertitel von ihr statt vom Screenreader vorgelesen werden
 - Tastenbelegung — die Tasten neu belegen, die die Mod hinzufügt
 - Audio-Glossar — spielt jedes Klangsignal der Mod einzeln mit seinem Namen ab, damit du lernst, was jeder Klang bedeutet
 

@@ -33,6 +33,25 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>v0.8.0</h2>
+
+<h3>Mod settings:</h3>
+
+- New setting "Announcement speed", a slider sitting next to the volume one.
+  It sets how fast the mod's own announcement voice talks: 50 percent is
+  SAPI's own default pace, 80 percent is where the channel has always run, and
+  100 percent is the fastest SAPI offers. Each press moves it by exactly one
+  SAPI step and replays the sample phrase at the new pace, so you hear where
+  you are landing before you leave the row. Your screen reader keeps its own
+  rate — only the mod's announcement voice follows this slider.
+- Everything about the announcement voice now lives in one submenu,
+  "Announcement voice settings", opened from the row where "Announcement
+  voice" used to be. It holds the volume, the new speed, the voice picker and
+  the "Speak subtitles with the announcement voice" toggle, and Esc inside it
+  returns to the Mod settings list instead of closing out to the Options
+  screen. That takes four rows off the root list, which now reads as a list of
+  features rather than a run of consecutive rows about the same voice.
+
 <h2>v0.7.9</h2>
 
 <h3>KOTOR 2:</h3>

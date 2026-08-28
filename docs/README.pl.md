@@ -252,11 +252,10 @@ Prawie każdy system dodany przez mod można dostosować albo włączyć i wył�
 - Opisy kształtu pomieszczeń — zapowiedź nazwy, kształtu i wyjść przy wejściu do pomieszczenia
 - Dźwięki ścian — ciągła warstwa przestrzennych sygnałów ścian
 - Czytaj napisy mówionych kwestii — odczytywanie napisów kwestii z podłożonym głosem
-- Czytaj napisy głosem komunikatów — czytanie dialogów głosem komunikatów moda zamiast czytnikiem ekranu
 - Automatyczne celowanie — pomoc w celowaniu w minigrze z działkiem
 - Pomijaj filmy wstępne — działa od następnego uruchomienia
-- Głośność dźwięków podpowiedzi i Głośność komunikatów mówionych — suwaki głośności dla dźwięków i mowy moda
-- Głos komunikatów — który z głosów SAPI zainstalowanych na komputerze wypowiada komunikaty moda
+- Głośność dźwięków podpowiedzi — suwak dla dźwięków moda
+- Ustawienia głosu komunikatów — podmenu dla głosu, którym mod wypowiada własne komunikaty: jego głośność, jego szybkość, którego z głosów SAPI zainstalowanych na komputerze używa i czy to on czyta napisy dialogów zamiast czytnika ekranu
 - Przypisania klawiszy — zmiana przypisań klawiszy dodanych przez mod
 - Słownik dźwięków — odtwarza każdy sygnał dźwiękowy moda, jeden po drugim wraz z nazwą, żebyś nauczył się, co oznacza każdy dźwięk
 

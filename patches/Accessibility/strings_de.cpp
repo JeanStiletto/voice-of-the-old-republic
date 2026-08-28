@@ -533,9 +533,12 @@ const char* Get(Id id) {
         case Id::ModSettingCueVolume:         return "Lautst\xe4rke der Hinweist\xf6ne";
         case Id::FmtModSettingSlider:         return "%s: %d Prozent";
         case Id::ModSettingUrgentVolume:      return "Lautst\xe4rke der Sprachansagen";
+        case Id::ModSettingUrgentRate:        return "Geschwindigkeit der Sprachansagen";
         case Id::ModSettingUrgentVoice:       return "Ansagestimme";
         case Id::ModSettingUrgentVoiceUnavailable: return "nicht verf\xFCgbar";
         case Id::ModSettingUrgentVolumePreview: return "Beispielansage";
+        case Id::ModSettingVoiceSettings:           return "Einstellungen der Ansagestimme";
+        case Id::ModSettingsVoiceSettingsOpened:    return "Einstellungen der Ansagestimme ge\xF6" "ffnet";
         case Id::ModSettingSupportModder:           return "Modder unterst\xFCtzen";
         case Id::ModSettingLatestChanges:           return "Neueste \xC4nderungen";
         case Id::ModSettingOpenReadme:              return "Anleitung \xF6" "ffnen";

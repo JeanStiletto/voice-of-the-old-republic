@@ -64,6 +64,19 @@ void SpeakOnUrgentChannel(const char* text, bool interrupt);
 void SetUrgentVolumePercent(int percent);
 int  GetUrgentVolumePercent();
 
+// Urgent-channel (SAPI) speech rate as a user-facing percent [0,100].
+// Prism maps [0.0..1.0] onto SAPI's -10..+10 with 0.5 = SAPI default, so 50
+// is the out-of-the-box SAPI pace and 100 the fastest SAPI offers. The
+// default is 80 — the rate the urgent channel has always run at.
+// Same contract as the volume pair: the setter clamps, persists across
+// launches (acc_settings.ini) and applies immediately to the live SAPI
+// backend; the getter lazily loads the persisted value. Both are safe to
+// call before Init(), which re-applies the persisted rate once the SAPI
+// backend is acquired. The normal screen-reader channel is untouched — it
+// keeps the user's own NVDA/JAWS rate.
+void SetUrgentRatePercent(int percent);
+int  GetUrgentRatePercent();
+
 // ---- Urgent-channel voice selection --------------------------------------
 //
 // The urgent channel speaks with one of the SAPI voices installed on the

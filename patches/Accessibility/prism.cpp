@@ -77,12 +77,14 @@ constexpr uint64_t kPrismFeatureSupportsOutput     = 1ull << 5;
 constexpr DWORD kVcppDelayLoadModNotFound  = 0xC06D007E;
 constexpr DWORD kVcppDelayLoadProcNotFound = 0xC06D007F;
 
-// SAPI speech rate for the urgent channel. Prism maps [0.0..1.0] to SAPI's
-// -10..+10 with 0.5 = SAPI default (midpoint-linear). 0.8 lands at roughly
-// SAPI +6 — distinctly faster than out-of-the-box SAPI so urgent map-cursor /
+// Default SAPI speech rate for the urgent channel, in the percent the
+// Mod-settings slider speaks. Prism maps [0.0..1.0] to SAPI's -10..+10 with
+// 0.5 = SAPI default (midpoint-linear); 80% lands at roughly SAPI +6 —
+// distinctly faster than out-of-the-box SAPI so urgent map-cursor /
 // region-cursor / walking cues don't drag during continuous WASD panning,
-// still well within intelligibility for the bundled Microsoft voices.
-constexpr float kPrismSapiUrgentRate = 0.8f;
+// still well within intelligibility for the bundled Microsoft voices. The
+// user can move it either way from the announcement-speed slider.
+constexpr int kSapiRateDefaultPercent = 80;
 
 // prism_init takes a void* and is always handed nullptr. It reads nothing from
 // a NULL config and falls back to the global backend registry, which is exactly
@@ -179,6 +181,23 @@ void EnsureSapiVolumeLoaded() {
     g_sapiVolumePercent = v;
 }
 
+// Same shape for the urgent-channel speech rate — persisted percent [0,100],
+// pushed to the backend through ApplySapiRate. The default is
+// kSapiRateDefaultPercent, the rate the channel ran at before the slider
+// existed, so an install that never touches the row sounds unchanged.
+constexpr const char* kSapiRateKey = "UrgentRatePercent";
+int  g_sapiRatePercent = kSapiRateDefaultPercent;
+bool g_sapiRateLoaded  = false;
+
+void EnsureSapiRateLoaded() {
+    if (g_sapiRateLoaded) return;
+    g_sapiRateLoaded = true;
+    int v = acc::settings::GetInt(kSapiRateKey, kSapiRateDefaultPercent);
+    if (v < 0)   v = 0;
+    if (v > 100) v = 100;
+    g_sapiRatePercent = v;
+}
+
 // L"NVDA" / L"SAPI" / ... — filled at Init time so ActiveScreenReader can
 // hand back a stable wide-string pointer without doing the conversion on
 // every call. L"none" if no backend resolved.
@@ -223,6 +242,26 @@ void ApplySapiVolume() {
         acclog::Write("Speech",
                       "SAPI urgent volume set to %d%% (%.2f, 0.0=mute, "
                       "1.0=full)", g_sapiVolumePercent, vol);
+    }
+}
+
+// Push g_sapiRatePercent to the live SAPI backend. Mirror of ApplySapiVolume,
+// including the "safe any time, no-op until acquired" contract: older Prism
+// builds without prism_backend_set_rate simply leave SAPI at its own rate.
+void ApplySapiRate() {
+    if (!g_prismSapi || !pPrism_backend_set_rate) return;
+    EnsureSapiRateLoaded();
+    float rate = static_cast<float>(g_sapiRatePercent) / 100.0f;
+    PrismError rc = pPrism_backend_set_rate(g_prismSapi, rate);
+    if (rc != kPrismOk) {
+        acclog::Write("Speech",
+                      "prism_backend_set_rate(SAPI, %.2f) rc=%d "
+                      "(SAPI staying at default rate)", rate, rc);
+    } else {
+        acclog::Write("Speech",
+                      "SAPI urgent rate set to %d%% (%.2f, 0.0=slowest, "
+                      "0.5=SAPI default, 1.0=fastest)",
+                      g_sapiRatePercent, rate);
     }
 }
 
@@ -522,25 +561,11 @@ bool TryAcquireSapi() {
         return false;
     }
 
-    if (pPrism_backend_set_rate) {
-        PrismError rrc = pPrism_backend_set_rate(g_prismSapi,
-                                                 kPrismSapiUrgentRate);
-        if (rrc != kPrismOk) {
-            acclog::Write("Speech",
-                          "prism_backend_set_rate(SAPI, %.2f) rc=%d "
-                          "(SAPI staying at default rate)",
-                          kPrismSapiUrgentRate, rrc);
-        } else {
-            acclog::Write("Speech",
-                          "SAPI rate set to %.2f "
-                          "(0.0=slowest, 0.5=default, 1.0=fastest)",
-                          kPrismSapiUrgentRate);
-        }
-    }
-
-    // Apply the persisted urgent-volume slider to the freshly-acquired
-    // backend. EnsureSapiVolumeLoaded pulls the saved value (default 100%)
-    // so the user's last choice carries across launches.
+    // Apply the persisted urgent-channel sliders to the freshly-acquired
+    // backend. The Ensure*Loaded helpers pull the saved values (defaults:
+    // kSapiRateDefaultPercent rate, 100% volume) so the user's last choice
+    // carries across launches.
+    ApplySapiRate();
     ApplySapiVolume();
 
     // Cache voice count so the voice picker and every range check can work
@@ -1024,6 +1049,20 @@ void SetUrgentVolumePercent(int percent) {
 int GetUrgentVolumePercent() {
     EnsureSapiVolumeLoaded();
     return g_sapiVolumePercent;
+}
+
+void SetUrgentRatePercent(int percent) {
+    if (percent < 0)   percent = 0;
+    if (percent > 100) percent = 100;
+    g_sapiRateLoaded  = true;  // we are the authoritative value now
+    g_sapiRatePercent = percent;
+    acc::settings::SetInt(kSapiRateKey, percent);  // persist across launches
+    ApplySapiRate();  // push to the live backend (no-op if not ready)
+}
+
+int GetUrgentRatePercent() {
+    EnsureSapiRateLoaded();
+    return g_sapiRatePercent;
 }
 
 size_t UrgentVoiceCount() {

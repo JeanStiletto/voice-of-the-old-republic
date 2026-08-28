@@ -22,6 +22,12 @@
 //     chain dispatcher sees them. Up/Down cycles the focused option,
 //     Space/Enter toggles, Esc closes and rebinds the parent chain.
 //
+//   * Rows can live one level deeper. The root list and the
+//     announcement-voice submenu are two views over the same Option enum
+//     and share one input handler; Esc inside the nested view returns to
+//     the root rather than to the parent panel. The audio glossary and the
+//     keybind configurator are separate views with their own row model.
+//
 //   * Three dummy toggle options ship as scaffolding: extended cycling,
 //     room shape descriptions, wall sounds. The toggle bits live in
 //     this TU (in-memory only — persistence is a follow-up). Real
@@ -35,16 +41,22 @@
 namespace acc::menus::modsettings {
 
 // Per-option identifiers. Add a new option = add an enum row, a label
-// strings::Id, and a row in the option table inside the .cpp.
+// strings::Id, a row in the option table inside the .cpp, and an entry in
+// whichever display table the row should appear in.
+//
+// This enum is a row's stable IDENTITY (persistence keys, GetToggle callers),
+// not its position on screen: the .cpp carries one display table per view —
+// the root list and the announcement-voice submenu — and those decide where a
+// row is seen. Adding a row to neither table hides it.
 //
 // ExtendedCycling / RoomShapes / WallSounds are boolean toggles (Enter
-// flips, current state spoken as "Name: an/aus"). AudioGlossary is a
-// submenu pivot (Enter opens a nested glossary view) and has no toggle
-// state; GetToggle() returns false for it. SupportModder / LatestChanges /
-// OpenReadme are link rows — Enter hands a URL to the default browser and
-// minimises the game; they hold no state either. UrgentVoice is a choice row
-// — Left/Right walk the installed SAPI voices, and it holds no toggle state
-// either (prism owns the selection).
+// flips, current state spoken as "Name: an/aus"). VoiceSettings and
+// AudioGlossary are submenu pivots (Enter opens a nested view) and have no
+// toggle state; GetToggle() returns false for them. SupportModder /
+// LatestChanges / OpenReadme are link rows — Enter hands a URL to the default
+// browser and minimises the game; they hold no state either. UrgentVoice is a
+// choice row — Left/Right walk the installed SAPI voices, and it holds no
+// toggle state either (prism owns the selection).
 enum class Option {
     ExtendedCycling = 0,
     RoomShapes,
@@ -55,7 +67,11 @@ enum class Option {
     TurretAutoAim,     // easy-mode cheat — turret auto-tracks the locked fighter (off by default)
     SkipIntros,        // filesystem-backed — state is biologo.bik vs biologo.bik.disabled
     CueVolume,         // slider — global hint-sound volume (audio_bus owns the value)
+    VoiceSettings,     // submenu pivot — the announcement-voice submenu, which
+                       // holds every row below plus SubtitleSapi
     UrgentVolume,      // slider — SAPI spoken-announcement volume (prism owns the value)
+    UrgentRate,        // slider — SAPI speech rate for the announcements
+                       // (prism owns the value + persistence)
     UrgentVoice,       // choice — which installed SAPI voice speaks the
                        // announcements (prism owns the value + persistence)
     Keybindings,       // submenu pivot — the mod keybind configurator (menus_keybinds)

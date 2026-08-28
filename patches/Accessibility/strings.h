@@ -1632,12 +1632,26 @@ enum class Id : int {
     // adjusting it speaks a short SAPI sample (UrgentVolumePreview) at the
     // new level so the user hears the resulting loudness.
     ModSettingUrgentVolume,
+    // Announcement-speed slider — SAPI speech rate for the same channel, as a
+    // percent through FmtModSettingSlider: 50 is SAPI's own default pace, 80
+    // the rate the mod has always used, 100 the fastest SAPI offers.
+    ModSettingUrgentRate,
     // Announcement-voice picker. Left/Right walk the SAPI voices installed on
     // the machine; the row reads "Name: <voice>" through FmtModSettingOption,
     // falling back to ModSettingUrgentVoiceUnavailable when SAPI offers none.
     ModSettingUrgentVoice,
     ModSettingUrgentVoiceUnavailable,
     ModSettingUrgentVolumePreview,
+
+    // ---- Mod-settings → Announcement-voice submenu (menus_modsettings).
+    //      Nested submenu that holds every row shaping the mod's own
+    //      announcement (SAPI) voice: its volume, its speed, which installed
+    //      voice speaks, and whether dialogue subtitles ride that channel.
+    //      VoiceSettings is the row label in the root list and the submenu's
+    //      own name; VoiceSettingsOpened is the opener cue, same shape as the
+    //      audio glossary's.
+    ModSettingVoiceSettings,
+    ModSettingsVoiceSettingsOpened,
 
     // Side-effect cues for the SkipIntros toggle — spoken after the
     // .bik rename to tell the user the change applies on next launch.

@@ -519,9 +519,12 @@ const char* Get(Id id) {
         case Id::ModSettingCueVolume:         return "Volumen de los sonidos de aviso";
         case Id::FmtModSettingSlider:         return "%s: %d por ciento";
         case Id::ModSettingUrgentVolume:      return "Volumen de los anuncios hablados";
+        case Id::ModSettingUrgentRate:        return "Velocidad de los anuncios hablados";
         case Id::ModSettingUrgentVoice:       return "Voz de los anuncios";
         case Id::ModSettingUrgentVoiceUnavailable: return "no disponible";
         case Id::ModSettingUrgentVolumePreview: return "Anuncio de ejemplo";
+        case Id::ModSettingVoiceSettings:           return "Ajustes de la voz de los anuncios";
+        case Id::ModSettingsVoiceSettingsOpened:    return "Ajustes de la voz de los anuncios abiertos";
         case Id::ModSettingSupportModder:           return "Apoyar al modder";
         case Id::ModSettingLatestChanges:           return "\xDAltimos cambios";
         case Id::ModSettingOpenReadme:              return "Abrir la gu\xED" "a";

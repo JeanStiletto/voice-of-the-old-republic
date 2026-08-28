@@ -10,6 +10,6 @@
 
 namespace acc {
 
-constexpr const char* kModVersion = "0.7.9";
+constexpr const char* kModVersion = "0.8.0";
 
 }  // namespace acc

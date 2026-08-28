@@ -252,11 +252,10 @@ Presque tous les systèmes ajoutés par le mod peuvent être ajustés, activés 
 - Descriptions de la forme des salles — l'annonce du nom, de la forme et des sorties quand vous entrez dans une pièce
 - Sons de mur — la couche continue de repères sonores positionnels sur les murs
 - Lire les sous-titres des locuteurs doublés — annoncer les sous-titres des répliques doublées
-- Lire les sous-titres avec la voix des annonces — lire les dialogues avec la voix d'annonce du mod plutôt qu'avec votre lecteur d'écran
 - Visée automatique — l'aide à la visée du mini-jeu de tourelle
 - Ignorer les vidéos d'introduction — prend effet au prochain lancement
-- Volume des indices sonores et Volume des annonces vocales — curseurs de volume pour les sons et la parole du mod
-- Voix des annonces — laquelle des voix SAPI installées sur votre PC prononce les annonces du mod
+- Volume des indices sonores — un curseur pour les sons du mod
+- Réglages de la voix des annonces — un sous-menu pour la voix avec laquelle le mod prononce ses propres annonces : son volume, sa vitesse, laquelle des voix SAPI installées sur votre PC elle utilise, et si les sous-titres des dialogues sont lus par elle plutôt que par votre lecteur d'écran
 - Raccourcis clavier — réassigner les touches ajoutées par le mod
 - Glossaire audio — joue chaque repère sonore du mod, un par un avec son nom, pour que vous appreniez ce que chaque son signifie
 

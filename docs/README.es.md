@@ -252,11 +252,10 @@ Casi todos los sistemas que añade el mod se pueden ajustar o activar y desactiv
 - Descripciones de la forma de las habitaciones — el anuncio del nombre, la forma y las salidas al entrar en una sala
 - Sonidos de pared — la capa continua de señales sonoras posicionales de las paredes
 - Leer subtítulos de hablantes con voz — anunciar los subtítulos de las líneas dobladas
-- Leer los subtítulos con la voz de los anuncios — leer los diálogos con la voz de anuncios del mod en lugar de con tu lector de pantalla
 - Apuntado automático — la ayuda de puntería del minijuego de la torreta
 - Omitir vídeos de introducción — surte efecto en el siguiente arranque
-- Volumen de los sonidos de aviso y Volumen de los anuncios hablados — deslizadores de volumen para los sonidos y la voz del mod
-- Voz de los anuncios — cuál de las voces SAPI instaladas en tu PC pronuncia los anuncios del mod
+- Volumen de los sonidos de aviso — un deslizador para los sonidos del mod
+- Ajustes de la voz de los anuncios — un submenú para la voz con la que el mod pronuncia sus propios anuncios: su volumen, su velocidad, cuál de las voces SAPI instaladas en tu PC usa, y si los subtítulos de los diálogos los lee ella en lugar de tu lector de pantalla
 - Asignación de teclas — reasignar las teclas que añade el mod
 - Glosario de audio — reproduce cada señal sonora del mod, una a una y con su nombre, para que aprendas qué significa cada sonido
 

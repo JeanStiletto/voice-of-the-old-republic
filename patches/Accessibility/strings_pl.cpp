@@ -517,9 +517,12 @@ const char* Get(Id id) {
         case Id::ModSettingCueVolume:         return "G\xB3o\x9Cno\x9C\xE6 d\x9Fwi\xEAk\xF3w podpowiedzi";
         case Id::FmtModSettingSlider:         return "%s: %d procent";
         case Id::ModSettingUrgentVolume:      return "G\xB3o\x9Cno\x9C\xE6 komunikat\xF3w m\xF3wionych";
+        case Id::ModSettingUrgentRate:        return "Szybko\x9C\xE6 komunikat\xF3w m\xF3wionych";
         case Id::ModSettingUrgentVoice:       return "G\xB3os komunikat\xF3w";
         case Id::ModSettingUrgentVoiceUnavailable: return "niedost\xEApny";
         case Id::ModSettingUrgentVolumePreview: return "Przyk\xB3""adowy komunikat";
+        case Id::ModSettingVoiceSettings:           return "Ustawienia g\xB3osu komunikat\xF3w";
+        case Id::ModSettingsVoiceSettingsOpened:    return "Otwarto ustawienia g\xB3osu komunikat\xF3w";
         case Id::ModSettingSupportModder:           return "Wesprzyj tw\xF3rc\xEA moda";
         case Id::ModSettingLatestChanges:           return "Najnowsze zmiany";
         case Id::ModSettingOpenReadme:              return "Otw\xF3rz poradnik";

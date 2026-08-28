@@ -255,8 +255,8 @@ Quasi ogni sistema aggiunto dalla mod può essere regolato o attivato e disattiv
 - Leggi i sottotitoli con la voce degli annunci — leggere i dialoghi con la voce degli annunci della mod invece che con lo screen reader
 - Mira automatica — l'aiuto alla mira nel minigioco della torretta
 - Salta i video introduttivi — ha effetto al prossimo avvio
-- Volume dei segnali sonori e Volume degli annunci vocali — cursori di volume per i suoni e la voce della mod
-- Voce degli annunci — quale delle voci SAPI installate sul PC pronuncia gli annunci della mod
+- Volume dei segnali sonori — un cursore per i suoni della mod
+- Impostazioni della voce degli annunci — un sottomenu per la voce con cui la mod pronuncia i propri annunci: il suo volume, la sua velocità, quale delle voci SAPI installate sul PC usa, e se i sottotitoli dei dialoghi vengono letti da lei invece che dallo screen reader
 - Combinazioni di tasti — riassegnare i tasti aggiunti dalla mod
 - Glossario audio — riproduce ogni segnale sonoro della mod, uno alla volta con il suo nome, così impari che cosa significa ciascun suono
 
