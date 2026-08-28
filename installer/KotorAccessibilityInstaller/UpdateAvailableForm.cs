@@ -8,19 +8,29 @@ namespace KotorAccessibilityInstaller
     {
         public UpdateChoice UserChoice { get; private set; } = UpdateChoice.Close;
 
-        public UpdateAvailableForm(GameTarget target, string installedVersion, string latestVersion,
-                                   bool spatialAudioEnabled, string gameStates = null)
+        /// <param name="gameNames">
+        /// The game (or games) this update will be applied to, already joined
+        /// for reading — see <c>Program.JoinGameNames</c>. A set rather than one
+        /// name because an update run covers every installed game that is behind
+        /// the published release, not just whichever one the installer looked at
+        /// first.
+        /// </param>
+        /// <param name="offerSpatialAudio">
+        /// Whether to show the dsoal toggle. Decided by the caller from the
+        /// KOTOR 1 install specifically — dsoal is bundled for KOTOR 1 only, so
+        /// the button is absent rather than present-and-inert everywhere else.
+        /// </param>
+        public UpdateAvailableForm(string gameNames, bool offerSpatialAudio, string installedVersion,
+                                   string latestVersion, bool spatialAudioEnabled, string gameStates = null)
         {
-            InitializeComponents(target, installedVersion, latestVersion, spatialAudioEnabled, gameStates);
+            InitializeComponents(gameNames, offerSpatialAudio, installedVersion, latestVersion,
+                                 spatialAudioEnabled, gameStates);
         }
 
-        private void InitializeComponents(GameTarget target, string installedVersion, string latestVersion,
-                                          bool spatialAudioEnabled, string gameStates)
+        private void InitializeComponents(string gameNames, bool offerSpatialAudio, string installedVersion,
+                                          string latestVersion, bool spatialAudioEnabled, string gameStates)
         {
-            // dsoal is KOTOR 1 only — see InstalledOptionsForm.
-            bool offerSpatialAudio = target == GameTarget.Kotor1;
-
-            Text = InstallerLocale.Get("Update_Title") + " — " + target.DisplayName;
+            Text = InstallerLocale.Get("Update_Title") + " — " + gameNames;
             Size = new Size(580, 330);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
@@ -29,7 +39,7 @@ namespace KotorAccessibilityInstaller
 
             var titleLabel = new Label
             {
-                Text = InstallerLocale.Get("Update_Heading") + " — " + target.DisplayName,
+                Text = InstallerLocale.Get("Update_Heading") + " — " + gameNames,
                 Font = new Font(Font.FontFamily, 14, FontStyle.Bold),
                 Location = new Point(20, 20),
                 Size = new Size(540, 30),

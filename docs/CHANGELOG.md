@@ -110,6 +110,22 @@ and add the German in parentheses if it genuinely aids clarity.
   axes at all, and a pad enumerated twice delivers every press twice — and
   points at Steam's per-game "Disable Steam Input" setting.
 
+<h3>Installer:</h3>
+
+- Updating now covers both games instead of only KOTOR 1. The update screen
+  acted on a single game — KOTOR 1 whenever KOTOR 1 had the mod — so with both
+  installed, "Update mod only" brought KOTOR 1 forward and silently left KOTOR 2
+  on the old version; on the next run KOTOR 1 was current, the installer
+  reported everything up to date, and no update button was offered at all. The
+  only way to move KOTOR 2 forward was a full reinstall. The installer now finds
+  every installed copy, names the ones that are behind in the update screen's
+  heading, and runs one update pass per game, each with its own progress and
+  completion summary.
+- A full reinstall started from the maintenance screen no longer prefills the
+  KOTOR 2 folder into the KOTOR 1 install step. On a KOTOR-2-only machine the
+  screen opened with a path its own check then rejected, leaving Install
+  disabled with nothing said about why.
+
 <h2>v0.7.9</h2>
 
 <h3>KOTOR 2:</h3>

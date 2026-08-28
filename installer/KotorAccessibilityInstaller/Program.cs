@@ -171,13 +171,16 @@ namespace KotorAccessibilityInstaller
 
             // Install mode.
             //
-            // Which game the maintenance dialogs act on: an explicit --game wins
-            // (that is how the in-game updater says which copy called it),
-            // otherwise the first game that already has the mod. Without that
-            // second rule a KOTOR-2-only player was invisible to the installer —
-            // it looked only at KOTOR 1, found nothing, and offered a fresh
-            // install every single time. Falls back to KOTOR 1 when neither is
-            // installed, which is the fresh-install path anyway.
+            // Which game the headless and fresh-install paths act on: an
+            // explicit --game wins (that is how the in-game updater says which
+            // copy called it), otherwise the first game that already has the
+            // mod. Without that second rule a KOTOR-2-only player was invisible
+            // to the installer — it looked only at KOTOR 1, found nothing, and
+            // offered a fresh install every single time. Falls back to KOTOR 1
+            // when neither is installed, which is the fresh-install path anyway.
+            //
+            // Deliberately NOT what the maintenance dialogs act on — see
+            // installedGames below.
             GameTarget modeTarget = argTarget ?? FirstInstalledTarget() ?? GameTarget.Kotor1;
 
             string detectedGamePath = pathArg ?? GamePathDetector.Detect(modeTarget)
@@ -191,6 +194,11 @@ namespace KotorAccessibilityInstaller
             // assumes the mod is already installed; the install-only path is
             // out of scope here because the in-game updater only fires when an
             // existing patch DLL has loaded.
+            //
+            // Single-game by design, and correctly so: the handoff batch passes
+            // --game for the copy the player pressed F5 in, and updating the
+            // other game behind their back while they wait to be put back into
+            // this one is not what they asked for.
             if (autoUpdateMode)
             {
                 Logger.Info($"Auto-update mode active — running headless update ({modeTarget.DisplayName})");
@@ -212,8 +220,7 @@ namespace KotorAccessibilityInstaller
                 Application.Run(new MainForm(modeTarget, detectedGamePath, updateOnly: true, localKpatchPath: localKpatchPath, headless: true));
                 return;
             }
-            bool updateAvailable = false;
-            string installedVersion = null;
+
             string latestVersion = null;
 
             try
@@ -229,41 +236,81 @@ namespace KotorAccessibilityInstaller
                 Logger.Warning($"Could not check for updates: {ex.Message}");
             }
 
-            if (modExists)
+            // EVERY installed copy of the mod, not just one.
+            //
+            // The maintenance dialogs used to follow modeTarget, which resolves
+            // to KOTOR 1 whenever KOTOR 1 has the mod. With both games modded
+            // that meant "Update mod only" updated KOTOR 1 and silently left
+            // KOTOR 2 behind — and on the next run KOTOR 1 was current, so the
+            // installer reported "up to date" and offered no update button at
+            // all. KOTOR 2 could then only be brought forward by a full
+            // reinstall, which is exactly what testers reported. An explicit
+            // --game still narrows this to one entry, so scripted invocations
+            // are unchanged.
+            var installedGames = FindInstalledGames(argTarget, pathArg);
+            var staleGames = new List<InstalledGame>();
+            foreach (var game in installedGames)
             {
-                installedVersion = RegistryManager.GetRegisteredVersion(modeTarget);
-                Logger.Info($"Installed version (from registry): {installedVersion ?? "unknown"}");
+                Logger.Info($"{game.Target.DisplayName}: installed version (from registry): {game.Version ?? "unknown"}");
 
-                if (installedVersion != null && latestVersion != null)
-                {
-                    updateAvailable = IsNewerVersion(latestVersion, installedVersion);
-                    Logger.Info($"Update available: {updateAvailable}");
-                }
+                // An unknown installed version stays out of the stale set:
+                // there is nothing to compare against, and offering an update
+                // on a guess would re-run the whole apply for no stated reason.
+                if (game.Version != null && latestVersion != null && IsNewerVersion(latestVersion, game.Version))
+                    staleGames.Add(game);
             }
+            Logger.Info($"Update available for: {(staleGames.Count > 0 ? JoinGameNames(staleGames) : "(none)")}");
 
-            if (modExists && updateAvailable)
+            // dsoal is bundled for KOTOR 1 only, so the toggle is resolved from
+            // the KOTOR 1 install specifically rather than from whichever game
+            // happens to lead the maintenance set.
+            string k1ModPath = InstalledPathOf(installedGames, GameTarget.Kotor1);
+            bool offerSpatialAudio = k1ModPath != null;
+            bool spatialOn = offerSpatialAudio && SpatialAudioManager.IsEnabled(k1ModPath);
+
+            // The full-install flow uses its game-path argument for one thing:
+            // prefilling the KOTOR 1 install screen. It therefore gets a KOTOR 1
+            // folder or nothing — handing it whichever game led the maintenance
+            // set prefilled the KOTOR 2 folder into a screen whose own
+            // validation then rejected it, with no explanation on offer.
+            string kotor1Path = k1ModPath
+                ?? (modeTarget == GameTarget.Kotor1 ? detectedGamePath : null);
+
+            if (staleGames.Count > 0)
             {
-                Logger.Info("Showing update dialog");
-                bool spatialOn = IsSpatialAudioOn(modeTarget, detectedGamePath);
-                var updateForm = new UpdateAvailableForm(modeTarget, installedVersion, latestVersion, spatialOn,
+                Logger.Info($"Showing update dialog ({JoinGameNames(staleGames)})");
+                var updateForm = new UpdateAvailableForm(JoinGameNames(staleGames), offerSpatialAudio,
+                                                         staleGames[0].Version, latestVersion, spatialOn,
                                                          DescribeAllGames());
                 Application.Run(updateForm);
 
                 switch (updateForm.UserChoice)
                 {
                     case UpdateChoice.UpdateOnly:
-                        Logger.Info("User chose to update mod only");
-                        Application.Run(new MainForm(modeTarget, detectedGamePath, updateOnly: true, language: LanguageDetector.DetectLanguage(), localKpatchPath: localKpatchPath));
+                        Logger.Info($"User chose to update mod only ({JoinGameNames(staleGames)})");
+                        // One MainForm pass per stale game, sequential rather
+                        // than one multi-target form — the same shape and the
+                        // same reasoning as the full-install flow: each pass has
+                        // its own path to validate, its own progress to announce
+                        // and its own completion summary, and a screen-reader
+                        // user needs those separated rather than interleaved.
+                        foreach (var game in staleGames)
+                        {
+                            Logger.Info($"Updating {game.Target.DisplayName} at {game.GamePath}");
+                            Application.Run(new MainForm(game.Target, game.GamePath, updateOnly: true,
+                                language: LanguageDetector.DetectLanguage(),
+                                localKpatchPath: localKpatchPath));
+                        }
                         break;
 
                     case UpdateChoice.FullInstall:
                         Logger.Info("User chose full install");
-                        InstallFlow.RunFullInstallFlow(detectedGamePath, pathArg, latestVersion, localKpatchPath);
+                        InstallFlow.RunFullInstallFlow(kotor1Path, pathArg, latestVersion, localKpatchPath);
                         break;
 
                     case UpdateChoice.ToggleSpatialAudio:
                         Logger.Info("User chose to toggle spatial audio");
-                        InstallFlow.ToggleSpatialAudioAndReport(detectedGamePath);
+                        InstallFlow.ToggleSpatialAudioAndReport(k1ModPath);
                         break;
 
                     case UpdateChoice.Close:
@@ -272,32 +319,32 @@ namespace KotorAccessibilityInstaller
                         break;
                 }
             }
-            else if (modExists)
+            else if (installedGames.Count > 0)
             {
-                Logger.Info($"Mod is up to date (installed: {installedVersion ?? "unknown"})");
-                string displayVersion = installedVersion ?? "?";
-                while (displayVersion.EndsWith(".0") && displayVersion.IndexOf('.') != displayVersion.LastIndexOf('.'))
-                    displayVersion = displayVersion.Substring(0, displayVersion.Length - 2);
+                var primary = installedGames[0];
+                Logger.Info($"Mod is up to date ({JoinGameNames(installedGames)})");
 
-                bool spatialOn = IsSpatialAudioOn(modeTarget, detectedGamePath);
-                var form = new InstalledOptionsForm(modeTarget, displayVersion, spatialOn, DescribeAllGames());
+                var form = new InstalledOptionsForm(offerSpatialAudio, TrimVersion(primary.Version ?? "?"),
+                                                    spatialOn, DescribeAllGames());
                 Application.Run(form);
 
                 switch (form.UserChoice)
                 {
                     case UpdateChoice.FullInstall:
                         Logger.Info("User chose full reinstall");
-                        InstallFlow.RunFullInstallFlow(detectedGamePath, pathArg, latestVersion, localKpatchPath);
+                        InstallFlow.RunFullInstallFlow(kotor1Path, pathArg, latestVersion, localKpatchPath);
                         break;
 
                     case UpdateChoice.ToggleSpatialAudio:
                         Logger.Info("User chose to toggle spatial audio");
-                        InstallFlow.ToggleSpatialAudioAndReport(detectedGamePath);
+                        InstallFlow.ToggleSpatialAudioAndReport(k1ModPath);
                         break;
 
                     case UpdateChoice.CollectLogs:
                         Logger.Info("User chose to collect logs for beta-test bundle");
-                        InstallFlow.CollectLogsAndReport(modeTarget, detectedGamePath);
+                        // LogCollector covers every installed game; the target
+                        // and path only seed its detection.
+                        InstallFlow.CollectLogsAndReport(primary.Target, primary.GamePath);
                         break;
 
                     case UpdateChoice.Close:
@@ -308,7 +355,7 @@ namespace KotorAccessibilityInstaller
             }
             else
             {
-                InstallFlow.RunFullInstallFlow(detectedGamePath, pathArg, latestVersion, localKpatchPath);
+                InstallFlow.RunFullInstallFlow(kotor1Path, pathArg, latestVersion, localKpatchPath);
             }
         }
 
@@ -379,12 +426,80 @@ namespace KotorAccessibilityInstaller
         }
 
         /// <summary>
-        /// dsoal is bundled for KOTOR 1 only, so its state is never queried for
-        /// KOTOR 2 — SpatialAudioManager validates a swkotor.exe and would answer
-        /// about the wrong game's folder.
+        /// One installed copy of the mod: which game, where, and at which
+        /// version. <see cref="Version"/> is the registry's DisplayVersion and
+        /// is null when that entry is missing, which a hand-copied or
+        /// pre-registry install can be.
         /// </summary>
-        private static bool IsSpatialAudioOn(GameTarget target, string gamePath) =>
-            target == GameTarget.Kotor1 && gamePath != null && SpatialAudioManager.IsEnabled(gamePath);
+        private sealed class InstalledGame
+        {
+            public GameTarget Target;
+            public string GamePath;
+            public string Version;
+        }
+
+        /// <summary>
+        /// Every game that currently has the mod, KOTOR 1 first.
+        ///
+        /// <para>This — not a single target — is what the maintenance dialogs
+        /// act on. Resolving to one game (the first installed) is what left a
+        /// modded KOTOR 2 a version behind indefinitely: KOTOR 1 always won
+        /// that race, so the update path never had the second install in hand
+        /// and only a full reinstall could bring KOTOR 2 forward.</para>
+        /// </summary>
+        /// <param name="only">
+        /// Restrict to this game (an explicit <c>--game</c>), or null for all.
+        /// </param>
+        /// <param name="pathOverride">
+        /// A folder named on the command line. It is offered to every candidate
+        /// and accepted only by the game whose executable it actually holds, so
+        /// it can never attach one game's folder to the other game's entry.
+        /// </param>
+        private static List<InstalledGame> FindInstalledGames(GameTarget only, string pathOverride)
+        {
+            var games = new List<InstalledGame>();
+            foreach (var target in GameTarget.All)
+            {
+                if (only != null && target != only) continue;
+
+                string path = pathOverride ?? GamePathDetector.Detect(target);
+                if (!GamePathDetector.IsValidGamePath(target, path)) continue;
+                if (!IsModInstalledAt(path)) continue;
+
+                games.Add(new InstalledGame
+                {
+                    Target = target,
+                    GamePath = path,
+                    Version = RegistryManager.GetRegisteredVersion(target),
+                });
+            }
+            return games;
+        }
+
+        /// <summary>That game's folder among <paramref name="games"/>, or null.</summary>
+        private static string InstalledPathOf(List<InstalledGame> games, GameTarget target)
+        {
+            foreach (var game in games)
+                if (game.Target == target) return game.GamePath;
+            return null;
+        }
+
+        /// <summary>
+        /// "KOTOR 1" or "KOTOR 1, KOTOR 2" — for the headings and log lines that
+        /// have to name a set rather than one game. Comma-separated rather than
+        /// joined with a symbol: a screen reader reads the comma as the pause it
+        /// is, where "+" is read out as a word mid-title.
+        /// </summary>
+        private static string JoinGameNames(List<InstalledGame> games)
+        {
+            var sb = new StringBuilder();
+            foreach (var game in games)
+            {
+                if (sb.Length > 0) sb.Append(", ");
+                sb.Append(game.Target.DisplayName);
+            }
+            return sb.ToString();
+        }
 
         /// <summary>
         /// Welcome → Base-components info → Optional-mods checkboxes → Main install.

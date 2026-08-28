@@ -18,21 +18,24 @@ namespace KotorAccessibilityInstaller
     {
         public UpdateChoice UserChoice { get; private set; } = UpdateChoice.Close;
 
+        /// <param name="offerSpatialAudio">
+        /// Whether to show the dsoal toggle. Decided by the caller from the
+        /// KOTOR 1 install specifically, not from whichever game leads the
+        /// maintenance set — this screen no longer has a single target.
+        /// </param>
         /// <param name="gameStates">
         /// One line per game — see <c>Program.DescribeAllGames</c>. Shown above
         /// the actions so both games' state is visible at once.
         /// </param>
-        public InstalledOptionsForm(GameTarget target, string installedVersion, bool spatialAudioEnabled,
+        public InstalledOptionsForm(bool offerSpatialAudio, string installedVersion, bool spatialAudioEnabled,
                                     string gameStates = null)
         {
-            InitializeComponents(target, installedVersion, spatialAudioEnabled, gameStates);
+            InitializeComponents(offerSpatialAudio, installedVersion, spatialAudioEnabled, gameStates);
         }
 
-        private void InitializeComponents(GameTarget target, string installedVersion, bool spatialAudioEnabled,
-                                          string gameStates)
+        private void InitializeComponents(bool offerSpatialAudio, string installedVersion,
+                                          bool spatialAudioEnabled, string gameStates)
         {
-            bool offerSpatialAudio = target == GameTarget.Kotor1;
-
             // No game name in the title. This screen lists the state of BOTH
             // games, so naming one of them was actively wrong: the heading is
             // also the buttons' accessible description, so "Reinstall" announced
