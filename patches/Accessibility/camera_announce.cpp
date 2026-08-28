@@ -36,6 +36,32 @@ constexpr DWORD kQuietMs = 250;
 // per 1.3 sectors.
 constexpr DWORD kMinIntervalHeldMs = 300;
 
+// When the running readout stops being useful and becomes noise. Either test
+// mutes it for the rest of the turn; the stop edge then speaks the heading the
+// player actually ended on.
+//
+// The readout exists so a player can steer by ear, and for a slow turn it does
+// that. It cannot serve a fast one: a cue costs ~250ms of blocking SpeakUrgent
+// on the tick thread, so once sector boundaries arrive faster than the cadence
+// each cue only cuts off the last and the player hears fragments. One tester's
+// ~7s spin spoke all eight sectors, four of them inside a single second, and
+// pushed three consecutive ticks over 200ms (k2-patch-20260827-190850,
+// 19:11:18-19:11:25).
+//
+//   kFastTurnDps — the speed above which the readout cannot keep up, derived
+//     rather than picked: one sector per announce slot is 45° / 300ms = 150°/s.
+//     The engine's keyboard turn runs at 200°/s by default ("Keyboard Camera
+//     DPS"), so a held turn key is always above it and a gentle mouse-edge turn
+//     is normally below.
+//   kSpinSuppressAfterMs — backstop for a turn that stays under the rate but
+//     never ends. Set above a deliberate 90-180° adjustment (<1s at 200°/s),
+//     which therefore keeps its cue.
+//
+// A tap needs neither: rotation ends before the first announce slot opens, so
+// the stop edge has always been what speaks for it.
+constexpr float kFastTurnDps         = 150.0f;
+constexpr DWORD kSpinSuppressAfterMs = 1200;
+
 // The camera counts as "actively rotating" inside this band. Derived from the
 // compass velocity rather than from specific turn keys, so it is independent
 // of which keys the player has bound turning to and also covers mouse-edge
@@ -86,6 +112,11 @@ float s_lastRotDps        = 0.0f;   // last rate measured over a real interval;
                                     // log never reports a rate we didn't measure
 bool  s_prevRotating      = false;  // was-rotating; falling edge is the stop
                                     // edge that speaks the final sector
+DWORD s_rotatingSince     = 0;      // tick the current unbroken rotation began;
+                                    // 0 = not rotating. Drives the spin cutoff
+bool  s_spinSuppressed    = false;  // running readout muted for this spin;
+                                    // separate from s_rotatingSince so the
+                                    // mute logs once per spin, not per tick
 void* s_lastLeader        = nullptr;  // active leader (Tab); identity change is
                                       // a compass discontinuity, not a turn
 DWORD s_discontinuityAt   = 0;      // tick of the most recent discontinuity;
@@ -127,6 +158,8 @@ void Tick() {
         s_lastCamCompass   = -1.0f;
         s_prevVelCompass   = -1.0f;
         s_lastRotDps       = 0.0f;
+        s_rotatingSince    = 0;
+        s_spinSuppressed   = false;
         s_mutedByCutscene  = false;
         s_lastLeader       = nullptr;
         s_discontinuityAt  = 0;
@@ -156,6 +189,8 @@ void Tick() {
         s_prevRotating     = false;  // drop any stale rotation stop edge
         s_prevVelCompass   = -1.0f;  // re-seed velocity after the mute gap
         s_lastRotDps       = 0.0f;
+        s_rotatingSince    = 0;
+        s_spinSuppressed   = false;
         s_lastLeader       = acc::engine::GetClientLeader();
         s_discontinuityAt  = 0;
         acclog::Write("CameraAnnounce", "cutscene end; silent re-anchor "
@@ -171,6 +206,8 @@ void Tick() {
         s_prevRotating   = false;
         s_prevVelCompass = -1.0f;
         s_lastRotDps     = 0.0f;
+        s_rotatingSince  = 0;
+        s_spinSuppressed = false;
         return;
     }
 
@@ -183,6 +220,8 @@ void Tick() {
         s_prevRotating     = false;
         s_prevVelCompass   = -1.0f;
         s_lastRotDps       = 0.0f;
+        s_rotatingSince    = 0;
+        s_spinSuppressed   = false;
         s_lastLeader       = acc::engine::GetClientLeader();
         s_discontinuityAt  = 0;
         acclog::Write("CameraAnnounce", "first-tick anchor; camCompass=%.1f sector=%d",
@@ -262,6 +301,19 @@ void Tick() {
     bool stopped  = !(leaderChanged || jumped) && s_prevRotating && !rotating;
     s_prevRotating = rotating;
 
+    // Age of the current unbroken rotation. Started on the rising edge and
+    // cleared the moment rotation stops, so a spin that pauses and resumes is
+    // two turns, each of which gets its own readout allowance.
+    if (rotating) {
+        if (s_rotatingSince == 0) s_rotatingSince = now;
+    } else {
+        s_rotatingSince  = 0;
+        s_spinSuppressed = false;
+    }
+    bool spinning = rotating &&
+                    (rotDps >= kFastTurnDps ||
+                     (now - s_rotatingSince) >= kSpinSuppressAfterMs);
+
     // Sticky hysteresis: the active sector stays put while the camera is
     // within (kHalfSector + kHysteresis)° of its centre.
     float lastCentre   = s_lastSpokenSector * kSectorSize;
@@ -290,7 +342,9 @@ void Tick() {
     //             kMinIntervalHeldMs (~1.3 sectors at the default 200°/s) so a
     //             long spin doesn't machine-gun. Without this path a held turn
     //             is silent until release, since the sector never holds still
-    //             long enough to count as settled.
+    //             long enough to count as settled. Cut off entirely once the
+    //             turn is too fast to track or has simply run too long — see
+    //             `spinning`; the stop edge above still reports where it ended.
     //   settled — the sector has held for kQuietMs: the final state after a
     //             burst, a nudge too small to register as rotation, or the tail
     //             of a discontinuity.
@@ -300,6 +354,16 @@ void Tick() {
         return;
     } else if (stopped) {
         reason = "stopped";
+    } else if (spinning) {
+        if (!s_spinSuppressed) {
+            s_spinSuppressed = true;
+            acclog::Write("CameraAnnounce",
+                "spin (%s: %ums, rot=%.0f°/s) — running readout muted until "
+                "it stops",
+                rotDps >= kFastTurnDps ? "too fast to track" : "sustained",
+                now - s_rotatingSince, rotDps);
+        }
+        return;
     } else if (rotating && (now - s_lastSpokenAt >= kMinIntervalHeldMs)) {
         reason = "turning";
     } else if (now - s_lastChangeAt >= kQuietMs) {

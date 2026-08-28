@@ -918,6 +918,7 @@ const char* Get(Id id) {
             return "Naci\x9Cnij G, aby w\xB3\xB9""czy\xE6 lub wy\xB3\xB9""czy\xE6 tryb ukrycia. Musisz mie\xE6 za\xB3o\xBFony generator pola maskuj\xB9""cego, aby z niego korzysta\xE6.";
         case Id::DialogRepeatLineHint:
             return "Naci\x9Cnij R, aby powt\xF3rzy\xE6 ostatni\xB9 kwesti\xEA dialogu.";
+        case Id::CameraFeed:            return "Widok kamery.";
 
         // ---- KOTOR 2 tutorial hints (tutorial_hints.cpp K2 tables). The
         //      shared rows 0-42 reuse the TutHint* wordings above; these

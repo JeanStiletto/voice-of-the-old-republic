@@ -471,7 +471,13 @@ extern "C" void __cdecl OnSetSWGuiStatus(void* thisPtr,
         return;
     }
 
-    acclog::Write("SubScreen.Status",
+    // Trace, not Write: the engine re-asserts the SAME status from the SAME
+    // caller on essentially every frame while a sub-screen is up, and at ~20
+    // lines/second that one call site was 55% of a tester's whole session log
+    // (k2-patch-20260827-190850: 5030 of 9141 lines, all
+    // `new_status=1 p2=1 caller=0x00781d3b`). Line-level dedup keeps the
+    // suppressed count, so no transition is lost — only the repeats fold.
+    acclog::Trace("SubScreen.Status",
                   "this=%p new_status=%d p2=%d caller=0x%08x",
                   thisPtr, new_status, param_2, caller_eip);
 

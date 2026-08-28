@@ -845,6 +845,54 @@ void Tick() {
         }
     }
 
+    // ---- Security-camera feed — its own panel, its own lifecycle. ----
+    //
+    // Using a console's "view camera" option swaps the terminal for
+    // CSWGuiDialogComputerCamera: a live camera picture with exactly one
+    // control on it, LBL_RETURN, whose text is the engine's own localised
+    // "press Enter to cancel the live feed and return" (computercamera.gui
+    // strref 48226 on KOTOR 1, computercam_p.gui strref 48759 on KOTOR 2 —
+    // both games ship a one-control panel). Nothing else on it is text, so
+    // that label IS the accessible content: without it the screen goes to a
+    // picture the player cannot see, in silence, with no hint of the key that
+    // leaves it.
+    //
+    // Deliberately NOT read through FindActiveDialogPanel: that returns the
+    // first dialog-kind panel in panels[], and while a console is open the
+    // camera panel and the conversation panel trade places there from tick to
+    // tick, so keying off it would re-announce on every swap. An edge on the
+    // camera panel's own presence fires exactly once per feed.
+    //
+    // Read the label rather than shipping our own string: the engine's text is
+    // already in the player's language, and it names the key the ENGINE
+    // actually honours, so it cannot drift out of sync with a rebind.
+    {
+        void* cam = acc::engine::FindPanelByKind(
+            acc::engine::PanelKind::DialogComputerCamera);
+        static void* s_lastCamPanel = nullptr;
+        if (!cam) {
+            s_lastCamPanel = nullptr;
+        } else if (cam != s_lastCamPanel) {
+            s_lastCamPanel = cam;
+            char hint[256] = "";
+            if (ReadFirstVisibleText(cam, hint, sizeof(hint)) && hint[0]) {
+                SpeakSubtitle(hint, /*interrupt=*/true);
+                acclog::Write("Dialog.Speech",
+                              "camera feed opened panel=%p -> [%.200s]",
+                              cam, hint);
+            } else {
+                // Panel is up but carries no readable label — say so rather
+                // than leaving the player in a silent picture with no idea a
+                // screen change happened at all.
+                SpeakSubtitle(acc::strings::Get(acc::strings::Id::CameraFeed),
+                              /*interrupt=*/true);
+                acclog::Write("Dialog.Speech",
+                              "camera feed opened panel=%p — no readable label, "
+                              "spoke the generic cue", cam);
+            }
+        }
+    }
+
     // ---- BarkBubble — independent lifecycle. ----
     void* bark = FindBarkBubblePanel();
     static void* s_lastBark = nullptr;

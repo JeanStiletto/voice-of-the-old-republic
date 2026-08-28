@@ -66,8 +66,44 @@ and add the German in parentheses if it genuinely aids clarity.
   screen. That takes four rows off the root list, which now reads as a list of
   features rather than a run of consecutive rows about the same voice.
 
+<h3>Cinematics and camera:</h3>
+
+- The mod now stays out of the way for the whole of a long cinematic, not just
+  its first five seconds. Its "is a movie playing" test asked whether the movie
+  window was in the foreground, and Windows replaces a window that has stopped
+  answering messages with a stand-in owned by another process — which the movie
+  player triggers on every cinematic over five seconds. Past that point the
+  answer flipped to "no movie", and the panel-label suppression in dialogue and
+  the "Loading:" announcements switched themselves back on mid-cinematic. That
+  matters because the engine cancels a playing movie the moment the game loses
+  foreground, so the gates guarding against it were open for exactly the long
+  cinematics — KOTOR 2's 111-second opening among them. The test now asks
+  whether the window exists at all.
+- Spinning the camera speaks once, when it stops, instead of once per compass
+  sector on the way round. The running readout now cuts out as soon as it
+  cannot do its job — above 150°/s, where sector boundaries arrive faster than
+  a cue can be spoken, or after 1.2 seconds of unbroken turning — and the
+  heading you actually stopped on is announced when you let go. Previously a
+  full revolution spoke all eight sectors, four of them inside one second, each
+  cue cutting off the last, and the speech calls stalled the game's frame for a
+  quarter of a second at a time. Short deliberate adjustments keep their
+  running readout.
+
+<h3>Computer terminals:</h3>
+
+- Switching a console to a security-camera view now announces itself. The
+  camera panel carries no text but its own return hint, so until now the screen
+  changed to a picture in silence, with no indication of the key that leaves
+  it. The mod reads the game's own line for it, so it is already in your
+  language and names the key the engine actually honours.
+
 <h3>Support logs:</h3>
 
+- One repeated line no longer buries the rest of the log. The engine re-asserts
+  the same sub-screen status roughly twenty times a second while a screen is
+  open, and that single call site was 55% of a tester's whole session file.
+  Consecutive repeats now fold to one line plus a count, the same way the mod's
+  other high-frequency diagnostics already do.
 - A log bundle now names Steam Input when it is standing in the way. The
   controller census reports Valve's vendor id outright, spells out what the
   layer does to the pad — a stick re-bound to buttons arrives with no analog

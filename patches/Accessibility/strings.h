@@ -1758,6 +1758,7 @@ enum class Id : int {
     LoadingPleaseWait,
     LoadingStuckWorkaround,
 
+
     // Pause-state transition cues. Spoken when the engine's server-side
     // pause bitmask flips 0 ↔ nonzero AND the player is in pure in-world
     // view (no menu, no popup). Suppressed for menu opens / modal closes
@@ -2188,6 +2189,13 @@ enum class Id : int {
     //      such a line is silent unless force-spoken, we append a one-off hint
     //      that R re-speaks it — the only other way to hear it.
     DialogRepeatLineHint,    // "Press R to repeat the last dialogue line."
+
+    // ---- Security-camera feed (CSWGuiDialogComputerCamera). Fallback only.
+    //      The panel normally carries the engine's own localised return hint
+    //      as its single label and we speak that instead; this covers the case
+    //      where the label reads empty, so a screen full of camera picture is
+    //      never announced as nothing at all.
+    CameraFeed,
 
     // ---- KOTOR 2 tutorial hints. Same two surfaces, retargeted at KOTOR 2's
     //      content: its tutorial.2da rows 0-42 mirror KOTOR 1's and reuse the

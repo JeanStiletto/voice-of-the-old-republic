@@ -441,7 +441,7 @@ extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
     // first-sight + focus speech resume cleanly then. Symmetric with
     // transitions::Tick's movie gate (patch-20260601-220641.log line
     // ~2110: panel-label burst one second into the cutscene movie).
-    if (acc::bringup_announce::IsMovieWindowForeground()) {
+    if (acc::bringup_announce::IsMoviePlaying()) {
         acclog::Write("Menus.SetActive",
                       "#%d panel=%p — suppressed (movie foreground)", n, panel);
         return;

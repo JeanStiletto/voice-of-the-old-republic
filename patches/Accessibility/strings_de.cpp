@@ -938,6 +938,7 @@ const char* Get(Id id) {
             return "Dr\xFC""cke G, um den Tarnmodus ein- oder auszuschalten. Daf\xFC""r musst du einen Tarnfeldgenerator tragen.";
         case Id::DialogRepeatLineHint:
             return "Dr\xFC""cke R, um die letzte Dialogzeile zu wiederholen.";
+        case Id::CameraFeed:            return "Kameraansicht.";
 
         // ---- KOTOR 2 tutorial hints (tutorial_hints.cpp K2 tables). The
         //      shared rows 0-42 reuse the TutHint* wordings above; these

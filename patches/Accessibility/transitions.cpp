@@ -6,7 +6,7 @@
 #include <cstring>
 #include <string>
 
-#include "bringup_announce.h" // IsMovieWindowForeground — gate speech during movies
+#include "bringup_announce.h" // IsMoviePlaying — gate speech during movies
 #include "combat.h"          // IsCombatActive — gate room-change speech
 #include "discovery.h"       // discovery-tier area reconciliation + landmark record
 #include "endar_softlock.h"  // Endar Spire room-5 softlock guard
@@ -1107,7 +1107,7 @@ void Tick() {
     // after the movie ends — the "Bereich: …" announce is deferred, not
     // dropped. The main loop is usually frozen during playback anyway;
     // this guards the boundary ticks where it isn't.
-    if (acc::bringup_announce::IsMovieWindowForeground()) {
+    if (acc::bringup_announce::IsMoviePlaying()) {
         return;
     }
 
@@ -1518,7 +1518,7 @@ static void AnnouncePreLoadDest(const char* dest, const char* shape) {
     // playback — don't spin up a SAPI worker window that can abort the
     // engine's movie queue. The latch above is already set, so per-tick
     // probes stay gated regardless.
-    if (acc::bringup_announce::IsMovieWindowForeground()) {
+    if (acc::bringup_announce::IsMoviePlaying()) {
         acclog::Write("Transition",
             "pre-load -> '%s' [%s] (speech suppressed — movie foreground)",
             dest, shape);

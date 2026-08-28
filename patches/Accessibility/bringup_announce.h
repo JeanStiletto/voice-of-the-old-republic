@@ -4,15 +4,18 @@
 // focus through them. Silent multi-second windows in this phase feel
 // like a hang to a blind user.
 //
-// This module spins up a polling thread that watches GetForegroundWindow
-// to derive the bringup phase, and if it detects an arrow/Enter/Space
+// This module spins up a polling thread that derives the bringup phase
+// from the game's own windows, and if it detects an arrow/Enter/Space
 // keypress during the Loading phase it speaks "Game is still loading"
 // once. Silent during MoviesPlaying (audio would clash with intro
 // audio) and during Responsive (no nag needed).
 //
-// Detection is fully derived from foreground-window class name + the
+// Detection is fully derived from the game's window state + the
 // input-pump-live signal — no callbacks from diag_focus needed, so the
-// two modules stay decoupled.
+// two modules stay decoupled. Foreground class name identifies the
+// Render Window; movie playback is keyed on the movie window EXISTING,
+// because it is ghosted out of the foreground once it stops pumping
+// (see IsMoviePlaying below).
 
 #pragma once
 
@@ -38,19 +41,24 @@ void NotifyInputPumpLive();
 // safe from any thread.
 bool IsInputPumpLive();
 
-// True iff a SWMovieWindow owned by this process is currently the
-// foreground window. Phase-INDEPENDENT (unlike the internal phase
-// machine, which latches to Responsive once gameplay starts and then
-// ignores movie windows) — so this also detects mid-game cutscene
-// movies (e.g. 03.bik at the Leviathan capture), not just the startup
-// intro logos. Cheap synchronous GetForegroundWindow + class compare,
-// safe to call from any thread.
+// True iff an engine movie is on screen — i.e. this process owns a visible
+// SWMovieWindow. Phase-INDEPENDENT (unlike the internal phase machine, which
+// latches to Responsive once gameplay starts and then ignores movie windows),
+// so this also detects mid-game cutscene movies (e.g. 03.bik at the Leviathan
+// capture), not just the startup intro logos. Cached + rate-limited, safe to
+// call from any thread and from a per-frame path.
+//
+// Presence, not foreground: the Bink player stops pumping its message queue
+// during playback, so Windows ghosts the window after ~5 s and GetForegroundWindow
+// starts returning a "Ghost"-class window owned by another process. Testing
+// the foreground therefore reported "no movie" for exactly the long movies —
+// see the implementation note in bringup_announce.cpp.
 //
 // Speech / input-synthesis paths use it to stay silent and hands-off
 // while an engine movie is on screen: KOTOR's movie player aborts its
 // play queue if windows/focus churn during playback (cf. the
 // Alt+Tab-during-intros queue-restart bug), which surfaces as the game
 // closing instead of starting the next queued movie.
-bool IsMovieWindowForeground();
+bool IsMoviePlaying();
 
 }  // namespace acc::bringup_announce

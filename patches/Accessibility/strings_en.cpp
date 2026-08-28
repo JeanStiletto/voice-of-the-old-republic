@@ -917,6 +917,7 @@ const char* Get(Id id) {
             return "Press G to turn stealth mode on or off. You must have a stealth field generator equipped to use it.";
         case Id::DialogRepeatLineHint:
             return "Press R to repeat the last dialogue line.";
+        case Id::CameraFeed:            return "Camera view.";
         case Id::DialogRepeatLineHintPad:
             return "Pull both triggers together to repeat the last dialogue line.";
 

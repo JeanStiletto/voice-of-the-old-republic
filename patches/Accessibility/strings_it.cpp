@@ -940,6 +940,7 @@ const char* Get(Id id) {
 
         case Id::DialogRepeatLineHint:
             return "Premi R per ripetere l'ultima battuta di dialogo.";
+        case Id::CameraFeed:            return "Vista telecamera.";
 
         // ---- KOTOR 2 tutorial hints (tutorial_hints.cpp K2 tables). The
         //      shared rows 0-42 reuse the TutHint* wordings above; these
