@@ -35,6 +35,20 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h2>v0.8.0</h2>
 
+<h3>Controller:</h3>
+
+- The pad no longer loses track of itself every few seconds when Steam Input is
+  enabled. Steam presents one physical controller as two virtual XInput
+  devices, and the mod's guard against binding to the wrong device kept
+  swapping between them — four times in a six-minute session — clearing the
+  held trigger and stick state on each swap, so the triggers, the face-button
+  chords, the map stick pan and the D-pad hold gestures all fired at random or
+  not at all. The guard now refuses to move between two slots reporting the
+  same vendor and product, since one device shown twice has nothing the other
+  does not. Trade-off worth knowing: with two controllers of the same model
+  plugged in, the mod will now stay on whichever it picked first — unplug the
+  one you are not holding.
+
 <h3>Mod settings:</h3>
 
 - New setting "Announcement speed", a slider sitting next to the volume one.
@@ -51,6 +65,14 @@ and add the German in parentheses if it genuinely aids clarity.
   returns to the Mod settings list instead of closing out to the Options
   screen. That takes four rows off the root list, which now reads as a list of
   features rather than a run of consecutive rows about the same voice.
+
+<h3>Support logs:</h3>
+
+- A log bundle now names Steam Input when it is standing in the way. The
+  controller census reports Valve's vendor id outright, spells out what the
+  layer does to the pad — a stick re-bound to buttons arrives with no analog
+  axes at all, and a pad enumerated twice delivers every press twice — and
+  points at Steam's per-game "Disable Steam Input" setting.
 
 <h2>v0.7.9</h2>
 

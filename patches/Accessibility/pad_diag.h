@@ -54,6 +54,22 @@ constexpr int kSubTypeGamepad = 1;
 // module pad_input resolved.
 int SlotSubType(HMODULE xinput, unsigned slot);
 
+// The USB vendor/product ids behind `slot`. False when the slot is empty, the
+// runtime has no XInputGetCapabilitiesEx (anything older than xinput1_4), or
+// the query fails — `*vid` / `*pid` are left untouched then, and the caller
+// has to treat "cannot tell" as its own answer rather than as a match.
+//
+// Exposed because the ids settle a question the census is not the only reader
+// of: whether two occupied slots are two devices or one device presented
+// twice. pad_input's idle-slot guard turns on exactly that.
+bool SlotVendorIds(HMODULE xinput, unsigned slot, unsigned* vid, unsigned* pid);
+
+// Vendor id Valve Corporation. Steam Input's emulated pad — the "Steam Virtual
+// Gamepad", 0x28DE:0x11FF — reports it, as does everything else Steam
+// synthesises, so a slot carrying this vid is Steam's layer standing in front
+// of the controller rather than the controller itself.
+constexpr unsigned kVendorValve = 0x28DE;
+
 // Emit the full census. `why` names the occasion and is printed verbatim.
 void LogDeviceCensus(HMODULE xinput, const wchar_t* xinputName, const char* why);
 

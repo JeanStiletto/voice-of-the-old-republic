@@ -293,8 +293,12 @@ int LogDirectInputControllers() {
 // ---------------------------------------------------------------------------
 // The census itself
 // ---------------------------------------------------------------------------
-int LogXInputSlots(const XiProcs& p) {
+// `valveSlots` counts the occupied slots whose vendor id is Valve's, which
+// LogReading needs and nothing else here does. Out-param rather than a second
+// pass: the ids are already in hand at the only point they can be read.
+int LogXInputSlots(const XiProcs& p, int* valveSlots) {
     int found = 0;
+    *valveSlots = 0;
     for (unsigned i = 0; i < 4; ++i) {
         XiState st = {};
         if (!p.get || p.get(i, &st) != ERROR_SUCCESS) {
@@ -318,6 +322,7 @@ int LogXInputSlots(const XiProcs& p) {
         idText[0] = '\0';
         XiCapsEx cx = {};
         if (p.capsEx && TryCapsEx(p.capsEx, i, &cx)) {
+            if (cx.VendorId == kVendorValve) ++*valveSlots;
             _snprintf_s(idText, sizeof(idText), _TRUNCATE,
                         " vid=0x%04X pid=0x%04X rev=0x%04X",
                         static_cast<unsigned>(cx.VendorId),
@@ -349,7 +354,7 @@ int LogXInputSlots(const XiProcs& p) {
 // What the two counts together MEAN, in the words the reader of a tester's log
 // needs. Kept here rather than in a doc because the log is what gets sent to
 // us, and a count nobody can interpret is not a diagnosis.
-void LogReading(int xiCount, int diCount) {
+void LogReading(int xiCount, int diCount, int valveSlots) {
     if (xiCount == 0 && diCount == 0) {
         acclog::Write("Pad.Devices",
                       "READING: no controller is visible to EITHER API. On a "
@@ -378,6 +383,25 @@ void LogReading(int xiCount, int diCount) {
                       "READING: XInput sees no controller, and DirectInput could "
                       "not be enumerated to say whether one exists at all.");
         return;
+    }
+    // Ahead of the multi-device reading and without returning: both can be
+    // true at once, and when they are, the Steam layer is the cause and the
+    // device count is the symptom.
+    if (valveSlots > 0) {
+        acclog::Write("Pad.Devices",
+                      "READING: %d XInput slot(s) report vendor 0x%04X, Valve — "
+                      "these are STEAM INPUT's emulated pads, not the "
+                      "controller in the player's hands. Steam re-presents the "
+                      "physical pad through a layout, so what reaches the game "
+                      "is whatever that layout emits: a stick bound to buttons "
+                      "or to the D-pad arrives with no analog axes at all, and "
+                      "the pad can be enumerated twice, once per virtual "
+                      "device, which delivers every press twice and leaves the "
+                      "mod's slot choice a coin flip. Turning Steam Input off "
+                      "for this title (Steam, game Properties, Controller, "
+                      "\"Disable Steam Input\") hands the game the real pad and "
+                      "is the fix — the mod cannot see past the layer.",
+                      valveSlots, kVendorValve);
     }
     if (xiCount > 1) {
         acclog::Write("Pad.Devices",
@@ -430,6 +454,19 @@ int SlotSubType(HMODULE xinput, unsigned slot) {
     return static_cast<int>(c.SubType);
 }
 
+bool SlotVendorIds(HMODULE xinput, unsigned slot, unsigned* vid,
+                   unsigned* pid) {
+    if (!xinput || slot > 3 || !vid || !pid) return false;
+    auto capsEx = reinterpret_cast<PFN_XiGetCapsEx>(
+        GetProcAddress(xinput, MAKEINTRESOURCEA(108)));
+    if (!capsEx) return false;
+    XiCapsEx cx = {};
+    if (!TryCapsEx(capsEx, slot, &cx)) return false;
+    *vid = static_cast<unsigned>(cx.VendorId);
+    *pid = static_cast<unsigned>(cx.ProductId);
+    return true;
+}
+
 void LogDeviceCensus(HMODULE xinput, const wchar_t* xinputName,
                      const char* why) {
     const XiProcs p = Resolve(xinput);
@@ -447,7 +484,8 @@ void LogDeviceCensus(HMODULE xinput, const wchar_t* xinputName,
                       p.caps ? " yes" : " no", p.capsEx ? " yes" : " no");
     }
 
-    const int xiCount = xinput ? LogXInputSlots(p) : 0;
+    int valveSlots    = 0;
+    const int xiCount = xinput ? LogXInputSlots(p, &valveSlots) : 0;
     const int diCount = LogDirectInputControllers();
 
     if (diCount >= 0) {
@@ -459,7 +497,7 @@ void LogDeviceCensus(HMODULE xinput, const wchar_t* xinputName,
                       "census: %d XInput device(s), DirectInput not enumerable",
                       xiCount);
     }
-    LogReading(xiCount, diCount);
+    LogReading(xiCount, diCount, valveSlots);
 }
 
 void LogDeviceCensusIfChanged(HMODULE xinput, const wchar_t* xinputName,

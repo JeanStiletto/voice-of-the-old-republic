@@ -1054,6 +1054,53 @@ bool AdoptLivelierSlot(ULONGLONG now) {
         }
         if (alt.dwPacketNumber == g_altPacket[i]) continue;
 
+        // A moving packet number proves the alternate is CARRYING input. It
+        // does not prove the input is coming from a different controller, and
+        // that is the whole question here. Steam Input presents one physical
+        // pad as two virtual XInput devices (both vendor Valve, both the same
+        // product), feeding whichever of them it likes; each is idle exactly
+        // when the other moves, so this test fires on every brief pause and
+        // the guard ping-pongs — four switches in one six-minute tester
+        // session, each one clearing the trigger and stick state below
+        // mid-gesture, which is what "the controller does random things" was.
+        //
+        // Same vendor AND same product means one device wearing two slots, and
+        // there is nothing to win by moving between them: the presses are
+        // identical. So the guard stands down. It keeps the case it was built
+        // for — a handheld's vendor layer sitting in front of the built-in pad
+        // is a DIFFERENT device with different ids, which is the only way the
+        // two can be told apart from here.
+        //
+        // The cost is a player holding two controllers of the same model, who
+        // now keeps whichever slot answered first. That is a worse outcome
+        // than before for a rarer setup than the one this fixes, and it is
+        // recoverable by unplugging the idle pad; a Steam layer is not
+        // recoverable by anything the player can see.
+        //
+        // Ids unavailable (a runtime older than xinput1_4 has no
+        // XInputGetCapabilitiesEx) means "cannot tell", and cannot-tell keeps
+        // the original behaviour rather than inventing a match.
+        unsigned boundVid = 0, boundPid = 0, altVid = 0, altPid = 0;
+        if (acc::pad::diag::SlotVendorIds(g_xinputDll,
+                                          static_cast<unsigned>(g_padSlot),
+                                          &boundVid, &boundPid) &&
+            acc::pad::diag::SlotVendorIds(g_xinputDll, i, &altVid, &altPid) &&
+            boundVid == altVid && boundPid == altPid) {
+            // Baseline moved forward so the next poll only re-enters here when
+            // the mirror moves again, and Trace so a pad in constant use
+            // collapses to one line with its own suppressed count.
+            g_altPacket[i] = alt.dwPacketNumber;
+            acclog::Trace("Pad",
+                          "slot %u carries the same device as bound slot %d "
+                          "(vid=0x%04X pid=0x%04X on both) — one pad presented "
+                          "twice, most often Steam Input's virtual controller. "
+                          "Staying on slot %d: a mirror has nothing the bound "
+                          "slot does not, and switching would drop the held "
+                          "trigger and stick state.",
+                          i, g_padSlot, boundVid, boundPid, g_padSlot);
+            continue;
+        }
+
         acclog::Write("Pad",
                       "slot %d has not changed state in %llu ms while slot %u "
                       "is producing input — switching to slot %u. The first "
