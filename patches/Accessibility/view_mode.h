@@ -37,10 +37,28 @@ bool ConsumedEnterThisTick();
 // Cursor world position. False when view mode isn't active.
 bool TryGetCursorPosition(Vector& out);
 
-// Camera yaw while view mode is active, player yaw otherwise. Used by
-// cue systems whose semantics should follow the camera in view mode and
-// the character outside it (e.g. Pillar 1's foremost-in-front cone).
+// Camera yaw (engine frame), in BOTH normal play and view mode, with
+// character yaw as the first-ticks fallback. Used by every cue system
+// whose semantics should follow where the user is LOOKING rather than
+// which way the body happens to point — which is all of them, because
+// KOTOR's A/D orbits the camera without turning the character, so
+// character yaw does not move until W/S commits a step.
 bool GetEffectiveOrientationYawDegrees(float& out);
+
+// The position spatial announcements must be measured FROM: the view-mode
+// cursor while view mode is active, the player creature otherwise. In view
+// mode the creature is frozen by SetPlayerInputEnabled(false) and W/S drives
+// the cursor instead, so a player-anchored distance stops changing as the
+// user explores. Mirrors spatial_change_detector's referencePos pick.
+// False when no player position is readable.
+bool GetEffectiveReferencePosition(Vector& out);
+
+// The full viewpoint an "at X o'clock, Y metres" line is relative to:
+// GetEffectiveReferencePosition + GetEffectiveOrientationYawDegrees in one
+// call, so the clock and the distance in a single spoken line can never be
+// measured from different frames. False when either read fails; callers
+// drop the clock segment rather than speak a stale or garbage one.
+bool GetEffectiveViewpoint(Vector& outPos, float& outYawDegrees);
 
 // B / Shift+B edge detection. Bare B toggles view mode; Shift+B dumps
 // CClientOptions to the log (diagnostic, no behaviour).

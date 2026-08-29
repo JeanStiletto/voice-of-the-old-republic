@@ -89,6 +89,21 @@ and add the German in parentheses if it genuinely aids clarity.
   quarter of a second at a time. Short deliberate adjustments keep their
   running readout.
 
+<h3>Spoken directions:</h3>
+
+- Turning now changes the o'clock direction the mod announces. Every spoken
+  bearing — comma/period cycling, the minus-key repeat and mine warnings — was
+  measured against the character's body, and KOTOR turns the body only when you
+  press W or S; A and D swing the camera on its own. So standing still and
+  turning right round left every object on the o'clock it had before the turn,
+  until the next step snapped the body round and the numbers jumped all at once.
+  Bearings now follow the camera, which is what the heading announcement has
+  always used, so the two finally agree with each other.
+- Distances in view mode follow the cursor instead of the character. View mode
+  holds the character still and hands W and S to the virtual cursor, so a
+  character-anchored measurement reported the same metres however far you had
+  moved the cursor away.
+
 <h3>Computer terminals:</h3>
 
 - Switching a console to a security-camera view now announces itself. The

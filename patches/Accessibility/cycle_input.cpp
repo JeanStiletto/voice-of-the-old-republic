@@ -37,6 +37,8 @@
 #include "peek_description.h"
 #include "same_name_suffix.h"
 #include "strings.h"
+#include "view_mode.h"      // GetEffectiveViewpoint — the frame the
+                            // clock + metres are measured from
 #include "prism.h"
 
 namespace acc::cycle_input {
@@ -49,13 +51,20 @@ namespace {
 // path queries GetAsyncKeyState directly (no need to share this flag).
 bool g_engineShiftHeld = false;
 
-// Clock-position relative to player facing, returning 1..12 with 12 =
+// Clock-position relative to the user's facing, returning 1..12 with 12 =
 // directly ahead, 3 = to the right, 6 = directly behind, 9 = to the left.
 //
-// Player yaw frame: degrees CCW from +X (engine convention via
-// GetPlayerYawDegrees). World-frame angle of the (object - player) vector
-// is atan2(dy, dx). Their difference is the relative bearing CCW from
-// "ahead"; clocks tick CW, so we negate before bucketing into 30° slots.
+// Yaw frame: degrees CCW from +X (engine convention). World-frame angle of
+// the (object - viewpoint) vector is atan2(dy, dx). Their difference is the
+// relative bearing CCW from "ahead"; clocks tick CW, so we negate before
+// bucketing into 30° slots.
+//
+// The yaw fed in is the CAMERA's, via view_mode::GetEffectiveViewpoint —
+// never the creature's. KOTOR's A/D orbits the camera and leaves the body
+// pointing where it was until W/S commits a step, so a body-anchored clock
+// does not move when the user turns: every object keeps the o'clock it had
+// before the turn until the next step snaps the body. That was the reported
+// "clock announcements go stale" bug.
 //
 // Returns 12 for the directly-ahead bucket (which would otherwise be 0).
 // Shared definition lives in engine_compass (also used by trap_watch).
@@ -363,14 +372,13 @@ void AnnounceCurrent(const acc::cycle::CategoryListing& listing,
                                                sizeof(name));
     }
 
-    Vector playerPos;
+    Vector viewPos{};
     float yaw = 0.0f;
-    bool haveYaw = acc::engine::GetPlayerPosition(playerPos) &&
-                   acc::engine::GetPlayerYawDegrees(yaw);
+    bool haveYaw = acc::view_mode::GetEffectiveViewpoint(viewPos, yaw);
     int clock = 12;
     if (haveYaw) {
-        clock = ClockPosition(yaw, objPos.x - playerPos.x,
-                              objPos.y - playerPos.y);
+        clock = ClockPosition(yaw, objPos.x - viewPos.x,
+                              objPos.y - viewPos.y);
     }
     int metres = static_cast<int>(listing.distances[s.focusedIndex] + 0.5f);
 
@@ -585,21 +593,33 @@ void OnAnnounceFocus() {
 
     PlayActivationCue(a);
 
-    Vector playerPos;
+    // Position and yaw are read separately because they gate different
+    // halves of the line: metres needs only the viewpoint position, the
+    // clock needs the facing too. The distance used to be computed outside
+    // any success check, from a Vector left uninitialised when the position
+    // read failed — a stack-garbage metre count, spoken as fact. It is now
+    // inside the guard, and a viewpoint we cannot read drops the spatial
+    // tail entirely rather than emitting the "1 metre" the format clamps to.
+    Vector viewPos{};
     float yaw = 0.0f;
-    bool haveYaw = acc::engine::GetPlayerPosition(playerPos) &&
-                   acc::engine::GetPlayerYawDegrees(yaw);
+    bool havePos = acc::view_mode::GetEffectiveReferencePosition(viewPos);
+    bool haveYaw = havePos &&
+                   acc::view_mode::GetEffectiveOrientationYawDegrees(yaw);
     int clock = 12;
-    if (haveYaw) {
-        clock = ClockPosition(yaw, a.pos.x - playerPos.x,
-                              a.pos.y - playerPos.y);
+    int metres = 0;
+    if (havePos) {
+        float dx = a.pos.x - viewPos.x;
+        float dy = a.pos.y - viewPos.y;
+        metres = static_cast<int>(std::sqrt(dx * dx + dy * dy) + 0.5f);
+        if (haveYaw) clock = ClockPosition(yaw, dx, dy);
     }
-    float dx = a.pos.x - playerPos.x;
-    float dy = a.pos.y - playerPos.y;
-    int metres = static_cast<int>(std::sqrt(dx * dx + dy * dy) + 0.5f);
 
     char msg[192];
-    FormatItemPayload(a.name, haveYaw, clock, metres, msg, sizeof(msg));
+    if (havePos) {
+        FormatItemPayload(a.name, haveYaw, clock, metres, msg, sizeof(msg));
+    } else {
+        std::snprintf(msg, sizeof(msg), "%s", a.name);
+    }
     prism::Speak(msg, /*interrupt=*/true);
 
     // Re-stamp the slot so the activation tick refreshes. Map pins keep

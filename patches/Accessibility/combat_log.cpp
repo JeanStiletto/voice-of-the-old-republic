@@ -23,7 +23,6 @@
 #include <cstring>
 
 #include "engine_offsets.h"
-#include "engine_player.h"
 #include "log.h"
 #include "menus_extract.h"
 #include "same_name_suffix.h"
@@ -56,6 +55,8 @@
 #include "party_cache.h"
 #include "strfmt.h"           // Format — heap-backed line assembly
 #include "trap_watch.h"       // PeekFreshMine / ConsumeFreshMine correlation
+#include "view_mode.h"        // GetEffectiveViewpoint — camera-anchored
+                              // position + facing for the spoken clock
 
 namespace acc::combat {
 namespace {
@@ -1205,10 +1206,11 @@ bool RuleMineDetect(const char* text) {
     prefix[plen] = '\0';
 
     std::string line(prefix);
+    // Camera-anchored viewpoint — see trap_watch::WithClock for why the
+    // creature's own facing is the wrong frame for a spoken clock.
     Vector p{};
     float  yaw = 0.0f;
-    if (acc::engine::GetPlayerPosition(p) &&
-        acc::engine::GetPlayerYawDegrees(yaw)) {
+    if (acc::view_mode::GetEffectiveViewpoint(p, yaw)) {
         int clock = acc::engine::ClockPosition(yaw, minePos.x - p.x,
                                                minePos.y - p.y);
         float dx = minePos.x - p.x, dy = minePos.y - p.y;

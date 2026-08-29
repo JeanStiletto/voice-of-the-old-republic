@@ -618,6 +618,26 @@ bool GetEffectiveOrientationYawDegrees(float& out) {
     return acc::engine::GetPlayerYawDegrees(out);
 }
 
+bool GetEffectiveReferencePosition(Vector& out) {
+    // View mode freezes the creature (SetPlayerInputEnabled(false)) and
+    // hands W/S to the virtual cursor, so the cursor — not the body — is
+    // where the user currently "is" for the purpose of any distance or
+    // bearing we speak. Same reference-frame pick spatial_change_detector
+    // makes for its T1 distance-deltas.
+    if (TryGetCursorPosition(out)) return true;  // false unless active
+    return acc::engine::GetPlayerPosition(out);
+}
+
+bool GetEffectiveViewpoint(Vector& outPos, float& outYawDegrees) {
+    Vector pos{};
+    float  yaw = 0.0f;
+    if (!GetEffectiveReferencePosition(pos)) return false;
+    if (!GetEffectiveOrientationYawDegrees(yaw)) return false;
+    outPos        = pos;
+    outYawDegrees = yaw;
+    return true;
+}
+
 void PollWin32() {
     bool risingAlone = acc::hotkeys::Pressed(
                            acc::hotkeys::Action::ViewModeToggle);

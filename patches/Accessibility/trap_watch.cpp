@@ -10,7 +10,12 @@
 
 #include "engine_area.h"     // AreaObjectIterator, GetObjectKind, TrapDetectedByAnyOf, kTriggerIsTrapOffset, GetObjectName, GetObjectPosition, GetObjectHandle, GetCurrentArea
 #include "engine_compass.h"  // ClockPosition
-#include "engine_player.h"   // GetPlayerServerCreature, GetPartyMembers, GetPlayerPosition, GetPlayerYawDegrees
+#include "engine_player.h"   // GetPlayerServerCreature, GetPartyMembers,
+                             // GetPlayerPosition (proximity trigger only —
+                             // the WARNING radius is about where the body
+                             // physically is, not where the user looks)
+#include "view_mode.h"       // GetEffectiveViewpoint — camera-anchored
+                             // position + facing for the spoken clock
 #include "log.h"
 #include "prism.h"
 #include "strfmt.h"
@@ -118,12 +123,15 @@ void TrapSpokenName(void* obj, bool isMine, char* out, size_t size) {
 }
 
 // "<label>, auf X Uhr, Y Meter" via the shared announce format; falls
-// back to the bare label when player pos/yaw is degenerate.
+// back to the bare label when the viewpoint is unreadable.
 std::string WithClock(const char* label, const Vector& target) {
+    // Camera-anchored viewpoint, not the creature's: KOTOR's A/D turns the
+    // camera and leaves the body facing where it was, so a body-anchored
+    // clock keeps announcing the direction the mine had before the user
+    // turned. GetEffectiveViewpoint also swaps in the view-mode cursor.
     Vector p{};
     float  yaw = 0.0f;
-    if (acc::engine::GetPlayerPosition(p) &&
-        acc::engine::GetPlayerYawDegrees(yaw)) {
+    if (acc::view_mode::GetEffectiveViewpoint(p, yaw)) {
         int clock = acc::engine::ClockPosition(yaw, target.x - p.x,
                                                target.y - p.y);
         float dx = target.x - p.x, dy = target.y - p.y;

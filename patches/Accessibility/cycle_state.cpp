@@ -5,11 +5,12 @@
 
 #include "discovery.h"
 #include "engine_area.h"
-#include "engine_player.h"
 #include "log.h"
 #include "map_shipped_hints.h"
 #include "map_user_markers.h"
 #include "menus_modsettings.h"
+#include "view_mode.h"          // GetEffectiveReferencePosition —
+                                // cursor-anchored while view mode is on
 
 namespace acc::cycle {
 
@@ -75,8 +76,14 @@ bool BuildCategoryListing(acc::filter::CycleCategory category,
                           acc::filter::CycleContext ctx) {
     out.count = 0;
 
-    Vector playerPos;
-    if (!acc::engine::GetPlayerPosition(playerPos)) return false;
+    // Reference point for the distance sort and the spoken metres. View
+    // mode freezes the creature and gives W/S to the virtual cursor, so a
+    // player-anchored listing stops responding to the user's exploration
+    // the moment view mode is on — the same reason spatial_change_detector
+    // swaps in the cursor. AnnounceCurrent measures its clock from this
+    // same viewpoint, so the two halves of one spoken line always agree.
+    Vector refPos{};
+    if (!acc::view_mode::GetEffectiveReferencePosition(refPos)) return false;
 
     void* area = acc::engine::GetCurrentArea();
     if (!area) {
@@ -155,7 +162,7 @@ bool BuildCategoryListing(acc::filter::CycleCategory category,
             }
             out.objs[out.count]      = obj;
             out.positions[out.count] = pos;
-            out.distances[out.count] = HorizontalDistance(pos, playerPos);
+            out.distances[out.count] = HorizontalDistance(pos, refPos);
             out.isPin[out.count]     = false;
             out.isStatic[out.count]  = false;
             ++out.count;
@@ -196,7 +203,7 @@ bool BuildCategoryListing(acc::filter::CycleCategory category,
             }
             out.objs[out.count]      = pin;
             out.positions[out.count] = pos;
-            out.distances[out.count] = HorizontalDistance(pos, playerPos);
+            out.distances[out.count] = HorizontalDistance(pos, refPos);
             out.isPin[out.count]     = true;
             out.isStatic[out.count]  = false;
             ++out.count;
@@ -233,8 +240,8 @@ bool BuildCategoryListing(acc::filter::CycleCategory category,
             out.objs[out.count]      = const_cast<void*>(
                 static_cast<const void*>(hints[i]));
             out.positions[out.count] = hints[i]->pos;
-            out.distances[out.count] = HorizontalDistance(hints[i]->pos,
-                                                          playerPos);
+            out.distances[out.count] =
+                HorizontalDistance(hints[i]->pos, refPos);
             out.isPin[out.count]     = false;
             out.isStatic[out.count]  = true;
             ++out.count;
