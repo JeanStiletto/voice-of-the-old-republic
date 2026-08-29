@@ -277,5 +277,24 @@
 
     "Logger_SaveLog_Title": "Save log file?",
     "Logger_SaveLog_Errors": "There were warnings or errors during the operation.\n\nWould you like to save a log file to your Desktop for troubleshooting?",
-    "Logger_SaveLog_Normal": "Would you like to save a log file to your Desktop?"
+    "Logger_SaveLog_Normal": "Would you like to save a log file to your Desktop?",
+
+    "SelfUpdate_Title": "Installer update",
+    "SelfUpdate_Heading": "A newer installer is available",
+    "SelfUpdate_Body_Format": "You are running installer version {0}. Version {1} has been published.\n\nThe installer carries the mod's runtime files inside it, so an older installer would install the newest mod next to older bundled components. Updating the installer first is recommended.\n\nThe download is about {2} MB. The installer restarts itself when it is done.\n\nYou can also continue with the current version - the mod will still install.",
+    "SelfUpdate_StatusAcc": "Update status",
+    "SelfUpdate_UpdateButton": "Update the installer now (recommended)",
+    "SelfUpdate_UpdateAcc_Format": "Update the installer to version {0} and restart",
+    "SelfUpdate_SkipButton": "Continue with the current version",
+    "SelfUpdate_SkipAcc": "Skip the installer update and continue",
+    "SelfUpdate_CancelButton": "Cancel the download",
+    "SelfUpdate_CancelAcc": "Cancel the download and continue with the current version",
+    "SelfUpdate_Working": "Downloading the new installer...",
+    "SelfUpdate_Progress_Format": "Downloading: {0} percent",
+    "SelfUpdate_Restarting_Format": "Version {0} is ready. Restarting the installer.",
+    "SelfUpdate_Failed_Format": "The installer could not update itself:\n\n{0}\n\nThis does not stop the mod from being installed. The installer continues with version {1}.",
+    "SelfUpdate_FailedTitle": "Installer update failed",
+    "SelfUpdate_BadHash": "The downloaded file did not match the published checksum.",
+    "SelfUpdate_Done_Format": "The installer updated itself to version {0} and restarted.",
+    "SelfUpdate_DoneTitle": "Installer updated"
 }

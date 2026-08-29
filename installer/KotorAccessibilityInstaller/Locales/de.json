@@ -277,5 +277,24 @@
 
     "Logger_SaveLog_Title": "Protokolldatei speichern?",
     "Logger_SaveLog_Errors": "Während des Vorgangs gab es Warnungen oder Fehler.\n\nMöchtest du eine Protokolldatei zur Fehlersuche auf dem Desktop speichern?",
-    "Logger_SaveLog_Normal": "Möchtest du eine Protokolldatei auf dem Desktop speichern?"
+    "Logger_SaveLog_Normal": "Möchtest du eine Protokolldatei auf dem Desktop speichern?",
+
+    "SelfUpdate_Title": "Installer-Aktualisierung",
+    "SelfUpdate_Heading": "Eine neuere Version des Installers ist verfügbar",
+    "SelfUpdate_Body_Format": "Du verwendest Installer-Version {0}. Version {1} wurde veröffentlicht.\n\nDer Installer enthält die Laufzeitdateien des Mods. Ein älterer Installer würde also den neuesten Mod neben älteren mitgelieferten Komponenten installieren. Es wird empfohlen, zuerst den Installer zu aktualisieren.\n\nDer Download ist etwa {2} MB groß. Danach startet sich der Installer selbst neu.\n\nDu kannst auch mit der aktuellen Version fortfahren - der Mod wird trotzdem installiert.",
+    "SelfUpdate_StatusAcc": "Status der Aktualisierung",
+    "SelfUpdate_UpdateButton": "Installer jetzt aktualisieren (empfohlen)",
+    "SelfUpdate_UpdateAcc_Format": "Installer auf Version {0} aktualisieren und neu starten",
+    "SelfUpdate_SkipButton": "Mit der aktuellen Version fortfahren",
+    "SelfUpdate_SkipAcc": "Installer-Aktualisierung überspringen und fortfahren",
+    "SelfUpdate_CancelButton": "Download abbrechen",
+    "SelfUpdate_CancelAcc": "Download abbrechen und mit der aktuellen Version fortfahren",
+    "SelfUpdate_Working": "Der neue Installer wird heruntergeladen...",
+    "SelfUpdate_Progress_Format": "Download: {0} Prozent",
+    "SelfUpdate_Restarting_Format": "Version {0} ist bereit. Der Installer wird neu gestartet.",
+    "SelfUpdate_Failed_Format": "Der Installer konnte sich nicht selbst aktualisieren:\n\n{0}\n\nDas verhindert die Installation des Mods nicht. Der Installer fährt mit Version {1} fort.",
+    "SelfUpdate_FailedTitle": "Installer-Aktualisierung fehlgeschlagen",
+    "SelfUpdate_BadHash": "Die heruntergeladene Datei stimmt nicht mit der veröffentlichten Prüfsumme überein.",
+    "SelfUpdate_Done_Format": "Der Installer hat sich auf Version {0} aktualisiert und neu gestartet.",
+    "SelfUpdate_DoneTitle": "Installer aktualisiert"
 }

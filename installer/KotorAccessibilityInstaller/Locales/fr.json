@@ -277,5 +277,24 @@
 
     "Logger_SaveLog_Title": "Enregistrer le fichier journal ?",
     "Logger_SaveLog_Errors": "Des avertissements ou erreurs sont survenus pendant l'opération.\n\nSouhaitez-vous enregistrer un fichier journal sur votre Bureau pour le dépannage ?",
-    "Logger_SaveLog_Normal": "Souhaitez-vous enregistrer un fichier journal sur votre Bureau ?"
+    "Logger_SaveLog_Normal": "Souhaitez-vous enregistrer un fichier journal sur votre Bureau ?",
+
+    "SelfUpdate_Title": "Mise à jour de l'installateur",
+    "SelfUpdate_Heading": "Une version plus récente de l'installateur est disponible",
+    "SelfUpdate_Body_Format": "Vous utilisez la version {0} de l'installateur. La version {1} a été publiée.\n\nL'installateur contient les fichiers d'exécution du mod : un installateur plus ancien installerait donc le mod le plus récent à côté de composants plus anciens. Il est recommandé de mettre d'abord l'installateur à jour.\n\nLe téléchargement fait environ {2} Mo. L'installateur redémarre ensuite tout seul.\n\nVous pouvez aussi continuer avec la version actuelle : le mod s'installera quand même.",
+    "SelfUpdate_StatusAcc": "État de la mise à jour",
+    "SelfUpdate_UpdateButton": "Mettre l'installateur à jour maintenant (recommandé)",
+    "SelfUpdate_UpdateAcc_Format": "Mettre l'installateur à jour vers la version {0} et redémarrer",
+    "SelfUpdate_SkipButton": "Continuer avec la version actuelle",
+    "SelfUpdate_SkipAcc": "Ignorer la mise à jour de l'installateur et continuer",
+    "SelfUpdate_CancelButton": "Annuler le téléchargement",
+    "SelfUpdate_CancelAcc": "Annuler le téléchargement et continuer avec la version actuelle",
+    "SelfUpdate_Working": "Téléchargement du nouvel installateur...",
+    "SelfUpdate_Progress_Format": "Téléchargement : {0} pour cent",
+    "SelfUpdate_Restarting_Format": "La version {0} est prête. Redémarrage de l'installateur.",
+    "SelfUpdate_Failed_Format": "L'installateur n'a pas pu se mettre à jour :\n\n{0}\n\nCela n'empêche pas l'installation du mod. L'installateur continue avec la version {1}.",
+    "SelfUpdate_FailedTitle": "Échec de la mise à jour de l'installateur",
+    "SelfUpdate_BadHash": "Le fichier téléchargé ne correspond pas à la somme de contrôle publiée.",
+    "SelfUpdate_Done_Format": "L'installateur s'est mis à jour vers la version {0} et a redémarré.",
+    "SelfUpdate_DoneTitle": "Installateur mis à jour"
 }

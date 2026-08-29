@@ -277,5 +277,24 @@
 
     "Logger_SaveLog_Title": "Salvare il file di log?",
     "Logger_SaveLog_Errors": "Si sono verificati avvertimenti o errori durante l'operazione.\n\nVuoi salvare un file di log sul Desktop per la risoluzione dei problemi?",
-    "Logger_SaveLog_Normal": "Vuoi salvare un file di log sul Desktop?"
+    "Logger_SaveLog_Normal": "Vuoi salvare un file di log sul Desktop?",
+
+    "SelfUpdate_Title": "Aggiornamento dell'installer",
+    "SelfUpdate_Heading": "È disponibile una versione più recente dell'installer",
+    "SelfUpdate_Body_Format": "Stai usando la versione {0} dell'installer. È stata pubblicata la versione {1}.\n\nL'installer contiene al suo interno i file di runtime della mod: un installer più vecchio installerebbe quindi la mod più recente accanto a componenti più vecchi. Si consiglia di aggiornare prima l'installer.\n\nIl download è di circa {2} MB. Al termine l'installer si riavvia da solo.\n\nPuoi anche continuare con la versione attuale: la mod verrà comunque installata.",
+    "SelfUpdate_StatusAcc": "Stato dell'aggiornamento",
+    "SelfUpdate_UpdateButton": "Aggiorna l'installer adesso (consigliato)",
+    "SelfUpdate_UpdateAcc_Format": "Aggiorna l'installer alla versione {0} e riavvia",
+    "SelfUpdate_SkipButton": "Continua con la versione attuale",
+    "SelfUpdate_SkipAcc": "Salta l'aggiornamento dell'installer e continua",
+    "SelfUpdate_CancelButton": "Annulla il download",
+    "SelfUpdate_CancelAcc": "Annulla il download e continua con la versione attuale",
+    "SelfUpdate_Working": "Download del nuovo installer in corso...",
+    "SelfUpdate_Progress_Format": "Download: {0} percento",
+    "SelfUpdate_Restarting_Format": "La versione {0} è pronta. Riavvio dell'installer.",
+    "SelfUpdate_Failed_Format": "L'installer non è riuscito ad aggiornarsi:\n\n{0}\n\nQuesto non impedisce l'installazione della mod. L'installer prosegue con la versione {1}.",
+    "SelfUpdate_FailedTitle": "Aggiornamento dell'installer non riuscito",
+    "SelfUpdate_BadHash": "Il file scaricato non corrisponde al checksum pubblicato.",
+    "SelfUpdate_Done_Format": "L'installer si è aggiornato alla versione {0} e si è riavviato.",
+    "SelfUpdate_DoneTitle": "Installer aggiornato"
 }

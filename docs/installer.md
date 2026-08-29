@@ -689,6 +689,65 @@ recommended reading before working on this one) with three KOTOR-specific deltas
   the IT/ES localisation footnote) in a screen-reader-friendly linear layout
   using a focusable multiline read-only `TextBox`.
 
+### The installer updates itself (2026-08-28)
+
+Modelled on the Sku TBC installer's self-update (`Sku-TBC/installer/SkuInstaller/SelfUpdater.cs`),
+with the swap step redesigned for this project's layout.
+
+**Why it exists.** The `.kpatch` is always fetched from the newest release, so
+an old installer still installs the newest mod. Everything else it lays down
+comes out of its own EXE — `KotorPatcher.dll`, `prism.dll`, the `dinput8.dll`
+proxy, the app-local VC runtime, HoloPatcher, the address database, the
+Override samples and 2DAs, all refreshed from `third_party/` at release time by
+`release.ps1` section 5b. An installer one release behind therefore pairs a
+current `.kpatch` with stale bundled binaries, and that mismatch is invisible to
+the user.
+
+**The version number already exists.** `release.ps1` publishes with
+`-p:Version=$Version`, so every shipped EXE is stamped with the release it went
+out in (v0.7.9 → file version `0.7.9.0`; verified against the published asset).
+`InstallerVersion.Number()` reads it back off the assembly. There is no separate
+installer version line to maintain, and no need to hash the 88 MB EXE on
+startup to tell whether it is current. A local dev build carries the csproj
+default `1.0.0`, which sorts above every published release, so no dev build ever
+offers itself an update.
+
+**Published state.** `installer-version.txt` — `version=`, `sha256=`, `size=`,
+written from the built EXE by `release.ps1` section 7b and uploaded alongside
+it. Read over the rolling `releases/latest/download/` URL, which is plain
+github.com and therefore not the rate-limited `api.github.com`. Unknown keys and
+`#` comments are ignored, so the format can gain a field without an older
+installer choking on it.
+
+**The swap is a launch, not an overwrite.** Sku renames itself aside and moves
+the download into its own name, because it lives at one fixed path a shortcut
+points at. This EXE has no fixed home — Downloads, the game folder (the
+uninstaller copy), or `%TEMP%` (the in-game F5 handoff) — and at ~85 MB it *is*
+the payload. So the verified download is staged as
+`%TEMP%\VoiceOfTheOldRepublicInstaller-<version>.exe` and simply started with
+the original arguments plus `--self-updated`; the file we were run from is never
+touched. The install that follows copies the *new* EXE into the game folder as
+the uninstaller, so the one copy that has to stay current does. Stale staged
+files are swept on the next run — never the one being executed.
+
+**Guard rails.** The published SHA-256 must match and the downloaded file's own
+version resource must be newer, or the swap aborts. No hash published means no
+self-update at all — there would be nothing to check an executable against.
+Skipped entirely for `--auto-update` (the F5 handoff already downloaded this EXE
+fresh), `/uninstall` and `/quiet`; `--no-self-update` suppresses it outright.
+
+**Testing the offered path.** A freshly built EXE always sorts above every
+release, so `--dev-self-update-from <version>` makes the run pose as an older
+one. That is the only way to reach the branch where an update is actually
+offered, downloaded, verified and started outside a real release day.
+
+**Release-time asserts** (`release.ps1` section 2b, alongside the existing
+producer/consumer checks): `Config.InstallerAssetName` and
+`Config.InstallerVersionAssetName` against what section 9 uploads, and the
+published EXE's file version against the release tag — a publish that silently
+ignored `-p:Version` would ship an installer that believes it is `1.0.0` forever
+and never offers itself an update.
+
 ### Layout dropped into the game folder
 
 After a successful install of a Steam KOTOR copy, the install root contains:

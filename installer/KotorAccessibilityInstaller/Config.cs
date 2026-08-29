@@ -24,6 +24,24 @@ namespace KotorAccessibilityInstaller
         public const string KPatchAssetName = "Accessibility.kpatch";
 
         /// <summary>
+        /// Filename of the installer EXE uploaded to GitHub releases — what
+        /// <see cref="SelfUpdater"/> downloads when it replaces this one.
+        /// The same name the in-game F5 updater fetches (kInstallerAsset in
+        /// patches/Accessibility/update_checker.cpp) and the same name
+        /// installer/release.ps1 publishes; release.ps1 asserts all three
+        /// against each other, because a producer/consumer drift here breaks
+        /// updating silently.
+        /// </summary>
+        public const string InstallerAssetName = "VoiceOfTheOldRepublicInstaller.exe";
+
+        /// <summary>
+        /// Asset carrying the published installer's version + SHA-256, read by
+        /// <see cref="SelfUpdater"/> off the rolling releases/latest URL.
+        /// Written by installer/release.ps1.
+        /// </summary>
+        public const string InstallerVersionAssetName = "installer-version.txt";
+
+        /// <summary>
         /// Patch ID inside the .kpatch — used by KPatchCore to look it up.
         /// Must match the manifest.toml inside patches/Accessibility/.
         /// </summary>

@@ -161,6 +161,22 @@ Assert-FileMatchesPattern `
     -Expected 'Accessibility.kpatch' `
     -Description "Config.cs KPatchAssetName != built kpatch filename (installer download would break)"
 
+# The installer's own self-update pulls the same EXE the in-game F5 updater
+# does, off the rolling releases/latest/download URL. Three names have to agree
+# — update_checker.cpp's (asserted above), Config.cs's, and what section 9
+# uploads — or the installer silently never updates itself.
+Assert-FileMatchesPattern `
+    -Path (Join-Path $root 'installer\KotorAccessibilityInstaller\Config.cs') `
+    -Pattern 'InstallerAssetName\s*=\s*"([^"]+)"' `
+    -Expected 'VoiceOfTheOldRepublicInstaller.exe' `
+    -Description "Config.cs InstallerAssetName != published installer EXE name (installer self-update would break)"
+
+Assert-FileMatchesPattern `
+    -Path (Join-Path $root 'installer\KotorAccessibilityInstaller\Config.cs') `
+    -Pattern 'InstallerVersionAssetName\s*=\s*"([^"]+)"' `
+    -Expected 'installer-version.txt' `
+    -Description "Config.cs InstallerVersionAssetName != the version asset section 7b publishes (installer self-update would break)"
+
 Write-Host "Version + asset-name consistency checks passed" -ForegroundColor Green
 
 # ── 3. Build our vendored KotorPatcher.dll ──────────────────────────────────
@@ -240,6 +256,23 @@ if (-not (Test-Path $installerExe)) {
     Write-Host "ERROR: Installer EXE not found at $installerExe" -ForegroundColor Red; exit 1
 }
 
+# The EXE is stamped with the release number by -p:Version above, and that
+# stamp is the ONLY thing the installer's self-update compares against
+# (InstallerVersion.Number reads it back off the assembly). A publish that
+# silently ignored the property would ship an installer that believes it is
+# 1.0.0 forever and never offers itself an update, so assert it here rather
+# than trust it. Any pre-release suffix is dropped: -p:Version=0.9.0-beta1
+# still produces file version 0.9.0.0.
+$numericVersion = ($Version -split '[-+]')[0]
+$exeFileVersion = (Get-Item $installerExe).VersionInfo.FileVersion
+$expectedFileVersion = @(($numericVersion -split '\.') + @('0','0','0','0'))[0..3] -join '.'
+if ($exeFileVersion -ne $expectedFileVersion) {
+    Write-Host "ERROR: Published installer carries file version $exeFileVersion, expected $expectedFileVersion." -ForegroundColor Red
+    Write-Host "       The installer's self-update compares this number; a wrong stamp disables it." -ForegroundColor Red
+    exit 1
+}
+Write-Host "  Installer file version: $exeFileVersion" -ForegroundColor Green
+
 Write-Host "Artifacts built:" -ForegroundColor Green
 Write-Host "  .kpatch:  $kpatchPath"
 Write-Host "  installer: $installerExe"
@@ -280,6 +313,24 @@ Write-Host "Release notes extracted ($($notes.Count) lines)" -ForegroundColor Gr
 
 $installerHash = (Get-FileHash -Path $installerExe -Algorithm SHA256).Hash.ToLower()
 $kpatchHash    = (Get-FileHash -Path $kpatchPath   -Algorithm SHA256).Hash.ToLower()
+
+# ── 7b. installer-version.txt (drives the installer's self-update) ──────────
+# Published beside the EXE on every release, and read by SelfUpdater through
+# the rolling releases/latest/download URL. It is what lets an installer built
+# a year ago learn that a newer one exists.
+#
+# Version, hash and size all come from the FILE we are about to upload, never
+# from the csproj text: a stale or skipped publish would otherwise put a
+# checksum on a binary nobody downloads. WITHOUT the hash the installer refuses
+# to self-update at all (it will not run an unverified EXE), so the two must
+# always be published as a pair.
+$versionFile = Join-Path $root 'build\installer-version.txt'
+$installerSize = (Get-Item $installerExe).Length
+[System.IO.File]::WriteAllText(
+    $versionFile,
+    "version=$Version`nsha256=$installerHash`nsize=$installerSize`n",
+    (New-Object System.Text.UTF8Encoding $false))
+Write-Host "installer-version.txt: version=$Version size=$installerSize sha256=$($installerHash.Substring(0,12))..." -ForegroundColor Green
 
 $notesText += @"
 
@@ -324,7 +375,8 @@ Invoke-Native "Create GitHub release" {
         --title $tag `
         --notes-file $notesFile `
         $kpatchPath `
-        $installerExe
+        $installerExe `
+        $versionFile
 }
 
 Remove-Item $notesFile -ErrorAction SilentlyContinue

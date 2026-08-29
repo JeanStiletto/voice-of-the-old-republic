@@ -112,6 +112,16 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h3>Installer:</h3>
 
+- The installer now updates itself. On start it checks whether a newer
+  installer has been published and offers to fetch it, verify it and restart
+  into it before anything else happens; "Continue with the current version"
+  stays available and still installs the mod. This matters because the
+  installer carries the mod's runtime files inside its own EXE — the patcher,
+  the speech runtime, the loader, the Visual C++ runtime, the address database
+  — so an installer kept from an earlier release would pair the newest mod with
+  older bundled components. The download is only ever run after its published
+  SHA-256 matches, and every failure — offline, GitHub down, checksum mismatch
+  — falls through to a normal run.
 - Updating now covers both games instead of only KOTOR 1. The update screen
   acted on a single game — KOTOR 1 whenever KOTOR 1 had the mod — so with both
   installed, "Update mod only" brought KOTOR 1 forward and silently left KOTOR 2

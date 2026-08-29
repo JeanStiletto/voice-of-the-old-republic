@@ -28,6 +28,59 @@ namespace KotorAccessibilityInstaller
             _httpClient.Timeout = TimeSpan.FromMinutes(5);
         }
 
+        /// <summary>
+        /// The ROLLING download URL for an asset on whichever release currently
+        /// carries the "Latest" badge, e.g.
+        /// https://github.com/OWNER/REPO/releases/latest/download/installer-version.txt.
+        /// No tag to know and no metadata call to make, which is what lets an
+        /// installer built a year ago resolve today's build (see
+        /// <see cref="SelfUpdater"/>). Same github.com host as every other
+        /// download here — not the rate-limited api.github.com.
+        /// </summary>
+        public static string BuildLatestDownloadUrl(string repoUrl, string assetName) =>
+            $"{repoUrl}/releases/latest/download/{Uri.EscapeDataString(assetName)}";
+
+        /// <summary>
+        /// Fetches a small text asset. Returns null on any failure — a missing
+        /// file (404 on a release published before the asset existed) is an
+        /// ordinary outcome here, not an error worth stopping for.
+        ///
+        /// <para>Takes its own short timeout rather than using the client's:
+        /// <see cref="_httpClient"/> is sized for an 85 MB installer download and
+        /// would leave an offline user waiting five minutes for three lines.</para>
+        /// </summary>
+        public async Task<string> DownloadTextAsync(string url, TimeSpan timeout)
+        {
+            try
+            {
+                using var cts = new CancellationTokenSource(timeout);
+                using var response = await _httpClient.GetAsync(url, cts.Token);
+                if (!response.IsSuccessStatusCode)
+                {
+                    Logger.Info($"{url} -> HTTP {(int)response.StatusCode}.");
+                    return null;
+                }
+                return await response.Content.ReadAsStringAsync();
+            }
+            catch (Exception ex)
+            {
+                Logger.Warning($"Could not fetch {url}: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Streams a URL to an explicit destination path with percent progress
+        /// and cancellation. Unlike <see cref="DownloadReleaseAssetAsync"/> this
+        /// takes the full URL and the exact path, because the self-updater picks
+        /// both: the rolling releases/latest URL, and a %TEMP% filename that must
+        /// not collide with the in-game updater's.
+        /// </summary>
+        public Task DownloadToPathAsync(string url, string destPath,
+                                        Action<int> progress = null,
+                                        CancellationToken cancel = default)
+            => DownloadFileAsync(url, destPath, progress, cancel);
+
         public async Task<string> GetLatestModVersionAsync(string repoUrl)
         {
             try
@@ -430,13 +483,20 @@ namespace KotorAccessibilityInstaller
         private static string Shorten(string sha) =>
             string.IsNullOrEmpty(sha) || sha.Length < 7 ? sha : sha.Substring(0, 7);
 
-        private Task DownloadFileAsync(string url, string destinationPath, Action<int> progress = null)
-            => DownloadFileAsync(new HttpRequestMessage(HttpMethod.Get, url), destinationPath, progress);
+        private Task DownloadFileAsync(string url, string destinationPath, Action<int> progress = null,
+                                       CancellationToken cancel = default)
+            => DownloadFileAsync(new HttpRequestMessage(HttpMethod.Get, url), destinationPath, progress, cancel);
 
-        private async Task DownloadFileAsync(HttpRequestMessage request, string destinationPath, Action<int> progress = null)
+        // Cancellation is honoured per buffer, which is what makes a Cancel
+        // button on an 85 MB download mean something: one that only took effect
+        // once the transfer had finished would be indistinguishable from one
+        // that did nothing. Cancelling throws OperationCanceledException and
+        // leaves a partial file behind for the caller to clear up.
+        private async Task DownloadFileAsync(HttpRequestMessage request, string destinationPath,
+                                             Action<int> progress = null, CancellationToken cancel = default)
         {
             using (request)
-            using (var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead))
+            using (var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancel))
             {
                 response.EnsureSuccessStatusCode();
                 long? totalBytes = response.Content.Headers.ContentLength;
@@ -449,9 +509,10 @@ namespace KotorAccessibilityInstaller
                     int bytesRead;
                     int lastReportedProgress = -1;
 
-                    while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+                    while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length, cancel)) > 0)
                     {
-                        await fileStream.WriteAsync(buffer, 0, bytesRead);
+                        cancel.ThrowIfCancellationRequested();
+                        await fileStream.WriteAsync(buffer, 0, bytesRead, cancel);
                         totalRead += bytesRead;
 
                         if (totalBytes.HasValue && progress != null)

@@ -277,5 +277,24 @@
 
     "Logger_SaveLog_Title": "Zapisać plik dziennika?",
     "Logger_SaveLog_Errors": "W trakcie operacji wystąpiły ostrzeżenia lub błędy.\n\nCzy chcesz zapisać plik dziennika na pulpicie w celu diagnostyki?",
-    "Logger_SaveLog_Normal": "Czy chcesz zapisać plik dziennika na pulpicie?"
+    "Logger_SaveLog_Normal": "Czy chcesz zapisać plik dziennika na pulpicie?",
+
+    "SelfUpdate_Title": "Aktualizacja instalatora",
+    "SelfUpdate_Heading": "Dostępna jest nowsza wersja instalatora",
+    "SelfUpdate_Body_Format": "Używasz instalatora w wersji {0}. Opublikowano wersję {1}.\n\nInstalator zawiera w sobie pliki uruchomieniowe moda, więc starszy instalator zainstalowałby najnowszego moda obok starszych dołączonych komponentów. Zalecana jest najpierw aktualizacja instalatora.\n\nPobieranie zajmuje około {2} MB. Następnie instalator uruchamia się ponownie sam.\n\nMożesz też kontynuować z obecną wersją - mod i tak zostanie zainstalowany.",
+    "SelfUpdate_StatusAcc": "Stan aktualizacji",
+    "SelfUpdate_UpdateButton": "Zaktualizuj instalator teraz (zalecane)",
+    "SelfUpdate_UpdateAcc_Format": "Zaktualizuj instalator do wersji {0} i uruchom ponownie",
+    "SelfUpdate_SkipButton": "Kontynuuj z obecną wersją",
+    "SelfUpdate_SkipAcc": "Pomiń aktualizację instalatora i kontynuuj",
+    "SelfUpdate_CancelButton": "Anuluj pobieranie",
+    "SelfUpdate_CancelAcc": "Anuluj pobieranie i kontynuuj z obecną wersją",
+    "SelfUpdate_Working": "Pobieranie nowego instalatora...",
+    "SelfUpdate_Progress_Format": "Pobieranie: {0} procent",
+    "SelfUpdate_Restarting_Format": "Wersja {0} jest gotowa. Ponowne uruchamianie instalatora.",
+    "SelfUpdate_Failed_Format": "Instalator nie mógł się zaktualizować:\n\n{0}\n\nNie przeszkadza to w instalacji moda. Instalator kontynuuje z wersją {1}.",
+    "SelfUpdate_FailedTitle": "Aktualizacja instalatora nie powiodła się",
+    "SelfUpdate_BadHash": "Pobrany plik nie zgadza się z opublikowaną sumą kontrolną.",
+    "SelfUpdate_Done_Format": "Instalator zaktualizował się do wersji {0} i uruchomił ponownie.",
+    "SelfUpdate_DoneTitle": "Instalator zaktualizowany"
 }

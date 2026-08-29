@@ -84,6 +84,10 @@ namespace KotorAccessibilityInstaller
             bool autoUpdateMode = false;
             string pathArg = null;
             string localKpatchPath = null;
+            // DEV only (--dev-self-update-from): the version this run claims to
+            // be when the self-update check compares itself against the
+            // published one. Null in every real run.
+            string selfUpdateFromVersion = null;
             // Which game the maintenance modes act on. Absent means KOTOR 1,
             // which keeps every uninstall entry written before this flag existed
             // working unchanged.
@@ -96,6 +100,16 @@ namespace KotorAccessibilityInstaller
                 else if (arg == "/quiet" || arg == "-quiet" || arg == "--quiet" || arg == "/q" || arg == "-q") quietMode = true;
                 else if (arg == "/auto-update" || arg == "-auto-update" || arg == "--auto-update") autoUpdateMode = true;
                 else if (arg == "--local-kpatch" && i + 1 < args.Length) localKpatchPath = args[++i];
+                else if (arg == "--dev-self-update-from" && i + 1 < args.Length)
+                {
+                    // DEV: pose as an older installer so the self-update path
+                    // can actually be walked. A freshly built EXE always sorts
+                    // above every published release, so the branch that matters
+                    // — an update IS offered, downloaded, verified and started —
+                    // is otherwise unreachable outside a real release day.
+                    selfUpdateFromVersion = args[++i];
+                    Logger.Info($"DEV: --dev-self-update-from active — posing as installer version {selfUpdateFromVersion}");
+                }
                 else if (arg == "--dev-gog-only")
                 {
                     GamePathDetector.SimulateGogOnly = true;
@@ -118,6 +132,49 @@ namespace KotorAccessibilityInstaller
                     }
                 }
                 else if (!arg.StartsWith("/") && !arg.StartsWith("-")) pathArg = args[i];
+            }
+
+            // Keep the installer itself current, before anything else happens.
+            //
+            // First, because a self-update ends in a restart: asking later would
+            // mean discarding choices the user had already made, and a window
+            // that disappears and comes back mid-install is exactly the sort of
+            // thing that cannot be followed by ear.
+            //
+            // Every branch here falls through to a normal run. Offline, no
+            // version file published, hash mismatch, user says no: the installer
+            // carries on with the EXE that is already here and can still install
+            // the mod. See SelfUpdater for why this matters more here than for a
+            // downloader — the bundled payload rides in this EXE.
+            SelfUpdater.CleanUp(args);
+
+            if (SelfUpdater.PostUpdateNotice != null && !quietMode)
+            {
+                // A restart the user did not ask for needs saying out loud. The
+                // screens that follow are the ordinary ones and carry no trace
+                // of what just happened, so this box is the only explanation on
+                // offer — and unlike an announcement it can be re-read.
+                MessageBox.Show(
+                    SelfUpdater.PostUpdateNotice,
+                    InstallerLocale.Get("SelfUpdate_DoneTitle"),
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+            }
+
+            if (SelfUpdater.ShouldCheck(args, uninstallMode, autoUpdateMode, quietMode))
+            {
+                var offer = SelfUpdater.Check(selfUpdateFromVersion);
+                if (offer != null)
+                {
+                    var selfPrompt = new SelfUpdatePromptForm(offer);
+                    Application.Run(selfPrompt);
+
+                    if (selfPrompt.Choice == SelfUpdateChoice.Restart)
+                    {
+                        SelfUpdater.LaunchStaged(selfPrompt.StagedExe, args);
+                        return;
+                    }
+                }
             }
 
             GameTarget maintenanceTarget = argTarget ?? GameTarget.Kotor1;

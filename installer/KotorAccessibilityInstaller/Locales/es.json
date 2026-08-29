@@ -277,5 +277,24 @@
 
     "Logger_SaveLog_Title": "¿Guardar el archivo de registro?",
     "Logger_SaveLog_Errors": "Hubo advertencias o errores durante la operación.\n\n¿Desea guardar un archivo de registro en su Escritorio para solucionar problemas?",
-    "Logger_SaveLog_Normal": "¿Desea guardar un archivo de registro en su Escritorio?"
+    "Logger_SaveLog_Normal": "¿Desea guardar un archivo de registro en su Escritorio?",
+
+    "SelfUpdate_Title": "Actualización del instalador",
+    "SelfUpdate_Heading": "Hay una versión más reciente del instalador",
+    "SelfUpdate_Body_Format": "Está usando la versión {0} del instalador. Se ha publicado la versión {1}.\n\nEl instalador lleva dentro los archivos de ejecución del mod, así que un instalador antiguo instalaría el mod más reciente junto a componentes más antiguos. Se recomienda actualizar primero el instalador.\n\nLa descarga ocupa unos {2} MB. Después, el instalador se reinicia solo.\n\nTambién puede continuar con la versión actual: el mod se instalará igualmente.",
+    "SelfUpdate_StatusAcc": "Estado de la actualización",
+    "SelfUpdate_UpdateButton": "Actualizar el instalador ahora (recomendado)",
+    "SelfUpdate_UpdateAcc_Format": "Actualizar el instalador a la versión {0} y reiniciar",
+    "SelfUpdate_SkipButton": "Continuar con la versión actual",
+    "SelfUpdate_SkipAcc": "Omitir la actualización del instalador y continuar",
+    "SelfUpdate_CancelButton": "Cancelar la descarga",
+    "SelfUpdate_CancelAcc": "Cancelar la descarga y continuar con la versión actual",
+    "SelfUpdate_Working": "Descargando el nuevo instalador...",
+    "SelfUpdate_Progress_Format": "Descarga: {0} por ciento",
+    "SelfUpdate_Restarting_Format": "La versión {0} está lista. Reiniciando el instalador.",
+    "SelfUpdate_Failed_Format": "El instalador no pudo actualizarse:\n\n{0}\n\nEsto no impide instalar el mod. El instalador continúa con la versión {1}.",
+    "SelfUpdate_FailedTitle": "Error al actualizar el instalador",
+    "SelfUpdate_BadHash": "El archivo descargado no coincide con la suma de comprobación publicada.",
+    "SelfUpdate_Done_Format": "El instalador se actualizó a la versión {0} y se reinició.",
+    "SelfUpdate_DoneTitle": "Instalador actualizado"
 }
