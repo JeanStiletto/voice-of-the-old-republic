@@ -25,6 +25,8 @@ namespace {
 // struct DB (swkotor.exe.h): panel (0..0x64) + 3 CSWGuiLabels (each 0x140)
 // = 0x64 + 0x3C0 = 0x424. The four labels in order are item_description_
 // label, inventory_label, credits_label, credits_value_label.
+// KOTOR 1 only; on KOTOR 2 the Todo poison makes AnchorLabel fall back to
+// the by-id anchor below.
 const size_t kInventoryCreditsValueLabelOffset = acc::off::Todo(0x424);
 
 // CSWGuiStore.credits_value_label offset — already documented in
@@ -48,6 +50,16 @@ constexpr size_t kAnchorByGuiId       = (size_t)-1;
 constexpr int    kCraftPoolValueGuiId = 6;   // LBL_CREDITS_VALUE
 constexpr int    kCraftPoolLabelGuiId = 7;   // LBL_CREDITS
 
+// KOTOR 2 Inventory/Store fall back to by-id anchoring: the K1 struct
+// offsets above are unported (Todo-poisoned on K2), which silently killed
+// both rows there — AnchorLabel got null and ForEachCreditsRowAnchor
+// no-opped. Ids witnessed in the shipped K2 gui files (inventory_p.gui /
+// store_p.gui, both tagged LBL_CREDITS_VALUE) and, for Inventory, live in
+// the 2026-08-31 panel walk (id 11 renders the credits number; the engine
+// loads the _p variants on PC — _x are the Xbox layouts with different ids).
+constexpr int kInventoryCreditsValueGuiIdK2 = 11;  // LBL_CREDITS_VALUE
+constexpr int kStoreCreditsValueGuiIdK2     = 17;  // LBL_CREDITS_VALUE
+
 struct CreditsAnchorSpec {
     acc::engine::PanelKind kind;
     size_t                 valueOffset;  // or kAnchorByGuiId
@@ -56,8 +68,10 @@ struct CreditsAnchorSpec {
 };
 
 const CreditsAnchorSpec k_anchors[] = {
-    { acc::engine::PanelKind::InGameInventory, kInventoryCreditsValueLabelOffset, -1, -1 },
-    { acc::engine::PanelKind::Store,           kStoreCreditsValueLabelOffsetLocal, -1, -1 },
+    { acc::engine::PanelKind::InGameInventory, kInventoryCreditsValueLabelOffset,
+      kInventoryCreditsValueGuiIdK2, -1 },
+    { acc::engine::PanelKind::Store,           kStoreCreditsValueLabelOffsetLocal,
+      kStoreCreditsValueGuiIdK2, -1 },
     { acc::engine::PanelKind::WorkbenchCreateItem,    kAnchorByGuiId,
       kCraftPoolValueGuiId, kCraftPoolLabelGuiId },
     { acc::engine::PanelKind::WorkbenchCreateMedical, kAnchorByGuiId,
@@ -75,13 +89,19 @@ const CreditsAnchorSpec* FindSpecForPanel(void* panel) {
     return nullptr;
 }
 
-// The value label this spec anchors on, or null.
+// The value label this spec anchors on, or null. Offset anchors that are
+// unported on the running game (Todo poison → off::Ok false) fall back to
+// the by-id path when the spec carries a gui id, so a K1-only offset does
+// not silently disable the row on KOTOR 2.
 void* AnchorLabel(void* panel, const CreditsAnchorSpec* spec) {
     if (!panel || !spec) return nullptr;
-    if (spec->valueOffset == kAnchorByGuiId) {
+    if (spec->valueOffset != kAnchorByGuiId && acc::off::Ok(spec->valueOffset)) {
+        return acc::off::Ptr(panel, spec->valueOffset);
+    }
+    if (spec->valueGuiId >= 0) {
         return acc::menus::detail::FindControlById(panel, spec->valueGuiId);
     }
-    return acc::off::Ptr(panel, spec->valueOffset);
+    return nullptr;
 }
 
 }  // namespace

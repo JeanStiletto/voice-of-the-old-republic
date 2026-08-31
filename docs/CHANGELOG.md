@@ -200,6 +200,12 @@ and add the German in parentheses if it genuinely aids clarity.
   security-console screens, whose recorded files were never shipped — still
   speak, because there the subtitle is the only channel. The mechanism is a
   curated list, ready for future entries of the same kind.
+- The inventory and store screens speak your credits again, as the first
+  entry of the screen — above the KOTOR 2 category filters, in every
+  category. The row was anchored to a KOTOR 1 memory layout that KOTOR 2
+  does not share, so both screens silently dropped it there; they now find
+  the credits display the same layout-independent way the workbench
+  resource pools already did.
 
 <h3>Controller:</h3>
 
