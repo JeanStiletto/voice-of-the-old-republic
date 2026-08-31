@@ -10,9 +10,11 @@ namespace KotorAccessibilityInstaller.ModInstallers
     /// a handful of TSLRCM restorations that Obsidian most likely cut on purpose.
     ///
     /// Pipeline: DeadlyStream guest scrape (same cookie + csrfKey flow as
-    /// TSLRCM), pinned SHA-256 verification, RAR5 extraction via Windows'
-    /// built-in <c>tar.exe</c> (libarchive reads RAR5 — no bundled extractor
-    /// needed), then one headless HoloPatcher run per component. We never touch
+    /// TSLRCM), pinned SHA-256 as the verified fast path (an upstream update
+    /// that no longer matches is validated structurally and installed anyway —
+    /// trust-DeadlyStream policy, see sources.json), RAR5 extraction via
+    /// Windows' built-in <c>tar.exe</c> (libarchive reads RAR5 — no bundled
+    /// extractor needed), then one headless HoloPatcher run per component. We never touch
     /// the archive's bundled TSLPatcher exes; each component folder carries its
     /// own <c>changes.ini</c> and is staged as a standalone tslpatchdata dir
     /// (Part 2's <c>changes2.ini</c> is renamed on staging), so the archive's
@@ -38,8 +40,10 @@ namespace KotorAccessibilityInstaller.ModInstallers
         private const string ArchiveTslpatchdataPath = "Individual component installer/tslpatchdata";
 
         // (DataPath relative to the tslpatchdata dir, ini name, display name).
-        // Mirrors namespaces.ini in the pinned archive; safe to hardcode
-        // because the archive is pinned by SHA-256.
+        // Mirrors namespaces.ini in the pinned archive. An archive newer than
+        // the pin may restructure these folders, so every component dir is
+        // verified to exist before anything is installed (structural check in
+        // InstallAsync) — a missing one fails the whole validation.
         private static readonly (string DataPath, string IniName, string Name)[] Components =
         {
             (@"1-Kaevee_Removal",         "changes.ini",  "Kaevee Removal, Part 1"),
@@ -69,10 +73,14 @@ namespace KotorAccessibilityInstaller.ModInstallers
                 ctx.StatusUpdate?.Invoke(InstallerLocale.Get("ModInstall_TweakDownloading"));
                 ctx.Progress?.Invoke(0);
 
-                // Automatic acquisition first; if it does not work, the user
-                // fetches the archive and we carry on from there. Whichever way
-                // it arrives, everything after this point is identical.
+                // Automatic acquisition first. The pinned hash is a fast path,
+                // not a gate: a mismatch almost always means upstream shipped
+                // an update this installer predates, so the archive is judged
+                // by the structural checks below instead (trust-DeadlyStream
+                // policy — see sources.json). Only a failed download goes to
+                // the manual path immediately.
                 string manualReason = null;
+                bool hashVerified = false;
                 try
                 {
                     using (var ds = new DeadlyStreamClient())
@@ -85,13 +93,12 @@ namespace KotorAccessibilityInstaller.ModInstallers
                     }
 
                     string hash = DeadlyStreamClient.ComputeSha256(rarPath);
-                    if (!hash.Equals(Config.TweakPackArchiveSha256, StringComparison.OrdinalIgnoreCase))
+                    hashVerified = hash.Equals(Config.TweakPackArchiveSha256, StringComparison.OrdinalIgnoreCase);
+                    if (!hashVerified)
                     {
-                        // Downloaded fine, just not the build we were pinned
-                        // against — almost always an upstream update. Different
-                        // sentence, same recovery.
-                        Logger.Warning($"Tweak Pack hash mismatch: expected {Config.TweakPackArchiveSha256}, got {hash}");
-                        manualReason = InstallerLocale.Get("ManualDownload_Reason_Updated");
+                        Logger.Warning($"Tweak Pack hash differs from the pinned {Config.TweakPackDisplayVersion} " +
+                                       $"(expected {Config.TweakPackArchiveSha256}, got {hash}) — " +
+                                       "assuming an upstream update; validating the archive structurally.");
                     }
                 }
                 catch (Exception ex)
@@ -100,45 +107,106 @@ namespace KotorAccessibilityInstaller.ModInstallers
                     manualReason = InstallerLocale.Format("ManualDownload_Reason_Failed_Format", ex.Message);
                 }
 
-                if (manualReason != null)
-                {
-                    string supplied = ctx.AskForManualDownload?.Invoke(new ManualDownloadRequest
-                    {
-                        ModDisplayName = "Unofficial TSLRCM Tweak Pack " + Config.TweakPackDisplayVersion,
-                        Reason = manualReason,
-                        PageUrl = Config.TweakPackDownloadPageUrl,
-                        ExpectedFileName = Config.TweakPackArchiveFileName,
-                        Kind = ManualDownloadForm.FileKind.RarArchive,
-                        PinnedSha256 = Config.TweakPackArchiveSha256,
-                    });
-
-                    if (string.IsNullOrEmpty(supplied))
-                        return ModInstallResult.Fail(Id, manualReason);
-
-                    // Copy rather than extract in place: staging is deleted at
-                    // the end of this method, and that must never take the
-                    // user's own download with it.
-                    File.Copy(supplied, rarPath, overwrite: true);
-                    Logger.Info($"Tweak Pack: using the user-supplied archive {supplied}");
-                }
-
                 ctx.StatusUpdate?.Invoke(InstallerLocale.Get("ModInstall_TweakExtracting"));
                 ctx.Progress?.Invoke(18);
 
-                string extractDir = Path.Combine(stagingRoot, "extracted");
-                Directory.CreateDirectory(extractDir);
-                var tarResult = await ExtractRarAsync(rarPath, extractDir);
-                if (!tarResult.Success)
+                // Extract and structurally validate, asking the user for the
+                // archive at most once: on entry when the download failed, or
+                // as the retry when what we downloaded is not a usable Tweak
+                // Pack archive. A validation failure on a hash-VERIFIED archive
+                // is ours (a bad pin or a stale layout assumption), and a
+                // manual download of the same bytes cannot fix it.
+                string srcRoot = null;
+                bool askedManual = false;
+                for (int attempt = 0; srcRoot == null; attempt++)
                 {
-                    return ModInstallResult.Fail(Id, tarResult.Error);
+                    if (manualReason != null)
+                    {
+                        if (askedManual)
+                            return ModInstallResult.Fail(Id, manualReason);
+                        askedManual = true;
+
+                        string supplied = ctx.AskForManualDownload?.Invoke(new ManualDownloadRequest
+                        {
+                            ModDisplayName = "Unofficial TSLRCM Tweak Pack " + Config.TweakPackDisplayVersion,
+                            Reason = manualReason,
+                            PageUrl = Config.TweakPackDownloadPageUrl,
+                            ExpectedFileName = Config.TweakPackArchiveFileName,
+                            Kind = ManualDownloadForm.FileKind.RarArchive,
+                            PinnedSha256 = Config.TweakPackArchiveSha256,
+                        });
+
+                        if (string.IsNullOrEmpty(supplied))
+                            return ModInstallResult.Fail(Id, manualReason);
+
+                        // Copy rather than extract in place: staging is deleted
+                        // at the end of this method, and that must never take
+                        // the user's own download with it.
+                        File.Copy(supplied, rarPath, overwrite: true);
+                        Logger.Info($"Tweak Pack: using the user-supplied archive {supplied}");
+                        hashVerified = DeadlyStreamClient.ComputeSha256(rarPath)
+                            .Equals(Config.TweakPackArchiveSha256, StringComparison.OrdinalIgnoreCase);
+                        manualReason = null;
+                    }
+
+                    // Fresh subdir per attempt so a half-extracted first try
+                    // cannot leak files into the payload we end up installing.
+                    string extractDir = Path.Combine(stagingRoot, $"extracted{attempt}");
+                    Directory.CreateDirectory(extractDir);
+
+                    string structuralError = null;
+                    var tarResult = await ExtractRarAsync(rarPath, extractDir);
+                    if (!tarResult.Success)
+                    {
+                        structuralError = $"the file is not a readable archive ({tarResult.Error})";
+                    }
+                    else
+                    {
+                        string candidate = Path.Combine(extractDir,
+                            ArchiveTslpatchdataPath.Replace('/', Path.DirectorySeparatorChar));
+                        if (!Directory.Exists(candidate))
+                        {
+                            structuralError = $"the archive is missing '{ArchiveTslpatchdataPath}'";
+                        }
+                        else
+                        {
+                            // Every component this installer drives must exist
+                            // with its ini — a newer archive that restructured
+                            // them would otherwise fail halfway through.
+                            foreach (var comp in Components)
+                            {
+                                string iniPath = Path.Combine(candidate, comp.DataPath, comp.IniName);
+                                if (!File.Exists(iniPath))
+                                {
+                                    structuralError = $"component '{comp.Name}' is missing " +
+                                                      $"({comp.DataPath}\\{comp.IniName} not found)";
+                                    break;
+                                }
+                            }
+                            if (structuralError == null)
+                                srcRoot = candidate;
+                        }
+                    }
+
+                    if (srcRoot == null)
+                    {
+                        Logger.Warning($"Tweak Pack archive failed structural validation: {structuralError}");
+                        if (hashVerified)
+                        {
+                            return ModInstallResult.Fail(Id,
+                                $"The Tweak Pack archive matches its pin but failed validation: {structuralError}.");
+                        }
+                        manualReason = InstallerLocale.Format(
+                            "ManualDownload_Reason_Failed_Format", structuralError);
+                    }
                 }
 
-                string srcRoot = Path.Combine(extractDir,
-                    ArchiveTslpatchdataPath.Replace('/', Path.DirectorySeparatorChar));
-                if (!Directory.Exists(srcRoot))
+                if (!hashVerified)
                 {
-                    return ModInstallResult.Fail(Id,
-                        $"Extracted archive is missing '{ArchiveTslpatchdataPath}' — layout may have changed.");
+                    Logger.Warning("Tweak Pack: installing an archive newer than the tested pin " +
+                                   "(structurally valid; trust-DeadlyStream policy).");
+                    ctx.StatusUpdate?.Invoke(InstallerLocale.Format(
+                        "ModInstall_NewerThanTested_Format", "Unofficial TSLRCM Tweak Pack"));
                 }
 
                 for (int i = 0; i < Components.Length; i++)

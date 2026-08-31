@@ -11,12 +11,14 @@ namespace KotorAccessibilityInstaller
     /// and pinned commits for TSLRCM, the Tweak Pack, K1CP and K2CP.
     ///
     /// <para><b>Why this is not just constants.</b> The pins are the part of the
-    /// installer with a shelf life. Upstream ships a new TSLRCM, its hash stops
-    /// matching, and every install from then on drops to the manual path — for a
-    /// blind user, the difference between one wizard and navigating a forum
-    /// download page. Baking the pins into the binary meant refreshing them
-    /// required a full installer release: build toolchain, publish, upload. This
-    /// makes it an edit to one JSON file on the main branch.</para>
+    /// installer with a shelf life. Since the trust-DeadlyStream policy (see the
+    /// comment block in <c>sources.json</c>) a stale pin no longer blocks an
+    /// install — an upstream update is validated structurally and installed
+    /// anyway — but a fresh pin still buys the silently-verified fast path and
+    /// a correctly displayed version. Baking the pins into the binary meant
+    /// refreshing them required a full installer release: build toolchain,
+    /// publish, upload. This makes it an edit to one JSON file on the main
+    /// branch, worth doing when convenient and never required.</para>
     ///
     /// <para><b>How it resolves.</b> The embedded copy of <c>sources.json</c> is
     /// parsed first and always wins if anything else fails — it ships with the

@@ -680,11 +680,12 @@ namespace KotorAccessibilityInstaller
                     break;
 
                 case TslrcmOutcome.VerificationFailed:
-                    // Not a breakage: the file downloaded fine, it just isn't
-                    // the one this installer was built against. Say that, then
-                    // let the user fetch it themselves.
+                    // The download completed but is not a usable installer
+                    // (HTML page, truncation — see ProbeInstallerExe). Say
+                    // what was wrong, then let the user fetch it themselves.
                     return OfferManualTslrcm(k2Path, statusLine,
-                        InstallerLocale.Get("ManualDownload_Reason_Updated"));
+                        InstallerLocale.Format("ManualDownload_Reason_Failed_Format",
+                                               form.FailureReason));
 
                 case TslrcmOutcome.DownloadFailed:
                     return OfferManualTslrcm(k2Path, statusLine,

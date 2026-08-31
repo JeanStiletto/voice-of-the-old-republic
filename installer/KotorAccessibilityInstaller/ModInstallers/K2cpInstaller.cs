@@ -27,9 +27,9 @@ namespace KotorAccessibilityInstaller.ModInstallers
     /// in a long log. The install looked like it worked and K2CP was, in
     /// practice, mostly not installed.</para>
     ///
-    /// <para>The repo is still where the recipe is authored, so the pinned
-    /// commit stays recorded in <c>sources.json</c> for provenance — the
-    /// archive's version matches it (both 2025-09-26).</para>
+    /// <para>The repo is still where the recipe is authored, so the commit
+    /// matching the pinned archive release stays recorded in
+    /// <c>sources.json</c> for provenance.</para>
     ///
     /// <para>K2CP has no translation subfolders: it is English-only upstream, so
     /// non-English installs receive the bugfix strings in English while the rest
@@ -75,9 +75,14 @@ namespace KotorAccessibilityInstaller.ModInstallers
                 ctx.StatusUpdate?.Invoke(InstallerLocale.Get("ModInstall_K2cpDownloading"));
                 ctx.Progress?.Invoke(0);
 
-                // Same three-way acquisition as the Tweak Pack: scrape, verify,
-                // and fall back to letting the user supply the archive.
+                // Acquisition. The pinned hash is a fast path, not a gate: a
+                // mismatch on a DeadlyStream "latest file" download almost
+                // always means upstream shipped an update this installer
+                // predates, so the archive is judged by the structural checks
+                // below instead (trust-DeadlyStream policy — see sources.json).
+                // Only a failed download goes to the manual path immediately.
                 string manualReason = null;
+                bool hashVerified = false;
                 try
                 {
                     using (var ds = new DeadlyStreamClient())
@@ -90,10 +95,12 @@ namespace KotorAccessibilityInstaller.ModInstallers
                     }
 
                     string hash = DeadlyStreamClient.ComputeSha256(zipPath);
-                    if (!hash.Equals(Config.K2cpArchiveSha256, StringComparison.OrdinalIgnoreCase))
+                    hashVerified = hash.Equals(Config.K2cpArchiveSha256, StringComparison.OrdinalIgnoreCase);
+                    if (!hashVerified)
                     {
-                        Logger.Warning($"K2CP hash mismatch: expected {Config.K2cpArchiveSha256}, got {hash}");
-                        manualReason = InstallerLocale.Get("ManualDownload_Reason_Updated");
+                        Logger.Warning($"K2CP hash differs from the pinned {Config.K2cpDisplayVersion} " +
+                                       $"(expected {Config.K2cpArchiveSha256}, got {hash}) — " +
+                                       "assuming an upstream update; validating the archive structurally.");
                     }
                 }
                 catch (Exception ex)
@@ -102,50 +109,104 @@ namespace KotorAccessibilityInstaller.ModInstallers
                     manualReason = InstallerLocale.Format("ManualDownload_Reason_Failed_Format", ex.Message);
                 }
 
-                if (manualReason != null)
-                {
-                    string supplied = ctx.AskForManualDownload?.Invoke(new ManualDownloadRequest
-                    {
-                        ModDisplayName = DisplayName,
-                        Reason = manualReason,
-                        PageUrl = Config.K2cpDownloadPageUrl,
-                        ExpectedFileName = Config.K2cpArchiveFileName,
-                        Kind = ManualDownloadForm.FileKind.ZipArchive,
-                        PinnedSha256 = Config.K2cpArchiveSha256,
-                    });
-
-                    if (string.IsNullOrEmpty(supplied))
-                        return ModInstallResult.Fail(Id, manualReason);
-
-                    // Copy in: staging is deleted below and must never take the
-                    // user's own download with it.
-                    File.Copy(supplied, zipPath, overwrite: true);
-                    Logger.Info($"K2CP: using the user-supplied archive {supplied}");
-                }
-
                 ctx.StatusUpdate?.Invoke(InstallerLocale.Get("ModInstall_K2cpStaging"));
                 ctx.Progress?.Invoke(50);
 
-                string tslpatchdataDir = Path.Combine(stagingRoot, ArchiveTslpatchdataDir);
-                await Task.Run(() => TslpatchdataZip.Extract(zipPath, stagingRoot, "K2CP"));
-
-                if (!Directory.Exists(tslpatchdataDir))
+                // Stage and structurally validate, asking the user for the
+                // archive at most once: on entry when the download failed, or
+                // as the retry when what we downloaded is not a usable K2CP
+                // archive. A validation failure on a hash-VERIFIED archive is
+                // ours (a bad pin or a layout assumption gone stale), and a
+                // manual download of the same bytes cannot fix it.
+                string tslpatchdataDir = null;
+                bool askedManual = false;
+                for (int attempt = 0; tslpatchdataDir == null; attempt++)
                 {
-                    return ModInstallResult.Fail(Id,
-                        $"The K2CP archive has no '{ArchiveTslpatchdataDir}' folder — its layout has changed.");
+                    if (manualReason != null)
+                    {
+                        if (askedManual)
+                            return ModInstallResult.Fail(Id, manualReason);
+                        askedManual = true;
+
+                        string supplied = ctx.AskForManualDownload?.Invoke(new ManualDownloadRequest
+                        {
+                            ModDisplayName = DisplayName,
+                            Reason = manualReason,
+                            PageUrl = Config.K2cpDownloadPageUrl,
+                            ExpectedFileName = Config.K2cpArchiveFileName,
+                            Kind = ManualDownloadForm.FileKind.ZipArchive,
+                            PinnedSha256 = Config.K2cpArchiveSha256,
+                        });
+
+                        if (string.IsNullOrEmpty(supplied))
+                            return ModInstallResult.Fail(Id, manualReason);
+
+                        // Copy in: staging is deleted below and must never take
+                        // the user's own download with it.
+                        File.Copy(supplied, zipPath, overwrite: true);
+                        Logger.Info($"K2CP: using the user-supplied archive {supplied}");
+                        hashVerified = DeadlyStreamClient.ComputeSha256(zipPath)
+                            .Equals(Config.K2cpArchiveSha256, StringComparison.OrdinalIgnoreCase);
+                        manualReason = null;
+                    }
+
+                    // Fresh subdir per attempt so a half-extracted first try
+                    // cannot leak files into the payload we end up installing.
+                    string attemptRoot = Path.Combine(stagingRoot, $"stage{attempt}");
+                    Directory.CreateDirectory(attemptRoot);
+
+                    string structuralError = null;
+                    try
+                    {
+                        await Task.Run(() => TslpatchdataZip.Extract(zipPath, attemptRoot, "K2CP"));
+
+                        string candidate = Path.Combine(attemptRoot, ArchiveTslpatchdataDir);
+                        if (!Directory.Exists(candidate))
+                        {
+                            structuralError = $"the archive has no '{ArchiveTslpatchdataDir}' folder";
+                        }
+                        else
+                        {
+                            // The bug this class exists to prevent, made loud. A
+                            // payload of changes.ini plus a readme installs almost
+                            // nothing while still exiting successfully.
+                            int payloadCount = Directory.GetFiles(candidate).Length;
+                            if (payloadCount < 10)
+                            {
+                                structuralError = $"the payload has only {payloadCount} file(s) " +
+                                                  "where K2CP ships hundreds";
+                            }
+                            else
+                            {
+                                tslpatchdataDir = candidate;
+                                Logger.Info($"K2CP tslpatchdata staged at {candidate} ({payloadCount} files)");
+                            }
+                        }
+                    }
+                    catch (InvalidDataException ex)
+                    {
+                        structuralError = $"the file is not a readable zip ({ex.Message})";
+                    }
+
+                    if (tslpatchdataDir == null)
+                    {
+                        Logger.Warning($"K2CP archive failed structural validation: {structuralError}");
+                        if (hashVerified)
+                        {
+                            return ModInstallResult.Fail(Id,
+                                $"The K2CP archive matches its pin but failed validation: {structuralError}.");
+                        }
+                        manualReason = InstallerLocale.Format(
+                            "ManualDownload_Reason_Failed_Format", structuralError);
+                    }
                 }
 
-                int payloadCount = Directory.GetFiles(tslpatchdataDir).Length;
-                Logger.Info($"K2CP tslpatchdata staged at {tslpatchdataDir} ({payloadCount} files)");
-
-                // The bug this class exists to prevent, made loud. A payload of
-                // changes.ini plus a readme is what the GitHub repo yields, and
-                // it installs almost nothing while still exiting successfully.
-                if (payloadCount < 10)
+                if (!hashVerified)
                 {
-                    return ModInstallResult.Fail(Id,
-                        $"The K2CP payload has only {payloadCount} file(s); it should have hundreds. " +
-                        "Refusing to run a patch that would silently install almost nothing.");
+                    Logger.Warning("K2CP: installing an archive newer than the tested pin " +
+                                   "(structurally valid; trust-DeadlyStream policy).");
+                    ctx.StatusUpdate?.Invoke(InstallerLocale.Format(
+                        "ModInstall_NewerThanTested_Format", "KOTOR 2 Community Patch"));
                 }
 
                 if (ctx.Locale != GameLocale.English)

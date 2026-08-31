@@ -1,6 +1,6 @@
 {
     "schemaVersion": 1,
-    "updated": "2026-08-03",
+    "updated": "2026-08-31",
 
     "_comment": [
         "Pins for the third-party mods the installer downloads. This file is BOTH",
@@ -8,19 +8,28 @@
         "the repo at install time, so a pin can be refreshed by editing this file",
         "on the main branch — no installer release, no build toolchain.",
         "",
-        "Editing checklist when an upstream mod updates:",
+        "TRUST POLICY (trust-DeadlyStream): the installer must keep working for",
+        "years without anyone maintaining these pins. For DeadlyStream-hosted",
+        "mods (TSLRCM, Tweak Pack, K2CP) the site only ever serves its LATEST",
+        "file, so a pinned hash cannot hold the old version in place — the",
+        "moment upstream updates, the pinned build stops being downloadable at",
+        "all. The hash here is therefore a fast path and a corruption detector,",
+        "not a gate: a matching download installs silently as fully verified; a",
+        "mismatching one is treated as an upstream update, validated",
+        "STRUCTURALLY (readable archive, expected layout, plausible payload),",
+        "and installed anyway with a notice to the user. Only a download that",
+        "fails the structural checks — an HTML challenge page, a truncated",
+        "file — is refused and routed to the guided manual download. Refreshing",
+        "a pin after an upstream release is still worth doing when convenient",
+        "(users get the silently-verified path and the correct displayed",
+        "version), but nothing breaks if nobody ever does.",
+        "",
+        "Refresh checklist when an upstream mod updates:",
         "  1. Download the new file from its pageUrl by hand.",
         "  2. Hash it:  certutil -hashfile <file> SHA256",
-        "  3. Update sha256, sizeBytes and displayVersion here. Commit to main.",
-        "  4. Bump 'updated'. Installers in the field pick it up on their next run.",
-        "",
-        "The hashes are load-bearing: the installer downloads these files without",
-        "a human in the loop and runs the TSLRCM one elevated, so a mismatch is",
-        "refused rather than warned about. Never relax a hash to make a download",
-        "work — if a file legitimately changed, re-hash it here. If you cannot",
-        "verify it, leave the pin alone: the installer already falls back to a",
-        "guided manual download, which is safe because the user fetches the file",
-        "themselves and vouches for it.",
+        "  3. Update sha256, sizeBytes, fileName and displayVersion here.",
+        "  4. Bump 'updated'. Commit to main. Installers in the field pick it up",
+        "     on their next run.",
         "",
         "GitHub-hosted mods pin a commit SHA rather than a file hash. Those do not",
         "rot the same way — a pinned commit stays fetchable as long as the repo",
@@ -28,8 +37,10 @@
         "",
         "Mods published as GitHub RELEASE ASSETS pin tag + asset name + hash. A",
         "tagged asset is effectively immutable, so the hash here is a tamper",
-        "check rather than a version check; bump tag, assetName, sha256 and",
-        "sizeBytes together when adopting a newer release."
+        "check rather than a version check, and for these a mismatch IS still",
+        "refused outright (fail-closed — a changed tagged asset is never an",
+        "update, something is wrong); bump tag, assetName, sha256 and sizeBytes",
+        "together when adopting a newer release."
     ],
 
     "tslrcm": {
@@ -56,10 +67,10 @@
     },
 
     "k2cp": {
-        "displayVersion": "v1.6.2",
-        "fileName": "K2CP_v1.6.2.zip",
-        "sha256": "1E6C6A2DC4E956256BFD7D36431E258EE792AD07E6DD326965336CFE96ADFD88",
-        "sizeBytes": 80523859,
+        "displayVersion": "v1.6.3",
+        "fileName": "K2CP_v1.6.3.zip",
+        "sha256": "6E734ED7E81AD8169D12870CE9FCF829BD56B88F22E7EA20FB37FCB85B8580C1",
+        "sizeBytes": 80523387,
         "pageUrl": "https://deadlystream.com/files/file/1280-kotor-2-community-patch/",
 
         "_note": [
@@ -72,11 +83,11 @@
             "applied the changes.ini edits, silently installed no files, and",
             "reported success.",
             "The commit is kept for provenance only — it matches the archive's",
-            "release date (2025-09-26) and is not fetched."
+            "release date (v1.6.3, 2026-08-26) and is not fetched."
         ],
         "repoOwner": "KOTORCommunityPatches",
         "repoName": "TSL_Community_Patch",
-        "ref": "4850a441368678ff72f3a173b33366c3c960d95e"
+        "ref": "bed365be3ca8d9aa798c414ad52ce070a685823e"
     },
 
     "thematicCompanionsK1": {

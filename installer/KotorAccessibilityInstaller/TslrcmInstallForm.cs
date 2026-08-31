@@ -18,11 +18,12 @@ namespace KotorAccessibilityInstaller
         DownloadFailed,
 
         /// <summary>
-        /// Downloaded fine but the SHA-256 did not match the pin, so it was not
-        /// run and was deleted. Kept distinct from <see cref="DownloadFailed"/>
-        /// because it means something different and needs a different sentence:
-        /// nothing is broken, TSLRCM has almost certainly just shipped an update
-        /// this installer predates. <c>FailureReason</c> carries the hash we got.
+        /// Downloaded fine but the file is not a plausible TSLRCM installer
+        /// (failed the structural probe after a hash mismatch), so it was not
+        /// run and was deleted. A mere hash mismatch no longer lands here —
+        /// that is treated as an upstream update and installed anyway; this
+        /// outcome means the download itself is junk (HTML page, truncation).
+        /// <c>FailureReason</c> carries what the probe found.
         /// </summary>
         VerificationFailed,
 
@@ -45,9 +46,11 @@ namespace KotorAccessibilityInstaller
     /// <summary>
     /// Downloads the TSLRCM installer exe from DeadlyStream (guest scrape via
     /// <see cref="DeadlyStreamClient"/>), verifies it against the pinned
-    /// SHA-256 in <see cref="Config.TslrcmInstallerSha256"/> (fail-closed: a
-    /// swapped or upstream-updated file routes the user to the manual browser
-    /// download), then — when the KOTOR 2 folder is known — runs the installer
+    /// SHA-256 in <see cref="Config.TslrcmInstallerSha256"/> (the verified fast
+    /// path — an upstream update that no longer matches is probed structurally
+    /// and run anyway, per the trust-DeadlyStream policy in sources.json; only
+    /// a file that is not an installer at all routes the user to the manual
+    /// browser download), then — when the KOTOR 2 folder is known — runs the installer
     /// silently with Inno Setup's <c>/VERYSILENT /DIR=...</c>. Silent install
     /// is the default because the TSLRCM wizard is English-only while this
     /// installer speaks the user's language.
@@ -227,19 +230,40 @@ namespace KotorAccessibilityInstaller
                     string hash = await Task.Run(() => DeadlyStreamClient.ComputeSha256(dest));
                     if (!hash.Equals(Config.TslrcmInstallerSha256, StringComparison.OrdinalIgnoreCase))
                     {
-                        // Reported separately from a download failure: this
-                        // almost always means TSLRCM shipped an update, not that
-                        // anything is broken, and the user gets a different
-                        // sentence and a working way forward.
-                        Logger.Warning($"TSLRCM hash mismatch: expected {Config.TslrcmInstallerSha256}, got {hash}");
-                        FailureReason = hash;
-                        TryDelete(dest);
-                        Outcome = TslrcmOutcome.VerificationFailed;
-                        _finished = true;
-                        Close();
-                        return;
+                        // Not fail-closed any more: a mismatch on DeadlyStream's
+                        // "latest file" almost always means TSLRCM shipped an
+                        // update this installer predates, and the old build is
+                        // no longer downloadable at all. So the file is checked
+                        // structurally instead and, if it is a plausible
+                        // installer exe, run anyway (trust-DeadlyStream policy —
+                        // see sources.json). The silent-install phase has its
+                        // own hard verification (dialog.tlk fingerprint + Inno's
+                        // log), so a broken installer still cannot report
+                        // success. Only a file that is not an installer at all
+                        // (HTML challenge page, truncated download) is refused
+                        // and routed to the manual path.
+                        Logger.Warning($"TSLRCM hash differs from the pin (expected {Config.TslrcmInstallerSha256}, " +
+                                       $"got {hash}) — assuming an upstream update; probing the file structurally.");
+                        string structuralError = ProbeInstallerExe(dest);
+                        if (structuralError != null)
+                        {
+                            Logger.Warning($"TSLRCM download failed the structural probe: {structuralError}");
+                            FailureReason = structuralError;
+                            TryDelete(dest);
+                            Outcome = TslrcmOutcome.VerificationFailed;
+                            _finished = true;
+                            Close();
+                            return;
+                        }
+                        Logger.Warning("TSLRCM: running an installer newer than the tested pin " +
+                                       "(structurally plausible; trust-DeadlyStream policy).");
+                        UpdateStatus(InstallerLocale.Format("ModInstall_NewerThanTested_Format", "TSLRCM"),
+                                     announce: true);
                     }
-                    Logger.Info($"TSLRCM installer downloaded and verified: {dest}");
+                    else
+                    {
+                        Logger.Info($"TSLRCM installer downloaded and verified: {dest}");
+                    }
                     InstallerPath = dest;
                 }
                 catch (OperationCanceledException)
@@ -472,6 +496,39 @@ namespace KotorAccessibilityInstaller
             if (!announce) return;
 
             ScreenReaderAnnouncer.Announce(_statusLabel, message);
+        }
+
+        /// <summary>
+        /// Structural probe for a downloaded file claiming to be the TSLRCM
+        /// installer: a real PE executable ("MZ" magic) of a size no plausible
+        /// TSLRCM build could be under. Catches what actually goes wrong with
+        /// a scrape — an HTML challenge page or a truncated download — without
+        /// pinning the upstream version. Returns null when plausible, else a
+        /// description of what is wrong.
+        /// </summary>
+        private static string ProbeInstallerExe(string path)
+        {
+            try
+            {
+                var fi = new FileInfo(path);
+                // TSLRCM carries full restored-content assets; every release for
+                // a decade has been >100 MB. 20 MB is a generous floor that still
+                // rejects any error page or stub.
+                const long minPlausibleBytes = 20L * 1024 * 1024;
+                if (fi.Length < minPlausibleBytes)
+                    return $"the downloaded file is only {fi.Length} bytes — not a TSLRCM installer";
+
+                using var fs = File.OpenRead(path);
+                var magic = new byte[2];
+                if (fs.Read(magic, 0, 2) != 2 || magic[0] != (byte)'M' || magic[1] != (byte)'Z')
+                    return "the downloaded file is not a Windows executable";
+
+                return null;
+            }
+            catch (Exception ex)
+            {
+                return $"the downloaded file could not be read: {ex.Message}";
+            }
         }
 
         private static void TryDelete(string path)

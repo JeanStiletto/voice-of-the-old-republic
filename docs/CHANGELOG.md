@@ -33,6 +33,27 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>Unreleased</h2>
+
+<h3>Installer:</h3>
+
+- Bundled mods keep installing after their authors publish an update. The
+  KOTOR 2 Community Patch released 1.6.3 on August 26 and every install since
+  then failed with a version error: the installer only accepted the exact file
+  version it was tested with, and DeadlyStream only serves the latest one, so
+  the accepted version was no longer downloadable at all. Downloads from
+  DeadlyStream (TSLRCM, the Tweak Pack, K2CP) that are newer than the tested
+  version are now checked for being a sound, complete archive and installed
+  anyway, with a spoken note that the mod is newer than the version this
+  installer was tested with. A download that is actually broken — an error
+  page, a cut-off file — is still refused and goes to the guided manual
+  download as before.
+- The bundled K2CP is now 1.6.3, which per its release notes also corrects
+  unintended content in 1.6.1 and 1.6.2. Existing installers pick the new
+  version up automatically on their next run.
+- The K2CP download status line now correctly says deadlystream.com instead of
+  GitHub.
+
 <h2>v0.8.0</h2>
 
 <h3>Controller:</h3>

@@ -564,8 +564,9 @@ audio stack is unverified. Open research item, not a gap.
   chooses whether to continue.
 - **Unattended TSLRCM install (`TslrcmInstallForm`)** — `DeadlyStreamClient`
   scrapes the guest download (cookie + csrfKey two-step), verifies the
-  pinned SHA-256 (fail-closed: a changed upstream file routes to the manual
-  link), then — when the KOTOR 2 folder was detected — runs TSLRCM's Inno
+  pinned SHA-256 (fast path — a mismatching file is probed structurally and
+  run anyway per the trust-DeadlyStream policy below; only a non-installer
+  routes to the manual link), then — when the KOTOR 2 folder was detected — runs TSLRCM's Inno
   Setup **silently** (`/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-
   /DIR=<path> /LOG=<temp>`); silent is the default because the TSLRCM wizard
   is English-only while our installer speaks the user's language. The silent
@@ -589,7 +590,9 @@ audio stack is unverified. Open research item, not a gap.
   the Tweak Pack on every install: no error, no prompt, two mods quietly
   missing, and a player who believes their mod set is complete.
 - **`TweakPackInstaller`** — DeadlyStream scrape of the pinned RAR5 archive,
-  SHA-256 verify, extraction via Windows' built-in `tar.exe` (libarchive
+  SHA-256 as the verified fast path (mismatch → structural validation of all
+  seven driven components, then install-with-notice; trust-DeadlyStream
+  policy), extraction via Windows' built-in `tar.exe` (libarchive
   reads RAR5), then one headless HoloPatcher run per component. Components
   are staged individually as standalone `tslpatchdata` dirs (Part 2's
   `changes2.ini` renamed on staging), bypassing the archive's
@@ -612,9 +615,12 @@ audio stack is unverified. Open research item, not a gap.
   not declared by the manifests (already patched, 3C-FD'd, unknown build) is
   skipped with a reason, never force-patched. No backup — Steam "Verify
   integrity" restores vanilla.
-- **`K2cpInstaller`** — mirrors `K1cpInstaller` (GitHub tree fetch at pinned
-  SHA → headless HoloPatcher), now ACTIVE in
+- **`K2cpInstaller`** — DeadlyStream archive scrape (NOT GitHub — the repo
+  holds only the recipe, see the class doc) → `tslpatchdata` staging →
+  headless HoloPatcher, ACTIVE in
   `ModInstallerCoordinator.BuildKotor2Pipeline()` behind the TSLRCM gate.
+  Hash pin is the fast path; mismatch → structural validation (readable zip,
+  `tslpatchdata/` with hundreds of files) → install-with-notice.
   Still open before release: a `.lyt`/`.vis` line-ending audit of K2CP's
   files (K1CP needed CRLF normalization; K2 engine uses the same parser
   family).
@@ -631,11 +637,14 @@ audio stack is unverified. Open research item, not a gap.
   permission request to mirror (removes the scrape fragility), and the same
   question for the Tweak Pack (also DeadlyStream-hosted; same scrape would
   work).
-- Both hash pins date from 2026-07-27 and have not been re-verified against
-  what DeadlyStream serves today. A stale pin is no longer a dead end (see
-  "Keeping the third-party pins alive" above), but re-hashing them is still the
-  difference between a one-wizard install and a guided manual one. The K1CP and
-  K2CP pinned commits WERE re-verified 2026-08-03 and both still resolve.
+- The TSLRCM and Tweak Pack hash pins date from 2026-07-27 and have not been
+  re-verified against what DeadlyStream serves today; the K2CP pin was
+  refreshed to v1.6.3 on 2026-08-31 (the 1.6.2→1.6.3 update was what exposed
+  the old hard-fail policy). A stale pin no longer blocks anything — a
+  mismatching upstream update is structurally validated and installed with a
+  notice (trust-DeadlyStream policy, see "Keeping the third-party pins alive")
+  — but a fresh pin still buys the silently-verified path and the correct
+  displayed version.
 - TSLRCM language handling on a German Steam install — needs a hands-on test
   of the 1.8.6 installer.
 - ~~Install-order contradiction.~~ **RESOLVED 2026-08-03: TSLRCM → Tweak Pack →
@@ -825,18 +834,49 @@ against toolset 14.44.35207.
 - **HoloPatcher** — modern cross-platform reimplementation of TSLPatcher. Drop-in compatible with `tslpatchdata` payloads. Drivable headlessly.
 - **TSLPatcher** — legacy Windows-only original. We probably never invoke it directly.
 
-## Keeping the third-party pins alive (2026-08-03)
+## Keeping the third-party pins alive (2026-08-03; policy revised 2026-08-31)
 
 The installer downloads mods whose upstreams we don't control. Pinning their
-SHA-256 makes the download safe and makes it expire. Three layers, deliberately
-ordered so the last one needs no maintenance at all.
+SHA-256 makes the download safe — and, as originally designed, made it expire.
+Three layers, deliberately ordered so the last one needs no maintenance at all.
 
-**The pins never relax.** TSLRCM's installer is 138 MB fetched over a scraped
-DeadlyStream endpoint and then executed elevated. If that scrape ever returns a
-login redirect, an error page saved as a file, or a hijacked upload, the hash is
-the only thing between that and running arbitrary code as administrator.
-Weakening it to "looks like an Inno installer of about the right size" would
-trade a real guarantee for convenience. A mismatch is refused, always.
+**Trust policy (revised 2026-08-31 — trust-DeadlyStream).** The original rule
+was "the pins never relax: a mismatch is refused, always." That rule had a flaw
+the first real upstream update exposed (K2CP 1.6.3, 2026-08-26): DeadlyStream
+only ever serves its *latest* file, so the moment upstream updates, the pinned
+build stops being downloadable at all and every fresh install fails until
+someone refreshes the pin. The project is meant to finish and keep working for
+years unmaintained, so the pin is now a **fast path and corruption detector,
+not a gate**, for the three DeadlyStream-hosted mods (TSLRCM, Tweak Pack,
+K2CP):
+
+- Hash matches the pin → install silently, fully verified, as before.
+- Hash differs → treated as an upstream update. The file is validated
+  **structurally** — K2CP: readable zip, `tslpatchdata/` present, hundreds of
+  payload files; Tweak Pack: readable RAR, every driven component folder and
+  ini present; TSLRCM: real PE executable ("MZ") of at least 20 MB — and, if
+  sound, installed anyway with a spoken/logged notice
+  (`ModInstall_NewerThanTested_Format`) naming the mod as newer than the
+  tested pin. This is the same trust decision the manual path always delegated
+  to the user (same file, same page, same HTTPS origin), minus sending a blind
+  user through DeadlyStream's download flow.
+- Structural validation fails (HTML challenge page, truncated download) → the
+  guided manual path, exactly as before. A structural failure on a
+  hash-*verified* archive is our bug (bad pin or stale layout assumption) and
+  fails hard instead — a manual download of the same bytes cannot fix it.
+
+What still never relaxes: **GitHub tagged release assets** (Thematic
+Companions). A tagged asset is immutable, so a mismatch there is never an
+update — it is tampering or breakage, and it stays fail-closed. Pinned
+*commits* (K1CP) don't rot at all. The residual risk accepted for the
+DeadlyStream three is a compromised upload on deadlystream.com itself serving
+a well-formed malicious archive — previously "mitigated" only until the pin
+was refreshed against that same upload, and always waived by the manual path
+anyway; DeadlyStream over HTTPS is explicitly part of the trust root now.
+
+TSLRCM's own silent install keeps its independent hard verification either
+way: the before/after `dialog.tlk` fingerprint plus Inno's own log, so a
+broken installer exe still cannot report success.
 
 **Layer 1 — `Resources/sources.json`, served by `SourcePins`.** All pins (hashes,
 sizes, page URLs, pinned commits) moved out of `Config` constants into one JSON
@@ -855,10 +895,10 @@ release, so it is not a new attack surface.
 
 **Layer 2 — guided manual acquisition (`ManualDownloadForm`). This is the one
 that matters.** A remote pin file only helps while somebody is still maintaining
-the repo; in five years it is likely dead. When automatic acquisition fails, the
-installer explains *specifically* what happened ("the download worked, but the
-file is not the version this installer was built against" vs "the download
-failed: …"), opens the official page in the browser, and takes the file the user
+the repo; in five years it is likely dead. When automatic acquisition fails —
+the download itself errors, or what arrived fails the structural checks — the
+installer explains *specifically* what happened ("the download failed: …" with
+the concrete error), opens the official page in the browser, and takes the file the user
 downloaded — via a file picker, or a one-press button when a plausible file is
 already sitting in Downloads. The install then continues exactly as if we had
 fetched it. **This path cannot go stale**, and it also covers what a pin can't:
