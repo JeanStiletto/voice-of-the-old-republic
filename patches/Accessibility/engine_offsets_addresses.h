@@ -874,8 +874,14 @@ const uintptr_t kVtableCSWGuiInGameItemEntry           = acc::addr::Pick(0x00756
 
 // CSWGuiStore::GetItemBuyValue / GetItemSellValue — __thiscall returning
 // ulong, single CSWSItem* argument. Both pop 4 bytes (callee).
-const uintptr_t kAddrCSWGuiStoreGetItemBuyValue = acc::addr::R(0x006c0790);
-const uintptr_t kAddrCSWGuiStoreGetItemSellValue = acc::addr::R(0x006c07f0);
+// K2 twins 0x008B8000 / 0x008B8070, decompile-matched: same
+// GetStoreByGameObjectID(this->store_id) lookup (store_id at +0x34d0),
+// same two markup fields summed (store+0x288/+0x290 buy, +0x284/+0x28c
+// sell — the K1 fields +0x40, like the item band), GetCost, /100. Called
+// from the K2 OnControlEntered twin 0x008B6E90 in the same buy/sell
+// branches K1 calls them from.
+const uintptr_t kAddrCSWGuiStoreGetItemBuyValue = acc::addr::Pick(0x006c0790, 0x008B8000);
+const uintptr_t kAddrCSWGuiStoreGetItemSellValue = acc::addr::Pick(0x006c07f0, 0x008B8070);
 
 // CSWGuiStore::OnControlInvAButton / OnControlStoreAButton — the engine
 // click handlers attached to the accept_button in Sell / Buy mode
@@ -890,8 +896,20 @@ const uintptr_t kAddrCSWGuiStoreGetItemSellValue = acc::addr::R(0x006c07f0);
 // Both open the engine's confirmation MessageBox if the price exceeds
 // the player's level threshold; otherwise they commit the trade
 // immediately via SellItem / BuyItem.
-const uintptr_t kAddrCSWGuiStoreOnControlInvAButton = acc::addr::R(0x006c0f40);
-const uintptr_t kAddrCSWGuiStoreOnControlStoreAButton = acc::addr::R(0x006c1130);
+//
+// K2 twins 0x008B61C0 (inv/sell) / 0x008B6930 (store/buy), found via the
+// row registrar: the K2 CreateItemEntry twin 0x008B5DB0 registers them
+// per row with event id 0x27 (buy-list rows get 0x008B6930, sell-list
+// rows 0x008B61C0) alongside the known OnControlEntered 0x008B6E90 at
+// event 0. Decompile-matched to the K1 shape: is_active gate (+0x50 on
+// K2, our Pick'd kControlIsActiveOffset), accept-button special case
+// (this+0x2174), row handle at +0x1d0, gold-vs-price examine box strref
+// 0xa3de, level*50 confirm (sell strref 0xa401 identical to K1), BuyItem
+// 0x008B74B0 / SellItem 0x008B7700 tails. The K2 sell twin adds an
+// upgraded-item branch (row+0x3ac, confirm strref 0x19da8) that our
+// direct call inherits unchanged.
+const uintptr_t kAddrCSWGuiStoreOnControlInvAButton = acc::addr::Pick(0x006c0f40, 0x008B61C0);
+const uintptr_t kAddrCSWGuiStoreOnControlStoreAButton = acc::addr::Pick(0x006c1130, 0x008B6930);
 
 // CServerExoApp::ClientToServerObjectId — __thiscall(ulong) -> ulong.
 // CServerExoApp::GetItemByGameObjectID — __thiscall(ulong) -> CSWSItem*.

@@ -76,6 +76,45 @@ narrator lines and `tutorial=1` on mapped ones (both paths log the flags);
 hints; (6) K1 regression: Trask flow + one voiced-human dialogue (suppression
 formula extended by two OR-terms, K1 semantics preserved).**
 
+**Store trade path — PORTED 2026-08-31 (one kotor2 Ghidra round off the peek
+batch's anchors; zero test rounds). SHIPPED UNTESTED in v0.8.0 — the merchant
+test round below is still owed.** Shipped rather than held because K2 buy/sell
+was already dead for testers (they reported it; no log), so the downside case
+is a crash where there is currently silence, and the upside is the reported bug
+fixed for the people who reported it. K1 is untouched: its constants went
+`R`→`Pick` and keep their tested values. The trade dispatch was never on any
+batch worklist: menus_store
+navigated and priced rows through the ported peek constants, but its five
+commit-side constants were still `R(k1)`/`Todo` — on K2 DispatchTradeAction
+called address 0 under SEH (silent no-op) and the buy pre-check read gold
+through a poisoned offset. The ledger:
+
+- **OnControl{Store,Inv}AButton twins 0x008B6930 / 0x008B61C0** — found via
+  the row registrar: CreateItemEntry twin 0x008B5DB0 registers them per row
+  at event 0x27 (buy list gets 6930, sell list 61C0) next to the known
+  OnControlEntered 0x008B6E90 at event 0. Decompile-matched (is_active gate
+  +0x50, accept-button compare this+0x2174, row handle +0x1d0, 0xa3de
+  examine box, level*50 confirm, 0xa401 sell strref, BuyItem 0x008B74B0 /
+  SellItem 0x008B7700 tails). K2's sell twin adds an upgraded-item branch
+  (row+0x3ac, strref 0x19da8) that the direct call inherits.
+- **GetItem{Buy,Sell}Value twins 0x008B8000 / 0x008B8070** — same
+  store-lookup + markup-sum/100 shape; store_id at panel+0x34d0, markup
+  fields store+0x288/0x290 (buy) and +0x284/0x28c (sell) = K1's +0x40.
+- **kStorePlayerGoldOffset → Pick(0x2270, 0x34c8)** — witnessed by the buy
+  twin's gold-vs-price compare feeding the 0xa3de box.
+- Same session, committed separately: the credits row (inventory + store)
+  anchored on Todo struct offsets and silently no-opped on K2; both anchors
+  now fall back to by-id (inventory_p.gui id 11 / store_p.gui id 17, both
+  LBL_CREDITS_VALUE; inventory id witnessed live in the 2026-08-31 walk).
+
+Test items: open a merchant on K2 — (1) Enter on a buy row with enough
+credits buys (spoken "Bought for N"), (2) Enter on a sell row sells, (3) a
+too-expensive buy speaks the mod's "not enough credits" line (engine box
+suppressed), (4) row focus speaks a real price, not 0, (5) the credits row
+reads at the top of store + inventory, (6) an expensive-item confirm box
+(price > level*50) still opens and is chain-navigable, (7) K1 regression:
+one buy + one sell (shared code, constants went R→Pick / Todo→Pick).**
+
 **Minigames — pazaak + swoop race PORTED 2026-08-15, offline (six kotor2 Ghidra
 rounds, two kotor1, plus capstone/PE scans and a GFF/NCS mine of both games'
 minigame areas; zero test rounds). Built green, NOT tested in game.** Both

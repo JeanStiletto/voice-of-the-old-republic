@@ -1876,7 +1876,10 @@ const size_t    kStoreCreditsValueLabelOffset          = acc::off::Todo(0x1200);
 //   if (field31_0x2270 < GetItemBuyValue(item)) ShowExamineBox(strref 0xa3de)
 // We use it for the same gate, but speak our own "not enough credits"
 // line instead of letting the engine pop its examine box.
-const size_t    kStorePlayerGoldOffset                 = acc::off::Todo(0x2270);
+// K2 +0x34c8, witnessed by the K2 buy twin 0x008B6930's identical compare:
+//   if (*(this+0x34c8) < GetItemBuyValue(item)) examine box strref 0xa3de
+// (store_id sits at +0x34d0 there, read by both GetItem*Value twins.)
+const size_t    kStorePlayerGoldOffset                 = acc::off::Pick(0x2270, 0x34c8);
 
 // Bit 1 (0x02) of the listbox's CSWGuiControl.bit_flags is set on the
 // "visible" listbox by ShowBuyGUI / ShowSellGUI. Same offset (+0x44)

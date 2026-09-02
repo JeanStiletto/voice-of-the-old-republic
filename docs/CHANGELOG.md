@@ -112,6 +112,18 @@ and add the German in parentheses if it genuinely aids clarity.
   it. The mod reads the game's own line for it, so it is already in your
   language and names the key the engine actually honours.
 
+<h3>KOTOR 2:</h3>
+
+- Buying and selling at a merchant works on KOTOR 2. Enter on a shop row did
+  nothing whatsoever: the four engine entry points behind a trade — the buy and
+  sell button handlers, and the two price calculations — were still the KOTOR 1
+  ones, so the mod called into empty address space and the failure was silent
+  rather than noisy. The "you cannot afford this" check was reading the
+  player's credits from an unmapped field on top of that. All five now have
+  their KOTOR 2 equivalents; KOTOR 1 keeps the addresses it has always used.
+  This one ships without a merchant test round of its own — please report
+  anything that misbehaves at a shop.
+
 <h3>Support logs:</h3>
 
 - One repeated line no longer buries the rest of the log. The engine re-asserts
