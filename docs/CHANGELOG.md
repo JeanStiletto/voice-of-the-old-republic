@@ -124,6 +124,17 @@ and add the German in parentheses if it genuinely aids clarity.
   layer does to the pad — a stick re-bound to buttons arrives with no analog
   axes at all, and a pad enumerated twice delivers every press twice — and
   points at Steam's per-game "Disable Steam Input" setting.
+- A log bundle can now explain "the game starts but the mod never speaks". The
+  files that get the mod into the game — the loader, the patcher, its config,
+  the C++ runtime — all live outside the mod DLL and none of them keep a log,
+  so when one of them went missing the bundle contained no session log and no
+  hint as to why. Every one of them is now listed with its size and date, next
+  to a check of whether the game executable is still the one the mod was
+  installed against. The usual culprit is antivirus quietly quarantining the
+  loader hours after a working session.
+- The bundle now carries the installer run that produced it, plus the one
+  before. It used to ship whichever run came before the log collection, so the
+  install a tester was asking about was never in the archive.
 
 <h3>Installer:</h3>
 

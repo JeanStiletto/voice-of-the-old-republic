@@ -18,10 +18,18 @@ namespace KotorAccessibilityInstaller
     /// installs a current .kpatch next to stale bundled binaries, which is
     /// exactly what <see cref="SelfUpdater"/> exists to prevent.</para>
     ///
-    /// <para>Three components always, never trimmed: the release tags are
-    /// three-component (v0.8.0), and reporting "0.8" for what the release page
-    /// calls "0.8.0" invites being heard as a different, rounded-off number.
-    /// The fourth (revision) component is always zero and is dropped.</para>
+    /// <para>Three components at minimum, never trimmed: reporting "0.8" for
+    /// what the release page calls "0.8.0" invites being heard as a different,
+    /// rounded-off number. The fourth (revision) component appears only on a
+    /// four-component release tag (v0.7.9.1 -> "0.7.9.1"); it is dropped when
+    /// zero so an ordinary release still reads "0.8.0" and not "0.8.0.0".</para>
+    ///
+    /// <para>Dropping it unconditionally was a bug waiting on the first hotfix
+    /// tag. release.ps1 stamps the EXE from the tag and publishes the same
+    /// string in installer-version.txt, so a v0.7.9.1 build would have called
+    /// itself "0.7.9", read "0.7.9.1" as newer than itself, and offered a
+    /// self-update to the binary already running — an 88 MB download and a
+    /// restart on every launch.</para>
     ///
     /// <para>A local dev build carries the csproj default (1.0.0) rather than a
     /// release number. It therefore sorts ABOVE every published release and no
@@ -32,11 +40,13 @@ namespace KotorAccessibilityInstaller
     /// </summary>
     public static class InstallerVersion
     {
-        /// <summary>Bare version, e.g. "0.8.0". What gets compared.</summary>
+        /// <summary>Bare version, e.g. "0.8.0" or "0.7.9.1". What gets compared.</summary>
         public static string Number()
         {
             var v = Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0, 0);
-            return $"{Math.Max(0, v.Major)}.{Math.Max(0, v.Minor)}.{Math.Max(0, v.Build)}";
+            string number = $"{Math.Max(0, v.Major)}.{Math.Max(0, v.Minor)}.{Math.Max(0, v.Build)}";
+            if (v.Revision > 0) number += $".{v.Revision}";
+            return number;
         }
 
         /// <summary>Version for display, e.g. "v0.8.0". What goes in title bars.</summary>

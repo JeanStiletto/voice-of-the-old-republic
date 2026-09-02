@@ -177,11 +177,31 @@ namespace KotorAccessibilityInstaller
                         }
                     }
 
+                    // Push THIS run's lines to disk before copying. Logger only
+                    // flushes from Main's finally, so without this the bundle
+                    // always shipped the PREVIOUS run's log — one real report
+                    // arrived carrying a run that did nothing but print "Mod is
+                    // up to date" and close, while the install the tester was
+                    // describing was two runs back and absent entirely. Flush is
+                    // documented safe to call repeatedly.
+                    Logger.Flush();
+
                     string installerLog = Logger.GetLogPath();
                     if (File.Exists(installerLog))
                     {
                         File.Copy(installerLog, Path.Combine(staging, Path.GetFileName(installerLog)), overwrite: true);
                         result.IncludedInstallerLog = true;
+                    }
+
+                    // The run before this one. Collecting logs is itself an
+                    // installer run, so the install being reported on is one
+                    // run further back than the tester thinks.
+                    string previousInstallerLog = Logger.GetPreviousLogPath();
+                    if (File.Exists(previousInstallerLog))
+                    {
+                        File.Copy(previousInstallerLog,
+                                  Path.Combine(staging, Path.GetFileName(previousInstallerLog)),
+                                  overwrite: true);
                     }
 
                     WriteSystemInfo(Path.Combine(staging, "system-info.txt"), sites, dumpPairings);
@@ -536,9 +556,10 @@ namespace KotorAccessibilityInstaller
                 sb.AppendLine($"=== {site.Target.DisplayName} ({site.Target.Id}) ===");
                 sb.AppendLine($"Installed mod version: {RegistryManager.GetRegisteredVersion(site.Target) ?? "(unknown)"}");
                 sb.AppendLine($"Game install path:    {site.Path}");
-                sb.AppendLine($"Game exe present:     {File.Exists(Path.Combine(site.Path, site.Target.ExeName))}");
-                sb.AppendLine($"Mod DLL present:      " +
-                    File.Exists(Path.Combine(site.Path, "patches", "accessibility.dll")));
+                string gameExe = Path.Combine(site.Path, site.Target.ExeName);
+                sb.AppendLine($"Game exe present:     {File.Exists(gameExe)}");
+                AppendLoadChain(sb, site.Path);
+                AppendVersionMatch(sb, gameExe, site.Path);
 
                 if (Directory.Exists(DumpsDir))
                 {
@@ -568,6 +589,167 @@ namespace KotorAccessibilityInstaller
             }
 
             File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
+        }
+
+        /// <summary>
+        /// Presence, size and timestamp of every file that has to be there for
+        /// the mod to enter the game process.
+        ///
+        /// <para>This block is what makes a "the game launches but the mod never
+        /// speaks" report answerable. <c>accessibility.dll</c> writes its log
+        /// header from DLL_PROCESS_ATTACH, so a session that produced no patch
+        /// log never mapped it — and the reason always lies upstream, in files
+        /// this bundle previously said nothing about: the proxy loader,
+        /// KotorPatcher, its config, the app-local CRT. One real report
+        /// (2026-09-01) had a nine-hour gap between its newest patch log and the
+        /// moment it was collected, and nothing in the archive could say which
+        /// link had gone.</para>
+        /// </summary>
+        private static void AppendLoadChain(StringBuilder sb, string gameDir)
+        {
+            sb.AppendLine("Load chain (in load order — anything MISSING here explains a session with no patch log):");
+
+            foreach (string relative in InstallationManager.LoadChainFileNames)
+            {
+                string label = ("  " + relative).PadRight(30);
+                string full = Path.Combine(gameDir, relative);
+                if (!File.Exists(full))
+                {
+                    sb.AppendLine($"{label}MISSING");
+                    continue;
+                }
+
+                var info = new FileInfo(full);
+                string line = $"{label}present  {info.Length,11:N0} bytes  " +
+                              $"{info.LastWriteTimeUtc:yyyy-MM-ddTHH:mm:ssZ}";
+
+                // Size against the copy we ship. Only the files we embed have
+                // one (accessibility.dll comes from the .kpatch and the config
+                // is generated), and a mismatch means someone else's file is in
+                // the slot — the case that matters is another mod's dinput8.dll
+                // proxy, which loads instead of ours and never reaches
+                // KotorPatcher.
+                long bundled = InstallationManager.GetEmbeddedResourceLength(Path.GetFileName(relative));
+                if (bundled >= 0 && bundled != info.Length)
+                    line += $"  (NOT our copy — we ship {bundled:N0} bytes)";
+
+                sb.AppendLine(line);
+            }
+
+            sb.AppendLine("  (prism.dll is delay-loaded: losing it silences the mod but still writes a patch log;");
+            sb.AppendLine("   every other line above is load-critical. dinput8.dll is the one antivirus quarantines.)");
+        }
+
+        /// <summary>
+        /// Whether the game exe is still the binary the mod was installed
+        /// against. A store verify/repair, a game update, or another mod that
+        /// rewrites the exe all move the hook sites out from under us, and the
+        /// symptom — the mod loads and then narrates nothing — looks nothing
+        /// like its cause.
+        ///
+        /// <para>The comparison is against <c>kpm_install_state.json</c>'s
+        /// CurrentHash, not against patch_config.toml's target_version_sha. KPM
+        /// edits the exe itself on some installs (KOTOR 2 here), so the live
+        /// hash legitimately differs from the clean one it targets: comparing
+        /// the wrong pair reports every such install as broken.</para>
+        /// </summary>
+        private static void AppendVersionMatch(StringBuilder sb, string gameExe, string gameDir)
+        {
+            string live = null;
+            try
+            {
+                if (File.Exists(gameExe))
+                {
+                    live = KPatchCore.Common.FileHasher.ComputeSha256(gameExe);
+                    sb.AppendLine($"Game exe SHA-256:     {live}  (live)");
+                }
+            }
+            catch (Exception ex)
+            {
+                sb.AppendLine($"Game exe SHA-256:     (could not hash: {ex.Message})");
+            }
+
+            string configured = ReadTargetVersionSha(
+                Path.Combine(gameDir, InstallationManager.PatchConfigFileName));
+
+            KPatchCore.Models.ManagedInstallState state = null;
+            try
+            {
+                var loaded = KPatchCore.Managers.InstallStateManager.Load(gameExe);
+                if (loaded.Success) state = loaded.Data;
+            }
+            catch
+            {
+                // Falls through to the "no state" branch. A malformed state
+                // file is itself worth reporting, and reporting it must not
+                // cost the tester the rest of the bundle.
+            }
+
+            if (state == null)
+            {
+                sb.AppendLine("Install state:        (no kpm_install_state.json — this install was never " +
+                              "completed by KPM, or it was removed)");
+                if (configured != null)
+                    sb.AppendLine($"patch_config target:  {configured}");
+                return;
+            }
+
+            string cleanNote = configured == null
+                ? "  (patch_config.toml has no target_version_sha)"
+                : string.Equals(configured, state.OriginalHash, StringComparison.OrdinalIgnoreCase)
+                    ? "  (matches patch_config target_version_sha)"
+                    : $"  (patch_config targets {configured} instead)";
+            sb.AppendLine($"Clean install hash:   {state.OriginalHash}{cleanNote}");
+            sb.AppendLine($"Patched hash:         {state.CurrentHash ?? "(none recorded)"}" +
+                          $"  (KProxy staged: {state.KProxyInstalled})");
+
+            // What actually matters: has anything touched the exe since we
+            // finished with it?
+            string patched = state.CurrentHash ?? state.OriginalHash;
+            string verdict;
+            if (live == null)
+                verdict = "(exe could not be hashed)";
+            else if (string.Equals(live, patched, StringComparison.OrdinalIgnoreCase))
+                verdict = "unchanged since install";
+            else if (string.Equals(live, state.OriginalHash, StringComparison.OrdinalIgnoreCase))
+                verdict = "REVERTED to the clean build — KPM's exe edits are gone " +
+                          "(store verify/repair is the usual cause)";
+            else
+                verdict = "CHANGED — matches neither hash above; something else rewrote the exe";
+            sb.AppendLine($"Exe since install:    {verdict}");
+        }
+
+        /// <summary>
+        /// Pulls <c>target_version_sha</c> out of patch_config.toml. Hand-parsed
+        /// rather than via a TOML reader: it is a top-level key on its own line,
+        /// the installer has no TOML dependency, and a diagnostic must survive a
+        /// config too malformed for a parser to accept — that malformation is
+        /// itself a reason the mod would not have loaded.
+        /// </summary>
+        private static string ReadTargetVersionSha(string configPath)
+        {
+            try
+            {
+                if (!File.Exists(configPath)) return null;
+
+                foreach (string line in File.ReadLines(configPath))
+                {
+                    string trimmed = line.TrimStart();
+                    if (!trimmed.StartsWith("target_version_sha", StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    int first = trimmed.IndexOf('"');
+                    int last = trimmed.LastIndexOf('"');
+                    if (first >= 0 && last > first)
+                        return trimmed.Substring(first + 1, last - first - 1);
+                }
+            }
+            catch
+            {
+                // Unreadable is reported as "not found" by the caller. A
+                // diagnostic that throws takes the whole bundle with it.
+            }
+            return null;
         }
     }
 

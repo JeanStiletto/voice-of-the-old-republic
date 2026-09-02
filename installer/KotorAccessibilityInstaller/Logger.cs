@@ -37,6 +37,13 @@ namespace KotorAccessibilityInstaller
         }
 
         public static string GetLogPath() => LogPath;
+
+        /// <summary>
+        /// The run before this one. Worth bundling alongside the current log:
+        /// "collect logs" is itself a run, so the install the tester is
+        /// describing is one run further back than they think.
+        /// </summary>
+        public static string GetPreviousLogPath() => PreviousLogPath;
         public static bool HasErrors => _hasErrors;
 
         public static void Info(string message) => Log("INFO", message);

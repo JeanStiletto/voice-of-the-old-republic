@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -33,6 +33,71 @@ namespace KotorAccessibilityInstaller
         // here instead of keeping a second copy of the list.
         private static readonly string[] VcRuntimeFiles = { "msvcp140.dll", "vcruntime140.dll" };
         public static IReadOnlyList<string> VcRuntimeFileNames => VcRuntimeFiles;
+
+        /// <summary>
+        /// The runtime patcher's config, written into the game root by
+        /// KPatchCore. KotorPatcher parses it before it loads any patch DLL, so
+        /// if it is missing or unparsable nothing downstream runs — and nothing
+        /// downstream logs.
+        /// </summary>
+        public const string PatchConfigFileName = "patch_config.toml";
+
+        /// <summary>
+        /// Every file the mod needs in order to enter the game process at all,
+        /// in load order, as game-root-relative paths. Composed from the lists
+        /// above so it cannot drift from what an install actually writes.
+        ///
+        /// <para>This exists for diagnostics. A "the game launches but the mod
+        /// never speaks" report is only answerable if we can see which of these
+        /// is gone: the whole chain — proxy loader, patcher, its config, the
+        /// CRT — lives outside <c>accessibility.dll</c>, and every link logs
+        /// exclusively through OutputDebugStringA, so when one breaks the
+        /// tester's bundle contains no patch log and no clue why. <c>dinput8.dll</c>
+        /// is the usual casualty: dropping one into an application folder is the
+        /// textbook DLL-hijack pattern, and antivirus quarantines it by
+        /// name+behaviour, often on a scan hours after a working session.</para>
+        ///
+        /// <para><c>prism.dll</c> is last and is the one non-fatal entry: it is
+        /// delay-loaded, so losing it silences the mod but still produces a
+        /// patch log. Included because "no speech" is exactly the report this
+        /// list is read for.</para>
+        /// </summary>
+        public static IReadOnlyList<string> LoadChainFileNames { get; } =
+            new[] { LoaderDllName }
+                .Concat(PatcherRuntimeFiles)
+                .Concat(VcRuntimeFiles)
+                .Concat(new[] { PatchConfigFileName })
+                .Concat(new[] { Path.Combine("patches", "accessibility.dll"),
+                                Path.Combine("patches", PrismDllName) })
+                .ToArray();
+
+        /// <summary>
+        /// Byte length of a file as it ships inside this installer, or -1 when
+        /// there is no such resource. Lets a diagnostic say whether the copy in
+        /// the game folder is the one we put there — the case that matters is
+        /// <c>dinput8.dll</c>, where another mod's proxy loader can be sitting
+        /// in the slot ours needs.
+        /// </summary>
+        public static long GetEmbeddedResourceLength(string shortName)
+        {
+            try
+            {
+                var assembly = Assembly.GetExecutingAssembly();
+                // Quiet lookup on purpose: FindResourceName dumps the whole
+                // resource list to the log when it misses, which is noise for a
+                // caller that treats "absent" as an answer rather than a fault.
+                string fullName = assembly.GetManifestResourceNames()
+                    .FirstOrDefault(n => n.EndsWith(shortName, StringComparison.OrdinalIgnoreCase));
+                if (fullName == null) return -1;
+
+                using var stream = assembly.GetManifestResourceStream(fullName);
+                return stream?.Length ?? -1;
+            }
+            catch
+            {
+                return -1;
+            }
+        }
 
         // WAV samples shipped into <game>/Override/ for the engine's
         // ResLoader to pick up by bare resref. Uninstall removes
