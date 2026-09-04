@@ -33,6 +33,20 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>Unreleased</h2>
+
+<h3>KOTOR 2 on GOG:</h3>
+
+- The mod now works on the GOG release of KOTOR 2. It had never loaded there:
+  the GOG executable is Aspyr's 2015 build re-linked in 2021, with every
+  function and global at a different address, and the mod only carried the
+  Steam addresses — so the first hook's byte check failed and the game
+  silently ran unmodded (no log, no speech, no error). All 265 engine
+  addresses are now machine-translated to the GOG layout, verified offline
+  against the GOG executable and Aspyr's own per-store address data, and the
+  GOG build is detected and remapped at runtime. Steam KOTOR 2 and both
+  KOTOR 1 builds are unchanged.
+
 <h2>v0.8.0</h2>
 
 <h3>Controller:</h3>

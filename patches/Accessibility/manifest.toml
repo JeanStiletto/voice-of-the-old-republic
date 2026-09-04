@@ -44,8 +44,12 @@ kotor1_allard_ru_172 = "7B961A140667336D22B06686CBDCBE2DDDF8A0EA13C20A27B63BDC57
 # (acc::addr::R) deliberately resolve to 0 there so they fault recognisably
 # rather than jumping into unrelated code.
 #
-# See docs/kotor2-port.md. Both releases share Aspyr's build; the hashes differ
-# because of the store wrapper.
+# The two releases are NOT the same binary: GOG is the same Aspyr compile
+# RE-LINKED in 2021 (PE timestamp 0x61395EE0), with every section reordered —
+# the KOTOR 1 relink situation again, at ±4 MB scale. Steam installs from
+# kotor2.hooks.toml, GOG from the generated kotor2-gog.hooks.toml, and the
+# in-DLL Steam-K2 constants are remapped at runtime by the K2 tables in
+# engine_rebase.cpp. See docs/kotor2-port.md "GOG build (2021 relink)".
 kotor2_steam_aspyr = "6A522E71631DCEE93467BD2010F3B23D9145326E1E2E89305F13AB104DBBFFEF"
 kotor2_gog_aspyr = "777BEE235A9E8BDD9863F6741BC3AC54BB6A113B62B1D2E4D12BBE6DB963A914"
 # Official Polish edition by Licomp Empik Multimedia (LEM), 2004. Stock, unmodified

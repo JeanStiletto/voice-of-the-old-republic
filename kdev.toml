@@ -12,6 +12,10 @@ install = 'C:\Program Files (x86)\Steam\steamapps\common\swkotor'
 # '--game k2'; without this key that flag fails with a clear message rather
 # than silently operating on the KOTOR 1 install.
 install_k2 = 'C:\Program Files (x86)\Steam\steamapps\common\Knights of the Old Republic II'
+# The GOG K2 install (a supported target since the 2026-09-04 GOG-relink port;
+# see docs/kotor2-port.md "GOG build") lives at
+# 'C:\Program Files\GOG Galaxy\Games\Star Wars - KotOR2' — point install_k2
+# there temporarily when a GOG round is needed.
 
 [patch_manager]
 # Runtime release layout for LaneDibello/Kotor-Patch-Manager.

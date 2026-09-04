@@ -53,7 +53,8 @@ const uintptr_t kAddrOnFilterGame = acc::addr::R(0x006ed3e0);  // K1 only: (pane
 const uintptr_t kAddrOnFilterMini = acc::addr::R(0x006ed430);  // K1 only: (panel) → MINIGAME
 const uintptr_t kAddrKeymapHandleInputEvent =
     acc::addr::Pick(0x006ec510, 0x009007a0);  // __thiscall(panel, key, press)
-const uintptr_t kAddrK2SetFilter        = 0x00900e30;  // K2 only: __thiscall(panel, idx)
+const uintptr_t kAddrK2SetFilter =
+    acc::addr::Kotor2Only(0x00900e30);  // K2 only: __thiscall(panel, idx)
 const size_t    kK2KeymapFilterIndexOff = 0x1364;      // K2 only: int, selected filter
 
 // CSWGuiInGameOptKeyMappings: == 1 while a capture is armed. K1 field11_0xf2c;

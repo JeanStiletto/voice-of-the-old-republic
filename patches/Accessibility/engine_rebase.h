@@ -80,6 +80,13 @@ inline bool Ok(uintptr_t va) { return va != 0; }
 // relocates everything, so a KOTOR 1 address is NEVER valid in KOTOR 2. Every
 // address is therefore in exactly one of two states — known (Pick/PickGlobal)
 // or not yet found (plain R() / TodoGlobal, both of which resolve to 0).
+//
+// KOTOR 2 itself has TWO builds: the value written at a declaration is always
+// the STEAM (Aspyr 2015) address, and on the GOG release — the same compile
+// re-linked in 2021, everything moved — it is remapped through the generated
+// K2 tables (engine_rebase_k2_table.inc / engine_rebase_k2_rdata.inc), with
+// R()'s failure mode: unmapped resolves to 0, never to a stale address. All
+// three functions below route their K2 side through that remap.
 
 // .text / .rdata address whose KOTOR 2 value is known. On KOTOR 1 builds this
 // is exactly R(), so relink rebasing still applies there.
@@ -104,8 +111,8 @@ uintptr_t Kotor1Only(uintptr_t referenceVa);
 
 // Mirror of Kotor1Only: an address for engine machinery KOTOR 1 does not
 // have (K2-only builders, K2-only panels). 0 on KOTOR 1 so Ok() declines
-// there; never rebased (K2 has a single build). Establish the K1 absence
-// before using — same evidence bar as Kotor1Only.
+// there; the Steam-K2 value is remapped on the GOG relink like any other.
+// Establish the K1 absence before using — same evidence bar as Kotor1Only.
 uintptr_t Kotor2Only(uintptr_t kotor2Va);
 
 // .data global pointer whose KOTOR 2 value is NOT yet known. Returns the

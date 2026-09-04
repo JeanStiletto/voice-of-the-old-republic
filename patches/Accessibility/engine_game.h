@@ -55,7 +55,8 @@ enum class Title {
 enum class Build {
     Kotor1Reference,    // Steam / GoG 1.0.3 and the GoG-equivalent CD re-pack
     Kotor1Relink2004,   // 2004-03-05 relink: Allard RU 1.72, LEM PL
-    Kotor2Aspyr2015,    // Aspyr's 2015 rebuild: Steam and GOG
+    Kotor2Aspyr2015,    // Aspyr's 2015 rebuild: the Steam release
+    Kotor2Relink2021,   // the same compile re-linked 2021-09-09: the GOG release
     Unknown,
 };
 
@@ -70,7 +71,8 @@ inline bool IsKotor1() { return CurrentTitle() == Title::Kotor1; }
 inline bool IsKotor2() { return CurrentTitle() == Title::Kotor2; }
 
 // Short, stable names for logs: "kotor1" / "kotor2" / "unknown", and
-// "reference" / "relink-2004-03-05" / "aspyr-2015" / "unknown".
+// "reference" / "relink-2004-03-05" / "aspyr-2015" / "relink-2021-09-09" /
+// "unknown".
 const char* TitleName();
 const char* BuildName();
 

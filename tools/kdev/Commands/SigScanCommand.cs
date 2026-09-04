@@ -54,11 +54,16 @@ public static class SigScanCommand
             "Output directory (default: build/re/sigscan).");
         var emitOnlyOpt = new Option<bool>("--emit-only",
             "Build and audit signatures against the reference; skip resolving.");
+        var k2Opt = new Option<bool>("--k2",
+            "KOTOR 2 mode: harvest the K2-side addresses (Pick/Kotor2Only args + " +
+            "kotor2.hooks.toml), reference the clean Steam Aspyr exe, resolve into the " +
+            "GOG 2021 relink. Defaults: --reference C:\\Tools\\k2re\\swkotor2.exe, " +
+            "--target the GOG Galaxy install.");
 
         var cmd = new Command("sigscan",
             "Rebase our hardcoded engine addresses onto another swkotor.exe build.")
         {
-            refOpt, targetOpt, outOpt, emitOnlyOpt
+            refOpt, targetOpt, outOpt, emitOnlyOpt, k2Opt
         };
 
         cmd.SetHandler((InvocationContext ctx) =>
@@ -67,24 +72,39 @@ public static class SigScanCommand
                 ctx.ParseResult.GetValueForOption(refOpt),
                 ctx.ParseResult.GetValueForOption(targetOpt),
                 ctx.ParseResult.GetValueForOption(outOpt),
-                ctx.ParseResult.GetValueForOption(emitOnlyOpt));
+                ctx.ParseResult.GetValueForOption(emitOnlyOpt),
+                ctx.ParseResult.GetValueForOption(k2Opt));
         });
         return cmd;
     }
 
-    internal static int Run(FileInfo? refFile, FileInfo? targetFile, DirectoryInfo? outDir, bool emitOnly)
+    /// <summary>KOTOR 2 mode default paths. Both are hash-verified clean copies
+    /// (docs/kotor2-port.md "GOG build"); overridable with --reference/--target.
+    /// On-disk files are fine here — the Aspyr exes are not SteamStub-encrypted,
+    /// so no memory dump is needed, unlike KOTOR 1.</summary>
+    private const string K2ReferenceDefault = @"C:\Tools\k2re\swkotor2.exe";
+    private const string K2TargetDefault =
+        @"C:\Program Files\GOG Galaxy\Games\Star Wars - KotOR2\swkotor2.exe";
+
+    internal static int Run(FileInfo? refFile, FileInfo? targetFile, DirectoryInfo? outDir,
+        bool emitOnly, bool k2 = false)
     {
         var cfg = KdevConfig.LoadOrPrintErrors(out int cfgExit);
         if (cfg == null) return cfgExit;
 
         string refPath = refFile?.FullName
-            ?? Path.Combine(cfg.ProjectRoot, "build", "re", "imagedump", "swkotor-image.bin");
-        string dest = outDir?.FullName ?? Path.Combine(cfg.ProjectRoot, "build", "re", "sigscan");
+            ?? (k2 ? K2ReferenceDefault
+                   : Path.Combine(cfg.ProjectRoot, "build", "re", "imagedump", "swkotor-image.bin"));
+        string dest = outDir?.FullName
+            ?? Path.Combine(cfg.ProjectRoot, "build", "re", k2 ? "sigscan-k2" : "sigscan");
+        if (k2 && !emitOnly && targetFile == null) targetFile = new FileInfo(K2TargetDefault);
 
         if (!File.Exists(refPath))
         {
             Console.Error.WriteLine($"ERROR: reference image not found at {refPath}");
-            Console.Error.WriteLine("Start the game, then run: kdev dump-text");
+            Console.Error.WriteLine(k2
+                ? "KOTOR 2 mode expects the clean Steam Aspyr exe there (docs/kotor2-port.md)."
+                : "Start the game, then run: kdev dump-text");
             return 1;
         }
         Directory.CreateDirectory(dest);
@@ -121,8 +141,13 @@ public static class SigScanCommand
         }
 
         // ---- addresses ----
-        var addresses = EngineAddresses.Collect(cfg.AccessibilitySource, cfg.ProjectRoot);
-        s_handResolved = EngineAddresses.CollectHandResolved(cfg.AccessibilitySource);
+        var addresses = k2
+            ? EngineAddresses.CollectKotor2(cfg.AccessibilitySource, cfg.ProjectRoot)
+            : EngineAddresses.Collect(cfg.AccessibilitySource, cfg.ProjectRoot);
+        // The hand-resolved supplement is the K1 kXrefTable; K2 has no analog
+        // yet (anything sigscan cannot place there is resolved by the .rdata /
+        // .data cross-reference scripts instead).
+        s_handResolved = k2 ? new() : EngineAddresses.CollectHandResolved(cfg.AccessibilitySource);
         // Merge duplicates by address. A hook site and a constexpr constant can
         // name the same address; keep whichever record carries OriginalBytes so
         // the hooks.toml cross-check below still sees all 25 detours rather
@@ -159,7 +184,8 @@ public static class SigScanCommand
                 continue;
             }
 
-            var r = Signatures.Build(refImage, refPe, refImageAligned, a.Va, refText);
+            var r = Signatures.Build(refImage, refPe, refImageAligned, a.Va, refText,
+                                     maskAllImageRefs: k2);
             if (r.Failure != null)
             {
                 // A non-unique pattern is still returned and still useful for
@@ -209,7 +235,7 @@ public static class SigScanCommand
                 return 1;
             }
             int rc = Resolve(records, targetFile.FullName, refImage, refPe, refImageAligned, refText);
-            WriteReports(dest, records, refPath, targetFile.FullName);
+            WriteReports(dest, records, refPath, targetFile.FullName, k2, cfg.AccessibilitySource);
             // Resolve() owns the verdict once it has run. A signature that
             // failed to build is not a failure if the ordinal pass or the
             // hand-resolved supplement placed the address anyway — what matters
@@ -222,7 +248,7 @@ public static class SigScanCommand
             Console.WriteLine("No --target given; skipping the resolve half.");
         }
 
-        WriteReports(dest, records, refPath, targetFile?.FullName);
+        WriteReports(dest, records, refPath, targetFile?.FullName, k2, cfg.AccessibilitySource);
         return failedBuild == 0 ? 0 : 1;
     }
 
@@ -254,6 +280,10 @@ public static class SigScanCommand
     /// <see cref="EngineAddresses.CollectHandResolved"/>.
     /// </summary>
     private static Dictionary<uint, uint> s_handResolved = new();
+
+    /// <summary>Preceding-context window lengths for the call-site
+    /// cross-reference pass, longest (most discriminating) first.</summary>
+    private static readonly int[] s_xrefContextLengths = { 16, 14, 12, 10, 8, 6, 5 };
 
     private static int Resolve(List<SigRecord> records, string targetPath,
         byte[] refImage, PeInfo refPe, bool refImageAligned, PeSection refText)
@@ -309,6 +339,80 @@ public static class SigScanCommand
             }
         }
 
+        // Call-site cross-reference pass — the automated form of the method
+        // engine_rebase.cpp's kXrefTable documents by hand: find every
+        // `call rel32` to the address in the reference, locate each call site
+        // in the target by the bytes PRECEDING it, decode the displacement
+        // there, and let the sites vote. Runs BEFORE the ordinal fallback
+        // because ordinal matching pairs identical code by address ORDER,
+        // which the KOTOR 2 GOG relink's ±4MB module shuffle does not
+        // preserve — measured 2026-09-04: the ordinal answer for one of eight
+        // identical thunks was refuted 72:1 by exactly this cross-reference.
+        // A few false-context votes are expected (near-identical caller code),
+        // so the winner needs at least two votes and a ≥90% majority.
+        int xrefResolved = 0;
+        {
+            int rStart = refImageAligned ? (int)refText.VirtualAddress : (int)refText.RawPointer;
+
+            int rLen = Math.Min(
+                (int)(refImageAligned ? Math.Max(refText.VirtualSize, refText.RawSize) : refText.RawSize),
+                refImage.Length - rStart);
+            uint rVaBase = refPe.ImageBase + refText.VirtualAddress;
+            int tStart = (int)text.RawPointer;
+            int tLen = Math.Min((int)text.RawSize, img.Length - tStart);
+            uint tVaBase = pe.ImageBase + text.VirtualAddress;
+
+            foreach (var rec in records.Where(r => r.Status is "ambiguous" or "not-found" or "build-failed").ToList())
+            {
+                // consumed exits move with their hook; the delta pass below is
+                // their resolver (they are jump targets, not call targets).
+                if (rec.Address.Name.EndsWith(" (consumed exit)")) continue;
+
+                var votes = new Dictionary<uint, int>();
+                int sites = 0;
+                for (int i = 0; i + 5 <= rLen; i++)
+                {
+                    if (refImage[rStart + i] != 0xE8) continue;
+                    int rel = BitConverter.ToInt32(refImage, rStart + i + 1);
+                    if ((uint)(rVaBase + (uint)i + 5 + rel) != rec.Address.Va) continue;
+                    sites++;
+                    // Progressively shorter preceding-context windows: long
+                    // ones can embed another relocated operand (no hit),
+                    // short ones repeat (ambiguous). First length that is
+                    // UNIQUE in the target wins.
+                    foreach (int ctx in s_xrefContextLengths)
+                    {
+                        if (i < ctx) continue;
+                        var needle = refImage.AsSpan(rStart + i - ctx, ctx);
+                        int hit = img.AsSpan(tStart, tLen).IndexOf(needle);
+                        if (hit < 0) continue;
+                        int again = img.AsSpan(tStart + hit + 1, tLen - hit - 1).IndexOf(needle);
+                        if (again >= 0) break;
+                        int callOff = tStart + hit + ctx;
+                        if (callOff + 5 > tStart + tLen || img[callOff] != 0xE8) break;
+                        int grel = BitConverter.ToInt32(img, callOff + 1);
+                        uint cand = (uint)(tVaBase + (uint)(callOff - tStart) + 5 + grel);
+                        votes[cand] = votes.GetValueOrDefault(cand) + 1;
+                        break;
+                    }
+                }
+                if (votes.Count == 0) continue;
+                var best = votes.MaxBy(kv => kv.Value);
+                int total = votes.Values.Sum();
+                if (best.Value < 2 || best.Value * 10 < total * 9) continue;
+
+                if (rec.Status == "ambiguous") { ambiguous--; rec.Candidates = null; }
+                else if (rec.Status == "not-found") { none--; }
+                rec.Resolved = best.Key;
+                rec.Status = "xref";
+                rec.Note = $"call-site cross-reference: {best.Value} of {total} located callers " +
+                           $"agree ({sites} reference call sites total" +
+                           (total > best.Value ? $", {total - best.Value} false-context dissenter(s) discounted" : "") +
+                           ").";
+                xrefResolved++;
+            }
+        }
+
         // Ordinal fallback. Some functions are byte-identical to another for
         // the whole window (duplicate code the linker folded), so no
         // content-based signature can separate them. But if a signature
@@ -345,6 +449,58 @@ public static class SigScanCommand
             ordinal++;
         }
 
+        // Consumed exits that would not resolve by content: a consumed exit is
+        // a point INSIDE its hook's function, and the whole function is
+        // byte-identical between builds — so it moved by exactly its hook's
+        // delta. A short epilogue's signature only becomes unique by growing
+        // past the RET into the next function, which is precisely the part a
+        // relink reorders, hence "not-found" here. Derive the address from the
+        // hook's delta instead, then verify the epilogue bytes themselves
+        // (masked, up to and including the RET) at the derived address. This is
+        // the same method the 2004-relink port used by hand (see
+        // relink2004.hooks.toml's header); automated so a regenerated file
+        // cannot silently skip the verification step.
+        int deltaDerived = 0;
+        foreach (var rec in records.Where(r => r.Status is "not-found" or "ambiguous" &&
+                                              r.Address.Name.EndsWith(" (consumed exit)")))
+        {
+            string fn = rec.Address.Name[..^" (consumed exit)".Length];
+            var hook = records.FirstOrDefault(h =>
+                h.Address.OriginalBytes != null && h.Resolved.HasValue &&
+                h.Address.Name.Split(" / ").Contains(fn));
+            if (hook == null) continue;
+
+            long delta = (long)hook.Resolved!.Value - hook.Address.Va;
+            uint candidate = (uint)(rec.Address.Va + delta);
+
+            var epi = Signatures.BuildUntilRet(refImage, refPe, refImageAligned,
+                                               rec.Address.Va, maskAllImageRefs: true);
+            if (epi == null)
+            {
+                rec.Note = "consumed exit: no RET within 128 bytes of the reference " +
+                           "address; cannot delta-verify. Resolve by hand.";
+                continue;
+            }
+            if (!Signatures.MatchesAt(img, pe, imageAligned: false, candidate, epi))
+            {
+                rec.Note = $"consumed exit: hook delta {delta:+#;-#;0} puts it at " +
+                           $"0x{candidate:X8}, but the epilogue bytes there do NOT match. " +
+                           "Resolve by hand.";
+                continue;
+            }
+
+            if (rec.Status == "ambiguous") { ambiguous--; rec.Candidates = null; } else { none--; }
+            rec.Resolved = candidate;
+            rec.Status = "delta-derived";
+            rec.Note = $"consumed exit of {fn}: moved with its function " +
+                       $"({delta:+#;-#;0} bytes, same as the hook site); epilogue bytes " +
+                       $"({epi.Length}b, {epi.ConcreteBytes} concrete, through the RET) " +
+                       "verified at the derived address.";
+            deltaDerived++;
+        }
+        if (deltaDerived > 0)
+            Console.WriteLine($"  delta-derived consumed exits: {deltaDerived} (epilogue-byte-verified)");
+
         // Anything still unresolved that engine_rebase.cpp's kXrefTable already
         // maps by hand is accounted for, not missing. Reclassify before counting
         // so the failure exit below means "an address is genuinely unmapped"
@@ -364,6 +520,8 @@ public static class SigScanCommand
 
         Console.WriteLine();
         Console.WriteLine($"  unique    : {unique}");
+        if (xrefResolved > 0)
+            Console.WriteLine($"  by xref   : {xrefResolved}  (agreeing call-site votes — see report)");
         if (ordinal > 0) Console.WriteLine($"  by ordinal: {ordinal}  (inferred — see report)");
         if (handResolved > 0)
             Console.WriteLine($"  hand-fixed: {handResolved}  (kXrefTable in engine_rebase.cpp)");
@@ -373,7 +531,7 @@ public static class SigScanCommand
         if (unique > 0)
         {
             var deltas = records
-                .Where(r => r.Status is "unique" or "unique-ordinal")
+                .Where(r => r.Status is "unique" or "unique-ordinal" or "xref")
                 .Select(r => (long)r.Resolved!.Value - r.Address.Va)
                 .Order()
                 .ToList();
@@ -429,7 +587,8 @@ public static class SigScanCommand
         return 0;
     }
 
-    private static void WriteReports(string dest, List<SigRecord> records, string refPath, string? targetPath)
+    private static void WriteReports(string dest, List<SigRecord> records, string refPath,
+        string? targetPath, bool k2 = false, string? sourceDir = null)
     {
         string txt = Path.Combine(dest, "sigscan-report.txt");
         string json = Path.Combine(dest, "sigscan-report.json");
@@ -486,7 +645,139 @@ public static class SigScanCommand
         Console.WriteLine($"Wrote {txt}");
         Console.WriteLine($"Wrote {json}");
 
-        if (targetPath != null) EmitArtifacts(dest, records, targetPath);
+        if (targetPath == null) return;
+        if (k2) EmitK2Artifacts(dest, records, targetPath, sourceDir!);
+        else EmitArtifacts(dest, records, targetPath);
+    }
+
+    /// <summary>
+    /// KOTOR 2 mode artifacts: the Steam-K2 → GOG rebase table consumed by
+    /// acc::addr's K2 lookup, and kotor2-gog.hooks.toml. Unlike the K1
+    /// emitter's skeleton (parameters copied by hand afterwards), the hooks
+    /// file is generated COMPLETE from kotor2.hooks.toml's parsed blocks —
+    /// every field including parameters and the six consumed_exit_address
+    /// values, with only the two address fields translated. Hand-copying
+    /// hook contracts across 26 hooks is precisely where a port oversight
+    /// would live, so no step of that remains manual.
+    /// </summary>
+    private static void EmitK2Artifacts(string dest, List<SigRecord> records,
+        string targetPath, string sourceDir)
+    {
+        var resolvedMap = records
+            .Where(r => r.Resolved.HasValue &&
+                        r.Status is "unique" or "unique-ordinal" or "xref" or "delta-derived")
+            .GroupBy(r => r.Address.Va)
+            .ToDictionary(g => g.Key, g => g.First().Resolved!.Value);
+
+        // ---- C++ rebase table (.text only; .rdata/.data come from the
+        //      cross-reference scripts and land in their own .inc) ----
+        var resolved = records
+            .Where(r => r.Resolved.HasValue &&
+                        r.Status is "unique" or "unique-ordinal" or "xref" or "delta-derived")
+            .OrderBy(r => r.Address.Va)
+            .ToList();
+
+        string incPath = Path.Combine(dest, "engine_rebase_k2_table.inc");
+        var inc = new StringBuilder();
+        inc.AppendLine("// GENERATED by `kdev sigscan --k2` -- do not edit by hand.");
+        inc.AppendLine($"// reference: KOTOR 2 Steam (Aspyr 2015); target: {Path.GetFileName(targetPath)} (GOG 2021 relink)");
+        inc.AppendLine($"// generated: {DateTime.UtcNow:u}");
+        inc.AppendLine("//");
+        inc.AppendLine("// Left column: the Steam-K2 address as written at Pick()/Kotor2Only() call");
+        inc.AppendLine("// sites. Right column: where the GOG relink put the same bytes. Sorted");
+        inc.AppendLine("// ascending so the K2 lookup can binary-search. 'ordinal' entries were");
+        inc.AppendLine("// matched by address order among identical code -- see the sigscan report.");
+        inc.AppendLine();
+        inc.AppendLine("// clang-format off");
+        foreach (var r in resolved)
+        {
+            string kind = r.Status switch
+            {
+                "unique-ordinal" => "  // ordinal",
+                "xref" => "  // xref",
+                "delta-derived" => "  // delta-derived",
+                _ => "",
+            };
+            inc.AppendLine($"    {{ 0x{r.Address.Va:X8}, 0x{r.Resolved!.Value:X8} }},  // {r.Address.Name}{kind}");
+        }
+        inc.AppendLine("// clang-format on");
+        File.WriteAllText(incPath, inc.ToString());
+        Console.WriteLine($"Wrote {incPath} ({resolved.Count} entries)");
+
+        // ---- kotor2-gog.hooks.toml, complete ----
+        string srcHooks = Path.Combine(sourceDir, "kotor2.hooks.toml");
+        var blocks = HookFile.Parse(srcHooks);
+        var missing = new List<string>();
+        foreach (var b in blocks)
+        {
+            if (!resolvedMap.ContainsKey(b.Address))
+                missing.Add($"0x{b.Address:X8} {b.Function}");
+            if (b.ConsumedExitAddress.HasValue && !resolvedMap.ContainsKey(b.ConsumedExitAddress.Value))
+                missing.Add($"0x{b.ConsumedExitAddress.Value:X8} {b.Function} (consumed exit)");
+        }
+        if (missing.Count > 0)
+        {
+            Console.Error.WriteLine();
+            Console.Error.WriteLine("ERROR: hooks file NOT written — these hook addresses did not resolve:");
+            foreach (var m in missing) Console.Error.WriteLine($"  {m}");
+            return;
+        }
+
+        string sha;
+        using (var sha256 = System.Security.Cryptography.SHA256.Create())
+        using (var fs = File.OpenRead(targetPath))
+            sha = Convert.ToHexString(sha256.ComputeHash(fs));
+
+        string hooksPath = Path.Combine(dest, "kotor2-gog.hooks.toml");
+        var hk = new StringBuilder();
+        hk.AppendLine("# GENERATED by `kdev sigscan --k2` for the GOG 2021 relink of swkotor2.exe.");
+        hk.AppendLine("#");
+        hk.AppendLine("# Same hooks as kotor2.hooks.toml, same original_bytes: the GOG release is");
+        hk.AppendLine("# the same Aspyr compile re-linked in 2021 -- the code at every hook site is");
+        hk.AppendLine("# byte-identical, only its address moved (per-module deltas, both");
+        hk.AppendLine("# directions). Addresses AND consumed_exit_address values are translated by");
+        hk.AppendLine("# the same signature scan that builds engine_rebase_k2_table.inc; parameters");
+        hk.AppendLine("# and flags are carried over verbatim from the parsed source blocks.");
+        hk.AppendLine("#");
+        hk.AppendLine("# Design rationale for each hook lives in kotor2.hooks.toml. Do not");
+        hk.AppendLine("# duplicate it here; keep this file mechanical so it stays regenerable.");
+        hk.AppendLine($"# generated: {DateTime.UtcNow:u}");
+        hk.AppendLine();
+        hk.AppendLine("[metadata]");
+        hk.AppendLine("target_versions = [");
+        hk.AppendLine($"    \"{sha}\",  # KOTOR 2 GOG (Aspyr, 2021 relink)");
+        hk.AppendLine("]");
+        foreach (var b in blocks)
+        {
+            uint newAddr = resolvedMap[b.Address];
+            hk.AppendLine();
+            hk.AppendLine("[[hooks]]");
+            hk.AppendLine($"# {b.Function} -- was 0x{b.Address:x8} ({(long)newAddr - b.Address:+#;-#;0} bytes)");
+            hk.AppendLine($"address = 0x{newAddr:x8}");
+            hk.AppendLine($"type = \"{b.Type}\"");
+            hk.AppendLine($"function = \"{b.Function}\"");
+            if (b.OriginalBytes != null)
+                hk.AppendLine("original_bytes = [" +
+                              string.Join(", ", b.OriginalBytes.Select(x => $"0x{x:x2}")) + "]");
+            hk.AppendLine($"skip_original_bytes = {(b.SkipOriginalBytes ? "true" : "false")}");
+            hk.AppendLine($"exclude_from_restore = {b.ExcludeFromRestore ?? "[]"}");
+            if (b.ConsumedExitAddress.HasValue)
+            {
+                uint newExit = resolvedMap[b.ConsumedExitAddress.Value];
+                hk.AppendLine($"# consumed exit -- was 0x{b.ConsumedExitAddress.Value:x8} " +
+                              $"({(long)newExit - b.ConsumedExitAddress.Value:+#;-#;0} bytes)");
+                hk.AppendLine($"consumed_exit_address = 0x{newExit:x8}");
+            }
+            foreach (var p in b.Parameters)
+            {
+                hk.AppendLine();
+                hk.AppendLine("[[hooks.parameters]]");
+                hk.AppendLine($"source = \"{p.Source}\"");
+                hk.AppendLine($"type = \"{p.Type}\"");
+            }
+        }
+        File.WriteAllText(hooksPath, hk.ToString());
+        Console.WriteLine($"Wrote {hooksPath} ({blocks.Count} hooks, complete — no hand-finishing step)");
     }
 
     /// <summary>
@@ -498,7 +789,8 @@ public static class SigScanCommand
     private static void EmitArtifacts(string dest, List<SigRecord> records, string targetPath)
     {
         var resolved = records
-            .Where(r => r.Resolved.HasValue && r.Status is "unique" or "unique-ordinal")
+            .Where(r => r.Resolved.HasValue &&
+                        r.Status is "unique" or "unique-ordinal" or "xref" or "delta-derived")
             .OrderBy(r => r.Address.Va)
             .ToList();
 

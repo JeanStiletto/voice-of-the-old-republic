@@ -14,6 +14,17 @@ plan.
 
 ## WHERE TO RESUME (read this first)
 
+**GOG K2 IS A DIFFERENT BINARY AND THE MOD HAS NEVER LOADED ON IT — the
+compatibility port is scoped, foundation laid 2026-09-04, execution not
+started.** Every K2 address we ship (26 hooks + ~226 distinct in-DLL
+constants) is a Steam-build address; on GOG the first hook's byte-verify
+fails and KotorPatcher's SteamStub-deferral path gives up after 30 s with no
+log, no crash and no speech — which is exactly what every GOG tester has
+seen since v0.7.0. See the section "GOG build (2021 relink) — compatibility
+port" at the end of this file for the diagnosis, the measured evidence, the
+local assets (both clean exes are on this machine now) and the step-by-step
+execution plan. That section is written to be executed cold.
+
 **Tutorial hints + custom tutorial popups — PORTED 2026-08-25, first K2 test
 round PASSED 2026-08-25 (patch-20260825-231201.log; Surface 1 popups
 confirmed), round-2 fixes + all-language translations built 2026-08-26 —
@@ -2724,10 +2735,19 @@ KOTOR 2 listing read. The big batches are several sessions each.
 
 ## Target
 
-Steam / GOG KOTOR 2, Aspyr's 2015 rebuild. PE link timestamp
+**Steam** KOTOR 2, Aspyr's 2015 rebuild. PE link timestamp
 2015-09-23 19:41:17Z (`0x5603005D`). The installed Steam copy's SHA-256 matches
 the `kotor2_steam_aspyr` entry in KPatchManager's `AddressDatabases/`, so the
 framework and this patch agree on which binary this is.
+
+**CORRECTION 2026-09-04: the GOG release is NOT this binary.** The original
+"Steam / GOG" heading here, and the manifest comment "both releases share
+Aspyr's build; the hashes differ because of the store wrapper", were wrong —
+GOG is the same Aspyr compile **re-linked in 2021** with translation units
+reordered, so every function and global address differs while all struct
+offsets are identical. Every address in this doc and in the codebase's
+`Pick()`/`Kotor2Only()` K2 arguments is a **Steam** address. See "GOG build
+(2021 relink) — compatibility port" at the end of this file.
 
 The exe is **not** SteamStub-encrypted (no `.bind` section), so unlike KOTOR 1
 it can be read straight off disk — no `kdev dump-text` step to get byte
@@ -3385,3 +3405,197 @@ pause". Worth doing at every K2 call site whose address might still be a bare
   do not carry.
 - `docs/controller-mod-techniques.md` — input pipelines, nav chain, activation.
 - `archiev/refactoring/END-REPORT.md` — what the pre-K2 refactoring bought.
+
+## GOG build (2021 relink) — compatibility port
+
+Written 2026-09-04, to be executed cold in a dedicated session. Status:
+**EXECUTED 2026-09-04 — all addresses resolved and offline-validated, local
+GOG smoke test passed, tester round pending.** Results and the regeneration
+workflow are at the end of this section; the plan below is kept as written
+(what changed during execution is marked).
+
+### The defect this fixes
+
+The mod has never loaded on GOG KOTOR 2, for any user, on any release since
+K2 support shipped in v0.7.0. Diagnosed 2026-09-04 from the tester bundle
+`userlogs/maybe08k2modnotworking.7z` (the first bundle with v0.8.0's
+load-chain report):
+
+- The install itself is fine — full load chain present, exe hashes consistent,
+  registry and KPM state correct. The v0.8.0 log collector proved its worth.
+- The K2 `logs/` directory did not exist AT ALL. `acclog` creates it on first
+  write, so accessibility.dll never initialised — ever.
+- Mechanism: `kotor2.hooks.toml` listed BOTH K2 SHAs over one (Steam) address
+  set. On GOG the first hook's `VerifyBytes` fails; KotorPatcher treats any
+  first-hook mismatch as SteamStub encryption ("hook site still encrypted"),
+  defers to a polling worker, times out after 30 s and gives up with only an
+  `OutputDebugString`. Game runs vanilla: no log, no crash, no speech.
+- Upstream-PR candidate (add to docs/upstream-prs.md when the port lands): the
+  deferral path should distinguish "encrypted" from "wrong build" and leave a
+  file-visible trace on timeout. Two release cycles of silence came from this.
+
+### Build identity (measured, not assumed)
+
+- Steam Aspyr: SHA `6A522E71...`, PE link timestamp `0x5603005D`
+  (2015-09-23).
+- GOG Aspyr: SHA `777BEE23...`, PE link timestamp `0x61395EE0`
+  (**2021-09-09**) — a re-link of the same compile, six years later.
+- Same compiler output per function, translation units REORDERED by the
+  linker: per-module constant deltas, both directions, up to ±4 MB.
+  (Compare K1's relink2004: same problem class, much smaller shuffle.)
+- Struct offsets: Lane's two K2 address DBs share 21 offsets — all 21
+  IDENTICAL. `acc::off` conversions need NO work.
+- Both exes import dinput8.dll — the proxy chain is fine as-is.
+- The PE timestamp is the clean runtime discriminator for the
+  `CurrentBuild()` split (KotorPatcher's `KOTOR_VERSION_SHA` env var is a
+  second witness).
+
+### Evidence base and local assets
+
+- Lane always knew: every upstream K2 patch ships per-store hooks files, and
+  `AddressDatabases/` has separate `kotor2_steam_aspyr.db` /
+  `kotor2_gog_aspyr.db` — 48 shared functions (all moved, per-module deltas:
+  every CVirtualMachine method −0xbcde0, every CSWSCreatureStats +0x3c480,
+  etc.), 14 shared globals (all moved — .data reordered too), 21 offsets
+  (identical). These 62 name→address pairs are the free VALIDATION SET for
+  the port: sigscan output must agree with all of them.
+- **Clean Steam reference: `C:\Tools\k2re\swkotor2.exe`** (hash-verified
+  `6A52...`). The INSTALLED Steam exe under steamapps hashes to neither known
+  SHA (locally byte-patched at some point) — never use it as byte reference.
+- **Clean GOG install: `C:\Program Files\GOG Galaxy\Games\Star Wars - KotOR2`**
+  (exe hash-verified `777BEE...`, installed 2026-09-04 via GOG Galaxy). This
+  is also a second runnable K2 for live verification.
+- Check script (reproduces every number in this section):
+  `tools/re-scripts/k2_gog_foundation_checks.py`.
+
+### Measured difficulty (2026-09-04 foundation checks)
+
+- Lane's 48 function pairs, first 64 bytes compared Steam-vs-GOG: 11
+  byte-identical, 36 differ in ≤16 bytes (relocated abs32/rel32 operands
+  only), 1 outlier (CClientExoApp::GetClientOptions, 25 bytes — inspect
+  during the port). So functions match once operands are masked —
+  **operand-masked matching is mandatory**, raw byte search is not enough.
+- All 26 hook sites' original_bytes EXIST in GOG .text (0 absent). With the
+  raw 5–10-byte hook patterns alone: 4 unique, 22 ambiguous — sigscan's
+  wide masked windows are needed, as expected.
+- In-DLL K2 constants: 226 distinct .text VAs harvested from
+  `Pick(k1, k2)`/`Kotor2Only(k2)` second arguments. Raw 32-byte windows: 69
+  already unique in GOG, 150 blocked by embedded operands, 7 ambiguous.
+  Consistent with the pairs measurement; masked scanning should resolve the
+  bulk mechanically.
+
+### Execution plan (the "big task")
+
+1. `kdev sigscan` harvester mode for the K2 side: harvest the SECOND argument
+   of `Pick()` and the argument of `Kotor2Only()` (the existing harvester
+   collects K1 reference declarations). Reference exe = `C:\Tools\k2re`,
+   target = the GOG install. Same masked-signature machinery as relink2004.
+2. Run, then VALIDATE against Lane's 62 pairs before trusting anything.
+3. Vtables/.rdata: `tools/re-scripts/rtti_scan.py` against the GOG exe
+   regenerates all 392 named vtables directly (easier than relink2004's
+   .rdata pass — K2 has full RTTI). Match by class name.
+4. Globals (`PickGlobal` K2 side, 9 constants + any strays): operand
+   cross-reference — find the imm32 in matched Steam code, read the GOG value
+   at the matched location. Same two-method discipline as the relink2004
+   .rdata pass (operand xref + content verification must agree).
+5. Wire the runtime: split `Build::Kotor2Aspyr2015` into Steam/GOG (PE
+   timestamp), add a second rebase table (Steam-K2 VA → GOG VA) behind
+   `acc::addr::Pick/Kotor2Only/PickGlobal` — `engine_rebase.cpp`'s comment
+   "K2 has a single build, nothing to rebase" is the line this replaces.
+6. Hooks: new `kotor2-gog.hooks.toml` — same hooks, same original_bytes,
+   translated addresses; move the GOG SHA out of `kotor2.hooks.toml`'s
+   target_versions (each file then owns exactly one SHA, like the K1 relink
+   split). Fix the wrong manifest comment while there.
+7. Offline byte-verify all 26 translated hook addresses against the GOG exe
+   (the same check KotorPatcher runs) BEFORE any test round.
+8. Live round on the local GOG install (we can run it ourselves now), then
+   the tester round.
+
+Struct offsets, .gui ids, 2DA/TLK data, and all engine-behaviour workarounds
+carry over untouched — the GOG build is the same compile, so only ADDRESSES
+move. This is a relocation job, not a re-RE job.
+
+### Execution record (2026-09-04)
+
+The plan above was executed in one session. Every number below is
+reproducible with the three regeneration commands at the end.
+
+**The address surface** (larger than the foundation checks counted): 265
+distinct Steam-K2 addresses, not 226+26 —
+
+- 209 `.text`: 178 harvested from `Pick()`/`Kotor2Only()` second arguments,
+  plus the 26 hook sites, plus **6 `consumed_exit_address` values** the
+  foundation script had not parsed (they are jump targets inside hook
+  functions and must relocate with them), minus overlaps.
+- 48 `.rdata`: 46 vtables + the AIL import-table entry + the upgrade-slot
+  type table.
+- 8 `.data` globals.
+
+**Resolution, all mechanical:**
+
+- `kdev sigscan --k2` (new mode) resolves the `.text` side: 205 unique by
+  masked signature, 2 by an automated call-site cross-reference pass, 2
+  consumed exits derived from their own hook's delta and byte-verified
+  through the RET. In K2 mode, absolute references into `.data` are ALSO
+  wildcarded (the GOG relink moved `.data`, unlike the K1 relink). The mode
+  writes `engine_rebase_k2_table.inc` and a COMPLETE `kotor2-gog.hooks.toml`
+  (all fields carried over from parsed source blocks — no hand-finishing).
+- `tools/re-scripts/k2_gog_rdata_data_map.py` resolves `.rdata`/`.data`:
+  vtables by RTTI identity plus slot-content verification, the rest by
+  agreeing operand cross-references (241:3, 4157:21, 828:15 majorities on
+  the heavily-referenced globals). Writes `engine_rebase_k2_rdata.inc`.
+- `tools/re-scripts/k2_gog_validate.py` is the offline gate: Lane's
+  per-store databases (10 of the 62 pairs overlap our tables, 10/10 agree),
+  the patcher's own original_bytes check at every translated hook address
+  (26/26), consumed-exit byte checks (6/6), and a pointer-aware window
+  re-check of every table row (265/265).
+
+**Plan deviations worth knowing:**
+
+- Step 2's "validate against Lane's 62 pairs" became part of the validation
+  script; only 10 overlap our constants, all agree.
+- The ordinal (address-order) fallback inherited from the K1 relink is
+  UNSAFE here: the ±4 MB module shuffle does not preserve address order
+  among identical thunks, and its answer for one of eight identical
+  forwarders was refuted 72:1 by call-site votes. sigscan now runs the
+  cross-reference pass BEFORE the ordinal pass; nothing resolves by ordinal
+  on this pair.
+- The harvester was Pick-aware-ified for BOTH games: previously the K1
+  literal sweep harvested K2 second arguments as K1 addresses (the Aug-25
+  K1 report's 4 not-founds + 7 build-fails were all this). The shipped K1
+  relink table (generated July 29, pre-contamination) was never affected.
+- One raw K2 literal was hiding outside the addr layer and above the K1
+  sweep's VA ceiling: `menus_keymap.cpp`'s `kAddrK2SetFilter` — now routed
+  through `Kotor2Only()`. A grep audit found no others.
+
+**Runtime wiring:** `Build::Kotor2Relink2021` (PE timestamp `0x61395EE0`,
+log name `relink-2021-09-09`); `Pick`/`Kotor2Only`/`PickGlobal` route their
+K2 side through the `K2()` lookup in engine_rebase.cpp (identity on Steam,
+table lookup on GOG, 0 when unmapped). `kotor2.hooks.toml` now owns ONLY the
+Steam SHA; the GOG SHA lives in the generated `kotor2-gog.hooks.toml`
+(mirroring the K1 hooks.toml/relink2004.hooks.toml split).
+
+**Local verification (the first time the mod ever ran on GOG K2):**
+`kdev apply --game k2` with `install_k2` pointed at the GOG install, then a
+direct launch. Log shows `build=relink-2021-09-09`, hooks firing, panel
+identification, and the main menu's focused button announced. The session
+ended in an engine crash on foreground loss to another fullscreen app —
+reproduced IDENTICALLY with the proxy DLL removed (vanilla), so it is not
+the port. The startup `ReadGuiString SEH` probe line appears on Steam K2
+sessions too (checked per the SEH-guard-hides-port-gaps lesson).
+
+**Regeneration** (after adding K2 addresses or hooks — run all three; each
+fails loudly rather than emitting an incomplete artifact):
+
+1. `kdev sigscan --k2` — then copy `engine_rebase_k2_table.inc` and
+   `kotor2-gog.hooks.toml` from `build/re/sigscan-k2/` into
+   `patches/Accessibility/`.
+2. `python tools/re-scripts/k2_gog_rdata_data_map.py` — then copy
+   `engine_rebase_k2_rdata.inc` likewise.
+3. `python tools/re-scripts/k2_gog_validate.py` — must print ALL CHECKS
+   PASSED before any test round.
+
+**Remaining:** the GOG tester's confirmation round (tracked in
+docs/known-issues.md under Monitor). Also still open, unchanged by this
+work: the upstream-PR candidate for KotorPatcher's silent wrong-build
+timeout (see "The defect this fixes" above).

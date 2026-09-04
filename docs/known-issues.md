@@ -283,6 +283,24 @@ Offer the community resolution / widescreen + HR-menus patches as an installer o
 
 ## Monitor
 
+### GOG KOTOR 2 relocation port — executed and locally verified 2026-09-04, awaiting the tester round
+
+The "mod has never loaded on GOG K2" defect (silent vanilla game since v0.7.0;
+fingerprint: K2 `logs/` directory never created, diagnosed from
+`userlogs/maybe08k2modnotworking.7z`) is fixed by the full Steam→GOG address
+relocation: `kdev sigscan --k2` + the two re-scripts generate and validate the
+K2 rebase tables and `kotor2-gog.hooks.toml` (all 265 addresses resolved, every
+offline check green — Lane's per-store databases 10/10, the patcher's own hook
+byte-verify 26/26). Local GOG smoke test passed: the DLL initialises
+(`build=relink-2021-09-09`), hooks fire, the main menu's focused button is read
+and announced. Full record in `docs/kotor2-port.md` "GOG build (2021 relink)".
+
+What remains is the GOG tester's confirmation round (speech through real play,
+not just the main menu). Note for reading that tester's logs: during the local
+smoke test the game crashed at the main menu whenever another fullscreen app
+stole foreground — but VANILLA GOG K2 (proxy removed) crashed identically, so
+that is engine/environment behaviour, not the port.
+
 ### World hotkeys that still act while a screen owns the keyboard
 
 Audit run 2026-08-20 alongside the galaxy-map fix above, over every Win32-polled

@@ -102,6 +102,30 @@ public static class EngineAddresses
         @"0x[0-9a-fA-F]+",
         RegexOptions.Compiled);
 
+    // A call into the per-game address layer (engine_rebase.h). These are the
+    // ONE shape that carries addresses for BOTH games on a single line, so the
+    // plain literal sweep must not see them: it would harvest the KOTOR 2 side
+    // as a KOTOR 1 address, build a signature from whatever KOTOR 1 bytes
+    // happen to live at that value, and either fail loudly (the pre-2026-09
+    // state: every K2 arg reported not-found/build-failed against the relink)
+    // or, worse, resolve it to an unrelated function. Matched and consumed
+    // BEFORE the sweep; each argument goes to the harvest for its own game.
+    //
+    // Argument order per engine_rebase.h:
+    //   R(k1) Kotor1Only(k1) TodoGlobal(k1) Kotor2Only(k2)
+    //   Pick(k1, k2) PickGlobal(k1, k2)
+    private static readonly Regex AddrCallRe = new(
+        @"(?:acc::)?addr::(R|Pick|PickGlobal|Kotor1Only|Kotor2Only|TodoGlobal)" +
+        @"\(\s*(0x[0-9a-fA-F]+|0)\s*(?:,\s*(0x[0-9a-fA-F]+|0)\s*)?\)",
+        RegexOptions.Compiled);
+
+    // Recovers the constant name when an addr-layer call sits in a normal
+    // declaration, so reports say `kAddrFoo` rather than an "(inline)" snippet.
+    private static readonly Regex LineDeclNameRe = new(
+        @"^\s*(?:(?:static|inline)\s+)*(?:constexpr|const)\s+(?:std::)?uintptr_t\s+" +
+        @"([A-Za-z_][A-Za-z0-9_]*)\s*=",
+        RegexOptions.Compiled);
+
     /// <summary>
     /// Scan <paramref name="sourceDir"/> (patches/Accessibility) plus its
     /// hooks.toml. Comment text is stripped first: the sources quote addresses
@@ -129,6 +153,29 @@ public static class EngineAddresses
                 string line = StripComments(raw, ref inBlockComment);
                 if (string.IsNullOrWhiteSpace(line)) { continue; }
                 if (raw.Contains(IgnoreLine, StringComparison.Ordinal)) { pendingName = null; continue; }
+
+                // Addr-layer calls first: harvest their KOTOR 1 argument, then
+                // blank the whole call so the sweep below cannot mistake the
+                // KOTOR 2 argument for a KOTOR 1 address. (No addr-layer call
+                // in this codebase spans lines; if one ever does, its literals
+                // fall through to the sweep and fail LOUDLY as unresolvable —
+                // never silently.)
+                var addrCalls = AddrCallRe.Matches(line);
+                if (addrCalls.Count > 0)
+                {
+                    var nameMatch = LineDeclNameRe.Match(line);
+                    foreach (Match c in addrCalls)
+                    {
+                        if (c.Groups[1].Value == "Kotor2Only") { continue; }
+                        if (!TryVa(c.Groups[2].Value, out uint k1Va)) { continue; }
+                        string name = nameMatch.Success
+                            ? nameMatch.Groups[1].Value
+                            : "(inline) " + Snippet(line);
+                        result.Add(new EngineAddress(k1Va, name, rel, i + 1));
+                    }
+                    line = AddrCallRe.Replace(line, c => new string(' ', c.Length));
+                    if (string.IsNullOrWhiteSpace(line)) { continue; }
+                }
 
                 var m = DeclRe.Match(line);
                 if (m.Success && TryVa(m.Groups[2].Value, out uint declVa))
@@ -165,6 +212,71 @@ public static class EngineAddresses
         }
 
         string hooksToml = Path.Combine(sourceDir, "hooks.toml");
+        if (File.Exists(hooksToml))
+        {
+            result.AddRange(ParseHooks(hooksToml, Path.GetRelativePath(repoRoot, hooksToml)));
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// The KOTOR 2 half of the harvest: the K2-side argument of every
+    /// addr-layer call (`Pick`/`PickGlobal` second argument, `Kotor2Only`
+    /// argument) plus every address in kotor2.hooks.toml — hook sites AND
+    /// consumed_exit_address values, which are K2 .text addresses in their own
+    /// right and were exactly the kind of entry a hook-only count missed.
+    ///
+    /// No literal catch-all here, deliberately: a bare hex literal cannot be
+    /// classified by game, and the invariant that every KOTOR 2 address is
+    /// written inside an addr-layer call is enforced from the KOTOR 1 side —
+    /// the K1 sweep harvests every unclaimed in-range literal as a K1 address,
+    /// and a K2 address swept that way fails the K1 relink resolve loudly.
+    /// (Literals above K1's VA ceiling are audited by grep; one was found and
+    /// converted, menus_keymap.cpp's kAddrK2SetFilter.)
+    /// </summary>
+    public static List<EngineAddress> CollectKotor2(string sourceDir, string repoRoot)
+    {
+        var result = new List<EngineAddress>();
+
+        foreach (var path in Directory.EnumerateFiles(sourceDir, "*.*", SearchOption.AllDirectories)
+                     .Where(p => p.EndsWith(".cpp", StringComparison.OrdinalIgnoreCase) ||
+                                 p.EndsWith(".h", StringComparison.OrdinalIgnoreCase))
+                     .OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
+        {
+            var lines = File.ReadAllLines(path);
+            string rel = Path.GetRelativePath(repoRoot, path);
+            if (lines.Any(l => l.Contains(IgnoreFile, StringComparison.Ordinal))) { continue; }
+
+            bool inBlockComment = false;
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string raw = lines[i];
+                string line = StripComments(raw, ref inBlockComment);
+                if (string.IsNullOrWhiteSpace(line)) { continue; }
+                if (raw.Contains(IgnoreLine, StringComparison.Ordinal)) { continue; }
+
+                var addrCalls = AddrCallRe.Matches(line);
+                if (addrCalls.Count == 0) { continue; }
+                var nameMatch = LineDeclNameRe.Match(line);
+                foreach (Match c in addrCalls)
+                {
+                    string k2Hex = c.Groups[1].Value switch
+                    {
+                        "Pick" or "PickGlobal" => c.Groups[3].Success ? c.Groups[3].Value : "",
+                        "Kotor2Only" => c.Groups[2].Value,
+                        _ => "",  // R / Kotor1Only / TodoGlobal carry no K2 value
+                    };
+                    if (k2Hex.Length == 0 || !TryVaK2(k2Hex, out uint k2Va)) { continue; }
+                    string name = nameMatch.Success
+                        ? nameMatch.Groups[1].Value
+                        : "(inline) " + Snippet(line);
+                    result.Add(new EngineAddress(k2Va, name, rel, i + 1));
+                }
+            }
+        }
+
+        string hooksToml = Path.Combine(sourceDir, "kotor2.hooks.toml");
         if (File.Exists(hooksToml))
         {
             result.AddRange(ParseHooks(hooksToml, Path.GetRelativePath(repoRoot, hooksToml)));
@@ -226,9 +338,28 @@ public static class EngineAddresses
     private static bool TryVa(string hex, out uint va)
     {
         va = 0;
+        if (hex.Length < 3) { return false; }  // a literal `0` placeholder arg
         if (!ulong.TryParse(hex.AsSpan(2), System.Globalization.NumberStyles.HexNumber,
                             null, out ulong parsed)) { return false; }
         if (parsed < VaLow || parsed >= VaHigh) { return false; }
+        va = (uint)parsed;
+        return true;
+    }
+
+    /// <summary>
+    /// KOTOR 2's image is larger: SizeOfImage 0x6B9000 (Steam Aspyr), so VAs
+    /// run to 0x00AB9000 — the .data globals around 0x00A1B000 are real and
+    /// sit past KOTOR 1's ceiling. Same base, own ceiling.
+    /// </summary>
+    private const uint VaHighK2 = 0x00AC0000;
+
+    private static bool TryVaK2(string hex, out uint va)
+    {
+        va = 0;
+        if (hex.Length < 3) { return false; }
+        if (!ulong.TryParse(hex.AsSpan(2), System.Globalization.NumberStyles.HexNumber,
+                            null, out ulong parsed)) { return false; }
+        if (parsed < VaLow || parsed >= VaHighK2) { return false; }
         va = (uint)parsed;
         return true;
     }
@@ -281,15 +412,25 @@ public static class EngineAddresses
         var lines = File.ReadAllLines(path);
 
         uint? addr = null;
+        uint? consumedExit = null;
         string? fn = null;
         byte[]? orig = null;
         int declLine = 0;
+        int exitLine = 0;
 
         void Flush()
         {
             if (addr.HasValue)
                 hooks.Add(new EngineAddress(addr.Value, fn ?? "(unnamed hook)", rel, declLine, orig));
-            addr = null; fn = null; orig = null;
+            // A consumed exit is a .text address of its own: the wrapper JMPs
+            // there on the consume path, so on a rebased build it must be
+            // resolved exactly like a hook site. It gets no OriginalBytes —
+            // the patcher writes nothing there, so there is nothing to verify
+            // against hooks.toml — but it does get a signature and a report row.
+            if (consumedExit.HasValue)
+                hooks.Add(new EngineAddress(consumedExit.Value,
+                    (fn ?? "(unnamed hook)") + " (consumed exit)", rel, exitLine));
+            addr = null; consumedExit = null; fn = null; orig = null;
         }
 
         for (int i = 0; i < lines.Length; i++)
@@ -300,6 +441,9 @@ public static class EngineAddresses
 
             var a = Regex.Match(t, @"^address\s*=\s*(0x[0-9a-fA-F]+)");
             if (a.Success) { addr = Convert.ToUInt32(a.Groups[1].Value, 16); declLine = i + 1; continue; }
+
+            var ce = Regex.Match(t, @"^consumed_exit_address\s*=\s*(0x[0-9a-fA-F]+)");
+            if (ce.Success) { consumedExit = Convert.ToUInt32(ce.Groups[1].Value, 16); exitLine = i + 1; continue; }
 
             var f = Regex.Match(t, @"^function\s*=\s*""([^""]+)""");
             if (f.Success) { fn = f.Groups[1].Value; continue; }
@@ -316,4 +460,106 @@ public static class EngineAddresses
         Flush();
         return hooks;
     }
+}
+
+/// <summary>One `[[hooks.parameters]]` sub-block.</summary>
+public sealed record HookParameter(string Source, string Type);
+
+/// <summary>
+/// A complete `[[hooks]]` block, every field the patcher consumes. Used by the
+/// per-version hooks-file emitter so a generated file carries the FULL hook
+/// contract — skip_original_bytes, exclude_from_restore, consumed_exit_address,
+/// parameter blocks — rather than a skeleton to be hand-completed. Hand-copying
+/// those fields across 26 hooks is exactly where a port oversight would live.
+/// </summary>
+public sealed record HookBlock(
+    uint Address,
+    string Type,
+    string Function,
+    byte[]? OriginalBytes,
+    bool SkipOriginalBytes,
+    string? ExcludeFromRestore,
+    uint? ConsumedExitAddress,
+    List<HookParameter> Parameters);
+
+public static class HookFile
+{
+    /// <summary>
+    /// Parse every `[[hooks]]` block of a hooks.toml with full fidelity.
+    /// Line-oriented, like the harvester's ParseHooks; `type =` is
+    /// disambiguated between hook level and parameter level by tracking which
+    /// sub-block is open.
+    /// </summary>
+    public static List<HookBlock> Parse(string path)
+    {
+        var blocks = new List<HookBlock>();
+
+        uint? addr = null;
+        string type = "detour";
+        string? fn = null;
+        byte[]? orig = null;
+        bool skip = false;
+        string? exclude = null;
+        uint? consumedExit = null;
+        var parameters = new List<HookParameter>();
+        string? paramSource = null;
+        string? paramType = null;
+        bool inParam = false;
+
+        void FlushParam()
+        {
+            if (inParam && paramSource != null && paramType != null)
+                parameters.Add(new HookParameter(paramSource, paramType));
+            paramSource = null; paramType = null; inParam = false;
+        }
+
+        void FlushHook()
+        {
+            FlushParam();
+            if (addr.HasValue)
+                blocks.Add(new HookBlock(addr.Value, type, fn ?? "(unnamed hook)", orig,
+                                         skip, exclude, consumedExit, parameters));
+            addr = null; type = "detour"; fn = null; orig = null;
+            skip = false; exclude = null; consumedExit = null;
+            parameters = new List<HookParameter>();
+        }
+
+        foreach (string rawLine in File.ReadAllLines(path))
+        {
+            string t = rawLine.Trim();
+            if (t == "[[hooks]]") { FlushHook(); continue; }
+            if (t == "[[hooks.parameters]]") { FlushParam(); inParam = true; continue; }
+            if (t.StartsWith('#') || t.Length == 0) continue;
+
+            var kv = Regex.Match(t, @"^([a-z_]+)\s*=\s*(.*?)\s*(?:#.*)?$");
+            if (!kv.Success) continue;
+            string key = kv.Groups[1].Value;
+            string val = kv.Groups[2].Value;
+
+            if (inParam)
+            {
+                if (key == "source") { paramSource = Unquote(val); continue; }
+                if (key == "type") { paramType = Unquote(val); continue; }
+            }
+            switch (key)
+            {
+                case "address": addr = Convert.ToUInt32(val, 16); break;
+                case "type": type = Unquote(val); break;
+                case "function": fn = Unquote(val); break;
+                case "skip_original_bytes": skip = val.StartsWith("true"); break;
+                case "exclude_from_restore": exclude = val; break;
+                case "consumed_exit_address": consumedExit = Convert.ToUInt32(val, 16); break;
+                case "original_bytes":
+                    orig = Regex.Matches(val, @"0x[0-9a-fA-F]{1,2}")
+                        .Select(m => (byte)Convert.ToInt32(m.Value, 16))
+                        .ToArray();
+                    break;
+            }
+        }
+        FlushHook();
+        return blocks;
+    }
+
+    private static string Unquote(string s) =>
+        s.Length >= 2 && s[0] == '"' && s[^1] == '"' ? s[1..^1] : s;
 }

@@ -75,15 +75,24 @@ public static class Signatures
     /// .text (code moved) and .rdata (vtables/literals, section size differs)
     /// qualify; .data does not.
     /// </summary>
-    private static bool IsRelocationSensitive(PeInfo pe, uint addr)
+    private static bool IsRelocationSensitive(PeInfo pe, uint addr, bool maskAllImageRefs)
     {
         if (addr < pe.ImageBase) return false;
-        var sec = pe.SectionForRva(addr - pe.ImageBase);
+        uint rva = addr - pe.ImageBase;
+        // KOTOR 2 Steam→GOG (the 2021 relink): the linker reordered EVERY
+        // section — .data included, measured via Lane's per-store databases
+        // (14 shared globals, all moved). So there, any absolute reference
+        // into the image is relocation-sensitive. The KOTOR 1 relink rule
+        // (.data byte-stable, its references the best discriminators) stays
+        // the default.
+        if (maskAllImageRefs) return rva < pe.SizeOfImage;
+        var sec = pe.SectionForRva(rva);
         return sec != null && (sec.Name == ".text" || sec.Name == ".rdata");
     }
 
     public static BuildResult Build(
-        byte[] image, PeInfo pe, bool imageAligned, uint va, PeSection text)
+        byte[] image, PeInfo pe, bool imageAligned, uint va, PeSection text,
+        bool maskAllImageRefs = false)
     {
         int start = pe.VaToOffset(va, imageAligned);
         if (start < 0) return new BuildResult(null, "address is not inside any section", 0);
@@ -118,7 +127,7 @@ public static class Signatures
             }
 
             int baseIdx = pattern.Count - len;
-            ApplyWildcards(instr, co, mask, baseIdx, pe);
+            ApplyWildcards(instr, co, mask, baseIdx, pe, maskAllImageRefs);
             instrCount++;
 
             if (instrCount < MinInstructions) continue;
@@ -156,7 +165,7 @@ public static class Signatures
     /// </summary>
     private static void ApplyWildcards(
         in Instruction instr, in ConstantOffsets co,
-        List<bool> mask, int baseIdx, PeInfo pe)
+        List<bool> mask, int baseIdx, PeInfo pe, bool maskAllImageRefs)
     {
         // Relative branches: the displacement is relative to the *next*
         // instruction, so it shifts whenever caller and callee moved apart.
@@ -182,7 +191,7 @@ public static class Signatures
         // every constructor.
         if (co.HasImmediate && co.ImmediateSize == 4)
         {
-            if (IsRelocationSensitive(pe, (uint)GetImmediate(instr)))
+            if (IsRelocationSensitive(pe, (uint)GetImmediate(instr), maskAllImageRefs))
                 Wildcard(mask, baseIdx + co.ImmediateOffset, co.ImmediateSize);
         }
 
@@ -192,7 +201,7 @@ public static class Signatures
         // discriminator available.
         if (co.HasDisplacement && co.DisplacementSize == 4)
         {
-            if (IsRelocationSensitive(pe, (uint)instr.MemoryDisplacement32))
+            if (IsRelocationSensitive(pe, (uint)instr.MemoryDisplacement32, maskAllImageRefs))
                 Wildcard(mask, baseIdx + co.DisplacementOffset, co.DisplacementSize);
         }
     }
@@ -218,6 +227,58 @@ public static class Signatures
             int idx = offset + i;
             if (idx >= 0 && idx < mask.Count) mask[idx] = false;
         }
+    }
+
+    /// <summary>
+    /// A masked pattern covering exactly the instructions from <paramref name="va"/>
+    /// up to and including the first RET — no growth past it. Signatures.Build
+    /// exists to make a pattern UNIQUE, which for a short epilogue means running
+    /// beyond the RET into whatever function the linker placed next; that makes
+    /// the pattern non-portable to a build where the neighbour moved. This
+    /// builder is for VERIFICATION at a known candidate address (a consumed
+    /// exit derived from its hook's delta), where uniqueness is not the
+    /// question — byte identity of the epilogue itself is.
+    /// </summary>
+    public static Signature? BuildUntilRet(
+        byte[] image, PeInfo pe, bool imageAligned, uint va, bool maskAllImageRefs)
+    {
+        int start = pe.VaToOffset(va, imageAligned);
+        if (start < 0) return null;
+
+        var reader = new ByteArrayCodeReader(image, start, Math.Min(160, image.Length - start));
+        var decoder = Decoder.Create(32, reader, va);
+        var pattern = new List<byte>();
+        var mask = new List<bool>();
+        int instrCount = 0;
+
+        while (pattern.Count < 128)
+        {
+            decoder.Decode(out Instruction instr);
+            if (instr.IsInvalid) return null;
+            int len = instr.Length;
+            int off = start + pattern.Count;
+            var co = decoder.GetConstantOffsets(instr);
+            for (int i = 0; i < len; i++) { pattern.Add(image[off + i]); mask.Add(true); }
+            ApplyWildcards(instr, co, mask, pattern.Count - len, pe, maskAllImageRefs);
+            instrCount++;
+            if (instr.Mnemonic == Mnemonic.Ret)
+                return new Signature(pattern.ToArray(), mask.ToArray(), instrCount);
+        }
+        return null;  // no RET within 128 bytes: not the epilogue shape this is for
+    }
+
+    /// <summary>Masked compare of a pattern against a specific VA in an image.</summary>
+    public static bool MatchesAt(
+        byte[] image, PeInfo pe, bool imageAligned, uint va, Signature sig)
+    {
+        int off = pe.VaToOffset(va, imageAligned);
+        if (off < 0 || off + sig.Length > image.Length) return false;
+        for (int i = 0; i < sig.Length; i++)
+        {
+            if (!sig.Mask[i]) continue;
+            if (image[off + i] != sig.Pattern[i]) return false;
+        }
+        return true;
     }
 
     /// <summary>
