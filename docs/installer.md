@@ -537,8 +537,22 @@ audio stack is unverified. Open research item, not a gap.
   a Steam-install copy at a neutral path; see below): full pass — table
   byte-identical after restore, `dialog.tlk.english.bak` language ID 0,
   exactly 7 trap-kit files removed, no TSLRCM uninstall registry entry left
-  behind by the silent install. Still pending: one real GOG-binary run
-  (reporter) to confirm Galaxy's registry key and the vanilla GOG exe hash.
+  behind by the silent install.
+  **Both previously-pending GOG unknowns CONFIRMED 2026-09-04 against a real
+  GOG Galaxy KOTOR 2 install:** Galaxy's registry key is
+  `HKLM\SOFTWARE\WOW6432Node\GOG.com\Games\1421404581` (32-bit view; product id
+  matches `GameTarget.Kotor2.GogProductId`, and `TryReadGogInstallPath` reads
+  the 32-bit view first, so `Detect` finds it) with `path` =
+  `C:\Program Files\GOG Galaxy\Games\Star Wars - KotOR2`; the vanilla GOG exe
+  hashes to `777BEE23…` (= `kotor2_gog_aspyr`). The core accessibility patch
+  installs on that real GOG binary via KPatchCore (proven by `kdev apply
+  --game k2`, the same applicator the installer drives) and, with v0.8.1's GOG
+  address port, now actually LOADS and runs there — the pre-0.8.1 "installed
+  but silent" state was the runtime load bug, not an installer defect. Still
+  pending: one real end-to-end run of the installer EXE's full GUI flow (ini /
+  registry / intro-movie / mod steps) against GOG K2 — every mechanism piece is
+  confirmed, but the assembled GUI pass has only been rehearsed via
+  `--dev-gog-only`, never run on a real GOG install.
 - **Fake-GOG rehearsal harness** — `--dev-gog-only` (dev-only arg) makes
   `GamePathDetector.Detect` ignore the registered install and all Steam
   sources, leaving only GOG's registry key, so a dev box with Steam installs
