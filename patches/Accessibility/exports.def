@@ -46,3 +46,4 @@ EXPORTS
     OnUpdateRollingFootstep
     OnGetBaseItem
     OnGetBaseItemK2
+    OnGuiForwardEventGuardK2

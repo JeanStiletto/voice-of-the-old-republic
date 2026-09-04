@@ -971,3 +971,49 @@ exclude_from_restore = []
 [[hooks.parameters]]
 source = "ebp"
 type = "pointer"
+
+# ============================================================================
+# Empty-listbox navigation crash guard (save/load with no saved games).
+#
+# GUI event-forward function @0x00412C00. It forwards an event to the focused
+# child at this+0x10 by calling that child's vtable slot 4. On an empty save
+# list this+0x10 is a STALE non-null pointer into freed memory (now string
+# data), so the engine's own `!= 0` check passes and the vtable read + call
+# jumps into garbage — crash-dump-confirmed EIP="Dire" (docs/known-issues.md).
+# KOTOR-2-only: on K1 the save/load listbox spec owns Up/Down so the engine's
+# native empty-list nav is never reached. Full rationale + the crash dump
+# analysis live in gui_forward_guard_k2.cpp.
+#
+# Hooked at the engine's own null check, cutting the weak guard:
+#   00412c91: 8b 4d bc              MOV ECX,[EBP-0x44]   ; this
+#   00412c94: 83 79 10 00          CMP [ECX+0x10],0     <- hook here, 6 bytes
+#   00412c98: 74 24                 JE 0x00412cbe        ; (in cut) engine skip
+#   00412c9a: 8b 55 0c              MOV EDX,[EBP+0xC]    ; resume: forward event
+#   ...
+#   00412cb3: ff d0                 CALL EAX             ; the forward (crashes)
+#
+# skip_original_bytes: the cut's JE is a relative jump that cannot relocate,
+# and the handler subsumes the CMP by re-checking validity itself. Verdict:
+#   return 1 -> consumed_exit 0x00412cbe, the engine's own "child did not
+#               handle it" path (null OR the vtable slot isn't code)
+#   return 0 -> natural resume 0x00412c9a, forward the event as the engine
+#               would (a real focused child)
+# Both destinations are frame-relative and write EAX before reading it, so
+# exclude_from_restore=["eax"] (keeping the handler's verdict for the wrapper's
+# TEST EAX) is safe on both paths; the cut has no stack effect. ECX = this.
+[[hooks]]
+address = 0x00412c94
+type = "detour"
+function = "OnGuiForwardEventGuardK2"
+
+# 83 79 10 00           CMP dword ptr [ECX+0x10], 0
+# 74 24                 JE  0x00412cbe
+original_bytes = [0x83, 0x79, 0x10, 0x00, 0x74, 0x24]
+
+skip_original_bytes = true
+exclude_from_restore = ["eax"]
+consumed_exit_address = 0x00412cbe
+
+[[hooks.parameters]]
+source = "ecx"
+type = "pointer"

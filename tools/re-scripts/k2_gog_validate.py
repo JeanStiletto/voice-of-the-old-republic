@@ -218,9 +218,14 @@ def main():
     print(f"3. hooks: {n_ok}/{n_hooks} original_bytes verified at GOG "
           f"addresses; {n_exit_ok}/{exits_seen} consumed exits byte-checked "
           f"(source file lists {len(old_exits)})")
-    if n_hooks != 26 or exits_seen != len(old_exits):
-        fails.append(f"hook/exit count mismatch: {n_hooks} hooks, "
-                     f"{exits_seen} exits vs source {len(old_exits)}")
+    # Cross-check the generated file against the source hooks file: every
+    # source [[hooks]] and every consumed_exit_address must survive into the
+    # GOG file. (No hardcoded count — it tracks kotor2.hooks.toml as it grows.)
+    src_hooks = len(re.findall(r"^\[\[hooks\]\]", src_text, re.M))
+    if n_hooks != src_hooks or exits_seen != len(old_exits):
+        fails.append(f"hook/exit count mismatch: generated {n_hooks} hooks / "
+                     f"{exits_seen} exits vs source {src_hooks} hooks / "
+                     f"{len(old_exits)} exits")
 
     # ---- 4. window re-check of every table row, pointer-aware ----
     # .text rows: raw bytes with operand tolerance. .rdata/.data rows are

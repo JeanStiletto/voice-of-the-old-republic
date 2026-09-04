@@ -47,6 +47,18 @@ and add the German in parentheses if it genuinely aids clarity.
   GOG build is detected and remapped at runtime. Steam KOTOR 2 and both
   KOTOR 1 builds are unchanged.
 
+<h3>Bug fixes:</h3>
+
+- KOTOR 2: opening Load Game with no saved games and pressing the arrow keys
+  no longer crashes the game. With an empty list the engine's own navigation
+  followed a stale pointer into freed memory and called into garbage; a guard
+  now detects that and safely does nothing, so you hear the "no saved games"
+  message and can close the screen normally. (KOTOR 1 was never affected.)
+- KOTOR 2: hardened the text reader that every menu announcement passes
+  through, so a control whose text has been freed or not yet filled in is read
+  as empty instead of crashing — the same empty-save-list situation exposed it,
+  but the fix protects every screen.
+
 <h2>v0.8.0</h2>
 
 <h3>Controller:</h3>

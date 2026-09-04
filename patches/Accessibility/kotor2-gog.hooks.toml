@@ -9,7 +9,7 @@
 #
 # Design rationale for each hook lives in kotor2.hooks.toml. Do not
 # duplicate it here; keep this file mechanical so it stays regenerable.
-# generated: 2026-09-04 13:54:14Z
+# generated: 2026-09-04 17:31:28Z
 
 [metadata]
 target_versions = [
@@ -416,4 +416,19 @@ exclude_from_restore = []
 
 [[hooks.parameters]]
 source = "ebp"
+type = "pointer"
+
+[[hooks]]
+# OnGuiForwardEventGuardK2 -- was 0x00412c94 (+5235840 bytes)
+address = 0x00911114
+type = "detour"
+function = "OnGuiForwardEventGuardK2"
+original_bytes = [0x83, 0x79, 0x10, 0x00, 0x74, 0x24]
+skip_original_bytes = true
+exclude_from_restore = ["eax"]
+# consumed exit -- was 0x00412cbe (+5235840 bytes)
+consumed_exit_address = 0x0091113e
+
+[[hooks.parameters]]
+source = "ecx"
 type = "pointer"
