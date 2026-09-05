@@ -52,6 +52,16 @@ constexpr DWORD kMovieRescanMs = 100;
 std::atomic<HWND>  g_movieHwnd{nullptr};
 std::atomic<DWORD> g_movieScanAt{0};
 
+// GetTickCount() at the moment the last movie window disappeared, i.e. the
+// most recent true->false edge of MoviePlaying(). 0 = no movie has ended yet
+// this session. Used by MovieRecentlyPlaying() to hold a short "just finished"
+// window: the engine plays some cutscenes (the Peragus docking stunt) as
+// several movie segments and destroys the movie window between them, so for a
+// sub-second gap MoviePlaying() reads false even though the cutscene is still
+// on screen. A caller that must stay quiet across the whole cutscene keys off
+// this instead of the bare presence flag.
+std::atomic<DWORD> g_movieEndedAt{0};
+
 // True iff `hwnd` belongs to the current process AND its class is the
 // given target. SEH-free — class-name lookup tolerates dead handles
 // (returns 0, comparison fails, we report "not us").
@@ -123,6 +133,12 @@ bool MoviePlaying() {
 
     HWND found = nullptr;
     EnumWindows(FindMovieWindowProc, reinterpret_cast<LPARAM>(&found));
+    // A true->false edge (we had a live window cached, none now) is a movie
+    // ending. Stamp it so MovieRecentlyPlaying() can hold a short tail across
+    // the between-segment gaps and the post-cutscene rebuild.
+    if (!found && cached) {
+        g_movieEndedAt.store(now, std::memory_order_release);
+    }
     g_movieHwnd.store(found, std::memory_order_release);
     acclog::Edge("BringupAnnounce", found ? 1 : 0,
                  "movie window %s", found ? "on screen" : "gone");
@@ -272,6 +288,14 @@ bool IsInputPumpLive() {
 
 bool IsMoviePlaying() {
     return MoviePlaying();
+}
+
+bool MovieRecentlyPlaying(unsigned int windowMs) {
+    // Refreshes the movie scan (and thus g_movieEndedAt) as a side effect.
+    if (MoviePlaying()) return true;
+    DWORD endedAt = g_movieEndedAt.load(std::memory_order_acquire);
+    if (endedAt == 0) return false;  // no movie has ended this session
+    return (GetTickCount() - endedAt) < windowMs;
 }
 
 }  // namespace acc::bringup_announce

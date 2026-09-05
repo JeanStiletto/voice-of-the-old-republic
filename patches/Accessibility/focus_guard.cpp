@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "bringup_announce.h"
 #include "engine_input.h"
 #include "log.h"
 #include "prism.h"
@@ -492,6 +493,79 @@ void MaybeReclaimForeground() {
     ForceForeground(render, fg);
 }
 
+// --- Movie-end foreground guard (cutscene leaves the game with no foreground) ---
+//
+// The Peragus docking stunt (GOG K2, patch-20260905-075831) ended with the
+// engine's movie player handing focus back, and then GetForegroundWindow()
+// returning NULL — no window in the system owned the foreground. The engine
+// auto-paused on the focus loss and never woke: from a blind player's chair the
+// game said "Paused." and then answered nothing, indistinguishable from a
+// crash. The vanilla GOG build is fragile to foreground loss generally; here
+// the trigger was its own movie handoff.
+//
+// This guard arms for a short window each time a movie window disappears, and
+// reclaims the render window ONLY when the foreground is genuinely orphaned
+// (GetForegroundWindow() == NULL). That is the precise stuck state and nothing
+// else:
+//   * a foreign app holding the foreground means the user alt-tabbed away on
+//     purpose — never trap them back (this was the original reason the startup
+//     guard is bounded);
+//   * our own window holding it (render live, or a movie segment still
+//     transitioning) means nothing is wrong;
+//   * a NEW movie segment starting inside the window means the cutscene resumed
+//     — we skip, because forcing focus mid-playback can abort the engine's
+//     movie queue and close the game (see bringup_announce IsMoviePlaying).
+//
+// Bounded hard: kMovieReclaimWindowMs total (a second or two, per the design
+// ask) and kMovieReclaimMax attempts, so a persistently orphaned foreground
+// cannot drag us into a focus war.
+constexpr DWORD kMovieReclaimWindowMs = 2000;
+constexpr int   kMovieReclaimMax      = 3;
+
+std::atomic<DWORD> g_movieReclaimDeadline{0};  // GetTickCount() deadline; 0 = disarmed
+std::atomic<int>   g_movieReclaims{0};
+
+void MaybeReclaimAfterMovie() {
+    DWORD deadline = g_movieReclaimDeadline.load(std::memory_order_acquire);
+    if (deadline == 0) return;  // disarmed
+
+    DWORD now = GetTickCount();
+    if (static_cast<int>(now - deadline) >= 0) {  // wrap-safe elapsed check
+        g_movieReclaimDeadline.store(0, std::memory_order_release);
+        acclog::Write("Focus",
+            "MovieEndForegroundGuard: window elapsed; disarmed (reclaims=%d)",
+            g_movieReclaims.load(std::memory_order_relaxed));
+        return;
+    }
+
+    // A new movie segment resumed — let the movie player keep focus; forcing it
+    // away mid-playback can abort the queue.
+    if (acc::bringup_announce::IsMoviePlaying()) return;
+
+    HWND render = g_liveRenderWindow.load(std::memory_order_acquire);
+    if (!render || !IsWindow(render)) return;
+
+    // Only act on a genuinely orphaned foreground. A foreign owner is a
+    // deliberate alt-tab; our own owner means nothing is wrong.
+    HWND fg = GetForegroundWindow();
+    if (fg != nullptr) return;
+
+    int n = g_movieReclaims.load(std::memory_order_relaxed);
+    if (n >= kMovieReclaimMax) {
+        g_movieReclaimDeadline.store(0, std::memory_order_release);
+        acclog::Write("Focus",
+            "MovieEndForegroundGuard: reclaim cap (%d) reached; giving up",
+            kMovieReclaimMax);
+        return;
+    }
+    g_movieReclaims.store(n + 1, std::memory_order_relaxed);
+
+    acclog::Write("Focus",
+        "MovieEndForegroundGuard: foreground orphaned (NULL) after movie; "
+        "reclaiming render %p (attempt %d/%d)", render, n + 1, kMovieReclaimMax);
+    ForceForeground(render, nullptr);
+}
+
 // --- Input-blocked warning: Steam Big Picture foreground theft ---
 //
 // When KOTOR runs windowed and Steam Big Picture Mode holds the foreground,
@@ -612,14 +686,33 @@ DWORD WINAPI PollProc(LPVOID) {
     // only newly-subclassed windows get individual log lines.
     LogAllProcessWindows("poll_start");
 
-    int iter = 0;
+    int  iter             = 0;
+    bool moviePlayingPrev = false;  // poll-thread-local movie-window edge
     for (;;) {
         ScanState st{ GetCurrentProcessId(), 0, nullptr };
         EnumWindows(ScanProc, reinterpret_cast<LPARAM>(&st));
         if (st.visibleRender) {
             g_liveRenderWindow.store(st.visibleRender, std::memory_order_release);
         }
+
+        // Arm the movie-end foreground guard on the true->false edge of movie
+        // playback. Multi-segment cutscenes fire this per segment; each re-arms
+        // the short window, and MaybeReclaimAfterMovie only acts once the
+        // foreground is actually orphaned.
+        bool moviePlayingNow = acc::bringup_announce::IsMoviePlaying();
+        if (moviePlayingPrev && !moviePlayingNow) {
+            g_movieReclaims.store(0, std::memory_order_relaxed);
+            DWORD dl = GetTickCount() + kMovieReclaimWindowMs;
+            if (dl == 0) dl = 1;  // 0 is the disarmed sentinel
+            g_movieReclaimDeadline.store(dl, std::memory_order_release);
+            acclog::Write("Focus",
+                "MovieEndForegroundGuard: armed for %lu ms after movie end",
+                kMovieReclaimWindowMs);
+        }
+        moviePlayingPrev = moviePlayingNow;
+
         MaybeReclaimForeground();
+        MaybeReclaimAfterMovie();
         MaybeFlagInputBlockedWarning();
         Sleep(100);
         ++iter;

@@ -61,4 +61,14 @@ bool IsInputPumpLive();
 // closing instead of starting the next queued movie.
 bool IsMoviePlaying();
 
+// True while a movie is on screen, and for `windowMs` after the most recent
+// one disappears. The tail exists because the engine plays some cutscenes (the
+// Peragus docking stunt) as several movie segments, destroying and recreating
+// the movie window between them — so IsMoviePlaying() blinks false in the
+// sub-second gaps even though the cutscene is still running. A caller that must
+// stay silent across the whole cutscene (the menu SetActive rebuild burst)
+// keys off this. Calling it also refreshes the movie scan, so the end-timestamp
+// it reads is current. Cheap, safe from any thread and per-frame paths.
+bool MovieRecentlyPlaying(unsigned int windowMs);
+
 }  // namespace acc::bringup_announce

@@ -125,6 +125,35 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
 // Exposed publicly via menus.h so the focus-monitor's AnnounceControl can
 // MarkSpoken(0, text) after voluntary speech, which lets the slot drain
 // suppress the engine's echo of the same nav.
+// File-scope helper for the cutscene-movie suppression gate. Kept at file scope
+// (not inside acc::menus) so both SetActive handlers see it — they live in
+// separate reopened acc::menus blocks, and MSVC does not carry an anonymous-
+// namespace member across the boundary.
+namespace {
+// How long after a cutscene movie ends we keep suppressing the SetActive
+// rebuild burst. The engine plays some cutscenes (the Peragus docking stunt,
+// patch-20260905-075831) as several movie segments and destroys the movie
+// window between them; the burst leaked in a sub-second gap where
+// IsMoviePlaying() read false. Two seconds covers those gaps and the tail
+// while the world rebuilds after the final segment — "a second or two", not
+// long enough to swallow anything the player would open themselves.
+constexpr unsigned kMovieBurstTailMs = 2000;
+
+// True while the engine-GUI SetActive rebuild burst must stay silent because a
+// cutscene movie is on screen — or was, within the last kMovieBurstTailMs.
+//
+// The bare-presence half fires in every phase (startup intros included). The
+// just-ended tail is gated on IsInputPumpLive() so it only applies in-game:
+// during startup a movie ends immediately before the main menu appears, and
+// the main-menu first-sight announce rides the very SetActive we would then
+// suppress. In-game there is no such announce racing the tail.
+bool InMovieBurstWindow() {
+    if (acc::bringup_announce::IsMoviePlaying()) return true;
+    return acc::bringup_announce::IsInputPumpLive() &&
+           acc::bringup_announce::MovieRecentlyPlaying(kMovieBurstTailMs);
+}
+}  // namespace
+
 namespace acc::menus {
 
 namespace {
@@ -430,18 +459,24 @@ extern "C" void __cdecl OnSetActiveControl(void* panel, void* newControl) {
     static int n = 0;
     ++n;
 
-    // Stay silent while an engine movie owns the foreground. During a
-    // cutscene-load (e.g. 03.bik at the Leviathan capture) the engine
-    // constructs and activates a storm of GUI panels — in-game HUD,
-    // store, options strip, equip screens — firing SetActiveControl on
-    // each. Announcing them talks over the movie AND would mark those
-    // panels first-seen, so they'd stay silent on the player's first
-    // real visit. Skip the whole handler: the engine re-fires
+    // Stay silent while an engine movie owns the foreground, and for a short
+    // tail after it ends. During a cutscene-load (e.g. 03.bik at the Leviathan
+    // capture) the engine constructs and activates a storm of GUI panels —
+    // in-game HUD, store, options strip, equip screens — firing
+    // SetActiveControl on each. Announcing them talks over the movie AND would
+    // mark those panels first-seen, so they'd stay silent on the player's
+    // first real visit. Skip the whole handler: the engine re-fires
     // SetActiveControl on genuine interaction once the movie ends, so
     // first-sight + focus speech resume cleanly then. Symmetric with
     // transitions::Tick's movie gate (patch-20260601-220641.log line
     // ~2110: panel-label burst one second into the cutscene movie).
-    if (acc::bringup_announce::IsMoviePlaying()) {
+    //
+    // The tail (InMovieBurstWindow, not bare IsMoviePlaying) closes the gap
+    // the Peragus docking stunt exposed: multi-segment cutscenes destroy the
+    // movie window between segments, and this burst leaked "Build: 427" /
+    // chargen "Add Power" / the message log over the cutscene in a sub-second
+    // window where IsMoviePlaying() read false (patch-20260905-075831).
+    if (InMovieBurstWindow()) {
         acclog::Write("Menus.SetActive",
                       "#%d panel=%p — suppressed (movie foreground)", n, panel);
         return;
@@ -557,6 +592,19 @@ extern "C" void __cdecl OnListBoxSetActiveControl(void* listBox, void* newRow,
 
     static int n = 0;
     ++n;
+
+    // Same cutscene-movie gate as OnSetActiveControl. The docking-stunt leak
+    // came through here too: the abilities listbox rebuilt mid-cutscene and
+    // this handler spoke its "Add Power" row (patch-20260905-075831). The
+    // module-load latch below never armed for that scripted transition, so the
+    // movie window (present, then briefly gone between segments) is the only
+    // signal that catches it.
+    if (InMovieBurstWindow()) {
+        acclog::Write("Menus.ListBox",
+                      "SetActive #%d list=%p — suppressed (movie foreground)",
+                      n, listBox);
+        return;
+    }
 
     // Suppress the in-game-GUI reconstruction burst on a module / save-game
     // load — same two-signal gate as OnSetActiveControl above. The engine
