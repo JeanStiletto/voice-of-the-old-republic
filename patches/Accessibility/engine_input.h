@@ -181,6 +181,21 @@ void NoteEngineKeyEvent();
 // GetTickCount64() at the last NoteEngineKeyEvent, 0 if none this session.
 unsigned long long LastEngineKeyEventMs();
 
+// The engine's own turn-axis value, exactly as UpdateCamera polls it every
+// frame (CExoInput::PollInput(0x11c, class 0), clamped by the caller to
+// [-1, 1] before it reaches AcclTurnCamera). Digital bindings scale the
+// GetEvents level flag, so a non-zero answer with no key physically held is
+// the engine holding a stranded turn key. Diagnostic witness for the camera
+// spin watch; false when the facade is unavailable or the call faults.
+bool PollTurnAxis(float* out);
+
+// KOTOR 2 only: the native right-stick pair UpdateCamera reads ahead of the
+// screen-edge test (DirectInput controllers enumerated at start, 20% dead
+// zone, first-seen baseline latch — camera-and-swoop.md "KOTOR 2 twin").
+// Zeros when no controller exists. False on KOTOR 1 (no joystick path), when
+// the facade is unavailable, or on a fault.
+bool ReadNativeStickAxes(float* x, float* y);
+
 }  // namespace acc::engine
 
 // Pre-translation codes received by CSWGuiManager::HandleInputEvent.

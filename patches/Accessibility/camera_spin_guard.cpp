@@ -3,9 +3,12 @@
 #include <windows.h>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 
 #include "camera_orient.h"   // IsActive — our own snap-turn drives the camera
 #include "engine_app.h"      // GetClientAppInternal — K2 viewport-object chain
+#include "engine_input.h"    // PollTurnAxis / ReadNativeStickAxes — the two
+                             // sources UpdateCamera feeds to AcclTurnCamera
 #include "engine_keymap.h"   // AnyMovementCommanded — device-independent input
 #include "engine_manager.h"  // kAddrGuiManagerPtr
 #include "engine_options.h"  // GetMouseLook
@@ -36,8 +39,19 @@ constexpr float kRadToDeg = 57.29577951308232f;
 const uintptr_t kAddrScreenFramePercent   = acc::addr::PickGlobal(0x007A2444, 0x00A10910);  // float
 // rightClickHeld: LOG-ONLY (episode START diagnostic). No K2 witness yet —
 // SafeRead declines to 0 there. Not part of the guard's firing logic.
-const uintptr_t kAddrRightClickHeld       = acc::addr::TodoGlobal(0x008338F0);  // int
+// K2 value witnessed 2026-09-14 in the UpdateCamera twin @0x0078c350: read into
+// the edge-turn gate, XORed with the mouse_look option bit exactly as K1 does.
+const uintptr_t kAddrRightClickHeld       = acc::addr::PickGlobal(0x008338F0, 0x00A7FCBC);  // int
 const size_t    kGuiMouseXOffset          = acc::off::Same(0x00);        // ulong
+const size_t    kGuiMouseYOffset          = acc::off::Same(0x04);        // ulong
+// K2 only (AcclTurnCamera twin @0x007f4220, follow-cam branch): the module
+// mirrors the follow behaviour's turn accumulator to +0x98 and raises +0x100
+// whenever it applies a non-zero turn. Both are witnesses that the camera's
+// OWN turn path ran; a spin that leaves them untouched came from elsewhere
+// (the player creature rotating under the chase camera, most likely). On K1
+// +0x98 is not the accumulator (camera-and-swoop.md), so these stay K2-only.
+const size_t    kK2ModuleAcclMirrorOffset = 0x98;   // float
+const size_t    kK2ModuleTurnedFlagOffset = 0x100;  // int
 const size_t    kGuiViewportWidthOffset   = acc::off::Same(0x6C);        // int16
 // K2 only: the viewport object holding width/height (+0x6c/+0x6e) hangs off
 // the client internal at +0x274 (witnessed via the getter 0x0073FEA0). On
@@ -150,6 +164,9 @@ struct State {
     bool  havePos    = false;
     float prevPosYaw = 0.0f;   // camera->player bearing, deg
     DWORD prevPosMs  = 0;
+    bool  havePlayer = false;
+    float prevPlayerYaw = 0.0f;  // player creature facing, deg
+    DWORD prevPlayerMs  = 0;
 };
 State g_state;
 
@@ -180,6 +197,7 @@ struct SpinWatch {
     DWORD startMs     = 0;
     float accumQuat   = 0.0f;  // signed, deg — from the orientation quaternion
     float accumPos    = 0.0f;  // signed, deg — from the camera->player bearing
+    float accumPlayer = 0.0f;  // signed, deg — the player creature's own facing
     float maxRate     = 0.0f;
     int   frames      = 0;
     int   reports     = 0;     // full turns already reported this episode
@@ -190,6 +208,7 @@ void ResetSpinWatch() {
     g_spin.active    = false;
     g_spin.accumQuat = 0.0f;
     g_spin.accumPos  = 0.0f;
+    g_spin.accumPlayer = 0.0f;
     g_spin.maxRate   = 0.0f;
     g_spin.frames    = 0;
     g_spin.reports   = 0;
@@ -215,10 +234,10 @@ void EndSpinWatch(DWORD now, const char* why) {
             (dur >= kSpinSummaryMs && swept >= kSpinSummaryDeg)) {
             acclog::Write("CameraSpinDiag",
                 "uncommanded-rotation END: duration=%ums frames=%d "
-                "quatTurn=%.0f deg posTurn=%.0f deg maxRate=%.0f deg/s "
-                "(ended: %s)",
+                "quatTurn=%.0f deg posTurn=%.0f deg playerTurn=%.0f deg "
+                "maxRate=%.0f deg/s (ended: %s)",
                 dur, g_spin.frames, g_spin.accumQuat, g_spin.accumPos,
-                g_spin.maxRate, why);
+                g_spin.accumPlayer, g_spin.maxRate, why);
         }
     }
     ResetSpinWatch();
@@ -257,6 +276,7 @@ void Tick() {
     if (!acc::engine::GetPlayerPosition(playerPos)) {
         g_state.have    = false;
         g_state.havePos = false;
+        g_state.havePlayer = false;
         g_anomalySinceMs = 0;
         EndSpinWatch(now, "left the world");
         if (g_ep.active) EndEpisode(now, g_ep.startYaw);
@@ -342,9 +362,44 @@ void Tick() {
         }
     }
 
+    // --- Player creature facing (third witness) ---
+    //
+    // The chase camera sits behind the player's facing, so a creature rotating
+    // in place sweeps BOTH camera witnesses above exactly like a camera turn
+    // does: at follow distance the two cases are indistinguishable from the
+    // camera alone. This sample separates them. A spin whose playerRate matches
+    // the camera rate is the creature turning with the camera following (a
+    // server-side driver: facing snaps, AI, pushing); one with playerRate near
+    // zero is the camera's own turn path. Added after patch-20260914-122504.log
+    // (K2), where every input UpdateCamera reads was excluded by the log and
+    // this was the question left open. Server-object facing via
+    // GetPlayerYawDegrees.
+    float playerYawDeg   = -1.0f;
+    float playerStepDeg  = 0.0f;
+    float playerRateDps  = 0.0f;
+    bool  havePlayerStep = false;
+    {
+        float y = 0.0f;
+        if (acc::engine::GetPlayerYawDegrees(y)) playerYawDeg = NormDeg(y);
+    }
+    if (playerYawDeg >= 0.0f) {
+        DWORD dt = now - g_state.prevPlayerMs;
+        if (g_state.havePlayer && dt > 0) {
+            playerStepDeg  = AngularDelta(playerYawDeg, g_state.prevPlayerYaw);
+            playerRateDps  = playerStepDeg * 1000.0f / (float)dt;
+            havePlayerStep = true;
+        }
+        if (havePlayerStep || !g_state.havePlayer) {
+            g_state.prevPlayerYaw = playerYawDeg;
+            g_state.prevPlayerMs  = now;
+            g_state.havePlayer    = true;
+        }
+    }
+
     // --- Cursor / edge-band state (the suspected driver) ---
     void* gui = SafeRead<void*>(kAddrGuiManagerPtr, nullptr);
     uint32_t mouseX = SafeReadOff<uint32_t>(gui, kGuiMouseXOffset, 0);
+    uint32_t mouseY = SafeReadOff<uint32_t>(gui, kGuiMouseYOffset, 0);
     // Width source is per-game: K1 keeps it on the GuiManager, K2 on the
     // viewport object at [internal+0x274] (see the constant's witness note).
     void* vpObj = gui;
@@ -470,8 +525,9 @@ void Tick() {
                 g_spin.startMs   = now;
             }
             ++g_spin.frames;
-            if (haveRate)    g_spin.accumQuat += quatStepDeg;
-            if (havePosStep) g_spin.accumPos  += posStepDeg;
+            if (haveRate)       g_spin.accumQuat   += quatStepDeg;
+            if (havePosStep)    g_spin.accumPos    += posStepDeg;
+            if (havePlayerStep) g_spin.accumPlayer += playerStepDeg;
             if (absRate > g_spin.maxRate) g_spin.maxRate = absRate;
 
             // Report per full turn. A player-controlled camera has no
@@ -484,16 +540,43 @@ void Tick() {
                 int  rightClick = SafeRead<int>(kAddrRightClickHeld, 0);
                 bool mouseLook  = false;
                 acc::engine::GetMouseLook(mouseLook);
+                // K2-only witnesses of the camera's own turn path (see the
+                // constants). -1 / -1 on K1 and when the module is not up.
+                float acclMirror = -1.0f;
+                int   turnedFlag = -1;
+                if (acc::game::IsKotor2()) {
+                    void* mod = acc::engine::GetClientModule();
+                    acclMirror = SafeReadOff<float>(mod, kK2ModuleAcclMirrorOffset, -1.0f);
+                    turnedFlag = SafeReadOff<int>(mod, kK2ModuleTurnedFlagOffset, -1);
+                }
+                // The two inputs UpdateCamera itself turns on, read the way it
+                // reads them. turnAxis is the engine's held-turn-key view (a
+                // stranded flag shows here even when the re-sync sees nothing);
+                // stickX is K2's native right stick, "n/a" where there is none.
+                float turnAxis = 0.0f;
+                bool  haveTurnAxis = acc::engine::PollTurnAxis(&turnAxis);
+                float stickX = 0.0f, stickY = 0.0f;
+                bool  haveStick = acc::engine::ReadNativeStickAxes(&stickX, &stickY);
+                char turnAxisBuf[16];
+                char stickBuf[16];
+                if (haveTurnAxis) _snprintf_s(turnAxisBuf, sizeof(turnAxisBuf), _TRUNCATE, "%.2f", turnAxis);
+                else              _snprintf_s(turnAxisBuf, sizeof(turnAxisBuf), _TRUNCATE, "n/a");
+                if (haveStick)    _snprintf_s(stickBuf, sizeof(stickBuf), _TRUNCATE, "%.2f", stickX);
+                else              _snprintf_s(stickBuf, sizeof(stickBuf), _TRUNCATE, "n/a");
                 acclog::Write("CameraSpinDiag",
                     "UNCOMMANDED ROTATION x%d: quatTurn=%.0f deg posTurn=%.0f deg "
                     "rate=%.0f deg/s duration=%ums frames=%d | mouseX=%u/%d "
-                    "band=%dpx edge=%s mouseLook=%d rightClick=%d "
-                    "heldMoveVk=0x%02x camDist=%.1fm quatYaw=%.1f posYaw=%.1f",
+                    "mouseY=%u band=%dpx edge=%s mouseLook=%d rightClick=%d "
+                    "heldMoveVk=0x%02x camDist=%.1fm quatYaw=%.1f posYaw=%.1f "
+                    "| playerYaw=%.1f playerRate=%.0f deg/s playerTurn=%.0f deg "
+                    "turnAxis=%s stickX=%s acclMirror=%.2f turnedFlag=%d",
                     due, g_spin.accumQuat, g_spin.accumPos, rateDegPerSec,
                     now - g_spin.startMs, g_spin.frames, mouseX, (int)vpW,
-                    bandPx, edge, mouseLook ? 1 : 0, rightClick,
+                    mouseY, bandPx, edge, mouseLook ? 1 : 0, rightClick,
                     acc::engine_keymap::FirstMovementKeyHeld(),
-                    camDistM, quatYawDeg, posYawDeg);
+                    camDistM, quatYawDeg, posYawDeg,
+                    playerYawDeg, playerRateDps, g_spin.accumPlayer,
+                    turnAxisBuf, stickBuf, acclMirror, turnedFlag);
                 if (due >= kSpinMaxReports) {
                     acclog::Write("CameraSpinDiag",
                         "uncommanded-rotation: report cap reached (%d turns) — "

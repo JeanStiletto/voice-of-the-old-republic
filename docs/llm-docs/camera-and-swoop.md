@@ -35,6 +35,41 @@ Gate: edge-turn fires when `uVar8==0`. `uVar8 = rightClickHeld`, inverted if `Cl
 
 **Fix #1 (camera_orient yaw read) — confirmed buggy but NOT the spin cause.** Engine `Quaternion` is **w,x,y,z** (w@+0, see [[project_turret_engine_model]] sibling); camera orientation at camera+0x88 (Gob+0x84). `camera_orient.cpp ReadCurrentEngineYawRad` assumes x,y,z,w, reads engine y/z as "qz/qw", computes garbage `2*atan2(y,z)` — that's why the author wrongly called the quaternion "multivalued" and fell back to atan2(player-camera). The position-derived path actually tracked real motion (the log's 255° "jumps" were the camera genuinely edge-spinning). Correct path: engine `Yaw(Quaternion*)` @0x4aa0f0 (also 0x4a9f40), `Pitch`@0x4aa130, `Roll`@0x4acb90, `YawPitchRoll`@0x4acac0, `Quaternion::zdir`@0x43e250. Decompile workflow: [[reference_ghidra_headless_decompile]].
 
+**KOTOR 2 twin — decompiled 2026-09-14 (kotor2 Ghidra project, headless).**
+`UpdateCamera` @0x0078c350 (the edge-band code the spin guard cites at 0x0078C520-0x0078C6A0 sits
+inside it). Same three-source shape as KOTOR 1, with these differences:
+- Turn sources, in priority order: (1) `PollInput` twin @0x0072c320 for the turn axis, clamped
+  [-1,1] — digital bindings return the GetEvents level flag; (2) the native right-stick read
+  @0x0072ed70 (`this, 1, &x, &y`): loops the DirectInput controllers enumerated at init
+  (count at `CExoInput+0x18`, present flag `DAT_00a7ea70[i]`), reads DIJOYSTATE2 +0xc/+0x10
+  with a 20% dead zone (|v| > 6553 → v/32768) and a first-seen-baseline latch (the axis is
+  ignored until it ever differs from its first value); non-zero x overrides source 1. Either
+  non-zero → `AcclTurnCamera` twin @0x007f4220 (follow-cam branch: accumulator `+0x40 += v`,
+  mirrored to module+0x98). With zero controllers the loop body never runs.
+- Edge band = `max(2, ftol(viewport * screenFramePercentage))` (`ftol` @0x0091c860, pct twin
+  @0x00A10910, default 0.001 → **2 px** at 2880 wide). Floor is 2, not 1. Mouse read from the
+  GuiManager global @0x00A1B49C (x at +0, y at +4 — the same global the guard reads), viewport
+  size int16 +0x6c/+0x6e on the object `client internal +0x274` (getter @0x0073fea0).
+- **Vertical edges are tested too** (`y <= band`, `y >= height - band`) → pitch call
+  @0x007f3de0, which only acts in camera modes 3/5/7 (module+0xc); in the normal follow camera
+  it is a no-op. So the (24,2) cursor park sits inside the KOTOR 2 top band, harmlessly in-world.
+  The vertical pair is suppressed outright when a controller is present and `DAT_00a106c0` is set
+  (@0x0073eee0).
+- Gates: all four edge flags are cleared unless `DAT_00a10238 != 0` (@0x0072e840) AND the OS
+  cursor is inside the render window's client rect (@0x0072e850: GetCursorPos → ScreenToClient →
+  PtInRect). Edge turning is skipped when `rightClickHeld` (K2 global `DAT_00a7fcbc`, XOR the
+  mouse_look bit `ClientOptions+8 & 2`; options getter @0x0072fb00) is set or
+  `ClientOptions+0x75 == 5`; those paths go to the `TurnCamera` twin @0x007f3ea0 (same
+  accumulator, mouse-delta driven) plus the pitch call @0x007f3c70. `ClientOptions+8 & 0x10`
+  inverts the vertical axis.
+- Field case patch-20260914-122504.log (K2, 13 s uncommanded spin at ~200°/s, cursor parked at
+  (24,2), zero controllers, keyboard re-sync silent, cursor never moved): none of the sources
+  above can have driven it, so either the PLAYER CREATURE was rotating and the chase camera
+  followed (quatYaw == posYaw at follow distance cannot tell the two apart), or the source is
+  outside `UpdateCamera`. KOTOR 2 does snap the player's facing to the selected target — the
+  instantaneous compass jumps in that log line up one-to-one with target changes (E cycling and
+  show-object changes). Open; see docs/known-issues.md.
+
 ---
 
 ## kotor_camera_character_decoupling

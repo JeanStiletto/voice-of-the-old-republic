@@ -61,4 +61,5 @@
     { 0x00A1B4A4, 0x00A11C04 },  // kAddrAppManagerPtr
     { 0x00A1B4B0, 0x00A11C10 },  // kAddrTlkTablePtr
     { 0x00A1B4D0, 0x00A11C30 },  // kAddrRulesGlobal
+    { 0x00A7FCBC, 0x00A132C4 },  // kAddrRightClickHeld
 // clang-format on

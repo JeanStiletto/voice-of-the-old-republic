@@ -61,6 +61,10 @@ and add the German in parentheses if it genuinely aids clarity.
   as empty instead of crashing — the same empty-save-list situation exposed it,
   but the fix protects every screen.
 
+<h3>Diagnostics:</h3>
+
+- The camera-spin report in the log now names what is driving the turn. A KOTOR 2 spin on 2026-09-14 was not a lost key release (the new re-sync saw the engine and the keyboard agree throughout) and, after decompiling the KOTOR 2 camera update, none of the inputs the camera reads could explain it either. Every `CameraSpinDiag: UNCOMMANDED ROTATION` line therefore also records the player character's own facing and turn rate (separates "the character is turning and the camera follows" from "the camera itself is turning"), the engine's own turn-axis poll and, on KOTOR 2, its native right-stick value, the right-click state and the two module fields the camera's turn path writes. Log-only; nothing changes in play.
+
 <h3>Room descriptions:</h3>
 
 - Area exits ("transition east to Residential 082 West") now point where you

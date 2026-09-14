@@ -57,6 +57,30 @@ const uintptr_t kAddrCExoInputSetActive =
 
 typedef void(__thiscall* PFN_CExoInputSetActive)(void* this_, int active);
 
+// CExoInput::PollInput(this, code, inputClass) -> float. The camera's turn
+// source: UpdateCamera reads it as PollInput(ExoInput, 0x11c, 0) on both games
+// (K1 @0x005f5ee6: MOV ECX,[0x007a39e4]; PUSH 0; PUSH 0x11c; CALL 0x005df4d0.
+// K2 @0x0078c48f: MOV ECX,[0x00a1b48c]; PUSH 0; PUSH 0x11c; CALL 0x0072f9d0 —
+// a thiscall forwarder to CExoInputInternal::PollInput @0x0072c320 via
+// this+4; both RET 8, float in ST0). Digital bindings answer the GetEvents
+// level flag scaled, so this IS the engine's own view of "turn key held".
+const uintptr_t kAddrCExoInputPollInput =
+    acc::addr::Pick(0x005df4d0, 0x0072f9d0);
+constexpr int kInputCodeTurnAxis = 0x11c;
+typedef float(__thiscall* PFN_CExoInputPollInput)(void* this_, int code,
+                                                  int inputClass);
+
+// KOTOR 2 only: CExoInput facade @0x0072fde0 -> CExoInputInternal
+// ::ReadJoystickAxes(1, &x, &y) @0x0072ed70 — the native right-stick pair
+// UpdateCamera feeds to AcclTurnCamera ahead of the edge test (camera-and-
+// swoop.md "KOTOR 2 twin"). Loops the DirectInput controllers enumerated at
+// start; with none the body never runs and both outputs stay 0. KOTOR 1 has
+// no joystick path at all (kotor1-controller-port.md).
+const uintptr_t kAddrCExoInputReadStickAxes =
+    acc::addr::Kotor2Only(0x0072fde0);
+typedef void(__thiscall* PFN_CExoInputReadStickAxes)(void* this_, float* x,
+                                                     float* y);
+
 // ---------------------------------------------------------------------------
 // CExoRawInputInternal::InitializeDirectInputMouse — no-mouse crash guard
 // ---------------------------------------------------------------------------
@@ -750,6 +774,42 @@ bool ReleaseInput() {
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         acclog::Write("EngineInput",
             "ReleaseInput: exception during SetActive; skipped");
+        return false;
+    }
+}
+
+bool PollTurnAxis(float* out) {
+    if (!out || !acc::addr::Ok(kAddrExoInputGlobal) ||
+        !acc::addr::Ok(kAddrCExoInputPollInput)) {
+        return false;
+    }
+    __try {
+        void* exoInput = *reinterpret_cast<void**>(kAddrExoInputGlobal);
+        if (!exoInput) return false;
+        auto poll = reinterpret_cast<PFN_CExoInputPollInput>(
+            kAddrCExoInputPollInput);
+        *out = poll(exoInput, kInputCodeTurnAxis, 0);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+bool ReadNativeStickAxes(float* x, float* y) {
+    if (!x || !y || !acc::addr::Ok(kAddrExoInputGlobal) ||
+        !acc::addr::Ok(kAddrCExoInputReadStickAxes)) {
+        return false;
+    }
+    __try {
+        void* exoInput = *reinterpret_cast<void**>(kAddrExoInputGlobal);
+        if (!exoInput) return false;
+        auto read = reinterpret_cast<PFN_CExoInputReadStickAxes>(
+            kAddrCExoInputReadStickAxes);
+        *x = 0.0f;
+        *y = 0.0f;
+        read(exoInput, x, y);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
     }
 }

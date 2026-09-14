@@ -322,6 +322,35 @@ its call site is byte-verified offline, but has not had a session yet.
 Which of the two invisible gaps produced the 09:10:58 episode is still
 unknown; the new lines answer that on the next occurrence.
 
+**Second KOTOR 2 spin, 2026-09-14 (`patch-20260914-122504.log`, 12:30:12 to the
+quit at 12:30:25): NOT a lost release.** The re-sync ran every frame through it
+and found the engine's key view and DirectInput in agreement; its four repairs
+that session all sat at real `active=0 → 1` edges, the last one at the quit
+popup. No pad, no snap-turn of ours, no UI owning the camera, the player
+standing still at onset, cursor parked at (24,2) and never moving. The KOTOR 2
+`UpdateCamera` twin was decompiled the same day (camera-and-swoop.md, "KOTOR 2
+twin"): its band is 2 px, so x=24 is outside it; the vertical band the park does
+sit in is a no-op in the follow camera; the native right-stick source needs a
+controller enumerated at start (there were none); the mouse-delta path needs
+cursor motion. Every input the camera itself reads is therefore excluded by the
+log, which leaves the player creature rotating with the chase camera following
+(indistinguishable from a camera turn in the spin report), or a source outside
+`UpdateCamera`. KOTOR 2 snaps the player's facing to the selected target — the
+instantaneous compass jumps in that log coincide one-to-one with target changes
+(E cycling, show-object changes under the parked cursor), and the engine target
+changed three times during the spin (the `Combat.Diag: DELTA target` lines
+date those). Instrumentation built and applied to both games 2026-09-14:
+every `UNCOMMANDED ROTATION` line now also carries `playerYaw` / `playerRate` /
+`playerTurn` (the player creature's own facing, from the server object — a
+rate matching the camera's means the creature turned and the chase camera
+followed; near zero means the camera's own turn path), `turnAxis` (the
+engine's PollInput(0x11c) answer, i.e. its own held-turn-key view),
+`stickX` (K2 native right stick, `n/a` on K1), `mouseY`, `rightClick`
+(K2 global now known) and, K2 only, `acclMirror` / `turnedFlag` (module +0x98
+/ +0x100, written only when AcclTurnCamera applies a turn). The END line
+carries `playerTurn` too. Read the next spin's first report line: it names
+the driver.
+
 ### GOG KOTOR 2 relocation port — executed and locally verified 2026-09-04, awaiting the tester round
 
 The "mod has never loaded on GOG K2" defect (silent vanilla game since v0.7.0;
