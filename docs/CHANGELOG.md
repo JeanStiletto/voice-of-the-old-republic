@@ -61,6 +61,23 @@ and add the German in parentheses if it genuinely aids clarity.
   as empty instead of crashing — the same empty-save-list situation exposed it,
   but the fix protects every screen.
 
+<h3>Room descriptions:</h3>
+
+- Area exits ("transition east to Residential 082 West") now point where you
+  actually cross, not where the level designer anchored the trigger. A
+  transition trigger is a polygon, and the mod took its bearing from the
+  polygon's origin point, which can sit metres away from the strip you walk
+  through — on Citadel Station one exit was announced east when the crossing
+  was south-west of the zone centre. The bearing now comes from the polygon's
+  centre.
+- A corridor is no longer described as running the wrong way because another
+  corridor crosses it. The "north-south" / "east-west" cue for a zone came from
+  a single wall probe at the zone's centre, and a corridor's centre is exactly
+  where a crossing hallway opens up: an east-west corridor whose midpoint sat
+  on its entrance passage read 50 metres north-south and was announced as
+  "north-south". The cue now takes the median over every node in the zone, so
+  a couple of nodes on a crossing cannot outvote the rest.
+
 <h2>v0.8.0</h2>
 
 <h3>Controller:</h3>

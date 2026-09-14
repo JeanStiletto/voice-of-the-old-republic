@@ -18,6 +18,7 @@
 
 #include "room_topology.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -522,10 +523,12 @@ int Degree(const acc::engine::navgraph::NavGraphSnapshot& g, int node) {
 // raw rays + every feature are logged so thresholds stay re-pickable.
 void ComputeNodeShapeFeatures(const acc::engine::navgraph::NavGraphSnapshot& g,
                               int n, bool* nodeOpen, bool* nodeRoom,
-                              float* nodeFloorZ, bool* nodeDeadEnd) {
+                              float* nodeFloorZ, bool* nodeDeadEnd,
+                              float (*nodeAxisExt)[4]) {
     for (int i = 0; i < n; ++i) {
         nodeOpen[i] = false; nodeRoom[i] = false; nodeFloorZ[i] = 0.0f;
         nodeDeadEnd[i] = false;
+        for (int a = 0; a < 4; ++a) nodeAxisExt[i][a] = 0.0f;
     }
     const acc::engine::WallEdge* cw = nullptr;
     int cwCount = 0;
@@ -551,6 +554,12 @@ void ComputeNodeShapeFeatures(const acc::engine::navgraph::NavGraphSnapshot& g,
         nodeFloorZ[i] = probePos.z;
         float r[8];
         ProbeClearance8(cw, cwCount, probePos, r);
+        // Full extent across each axis (opposite rays summed), kept per
+        // node so Pass 3 can judge a cluster's elongation from ALL its
+        // members instead of one probe at the centroid — see
+        // ComputeCentroidAxis for why the centroid alone misleads.
+        // Index 0=E-W, 1=NE-SW, 2=N-S, 3=NW-SE.
+        for (int a = 0; a < 4; ++a) nodeAxisExt[i][a] = r[a] + r[a + 4];
         float mn = r[0], mx = r[0];
         int mnBit = 0, mxBit = 0;
         for (int k = 1; k < 8; ++k) {
@@ -889,8 +898,28 @@ void SnapshotTransitionTriggers(void* area) {
             continue;
         }
         if (!acc::engine::IsTransitionTrigger(obj)) continue;
-        Vector pos;
-        if (!acc::engine::GetObjectPosition(obj, pos)) continue;
+        Vector origin;
+        if (!acc::engine::GetObjectPosition(obj, origin)) continue;
+
+        // The object position is only the trigger polygon's ORIGIN (the
+        // GIT XPosition/YPosition the Geometry list is authored against),
+        // not where the player crosses it. Transition polygons are long
+        // strips across a corridor mouth, so the origin can sit many
+        // metres from the crossing (Wohnmodul 082 Ost 2026-09-14: origin
+        // 8m east of the actual crossing, voiced as "Übergang Ost" for a
+        // south-west exit). The polygon centroid is what the bearing and
+        // the nearest-node attach must use; origin only as fallback.
+        Vector pos = origin;
+        Vector poly[32];
+        int    nVerts = acc::engine::GetTriggerGeometry(obj, poly, 32);
+        if (nVerts >= 3) {
+            Vector sum = {0, 0, 0};
+            for (int v = 0; v < nVerts; ++v) {
+                sum.x += poly[v].x; sum.y += poly[v].y; sum.z += poly[v].z;
+            }
+            pos.x = sum.x / nVerts; pos.y = sum.y / nVerts;
+            pos.z = sum.z / nVerts;
+        }
 
         TransitionRecord& rec = g_graph.transitions[g_graph.transition_count];
         rec.pos         = pos;
@@ -913,8 +942,10 @@ void SnapshotTransitionTriggers(void* area) {
 
         acclog::Write("WallTopo",
                       "SnapshotTransitions: transition[%d] pos=(%.1f,%.1f) "
+                      "(polygon centroid of %d verts; origin=(%.1f,%.1f)) "
                       "dest=\"%s\" nearestNode=%d (dist=%.1fm)",
-                      g_graph.transition_count, pos.x, pos.y, rec.destName,
+                      g_graph.transition_count, pos.x, pos.y, nVerts,
+                      origin.x, origin.y, rec.destName,
                       rec.nearestNode,
                       rec.nearestNode >= 0 ? std::sqrt(bestSq) : -1.0f);
         if (rec.nearestNode < 0) {
@@ -1409,32 +1440,63 @@ std::string DirEntry(acc::strings::Id dirId, bool markDeadEnd,
     return std::string(word);
 }
 
-// Long-axis test for an area cluster. Probes 8 rays at the cluster
-// centroid (calibrated floor z) and reports whether the space is clearly
-// elongated and along which axis word. Returns false (no axis) for
-// roughly square / round / open spaces — those speak as a bare "Bereich".
-// The axis is the only geometry cue we surface; there is no size.
+// Long-axis test for an area cluster: is the space clearly elongated,
+// and along which axis word? Returns false (no axis) for roughly
+// square / round / open spaces — those speak as a bare "Bereich". The
+// axis is the only geometry cue we surface; there is no size.
+//
+// memberExt: the cluster's per-axis extents (index 0=E-W, 1=NE-SW,
+// 2=N-S, 3=NW-SE), each the MEDIAN over the member nodes' own 8-ray
+// probes (ComputeNodeShapeFeatures). Preferred over a single probe at
+// the centroid, which is what this used to be: the centroid of a
+// corridor sits mid-run, and mid-run is exactly where a crossing
+// corridor opens up. Citadel Station Wohnmodul 082 Ost (2026-09-14),
+// the Apartmentkomplex-C corridor: 11 nodes spanning 23m east-west,
+// 9 of them boxed to ~9m north-south, but the centroid landed on the
+// entrance corridor crossing it and its N-S rays ran 50m through the
+// door — "Bereich Nord-Süd" for a corridor you walk east-west. The
+// median ignores the two crossing members. nullptr falls back to the
+// centroid probe (no per-node data — wall cache missing at feature
+// time, in which case the probe here fails the same way).
 bool ComputeCentroidAxis(const Vector& centroid, float floorZ,
+                         const float* memberExt,
                          acc::strings::Id& outAxisId) {
     using acc::strings::Id;
-    const acc::engine::WallEdge* cw = nullptr;
-    int cwCount = 0;
-    if (!acc::spatial::change_detector::GetCachedWalls(cw, cwCount) ||
-        !cw || cwCount <= 0) {
-        return false;
-    }
-    Vector p = centroid;
-    p.z = floorZ;
-    float r[8];
-    ProbeClearance8(cw, cwCount, p, r);
-    // Full extent across each of the 4 axes = sum of the opposite rays.
-    // Index 0=E-W, 1=NE-SW, 2=N-S, 3=NW-SE (octant pairs k and k+4).
     float ext[4];
-    for (int a = 0; a < 4; ++a) ext[a] = r[a] + r[a + 4];
+    if (memberExt) {
+        for (int a = 0; a < 4; ++a) ext[a] = memberExt[a];
+    } else {
+        const acc::engine::WallEdge* cw = nullptr;
+        int cwCount = 0;
+        if (!acc::spatial::change_detector::GetCachedWalls(cw, cwCount) ||
+            !cw || cwCount <= 0) {
+            return false;
+        }
+        Vector p = centroid;
+        p.z = floorZ;
+        float r[8];
+        ProbeClearance8(cw, cwCount, p, r);
+        // Full extent across each of the 4 axes = sum of the opposite
+        // rays (octant pairs k and k+4).
+        for (int a = 0; a < 4; ++a) ext[a] = r[a] + r[a + 4];
+    }
     int longA = 0;
     for (int a = 1; a < 4; ++a) if (ext[a] > ext[longA]) longA = a;
     int perpA = (longA + 2) % 4;  // 90° away
-    if (ext[longA] < kAxisElongRatio * ext[perpA]) return false;
+    // ext[longA] > 0 guards the all-zero case (per-node data never
+    // computed) — 0 >= 1.8 * 0 would otherwise claim an "Ost-West" axis.
+    bool elong = ext[longA] > 0.0f &&
+                 ext[longA] >= kAxisElongRatio * ext[perpA];
+    acclog::Write("WallTopo",
+                  "ComputeCentroidAxis: at (%.1f,%.1f) %s extents "
+                  "E-W=%.1f NE-SW=%.1f N-S=%.1f NW-SE=%.1f -> %s",
+                  centroid.x, centroid.y,
+                  memberExt ? "member-median" : "centroid-probe",
+                  ext[0], ext[1], ext[2], ext[3],
+                  elong ? (longA == 0 ? "E-W" : longA == 1 ? "NE-SW"
+                           : longA == 2 ? "N-S" : "NW-SE")
+                        : "no axis");
+    if (!elong) return false;
     switch (longA) {
         case 0: outAxisId = Id::AxisEastWest;   break;
         case 2: outAxisId = Id::AxisNorthSouth; break;
@@ -1585,7 +1647,7 @@ void ClassifyAsArea(const acc::engine::navgraph::NavGraphSnapshot& g, int n,
                     const int* externalNbs, const int* externalSrcs,
                     const int* externalDoorIdx, int externalCount,
                     int areaHint, bool isLargeArea,
-                    const float* bboxXY,
+                    const float* bboxXY, const float* axisExt,
                     const bool* nodeDeadEnd,
                     const std::string& trigEntries,
                     std::string& outLabel, int& outKind, int& outSig) {
@@ -1677,7 +1739,8 @@ void ClassifyAsArea(const acc::engine::navgraph::NavGraphSnapshot& g, int n,
     AppendListEntry(dirList, trigEntries);
 
     Id axisId = Id::AxisEastWest;
-    bool elong = ComputeCentroidAxis(centroid, centroidFloorZ, axisId);
+    bool elong = ComputeCentroidAxis(centroid, centroidFloorZ, axisExt,
+                                     axisId);
     // Large-footprint clusters swap the neutral "Bereich" noun for
     // "Großer Bereich" — expectation-setting only; axis/exits/kind
     // are identical. Large areas only take the areaHint != 0 path
@@ -2113,7 +2176,7 @@ void ClassifyClusterShape(const acc::engine::navgraph::NavGraphSnapshot& g,
                      const std::string& trigEntries,
                      int areaHint, float centroidFloorZ,
                      bool isLargeArea,
-                     const float* bboxXY,
+                     const float* bboxXY, const float* axisExt,
                      const bool* nodeDeadEnd,
                      bool terminalDeadEndAgrees,
                      std::string& outLabel,
@@ -2129,7 +2192,7 @@ void ClassifyClusterShape(const acc::engine::navgraph::NavGraphSnapshot& g,
     if (areaHint != 0) {
         ClassifyAsArea(g, n, centroid, centroidFloorZ, externalNbs,
                        externalSrcs, externalDoorIdx, externalCount,
-                       areaHint, isLargeArea, bboxXY, nodeDeadEnd,
+                       areaHint, isLargeArea, bboxXY, axisExt, nodeDeadEnd,
                        trigEntries, outLabel, outKind, outSig);
         return;
     }
@@ -2333,7 +2396,7 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
                      const int* trigIdxs, int trigCount,
                      int areaHint, float centroidFloorZ,
                      bool isLargeArea,
-                     const float* bboxXY,
+                     const float* bboxXY, const float* axisExt,
                      const bool* nodeDeadEnd,
                      bool terminalDeadEndAgrees,
                      std::string& outLabel,
@@ -2351,15 +2414,15 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
                          externalDoorIdx, externalCount,
                          trigCount, trigEntries,
                          areaHint, centroidFloorZ, isLargeArea, bboxXY,
-                         nodeDeadEnd, terminalDeadEndAgrees,
+                         axisExt, nodeDeadEnd, terminalDeadEndAgrees,
                          outLabel, outKind, outSig, outFiltered);
     if (!outLabel.empty()) return;
 
     int n = static_cast<int>(g.nodes.size());
     ClassifyAsArea(g, n, centroid, centroidFloorZ, externalNbs,
                    externalSrcs, externalDoorIdx, externalCount,
-                   /*areaHint=*/2, isLargeArea, bboxXY, nodeDeadEnd,
-                   trigEntries, outLabel, outKind, outSig);
+                   /*areaHint=*/2, isLargeArea, bboxXY, axisExt,
+                   nodeDeadEnd, trigEntries, outLabel, outKind, outSig);
     outFiltered = false;
     acclog::Write(
         "WallTopo",
@@ -2852,6 +2915,10 @@ struct BuildPasses {
     // the walkmesh says don't terminate — and by every classification
     // site that used to re-probe this for itself.
     bool  nodeDeadEnd[kMaxNodes];
+    // Per-node axis extents from the same 8-ray probe (E-W, NE-SW, N-S,
+    // NW-SE). Pass 3 takes the per-cluster median so the elongation
+    // verdict comes from the whole cluster, not one centroid probe.
+    float nodeAxisExt[kMaxNodes][4];
 
     // Corridor straightness. Precomputed so Pass 1's corridor rule is a
     // both-straight test in the edge-walk; also read by Pass 1b (to pick
@@ -3575,6 +3642,28 @@ void PassClassifyClusters(void* area,
         }
         bool isLargeArea = bboxExtent >= kLargeAreaExtentMeters;
 
+        // Per-axis extent of the cluster = median over its members' own
+        // 8-ray extents. Feeds the elongation verdict (ComputeCentroidAxis
+        // explains why one centroid probe is not enough). Median, not
+        // mean: a member sitting on a crossing corridor reads tens of
+        // metres along that corridor and must not drag the verdict.
+        float axisExt[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        bool haveAxisExt = false;
+        if (size > 0 && bp.haveGW) {
+            float extTmp[kMaxNodes];
+            for (int a = 0; a < 4; ++a) {
+                int cnt = 0;
+                for (int m = 0; m < n; ++m) {
+                    if (UFFind(m) != root) continue;
+                    extTmp[cnt++] = bp.nodeAxisExt[m][a];
+                }
+                if (cnt <= 0) break;
+                std::nth_element(extTmp, extTmp + cnt / 2, extTmp + cnt);
+                axisExt[a] = extTmp[cnt / 2];
+                haveAxisExt = true;
+            }
+        }
+
         // External neighbours: edges from any member to a non-member.
         // Dedup by node id so multi-edge connections to the same
         // outside node only register once. Capture the source cluster
@@ -3757,6 +3846,7 @@ void PassClassifyClusters(void* area,
                         trigIdxs, trigCount,
                         areaHint, centroidFloorZ, isLargeArea,
                         (size > 0) ? bboxXY : nullptr,
+                        haveAxisExt ? axisExt : nullptr,
                         bp.nodeDeadEnd, terminalDeadEndAgrees,
                         label, kind, sig, filtered);
 
@@ -3888,7 +3978,7 @@ void BuildForArea(void* area) {
     // see the Pass 1 space/passage rule.
     BuildPasses bp;
     ComputeNodeShapeFeatures(g, n, bp.nodeOpen, bp.nodeRoom, bp.nodeFloorZ,
-                             bp.nodeDeadEnd);
+                             bp.nodeDeadEnd, bp.nodeAxisExt);
     // Persist the calibrated floor heights immediately — Pass 3's ramp-
     // exit annotation and (after build) LookupAt's zTrusted filters read
     // g_graph.node_floor_z directly.
