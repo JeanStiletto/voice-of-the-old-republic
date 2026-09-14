@@ -1551,6 +1551,22 @@ enum class Id : int {
     //                              callouts if we wire those up.
     SwoopRaceStarted,
     SwoopRaceControls,
+    // KOTOR 2 cheat sheet. Its tracks rebind the race: the follower's OnFire
+    // slot is EMPTY, the gear ladder moved to the OnAccelerate slot and the
+    // OnBrake slot runs onjump.ncs (SWMG_SetJumpSpeed 30 — a 1.3 s hop under
+    // a 10-unit tunnel ceiling). The client HandleInputEvent twin @0x007b12c0
+    // routes event 0xd9 (the MGshoot keymap row = Space, pad A) and 0x1a to
+    // the OnBrake runner @0x00838ec0, and events 0x16 (pad B) / 0x19 to the
+    // OnAccelerate runner @0x00838e10 — so Space JUMPS on KOTOR 2 and the
+    // shift is on the accelerate input named in the string. K1 sends both
+    // 0x19 and 0xd9 to CSWMiniPlayer::Fire, which is why Space shifts there.
+    SwoopRaceControlsK2,
+    // Spoken once when the bike has made no forward progress for several
+    // seconds in gear 0 after the race started — the KOTOR 2 "pinned against
+    // a lane-edge post / low bar, every relaunch hits it again" loop seen in
+    // patch-20260914-163810. Tells the player the escape: steer aside, then
+    // shift and jump together. Re-arms after real progress.
+    SwoopRaceStuckHint,
     SwoopRaceEnded,
     // Gear-shift cue spoken urgently on each shift event so the player
     // hears "Gang 2 / 3 / 4 / 5" through NVDA's typed-character cancel.
@@ -1697,6 +1713,7 @@ enum class Id : int {
     GlossaryEntrySwoopWallImpact,
     GlossaryEntrySwoopAligned,
     GlossaryEntrySwoopShiftReady,
+    GlossaryEntrySwoopJumpNow,
 
     // ---- In-game auto-updater (UpdateChecker).
     //      Background version check fires on first hook (CSWRules construction);
@@ -2104,6 +2121,7 @@ enum class Id : int {
     KbNamePazaakOppHand,
     KbNameTurretCyclePrev,
     KbNameTurretCycleNext,
+    KbNameSwoopJump,
     //      General:
     KbNameHelpMenuOpen,
     KbNameHelpContext,

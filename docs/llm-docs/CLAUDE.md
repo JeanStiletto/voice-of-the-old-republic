@@ -25,6 +25,7 @@ Each is a consolidation of former memory notes (offsets, addresses, decompiled m
 - **`walk-nav-and-walkmesh.md`** — leader-walk recipe, per-area nav-graph layout, dialog-speaker resolution, WallTopo walkmesh clustering.
 - **`audio-internals.md`** — Play3DOneShotSound gain chain, CExoSoundSource lifecycle, sound-mode pause exemptions, footstep paths, cue/party filtering, droid subtitles.
 - **`camera-and-swoop.md`** — camera screen-edge turn, A/D-vs-W/S decoupling, mouse-look gating, swoop accelerator-pad classification.
+- **`swoop-k2-controls-and-jump.md`** — engine-confirmed model of what KOTOR 2 changed in the swoop race (decompiled 2026-09-14): the OnAccelerate/OnBrake script slots and which client input events reach them (Space is the JUMP on K2, left click shifts), the K2 gear ladder and its one-notch-lower gates, `MIN_RACE_GEAR` as the gear source on both games, the jump physics (`CSWMiniGame+0x118`, gravity 45.8, 1.3 s hop under a 10-unit ceiling), the K2 player struct layout (+0x30), and the per-track obstacle inventory (`mgo` mines / `mgc` / `mge` / Nar Shaddaa fans). Read before touching `minigame_swoop_race.cpp` on KOTOR 2 or designing the vertical-obstacle cue.
 
 ## Source-file naming conventions (patch side)
 

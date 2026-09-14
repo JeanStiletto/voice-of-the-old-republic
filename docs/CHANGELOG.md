@@ -35,6 +35,55 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h2>v0.8.1</h2>
 
+<h3>KOTOR 2 swoop racing:</h3>
+
+- Space shifts gears again in KOTOR 2 swoop races, and W jumps. KOTOR 2 rebound
+  the race without telling anyone who plays by ear: its tracks moved the gear
+  ladder from the "fire" script to a new "accelerate" script that the engine
+  only triggers from the left mouse button (or a gamepad's B button), and gave
+  Space to the new jump. So the first K2 race parked at speed zero while Space
+  was pressed — the engine received every press and refused the jump because
+  the bike was still in gear 0. The mod now intercepts Space (and pad A) during
+  a KOTOR 2 race, runs the track's own gear-shift script through the engine's
+  runner and swallows the press so the engine's jump never fires; bare W (a new
+  rebindable "Swoop: Jump" hotkey) and pad B run the jump script. Left and right
+  mouse buttons keep their native meaning. KOTOR 1 is untouched.
+- The spoken gear number now comes from the track scripts' own gear variable
+  on both games, so a KOTOR 2 collision — which drops the bike to gear 0 and
+  forces a relaunch — is announced as "gear 0" instead of leaving the count
+  stuck (the previous top-speed-plateau counter could only ever go up).
+- The "shift now" cue uses KOTOR 2's own, lower gate ladder there (35 / 60 /
+  100 / 150 instead of KOTOR 1's 60 / 100 / 150 / 210), read from the shipped
+  `onaccelerate.ncs`; KOTOR 1 keeps its ladder.
+- The race entry cheat sheet on KOTOR 2 names the jump key.
+- KOTOR 2 tracks are now read by shape, not by object position. The obstacle
+  loop used to sound every lane-edge post (90 of Citadel's 105 objects, none
+  reachable from the lane) and placed the real hazards at their object
+  origins, up to 46 units away from the thing you hit. Each obstacle's
+  collision box is now read from the engine once per race: posts stay silent,
+  low bars get a "jump now" beep about 1.4 seconds ahead when they span your
+  lane, and blocks keep the panned warning loop at their true position.
+- Mines no longer attract the swoop co-pilot. KOTOR 2 keeps its mines in the
+  same pool as the accelerator pads, so the steering assist locked onto two
+  mines in the first playable race and drove the bike into both. Mines are
+  told apart by model and now warn like other blocks.
+- The "shift now" cue is audible on KOTOR 2. Its sample only exists in KOTOR
+  1's archives, so it had been firing silently there; KOTOR 2 plays a sibling
+  droid chirp that both games ship.
+- A collision no longer ends the race in speech. KOTOR 2 hits stop the bike
+  dead, which the "coasted to a stop" finish fallback took for the finish line
+  ("23.22 seconds, race ended" at the first bar). The finish is now the track
+  script's own finish flag; the fallback stays KOTOR 1 only.
+- After a collision the steering assist stays off until you are back in gear,
+  so you can steer clear of what you hit instead of being pulled back into it.
+- If the bike makes no headway for six seconds in gear 0 after the start, the
+  mod says how to get out: steer aside with A or D, then press Space and W
+  together.
+- Diagnostics: every jump start and landing is logged with speed, gear, air
+  time and peak height, the once-per-second race snapshot shows the gear
+  variable and the jump velocity, and the first-sweep inventory prints each
+  obstacle's collision box and class.
+
 <h3>KOTOR 2 on GOG:</h3>
 
 - The mod now works on the GOG release of KOTOR 2. It had never loaded there:

@@ -93,6 +93,67 @@ bool ReadFollowerPosition(void* follower, Vector& out) {
     }
 }
 
+void* ReadFollowerModelGob(void* follower) {
+    if (!follower) return nullptr;
+    __try {
+        void* modelsData = SafeReadPtr(follower, kTrackFollowerModelsDataOffset);
+        if (!modelsData) return nullptr;
+        return *reinterpret_cast<void**>(modelsData);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
+bool ReadGobBoundingBox(void* gob, Vector& mn, Vector& mx) {
+    if (!gob) return false;
+    __try {
+        void* vtable = *reinterpret_cast<void**>(gob);
+        if (!vtable) return false;
+        void* fn = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(vtable) + kGobVtableSlotGetBoundingBox);
+        if (!fn) return false;
+        typedef void (__thiscall* PFN_GetBBox)(void* this_, Vector* mn, Vector* mx);
+        Vector a = {0.0f, 0.0f, 0.0f}, b = {0.0f, 0.0f, 0.0f};
+        reinterpret_cast<PFN_GetBBox>(fn)(gob, &a, &b);
+        if (!(a.x <= b.x && a.y <= b.y && a.z <= b.z)) return false;  // NaN / empty
+        mn = a; mx = b;
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+bool ReadGobPartBoundingBox(void* gob, const char* partName, Vector& mn, Vector& mx) {
+    if (!gob || !partName) return false;
+    __try {
+        void* vtable = *reinterpret_cast<void**>(gob);
+        if (!vtable) return false;
+        void* fnPart = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(vtable) + kGobVtableSlotGetPart);
+        if (!fnPart) return false;
+        typedef void* (__thiscall* PFN_GetPart)(void* this_, const char* name);
+        void* part = reinterpret_cast<PFN_GetPart>(fnPart)(gob, partName);
+        if (!part) return false;
+        void* pvt = *reinterpret_cast<void**>(part);
+        if (!pvt) return false;
+        void* fnBox = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(pvt) + kPartVtableSlotGetMinBBox);
+        if (!fnBox) return false;
+        typedef void (__thiscall* PFN_PartMinBBox)(void* this_, Vector* mn,
+                                                   Vector* mx, float scale);
+        // The engine folds vertices into the caller's running min/max.
+        Vector a = { 3.4e38f,  3.4e38f,  3.4e38f};
+        Vector b = {-3.4e38f, -3.4e38f, -3.4e38f};
+        reinterpret_cast<PFN_PartMinBBox>(fnBox)(part, &a, &b, 1.0f);
+        if (!(a.x <= b.x && a.y <= b.y && a.z <= b.z)) return false;  // untouched / NaN
+        if (a.x < -1.0e6f || b.x > 1.0e6f) return false;              // still the sentinels
+        mn = a; mx = b;
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 void* CallAsCast(void* obj, size_t vtableSlotOffset) {
     if (!obj) return nullptr;
     __try {

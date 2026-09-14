@@ -476,6 +476,10 @@ const char* Get(Id id) {
             // Pause pauses the race, etc.) is in the manual ? verbose
             // spoken intro got in the way of the start countdown.
             return "Spazio per salire di marcia al segnale audio. Sterza con A e D. Evita gli ostacoli e colpisci le piastre acceleratrici per battere il tempo.";
+        case Id::SwoopRaceControlsK2:
+            return "Spazio per salire di marcia al segnale audio, W per saltare un ostacolo. Sterza con A e D. Evita gli ostacoli e colpisci le piastre acceleratrici per battere il tempo.";
+        case Id::SwoopRaceStuckHint:
+            return "Bloccato. Sterza di lato con A o D, poi premi spazio e W insieme.";
         case Id::SwoopRaceEnded:
             return "Corsa Swoop terminata.";
         case Id::FmtSwoopRaceGear:
@@ -546,6 +550,7 @@ const char* Get(Id id) {
         case Id::GlossaryEntrySwoopWallImpact:      return "Impatto contro muro Swoop";
         case Id::GlossaryEntrySwoopAligned:         return "Swoop in traiettoria";
         case Id::GlossaryEntrySwoopShiftReady:      return "Swoop cambio marcia pronto";
+        case Id::GlossaryEntrySwoopJumpNow:         return "Swoop salta ora";
 
         case Id::FmtUpdateAvailable:    return "Aggiornamento disponibile, versione %s. Premi F5 dal menu principale per installare.";
         case Id::UpdateDownloadStarting: return "Avvio del download.";
@@ -818,6 +823,7 @@ const char* Get(Id id) {
         case Id::KbNamePazaakOppHand:       return "Pazaak: Mano avversario";
         case Id::KbNameTurretCyclePrev:     return "Torretta: Bersaglio precedente";
         case Id::KbNameTurretCycleNext:     return "Torretta: Bersaglio successivo";
+        case Id::KbNameSwoopJump:           return "Swoop: Salta";
         // General
         case Id::KbNameHelpMenuOpen:        return "Aiuto tasti";
         case Id::KbNameHelpContext:         return "Aiuto contestuale";

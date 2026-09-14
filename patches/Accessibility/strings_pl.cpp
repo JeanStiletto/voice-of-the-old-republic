@@ -478,6 +478,10 @@ const char* Get(Id id) {
             return "Wy\x9C""cig \x9C""cigaczy.";
         case Id::SwoopRaceControls:
             return "Naci\x9Cnij spacj\xEA, aby zmieni\xE6 bieg na sygna\xB3 d\x9Fwi\xEAkowy. Steruj klawiszami A i D. Omijaj przeszkody i naje\xBF""d\xBF""aj na pola przyspieszenia, aby pobi\xE6 czas.";
+        case Id::SwoopRaceControlsK2:
+            return "Naci\x9Cnij spacj\xEA, aby zmieni\xE6 bieg na sygna\xB3 d\x9Fwi\xEAkowy, a W, aby przeskoczy\xE6 przeszkod\xEA. Steruj klawiszami A i D. Omijaj przeszkody i naje\xBF""d\xBF""aj na pola przyspieszenia, aby pobi\xE6 czas.";
+        case Id::SwoopRaceStuckHint:
+            return "Utkn\xB9\xB3""e\x9C. Zjed\x9F w bok klawiszem A lub D, potem naci\x9Cnij spacj\xEA i W razem.";
         case Id::SwoopRaceEnded:
             return "Koniec wy\x9C""cigu.";
         case Id::FmtSwoopRaceGear:
@@ -546,6 +550,7 @@ const char* Get(Id id) {
         case Id::GlossaryEntrySwoopWallImpact:      return "Uderzenie w \x9C""cian\xEA";
         case Id::GlossaryEntrySwoopAligned:         return "\x8C""cigacz na torze";
         case Id::GlossaryEntrySwoopShiftReady:      return "Gotowo\x9C\xE6 do zmiany biegu";
+        case Id::GlossaryEntrySwoopJumpNow:         return "Swoop skacz teraz";
 
         case Id::FmtUpdateAvailable:    return "Dost\xEApna aktualizacja, wersja %s. Naci\x9Cnij F5 w menu g\xB3\xF3wnym, aby zainstalowa\xE6.";
         case Id::UpdateDownloadStarting: return "Rozpoczynam pobieranie.";
@@ -818,6 +823,7 @@ const char* Get(Id id) {
         case Id::KbNamePazaakOppHand:       return "Pazaak: R\xEAka przeciwnika";
         case Id::KbNameTurretCyclePrev:     return "Wie\xBFyczka: Poprzedni cel";
         case Id::KbNameTurretCycleNext:     return "Wie\xBFyczka: Nast\xEApny cel";
+        case Id::KbNameSwoopJump:           return "Swoop: Skok";
         // General
         case Id::KbNameHelpMenuOpen:        return "Pomoc klawiszy";
         case Id::KbNameHelpContext:         return "Pomoc kontekstowa";

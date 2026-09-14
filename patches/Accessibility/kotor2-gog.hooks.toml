@@ -9,7 +9,7 @@
 #
 # Design rationale for each hook lives in kotor2.hooks.toml. Do not
 # duplicate it here; keep this file mechanical so it stays regenerable.
-# generated: 2026-09-14 14:18:04Z
+# generated: 2026-09-14 16:04:37Z
 
 [metadata]
 target_versions = [

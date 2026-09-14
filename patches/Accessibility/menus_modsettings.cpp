@@ -413,6 +413,7 @@ constexpr GlossaryEntry k_glossary[] = {
     { acc::audio::NavCue::SwoopWallImpact,          acc::strings::Id::GlossaryEntrySwoopWallImpact    },
     { acc::audio::NavCue::SwoopSteerAligned,        acc::strings::Id::GlossaryEntrySwoopAligned       },
     { acc::audio::NavCue::SwoopShiftReady,          acc::strings::Id::GlossaryEntrySwoopShiftReady    },
+    { acc::audio::NavCue::SwoopJumpNow,             acc::strings::Id::GlossaryEntrySwoopJumpNow       },
 };
 constexpr int k_glossaryCount = static_cast<int>(
     sizeof(k_glossary) / sizeof(k_glossary[0]));
@@ -1068,7 +1069,9 @@ void Tick() {
     if (static_cast<int32_t>(now - s_pendingFireAt) < 0) return;
     acc::audio::NavCue cue = s_pendingCue;
     s_pendingValid = false;
-    const char* resref = acc::audio::GetNavCueResref(cue);
+    // Per-game resolution: KOTOR 2's archives lack the K1 shift-ready sample,
+    // so the glossary must audition what the race will actually play.
+    const char* resref = acc::audio::GetNavCueResrefForGame(cue);
     // Audition through a self-managed CExoSoundSource (non-looping, 2D)
     // rather than CExoSound::PlayOneShotSound. 2D + non-spatial so the
     // sample plays centred, matching how the main-menu glossary sounds —

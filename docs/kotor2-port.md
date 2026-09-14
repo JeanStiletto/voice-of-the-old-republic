@@ -253,6 +253,16 @@ entry on K2 — its "clear cards" button, which this navigator has to list
 because it owns the arrows on that panel and anything it does not list is
 unreachable; pressing it empties the deck and the next tick says so; (8) the
 tutorial pazaak game does not freeze on the first draw.
+**Swoop round 1 (2026-09-14) — the bike never launched.** Space is the JUMP on
+KOTOR 2 (event 0xd9 → the new OnBrake slot, `onjump.ncs`); the gear ladder
+moved to the OnAccelerate slot, reachable only from the left mouse button /
+pad B, and K2's gates are one notch lower (35/60/100/150). Decompiled and
+fixed the same day: Space / pad A are re-routed to the shift at the client
+input hook, W / pad B jump, the gear is read from `MIN_RACE_GEAR` (a K2 hit
+drops it to 0). Model + log expectations: `docs/llm-docs/swoop-k2-controls-and-jump.md`
+and the Monitor entry in `docs/known-issues.md`. The test items below still
+stand, with "Space" now meaning the re-routed shift.
+
 Swoop: (1) entering a race speaks the opener + keybinds; (2) the gear
 announcement fires on each shift and the shift-ready cue precedes it; (3)
 obstacles and pads are audible and on the correct side — or the log says the

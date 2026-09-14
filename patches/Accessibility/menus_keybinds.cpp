@@ -106,6 +106,7 @@ constexpr ActionEntry kMinigames[] = {
     { A::PazaakOppHand,     S::KbNamePazaakOppHand },
     { A::TurretCyclePrev,   S::KbNameTurretCyclePrev },
     { A::TurretCycleNext,   S::KbNameTurretCycleNext },
+    { A::SwoopJump,         S::KbNameSwoopJump },
 };
 
 constexpr ActionEntry kGeneral[] = {

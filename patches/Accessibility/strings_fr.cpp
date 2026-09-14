@@ -477,6 +477,10 @@ const char* Get(Id id) {
             // Pause pauses the race, etc.) is in the manual ? verbose
             // spoken intro got in the way of the start countdown.
             return "Espace pour monter une vitesse au signal sonore. Dirigez avec A et D. \xC9vitez les obstacles et touchez les plaques d'acc\xE9l\xE9ration pour battre le temps.";
+        case Id::SwoopRaceControlsK2:
+            return "Espace pour monter une vitesse au signal sonore, W pour sauter un obstacle. Dirigez avec A et D. \xC9vitez les obstacles et touchez les plaques d'acc\xE9l\xE9ration pour battre le temps.";
+        case Id::SwoopRaceStuckHint:
+            return "Bloqu\xE9. D\xE9portez-vous avec A ou D, puis appuyez sur Espace et W ensemble.";
         case Id::SwoopRaceEnded:
             return "Course de Swoop termin\xE9""e.";
         case Id::FmtSwoopRaceGear:
@@ -547,6 +551,7 @@ const char* Get(Id id) {
         case Id::GlossaryEntrySwoopWallImpact:      return "Impact contre un mur Swoop";
         case Id::GlossaryEntrySwoopAligned:         return "Swoop sur la trajectoire";
         case Id::GlossaryEntrySwoopShiftReady:      return "Swoop changement de vitesse pr\xEAt";
+        case Id::GlossaryEntrySwoopJumpNow:         return "Swoop sauter maintenant";
 
         case Id::FmtUpdateAvailable:    return "Mise \xE0 jour disponible, version %s. Appuyez sur F5 depuis le menu principal pour installer.";
         case Id::UpdateDownloadStarting: return "D\xE9marrage du t\xE9l\xE9""chargement.";
@@ -819,6 +824,7 @@ const char* Get(Id id) {
         case Id::KbNamePazaakOppHand:       return "Pazaak : Main de l'adversaire";
         case Id::KbNameTurretCyclePrev:     return "Tourelle : Cible pr\xE9""c\xE9""dente";
         case Id::KbNameTurretCycleNext:     return "Tourelle : Cible suivante";
+        case Id::KbNameSwoopJump:           return "Swoop : Sauter";
         // General
         case Id::KbNameHelpMenuOpen:        return "Aide des touches";
         case Id::KbNameHelpContext:         return "Aide contextuelle";

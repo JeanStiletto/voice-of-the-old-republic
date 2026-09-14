@@ -489,6 +489,12 @@ const char* Get(Id id) {
             // ? verbose spoken intro got in the way of the start
             // countdown so the shorter form is preferred.
             return "Leertaste zum Hochschalten beim Audiosignal. Mit A und D lenken. Weiche den Hindernissen aus und triff die Beschleunigerfelder, um die Zeit zu schlagen.";
+        case Id::SwoopRaceControlsK2:
+            // KOTOR 2: Leertaste wird auf den Gangwechsel umgeleitet (die
+            // Engine legt dort den Sprung auf die Leertaste), Springen auf W.
+            return "Leertaste zum Hochschalten beim Audiosignal, W zum Springen \xFC""ber ein Hindernis. Mit A und D lenken. Weiche den Hindernissen aus und triff die Beschleunigerfelder, um die Zeit zu schlagen.";
+        case Id::SwoopRaceStuckHint:
+            return "Festgefahren. Mit A oder D zur Seite lenken, dann Leertaste und W zusammen dr\xFC""cken.";
         case Id::SwoopRaceEnded:
             return "Swoop-Rennen beendet.";
         case Id::FmtSwoopRaceGear:
@@ -562,6 +568,7 @@ const char* Get(Id id) {
         case Id::GlossaryEntrySwoopWallImpact:      return "Swoop-Wandaufprall";
         case Id::GlossaryEntrySwoopAligned:         return "Swoop auf Kurs";
         case Id::GlossaryEntrySwoopShiftReady:      return "Swoop-Gangwechsel bereit";
+        case Id::GlossaryEntrySwoopJumpNow:         return "Swoop jetzt springen";
 
         // "dr?cken" ? the hex escape \xFC followed by literal 'c' would be
         // parsed as \xFCc (out of range). Split the literal across two
@@ -838,6 +845,7 @@ const char* Get(Id id) {
         case Id::KbNamePazaakOppHand:       return "Pazaak: Gegnerhand";
         case Id::KbNameTurretCyclePrev:     return "Gesch\xFCtz: Ziel zur\xFC""ck";
         case Id::KbNameTurretCycleNext:     return "Gesch\xFCtz: Ziel vor";
+        case Id::KbNameSwoopJump:           return "Swoop: Springen";
         // General
         case Id::KbNameHelpMenuOpen:        return "Tastenhilfe";
         case Id::KbNameHelpContext:         return "Kontexthilfe";

@@ -141,6 +141,7 @@ const char* const kActionNames[static_cast<int>(Action::COUNT)] = {
     "PazaakOppHand",
     "TurretCyclePrev",
     "TurretCycleNext",
+    "SwoopJump",
     "DialogRepeatLine",
     "CopyLastSpoken",
 };
@@ -416,6 +417,14 @@ void InitDefaults() {
     // active (turret_game.cpp). Forbid every modifier like the Pazaak letters.
     bind(Action::TurretCyclePrev,   'Q',       0, 0,         kModShift | kModCtrl | kModAlt | kModAltGr);
     bind(Action::TurretCycleNext,   'E',       0, 0,         kModShift | kModCtrl | kModAlt | kModAltGr);
+
+    // ----- Swoop race (KOTOR 2) -----
+    // Bare W hops the bike over an obstacle. Polled only while a KOTOR 2 swoop
+    // race is active (minigame_swoop_race.cpp); in the race W is otherwise dead
+    // — the engine polls only the lateral axis and the mouse there. Space stays
+    // the gear shift on both games (the K2 engine's Space-jump is intercepted
+    // and re-routed at the client input hook). Forbid every modifier.
+    bind(Action::SwoopJump,         'W',       0, 0,         kModShift | kModCtrl | kModAlt | kModAltGr);
 
     // ----- Dialog -----
     // Bare R re-speaks the current NPC dialog line. Vanilla R is the in-world

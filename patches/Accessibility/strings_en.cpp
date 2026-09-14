@@ -469,6 +469,12 @@ const char* Get(Id id) {
             // Pause pauses the race, etc.) is in the manual ? verbose
             // spoken intro got in the way of the start countdown.
             return "Press space to shift up on the audio cue. Steer with A and D. Avoid the obstacles and hit the accelerator pads to beat the time.";
+        case Id::SwoopRaceControlsK2:
+            // KOTOR 2: Space is re-routed to the shift (the engine's own Space
+            // is the jump there) and the jump gets W — see strings.h.
+            return "Press space to shift up on the audio cue and W to jump over an obstacle. Steer with A and D. Avoid the obstacles and hit the accelerator pads to beat the time.";
+        case Id::SwoopRaceStuckHint:
+            return "Stuck. Steer aside with A or D, then press space and W together.";
         case Id::SwoopRaceEnded:
             return "Swoop race ended.";
         case Id::FmtSwoopRaceGear:
@@ -546,6 +552,7 @@ const char* Get(Id id) {
         case Id::GlossaryEntrySwoopWallImpact:      return "Swoop wall impact";
         case Id::GlossaryEntrySwoopAligned:         return "Swoop on track";
         case Id::GlossaryEntrySwoopShiftReady:      return "Swoop shift ready";
+        case Id::GlossaryEntrySwoopJumpNow:         return "Swoop jump now";
 
         case Id::FmtUpdateAvailable:    return "Update available, version %s. Press F5 from the main menu to install.";
         case Id::UpdateDownloadStarting: return "Starting download.";
@@ -817,6 +824,7 @@ const char* Get(Id id) {
         case Id::KbNamePazaakOppHand:       return "Pazaak: Opponent hand";
         case Id::KbNameTurretCyclePrev:     return "Turret: Previous target";
         case Id::KbNameTurretCycleNext:     return "Turret: Next target";
+        case Id::KbNameSwoopJump:           return "Swoop: Jump";
         // General
         case Id::KbNameHelpMenuOpen:        return "Key help";
         case Id::KbNameHelpContext:         return "Context help";

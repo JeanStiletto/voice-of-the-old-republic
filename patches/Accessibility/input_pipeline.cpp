@@ -37,6 +37,7 @@
                              // registry decides if this press belongs to a mod
                              // hotkey rather than the engine's bare action
 #include "floor_puzzle.h"    // IsActive — puzzle room owns bare R (board readout)
+#include "minigame_swoop_race.h"  // TryShift / TryJump — KOTOR 2 swoop keys
 #include "engine_panels.h"   // HasActiveDialogPanel — suppress the bare 1..7
                              // combat dispatch while a dialog reply listbox
                              // owns the number keys
@@ -236,6 +237,28 @@ extern "C" int __cdecl OnClientHandleInputEvent(void* this_ptr,
         acclog::Write("Diag.ClientHIE", "seq=%u code=%d CONSUMED — pad binding",
                       seq, param_1);
         return 1;  // consume → consumed_exit (POP*5 + RET 8)
+    }
+
+    // ---- KOTOR 2 swoop race: Space shifts, not jumps -----------------------
+    // K2's HandleInputEvent sends event 0xd9 (the MGshoot keymap row = Space,
+    // pad A) and 0x1a (right mouse) to the bike's OnBrake runner — the JUMP —
+    // and only 0x16 (pad B) / 0x19 (left mouse) to the OnAccelerate runner,
+    // the gear shift. No keyboard key shifts by default. Keep the KOTOR 1
+    // contract the mod already teaches ("Space to shift on the cue"): run the
+    // shift ourselves and swallow the press so the engine's jump case never
+    // sees it; give pad B the jump so a pad keeps both. Presses only — the
+    // engine's cases early-out on release anyway. TryShift/TryJump are no-ops
+    // (return false → pass through) outside an active K2 swoop race, so this
+    // touches nothing else that arrives as 0xd9 / 0x16.
+    if (param_2 != 0 && (param_1 == 0xd9 || param_1 == 0x16)) {
+        const bool handled = (param_1 == 0xd9) ? acc::swoop_race::TryShift()
+                                               : acc::swoop_race::TryJump();
+        if (handled) {
+            acclog::Write("Diag.ClientHIE",
+                          "seq=%u code=0x%x CONSUMED — K2 swoop %s",
+                          seq, param_1, param_1 == 0xd9 ? "shift" : "jump");
+            return 1;  // consume → consumed_exit
+        }
     }
 
     // ---- Puzzle-room bare-R ownership --------------------------------------

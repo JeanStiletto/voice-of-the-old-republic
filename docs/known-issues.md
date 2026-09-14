@@ -283,6 +283,55 @@ Offer the community resolution / widescreen + HR-menus patches as an installer o
 
 ## Monitor
 
+### KOTOR 2 swoop race — controls fixed in round 1, hazards rebuilt after round 2 (2026-09-14), awaiting round 3
+
+Round 1 (`patch-20260914-143533.log`): the bike never launched — Space is the
+JUMP on KOTOR 2 (event `0xd9` → OnBrake slot, `onjump.ncs`), the gear ladder
+sits on the OnAccelerate slot reachable only from the left mouse button / pad
+B. Fixed: Space / pad A re-routed to the shift at the client input hook, W (new
+`SwoopJump` hotkey) / pad B jump, gear from `MIN_RACE_GEAR`, K2's lower gate
+ladder.
+
+Round 2 (`patch-20260914-163810.log`): shifting, jumping and the gear
+announcements all worked (gear 3 reached, four jumps with peak 10.0), but the
+race was unplayable for four reasons, all now fixed:
+
+- The pad co-pilot steered the bike into two MINES (they share the enemy pool
+  with the pads; 23 pads + 24 mines on Citadel). Mines are now told apart by
+  model name, excluded from targeting and sounded as blocks.
+- The obstacle loop sounded 90 lane-edge posts that cannot be hit from the
+  lane ("enormous amounts of obstacles") and placed the real hazards at their
+  object origins, up to 46 units from the collision mesh. Every K2 obstacle is
+  now classified from its collision box (bar / block / post) — see
+  `docs/llm-docs/swoop-k2-controls-and-jump.md` section 7 for the atlas.
+  Posts are silent, bars get a jump cue (the jump itself stays the player's —
+  an auto-jump was built and removed the same day at the user's request),
+  blocks keep the panned loop at the right place.
+- The shift-ready cue fired eight times but was silent: its sample does not
+  exist in K2's archives. K2 now plays a sibling sample that does.
+- A bar hit bounced the bike against a post and the mod spoke "23.22 seconds,
+  race ended" (coast-to-a-stop fallback, now K1-only; finish is the scripts'
+  `MIN_RACE_GEAR == 6`). The bike then stayed pinned for 20 s; the magnet kept
+  pulling relaunches back into the bar (now off in gear 0) and nothing said
+  what to do (a stuck hint now does).
+
+What round 3 must show:
+
+- `enemy pool: accelpads=23 mines=24`, `mine slot=… model=[mgf_mine01]`, and
+  no `magnet slot=` line whose slot is a mine slot.
+- Obstacle inventory lines with `box=hitbump … class=post|bar|block`; the
+  `hazards: posts=… bars=…` trace with posts ≈ 90 on Citadel.
+- `jump cue: slot=… bar y=880.1` about 1.4 s before y=880 when driving near
+  the centre; after the W press `jump end: … peak_z≈10` and NO `gear -> 0`
+  at y≈880.
+- `shift-ready cue:` lines still present AND the cue audible this time.
+- `finish: script=1` at the real finish; no race-end speech mid-race.
+- If pinned anyway: `stuck hint:` once, and the hint spoken.
+
+KOTOR 1 regression to schedule: one Taris race — the gear source, the finish
+trigger and the magnet gear gate are shared; the bar/post classification,
+mines and the jump cue are K2-only paths.
+
 ### Lost key releases (stuck turn / walk) — engine-level fix built 2026-09-14, KOTOR 2 confirmed the same day, KOTOR 1 untested
 
 The KOTOR 2 uncommanded-camera-spin report of 2026-09-14 (`patch-20260914-085546.log`,

@@ -14,6 +14,8 @@
 
 #pragma once
 
+#include "engine_game.h"  // IsKotor2 — GetNavCueResrefForGame
+
 namespace acc::audio {
 
 enum class NavCue {
@@ -59,6 +61,11 @@ enum class NavCue {
     // "You can shift up a gear now" cue (swoop_race.cpp TickShiftReady). Was a
     // bare literal there; centralised here so the glossary can audition it.
     SwoopShiftReady,        // c_drdastro_atk1 (short droid-attack chirp)
+    // KOTOR 2 only in practice (K1's bike cannot jump): a low bar that spans the
+    // bike's lane is close enough that a jump pressed now clears it
+    // (minigame_swoop_audio.cpp, the hazard sweep). One-shot per bar.
+    SwoopJumpNow,           // mgs_warnbust (the minigames' own warning beep;
+                            //   present in both games' Sounds.bif)
 };
 
 constexpr const char* GetNavCueResref(NavCue cue) {
@@ -87,8 +94,21 @@ constexpr const char* GetNavCueResref(NavCue cue) {
         case NavCue::SwoopSteerRight:          return "acc_steer_r";
         case NavCue::SwoopSteerAligned:        return "acc_steer_ok";
         case NavCue::SwoopShiftReady:          return "c_drdastro_atk1";
+        case NavCue::SwoopJumpNow:             return "mgs_warnbust";
     }
     return "";
+}
+
+// Per-game resolution. The table above is what the K1 install ships; KOTOR 2's
+// Sounds.bif lacks c_drdastro_atk1 (only the droid's .utc/.ssf exist there), so
+// the shift-ready cue was silent for the whole first K2 swoop round
+// (patch-20260914-163810). Use this wherever a race cue or the glossary
+// audition plays, so both hear the same sample.
+inline const char* GetNavCueResrefForGame(NavCue cue) {
+    if (cue == NavCue::SwoopShiftReady && acc::game::IsKotor2()) {
+        return "c_drdasasin_atk1";  // assassin-droid chirp: same family, in both games
+    }
+    return GetNavCueResref(cue);
 }
 
 }  // namespace acc::audio
