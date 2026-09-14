@@ -720,3 +720,89 @@ while the Steam build's .text is still encrypted, so the scan would match nothin
 it installs from `EnsureSessionBringup` (rules-init) instead.
 
 ---
+
+## keyboard_transition_stream
+_The engine derives every key's down-state from buffered DirectInput transitions and never re-reads the device; the discard sites, which of them strand a key, and the ingest-point re-sync that fixes it_
+
+Decompiled 2026-09-14 on both games (Ghidra headless; KOTOR 2 twins located by
+`FindScalar.java` on the 0x1400 batch allocation). Fix: `engine_keyboard_resync.cpp`.
+
+**The read path (once per frame, from `CClientExoAppInternal::ProcessInput`):**
+- `CExoInput::GetEvents` (K1 @0x005df6b0, K2 @0x0072fa80) → `CExoInputInternal::GetEvents`
+  (K1 @0x005e24e0, K2 @0x0072c7e0). KOTOR 2 has a second caller, the Bink movie player
+  (class 5, skip-movie keys only).
+- It calls `CExoRawInputInternal::GetKeyboardBuffer` (K1 @0x005e3ae0, K2 @0x00732c40)
+  at ONE call site (K1 @0x005e25fe, K2 @0x0072c986, both `CALL rel32`), unless
+  `capture_keyboard_keys` is set (key-mapping options screen; `GetLastCapturedKeyboardKey`
+  drains the buffer instead).
+- `GetKeyboardBuffer`: gates on device non-NULL, `active` (+0x04) and keyboard mode
+  (+0x08, set by `KeyboardModeOn` for editboxes / the console — WM_CHAR carries the
+  typing and DirectInput is not read at all). Allocates a 0x1400 batch (256 ×
+  `DIDEVICEOBJECTDATA`, 0x14 each: dwOfs = DIK, dwData = 0x80 down / 0 up,
+  dwTimeStamp, dwSequence, uAppData) and calls `GetDeviceData(0x14, buf, &256, 0)`.
+  Error handling: `DIERR_INPUTLOST` / `DIERR_NOTACQUIRED` → `Acquire()` and **return an
+  empty batch** (everything queued in the gap is gone); `DI_BUFFEROVERFLOW` (1) treated
+  as success. The DirectInput buffer is 256 events (`DIPROP_BUFFERSIZE` = 0x100 in the
+  constructor @0x005e3e80; cooperative level 6 = NONEXCLUSIVE | FOREGROUND), so overflow
+  is not a realistic loss.
+- `GetEvents` walks the batch in dwSequence order (a fresh pick whenever the running
+  sequence finds no match, so an out-of-order entry cannot hang it). For each
+  transition it searches the ACTIVE input class's binding list for a matching code and,
+  for digital bindings (types 0/2/5), **assigns** `desc->field1_0x4 = dwData` — the
+  key's level flag. Transitions matching no binding in that class are skipped.
+- `CExoInputInternal::PollInput` (K1 @0x005e23c0) returns `ScaledValue(field1_0x4)` —
+  that is the turn axis (`0x11c`), the walk axis, everything `UpdateCamera` and player
+  control read. Nothing ever re-reads `GetDeviceState`: a missed release is permanent
+  until the same key is pressed and released again.
+
+**Discard sites, and whether they strand:**
+- `CExoRawInputInternal::SetActive` 0→1 (K1 @0x005e3c20, K2 @0x00733090): `Acquire()`
+  then `ClearKeyboardBuffer` — drains the buffer, **flags untouched → strands**. Engine
+  callers of `CExoInput::SetActive` on K1: `WinMessageHandler` (5 sites) /
+  `ActivateRenderWindow` / `DeactivateRenderWindow` / `toggleFullScreen` / `ReInitAurora`
+  via `CClientExoApp::SetInputActive`, `CSWSArea::SetTransitionPending` (2),
+  `CSWSArea::EventHandler`, `ShowLoadScreen` / `HideLoadScreen`, `WaitForMovie` (2),
+  `PlayMoviesInExoArrayList` (2), `CSWSObject::AIActionDialogObject` — SetActive(0)
+  at conversation start (after `StartGlobalFade`), SetActive(1) at its end —,
+  `CGuiInGame::UpdateControllerPauseState` / `EndControllerPauseState` (only on
+  `GetMainDeviceLost`), `QueryExitProgram` (quit popup). KOTOR 2 twins: SetInputActive
+  internal @0x00797d90 (window messages @0x0040a750 ×6, transition-pending @0x0052e110
+  ×2, and the CGuiInGame pause/popup functions @0x00798190 / @0x007983e0 /
+  @0x00798820 / @0x007a0fb0), dialogue @0x005d75b0 (2 sites), movies @0x007d0220 /
+  @0x007d01b0, quit @0x00796ba0. Field proof: `Diag.ClientHIE` key 218 (pause) is
+  logged DOWN and never UP on essentially every press in the K2 logs, with the
+  `DirectInput state: active=0 … active=1` pair between.
+- `GetKeyboardBuffer`'s own `INPUTLOST` / `NOTACQUIRED` path — **strands**, invisible
+  from outside (no log line existed before `KeyboardResync.Device`).
+- `CExoInput::ClearEvents` (K1 @0x005df4e0, K2 @0x0072f9f0): drains the buffer AND
+  zeroes every binding's level (`field1_0x4 = 0` for all descs) — **releases, does not
+  strand**. Called by `CClientExoAppInternal::SetInputClass` on every class change
+  (K1 @0x006200e0, K2 @0x007b3050), `SetInputActive` when its second arg is set, load
+  and movie paths, `HandleInputEvent` (4 sites), and the console toggle. So GUI panels,
+  dialogue reply screens and pause menus are safe on their own; only a raw SetActive
+  edge or a DirectInput loss strands.
+- `capture_keyboard_keys` (key-mapping screen only) and keyboard mode (editbox /
+  console): the batch is not read; transitions queue and arrive when the mode ends,
+  unless a `ClearEvents` intervenes.
+
+**The re-sync** (`acc::engine::InstallKeyboardStreamResync`, engine_keyboard_resync.cpp):
+rewrites the rel32 of the one `GetKeyboardBuffer` call inside `GetEvents` (self-verified:
+byte 0xE8 and the displacement must resolve to the reader) to a `__fastcall` wrapper that
+calls the real reader, folds the batch into a 256-key shadow of what the engine has been
+told, reads the true state with `IDirectInputDevice8::GetDeviceState` (vtable +0x24), and
+appends `{DIK, 0, GetTickCount, maxSeq+1, 0}` for every key the shadow holds down that the
+device reports up — only after two consecutive frames of disagreement with no transition
+for that key in this or the previous frame (a real release landing between the two reads
+arrives in the next batch and cancels it; duplicates are impossible). Presses are never
+synthesised. Gated on the reader's own gates; a device pointer change resets the shadow;
+a fault disables the resync for the session (the wrapper keeps forwarding). Install: K2
+from DllMain, K1 from `EnsureSessionBringup` (packed .text). This is the same shape as
+KOTOR 2's own joystick reader (@0x00731390), which derives its transitions by diffing
+`GetDeviceState` against the previous frame.
+
+**Why the earlier guards were not enough:** `camera_spin_guard` fixes one cause (cursor in
+the edge band) and only watches the symptom otherwise; `WatchDeadKeyboard` stops the mod's
+OWN reacquire cycles from stranding a held key, but cannot touch the engine's edges or a
+DirectInput loss. Both stay — the watchdog addresses a different failure (a dead keyboard),
+and the spin watch is now the check that a spin ends within a fraction of a second with a
+`KeyboardResync: synthesised release` line beside it.

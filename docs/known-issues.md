@@ -283,6 +283,45 @@ Offer the community resolution / widescreen + HR-menus patches as an installer o
 
 ## Monitor
 
+### Lost key releases (stuck turn / walk) — engine-level fix built 2026-09-14, KOTOR 2 confirmed the same day, KOTOR 1 untested
+
+The KOTOR 2 uncommanded-camera-spin report of 2026-09-14 (`patch-20260914-085546.log`,
+a clockwise spin from 09:10:58 to the quit at 09:12:24, cursor NOT in the edge
+band) was a stranded turn-key release. Decompiled on both games the same day:
+the engine reads the keyboard as buffered DirectInput transitions and never
+re-reads the device, so a release discarded by any of its own gaps stays "down"
+until the key is pressed again. The gaps: every raw-input SetActive 0→1 edge
+(dialogue start/end, pause and quit popups, area transitions, load screens,
+movies, window focus) and the reader's own "input lost / not acquired" path,
+which answers an empty batch. The pause key's own release is lost on
+essentially every press in the KOTOR 2 logs (`Diag.ClientHIE` 218 down, never
+up) — harmless there, proof of the mechanism. Input-class switches also drain
+the buffer but zero every key state first, so they release rather than strand.
+
+Fix: `engine_keyboard_resync.cpp` wraps the one call through which the per-frame
+event fetch pulls the keyboard batch, diffs the engine's view against
+`GetDeviceState`, and appends a release for any key the engine still holds that
+DirectInput reports up, after two consecutive frames of disagreement with no
+transition for that key. Presses are never synthesised. Full model in
+`docs/llm-docs/gui-and-input-internals.md` "keyboard_transition_stream".
+
+What to look for in the next logs of either game: `KeyboardResync: installed`
+at bring-up; a `synthesised release for DIK 0x..` line whenever a loss was
+repaired (0x2e = C, the user's turn-right key); `KeyboardResync.Device` edges
+dating any DirectInput-level gaps. A `CameraSpinDiag: UNCOMMANDED ROTATION`
+that is NOT followed within a second by a synthesised release is a new cause.
+KOTOR 2 confirmation (`patch-20260914-115230.log`, 12 minutes of deliberate
+provocation, no spin, no fault): four releases repaired — Enter at a load end,
+F4 at the quit popup twice, W during a popup — every one at an engine
+`active=0 → 1` edge, none anywhere else, i.e. no misfire in ordinary play.
+The `KeyboardResync.Device` edge only reports a device lost while the
+engine still believes input is active; gaps the engine itself opens are
+already dated by the `DirectInput state` poll. KOTOR 1 shares the code and
+its call site is byte-verified offline, but has not had a session yet.
+
+Which of the two invisible gaps produced the 09:10:58 episode is still
+unknown; the new lines answer that on the next occurrence.
+
 ### GOG KOTOR 2 relocation port — executed and locally verified 2026-09-04, awaiting the tester round
 
 The "mod has never loaded on GOG K2" defect (silent vanilla game since v0.7.0;

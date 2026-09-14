@@ -2,6 +2,10 @@
 
 #pragma once
 
+#include <cstddef>
+
+#include "engine_offsets_select.h"  // acc::off — the raw-input layout below
+
 namespace acc::engine {
 
 // Human-readable name. "?" for unknown, "INPUTDEVICE_NONE" for -1.
@@ -219,3 +223,22 @@ constexpr int kInputKbRightShift = 25;
 constexpr int kInputKbComma      = 103;
 constexpr int kInputKbPeriod     = 104;
 constexpr int kInputKbAnnounce   = 105;
+
+// CExoRawInputInternal field layout — the object that owns the DirectInput
+// devices, reached from the ExoInput global via CExoInput::internal (+0x04)
+// then CExoInputInternal::raw_input (K1 +0x140, K2 +0x1a0). KOTOR 1 values are
+// Lane's struct (size 0x34); KOTOR 2 values come from the disassembly of its
+// InitializeDirectInputMouse / SetActive / ShutDownDirectInput / the keyboard
+// reader, which agree with each other — the three device fields each sit 4
+// bytes higher than in KOTOR 1, while `active` and the keyboard-mode flag do
+// not move. Shared here because engine_input.cpp (device lifecycle) and
+// engine_keyboard_resync.cpp (transition stream) both walk it.
+namespace acc::engine::raw_input {
+inline const size_t kOffActive       = acc::off::Same(0x04);
+// Non-zero while an editbox / the console owns the keyboard (KeyboardModeOn):
+// the reader skips DirectInput entirely and WM_CHAR carries the typing.
+inline const size_t kOffKeyboardMode = acc::off::Same(0x08);
+inline const size_t kOffInterface    = acc::off::Pick(0x1c, 0x20);
+inline const size_t kOffKeyboard     = acc::off::Pick(0x20, 0x24);
+inline const size_t kOffMouse        = acc::off::Pick(0x24, 0x28);
+}  // namespace acc::engine::raw_input

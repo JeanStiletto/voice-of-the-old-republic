@@ -131,15 +131,8 @@ const uintptr_t kAddrInitMouseEnd =
 const uintptr_t kAddrShutDownDirectInput =
     acc::addr::Pick(0x005e3dc0, 0x00733200);
 
-// CExoRawInputInternal fields. KOTOR 1 values are Lane's struct
-// (/KotOR Types/Exo Types/CExoRawInputInternal, size 0x34); KOTOR 2 values are
-// from the disassembly of its InitializeDirectInputMouse / SetActive /
-// ShutDownDirectInput, which agree with each other — the three device fields
-// each sit 4 bytes higher than in KOTOR 1, while `active` does not move.
-const size_t kOffRawActive   = acc::off::Same(0x04);
-const size_t kOffRawInterface = acc::off::Pick(0x1c, 0x20);
-const size_t kOffRawKeyboard  = acc::off::Pick(0x20, 0x24);
-const size_t kOffRawMouse     = acc::off::Pick(0x24, 0x28);
+// CExoRawInputInternal fields live in engine_input.h (raw_input::kOff*) —
+// shared with the keyboard stream re-sync, which walks the same object.
 
 // CExoInput::internal, then CExoInputInternal::raw_input — the walk from the
 // ExoInput global to the object that owns the DirectInput devices. KOTOR 2's
@@ -494,9 +487,9 @@ void __fastcall MouseInitFailedInsteadOfTeardown(void* rawInput,
     void* mouse = nullptr;
     __try {
         auto* base = static_cast<uint8_t*>(rawInput);
-        iface    = *reinterpret_cast<void**>(base + kOffRawInterface);
-        keyboard = *reinterpret_cast<void**>(base + kOffRawKeyboard);
-        mouse    = *reinterpret_cast<void**>(base + kOffRawMouse);
+        iface    = *reinterpret_cast<void**>(base + raw_input::kOffInterface);
+        keyboard = *reinterpret_cast<void**>(base + raw_input::kOffKeyboard);
+        mouse    = *reinterpret_cast<void**>(base + raw_input::kOffMouse);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
     }
 
@@ -629,10 +622,10 @@ bool ReadDiSnapshot(DiSnapshot* out) {
 
         auto* base = static_cast<uint8_t*>(raw);
         out->raw      = raw;
-        out->active   = *reinterpret_cast<unsigned int*>(base + kOffRawActive);
-        out->iface    = *reinterpret_cast<void**>(base + kOffRawInterface);
-        out->keyboard = *reinterpret_cast<void**>(base + kOffRawKeyboard);
-        out->mouse    = *reinterpret_cast<void**>(base + kOffRawMouse);
+        out->active   = *reinterpret_cast<unsigned int*>(base + raw_input::kOffActive);
+        out->iface    = *reinterpret_cast<void**>(base + raw_input::kOffInterface);
+        out->keyboard = *reinterpret_cast<void**>(base + raw_input::kOffKeyboard);
+        out->mouse    = *reinterpret_cast<void**>(base + raw_input::kOffMouse);
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;

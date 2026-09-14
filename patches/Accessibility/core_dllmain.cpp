@@ -16,6 +16,7 @@
 #include "diag_settings.h"
 #include "engine_game.h"
 #include "engine_input.h"
+#include "engine_keyboard_resync.h"
 #include "engine_keymap.h"
 #include "log.h"
 #include "mod_version.h"
@@ -234,6 +235,11 @@ void EnsureSessionBringup() {
     // would match nothing. Idempotent, so the KOTOR 2 call below is not undone
     // by this one.
     acc::engine::InstallMouseTeardownBlock();
+    // Keyboard transition-stream re-sync: a release the engine discards (its
+    // own SetActive edges, a lost DirectInput device) is re-delivered instead
+    // of stranding the key. KOTOR 1 installs here for the same packed-.text
+    // reason as the teardown block; KOTOR 2 has already done so from DllMain.
+    acc::engine::InstallKeyboardStreamResync();
     // Save-thumbnail divide-by-zero guard. Declines on KOTOR 2 by design —
     // see the note at its install site.
     acc::save_guard::InstallSaveScreenshotGuard();
@@ -349,6 +355,11 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD reason, LPVOID) {
             // the crash used to. KOTOR 2's image is not packed, so the
             // verification scan reads real bytes here.
             acc::engine::InstallMouseTeardownBlock();
+            // Keyboard transition-stream re-sync (engine_keyboard_resync.h).
+            // A static CALL-site rewrite inside GetEvents; nothing about it
+            // depends on the engine's input bring-up having run, and the
+            // unpacked image makes the site verifiable here.
+            acc::engine::InstallKeyboardStreamResync();
         }
         // Prism init deferred — loader lock.
     }

@@ -49,6 +49,8 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h3>Bug fixes:</h3>
 
+- A key the game loses track of no longer stays pressed (both games). Cause: the engine reads the keyboard as a stream of press/release transitions and derives "is this key down" from that stream alone, but it throws the queued transitions away at every dialogue start and end, pause or quit popup, area transition, load screen, movie and focus change, and again whenever DirectInput briefly loses the device. A release that fell into one of those gaps left the key held forever: the camera spun after a conversation, the party walked off on its own. The mod now compares what the engine has been told with the true key state after every keyboard read, and re-delivers a lost release through the engine's own path within two frames. Presses are never invented and normal keypresses pass through untouched. The log names every re-delivered key (`KeyboardResync`).
+
 - KOTOR 2: opening Load Game with no saved games and pressing the arrow keys
   no longer crashes the game. With an empty list the engine's own navigation
   followed a stale pointer into freed memory and called into garbage; a guard

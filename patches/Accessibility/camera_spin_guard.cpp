@@ -428,6 +428,15 @@ void Tick() {
     // engine over a camera that is doing something legitimate we failed to
     // gate; naming the cause comes first.
     //
+    // 2026-09-14: the cause behind the KOTOR 2 field report was named — a
+    // turn-key release the engine discarded (its buffered keyboard model,
+    // gui-and-input-internals.md "keyboard_transition_stream") — and is fixed
+    // at the ingest point by engine_keyboard_resync.cpp, which re-delivers a
+    // lost release within two frames. A spin this watch reports from now on
+    // should therefore end on its own inside a fraction of a second and be
+    // accompanied by a "KeyboardResync: synthesised release" line; one that
+    // runs longer is a different cause again.
+    //
     // Both queries below scan (panel stack / key state), so resolve once per
     // tick — the tripwire further down wants the same two answers.
     //
