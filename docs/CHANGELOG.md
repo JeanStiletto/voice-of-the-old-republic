@@ -108,6 +108,18 @@ bullet says otherwise.
 
 <h3>Bug fixes:</h3>
 
+- Loading a new area on KOTOR 2 no longer reads out the game's internal menus.
+  Walking through a door between Citadel Station modules, or starting and
+  leaving a swoop race, spoke the screens the engine rebuilds behind the
+  loading screen — "Build: 427", "Add Power", "Name", the message log,
+  "control 8", the store and the save screen — before the area name. The mod
+  goes quiet during a load by watching the engine store the module it is about
+  to load, and on KOTOR 2 that watch sat on the wrong function: a neighbouring
+  one that reads the arrival waypoint, which the engine calls from a single
+  place. Doors, triggers, area events and scripted transitions therefore never
+  armed the silence. Loading a save was never affected, which is why the same
+  cantina was clean on a save load and noisy through a door.
+
 - A key the game loses track of no longer stays pressed (both games). Cause: the engine reads the keyboard as a stream of press/release transitions and derives "is this key down" from that stream alone, but it throws the queued transitions away at every dialogue start and end, pause or quit popup, area transition, load screen, movie and focus change, and again whenever DirectInput briefly loses the device. A release that fell into one of those gaps left the key held forever: the camera spun after a conversation, the party walked off on its own. The mod now compares what the engine has been told with the true key state after every keyboard read, and re-delivers a lost release through the engine's own path within two frames. Presses are never invented and normal keypresses pass through untouched. The log names every re-delivered key (`KeyboardResync`).
 
 <h3>Diagnostics:</h3>

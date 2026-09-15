@@ -393,25 +393,43 @@ type = "pointer"
 # Batch 3 — world / area / transitions
 # ============================================================================
 
-# CServerExoApp::SetMoveToModuleString @0x0051BFD0 (K1 0x004AECD0). Identity
-# decompile-confirmed: the body assigns the destination-module CExoString at
-# internal([this+4])+0x1008C. 7 callers incl. the door-transition EventHandler.
+# CServerExoApp::SetMoveToModuleString @0x0051BEA0 (K1 0x004AECD0). The
+# internal block keeps K1's layout exactly: +0x10080 move-pending flag,
+# +0x10084 destination module CExoString, +0x1008C start-waypoint CExoString.
+# The facade cluster, witnessed by FindScalar on those offsets (2026-09-16):
+#   0x0051BE50 SetMoveToModulePending   MOV [internal+0x10080], arg
+#   0x0051BE80 GetMoveToModulePending   MOV EDX, [internal+0x10080]
+#   0x0051BEA0 SetMoveToModuleString    ECX=internal+0x10084; CExoString::operator=
+#   0x0051BFA0 SetMoveToModuleStartWaypoint (same shape, +0x1008C)
+#   0x0051BFD0 GetMoveToModuleStartWaypoint (copy-constructs into [EBP+8], returns it)
+# Six callers each for the pending and string setters, and the SAME six —
+# K1's door / trigger / area event handlers, StartNewModule, warp and the
+# debug module menu, one for one.
 #
-# Hooked after the prologue at 0x0051BFD9, on the SEH-scope-index init:
-#   0051bfd0: 55 8b ec 83 ec 0c     prologue (PUSH EBP; MOV EBP,ESP; SUB ESP,0xC)
-#   0051bfd6: 89 4d f4              MOV [EBP-0xC],ECX     ; this stored
-#   0051bfd9: c7 45 fc 00 00 00 00  MOV [EBP-0x4],0       ← hook here, 7 bytes
-#   0051bfe0: 8b 45 f4              MOV EAX,[EBP-0xC]     ; resume point
+# THIS HOOK USED TO SIT ON 0x0051BFD0 — the start-waypoint GETTER, whose only
+# caller is the server main loop on one branch. Every K2 door and scripted
+# module change (Citadel Station doors, the swoop track in and out) went
+# un-latched, so the in-game GUI rebuild burst ("Build: 427", "Add Power",
+# "Nachrichten", "control 8" ...) was spoken over every load; the rare fires it
+# did get read their "destination" out of an empty stack return buffer.
 #
-# The destination CExoString* is a clean frame param at [EBP+8] — the VALUE,
-# unlike K1's esp+4 LEA'd slot address, so the K2 wrapper reads it directly.
+# Hooked after the prologue at 0x0051BEA9:
+#   0051bea0: 55 8b ec 83 ec 08     prologue (PUSH EBP; MOV EBP,ESP; SUB ESP,8)
+#   0051bea6: 89 4d f8              MOV [EBP-0x8],ECX     ; this stored
+#   0051bea9: 8b 45 f8              MOV EAX,[EBP-0x8]     ← hook here, 6 bytes
+#   0051beac: 8b 48 04              MOV ECX,[EAX+0x4]     ; internal
+#   0051beaf: 89 4d fc              MOV [EBP-0x4],ECX     ; resume point
+# Both cut instructions read only through EBP, so no register state has to
+# survive the wrapper. The destination is `CExoString const&` at [EBP+8] — a
+# CExoString* VALUE, unlike K1's esp+4 LEA'd slot address.
 [[hooks]]
-address = 0x0051bfd9
+address = 0x0051bea9
 type = "detour"
 function = "OnSetMoveToModuleStringK2"
 
-# c7 45 fc 00 00 00 00  MOV [EBP-0x4], 0
-original_bytes = [0xc7, 0x45, 0xfc, 0x00, 0x00, 0x00, 0x00]
+# 8b 45 f8  MOV EAX,[EBP-0x8]
+# 8b 48 04  MOV ECX,[EAX+0x4]
+original_bytes = [0x8b, 0x45, 0xf8, 0x8b, 0x48, 0x04]
 
 skip_original_bytes = false
 exclude_from_restore = []

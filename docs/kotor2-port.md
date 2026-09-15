@@ -2354,6 +2354,15 @@ above are cleared):**
   frame param, so **no LEA-vs-MOV double-deref** unlike K1. Needs an in-game
   first-fire check: the setter identity is caller-count-inferred, not yet
   landmark-confirmed.
+  **WRONG — corrected 2026-09-16.** 0x0051bfd0 is
+  `GetMoveToModuleStartWaypoint` (copy-constructs `internal+0x1008c` into the
+  hidden return buffer at [EBP+8]; one caller, the server main loop). K2 keeps
+  K1's layout: +0x10080 pending, +0x10084 module string, +0x1008c waypoint.
+  The real setter is **0x0051bea0** (six callers, the same six as K1), hooked
+  at **0x0051bea9**, cut `8b 45 f8 8b 48 04`. The wrong hook left every K2
+  door/scripted module change un-latched, so the in-game GUI rebuild burst
+  ("Build: 427", "Add Power", ...) was spoken over each load. K2 logs the
+  destination resref but does not speak it. Rationale in kotor2.hooks.toml.
 - **OnDoorOpen** — `CSWSDoor::OpenDoor` 0x00589ceb → **0x00619d00**. The opener
   stamp is `mov [eax+0x36c],ecx` at 0x00619db0 (K1 stamped `[esi+0x31c]`). Hook
   at **0x00619daa**, cut `8b 45 c4 8b 4d 08` (6 bytes, `mov eax,[ebp-0x3c]` +

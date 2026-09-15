@@ -9,7 +9,7 @@
 #
 # Design rationale for each hook lives in kotor2.hooks.toml. Do not
 # duplicate it here; keep this file mechanical so it stays regenerable.
-# generated: 2026-09-14 16:04:37Z
+# generated: 2026-09-15 22:23:03Z
 
 [metadata]
 target_versions = [
@@ -177,11 +177,11 @@ source = "ebp"
 type = "pointer"
 
 [[hooks]]
-# OnSetMoveToModuleStringK2 -- was 0x0051bfd9 (+1243680 bytes)
-address = 0x0064b9f9
+# OnSetMoveToModuleStringK2 -- was 0x0051bea9 (+1243680 bytes)
+address = 0x0064b8c9
 type = "detour"
 function = "OnSetMoveToModuleStringK2"
-original_bytes = [0xc7, 0x45, 0xfc, 0x00, 0x00, 0x00, 0x00]
+original_bytes = [0x8b, 0x45, 0xf8, 0x8b, 0x48, 0x04]
 skip_original_bytes = false
 exclude_from_restore = []
 

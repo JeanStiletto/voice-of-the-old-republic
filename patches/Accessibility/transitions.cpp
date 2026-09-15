@@ -1444,7 +1444,8 @@ namespace {
 // wrong shape, and the two consequences of trusting it are both bad: the log
 // line stops identifying the destination (the one field a stuck-transition
 // report needs) and the "Loading: …" announce speaks binary noise at the
-// player. Both K2 fires on record failed this test.
+// player. Every K2 fire failed this test while that hook sat on the wrong
+// function (a getter handing us an empty return buffer).
 bool LooksLikeResref(const char* s) {
     if (!s || !s[0]) return false;
     bool sawAlnum = false;
@@ -1460,7 +1461,7 @@ bool LooksLikeResref(const char* s) {
     return sawAlnum;
 }
 
-// Shape A — `base` is a CExoString* { char* c_string; uint32 length }.
+// `base` is a CExoString* { char* c_string; uint32 length }.
 // ReadCExoString dereferences c_string unguarded, so the guard is ours (the
 // old comment here claimed otherwise; the K1 hook survived on a correct
 // argument, not on a guard).
@@ -1470,23 +1471,6 @@ bool TryReadExoString(void* base, char* out, size_t outSize) {
     __try {
         return acc::engine::ReadCExoString(base, /*offset=*/0, out, outSize);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
-}
-
-// Shape B — the slot holds a by-value CExoString, so the dword IS c_string
-// and the text starts there. Bounded, NUL-terminated, SEH-guarded.
-bool TryReadNarrowText(const void* p, char* out, size_t outSize) {
-    if (!p || !out || outSize == 0) return false;
-    out[0] = '\0';
-    __try {
-        const char* s = static_cast<const char*>(p);
-        size_t n = 0;
-        for (; n + 1 < outSize && s[n]; ++n) out[n] = s[n];
-        out[n] = '\0';
-        return out[0] != '\0';
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        out[0] = '\0';
         return false;
     }
 }
@@ -1568,34 +1552,25 @@ void AnnouncePreLoadDestination(void* exoStringPtr) {
     AnnouncePreLoadDest(dest, "exoString*");
 }
 
-void AnnouncePreLoadDestinationK2(void* slotValue) {
+void LatchPreLoadDestinationK2(void* exoStringPtr) {
+    // Same unconditional latch as the K1 path — this is what silences the
+    // in-game GUI rebuild burst over the load.
     g_module_load_pending = true;
 
-    if (!slotValue) return;
-
-    // Shape A first — the K1 reading, and what the hook comment assumes.
     char dest[128] = {0};
-    if (TryReadExoString(slotValue, dest, sizeof(dest)) &&
-        LooksLikeResref(dest)) {
-        AnnouncePreLoadDest(dest, "K2 exoString*");
+    if (!exoStringPtr || !TryReadExoString(exoStringPtr, dest, sizeof(dest)) ||
+        !LooksLikeResref(dest)) {
+        acclog::Write("Transition",
+            "pre-load requested (K2) but destination unreadable (exoStr=%p) — "
+            "load latch armed", exoStringPtr);
         return;
     }
 
-    // Shape B — the slot holds the CExoString by value, so it IS the c_string.
-    if (TryReadNarrowText(slotValue, dest, sizeof(dest)) &&
-        LooksLikeResref(dest)) {
-        AnnouncePreLoadDest(dest, "K2 inline");
-        return;
-    }
-
-    // Neither reading produced a resref. Say so plainly rather than speaking
-    // the noise: the transition itself is latched and under way, and the log
-    // line still marks the request, which is what a stuck-transition report
-    // needs. If this line is what a future log shows, the argument shape at
-    // the K2 hook site is a third thing and wants a decompile, not a guess.
-    acclog::Write("Transition",
-        "pre-load requested (K2) but neither shape read a resref "
-        "(slot=%p) — announce skipped, load latch armed", slotValue);
+    // Logged, not spoken: a resref ("203TEL") is internal noise to the
+    // player, and the area-name announce names the new module properly once
+    // it has surfaced.
+    acclog::Write("Transition", "pre-load -> '%s' (K2, latch armed, not spoken)",
+                  dest);
 }
 
 }  // namespace acc::transitions
@@ -1633,31 +1608,25 @@ extern "C" void __cdecl OnSetMoveToModuleString(void* /*serverApp*/,
     acc::transitions::AnnouncePreLoadDestination(exoStringPtr);
 }
 
-// CServerExoApp::SetMoveToModuleString @0x0051BFD0 on KOTOR 2, hooked at
-// 0x0051BFD9 (after the prologue stored `this`). Identity decompile-confirmed:
-// the body assigns the destination CExoString at internal([this+4])+0x1008C.
-// Unoptimised frame, so the destination is a clean frame param at [EBP+8] —
-// the value itself, NOT the K1 LEA'd slot address; no double-deref here.
-//
-// The hook itself is proven — it fires on K2's scripted module changes (turret
-// entry / exit, patch-20260812-115149.log) — but every K2 fire on record read
-// its destination as noise where K1 reads a clean resref, so the dword is
-// handed on unread and AnnouncePreLoadDestinationK2 decides what it is.
+// CServerExoApp::SetMoveToModuleString @0x0051BEA0 on KOTOR 2, hooked at
+// 0x0051BEA9 (after the prologue stored `this`). Unoptimised frame, so the
+// `CExoString const&` destination is a clean frame param at [EBP+8] — a
+// CExoString* value, NOT the K1 LEA'd slot address; no double-deref here.
+// Offset witnesses and the history of the wrong-function hook this replaced
+// are in kotor2.hooks.toml.
 extern "C" __declspec(dllexport)
 void __cdecl OnSetMoveToModuleStringK2(void* ebp) {
     if (!acc::game::IsKotor2()) return;
     if (!ebp) return;
 
-    void* slotValue = nullptr;
+    void* exoStringPtr = nullptr;
     __try {
-        slotValue = *reinterpret_cast<void**>(static_cast<char*>(ebp) + 8);
+        exoStringPtr = *reinterpret_cast<void**>(static_cast<char*>(ebp) + 8);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        acclog::Write("Transition", "pre-load (K2) arg read faulted (ebp=%p)",
-                      ebp);
-        return;
+        exoStringPtr = nullptr;
     }
-    if (!slotValue) return;
 
-    EnsurePrismInitialized();
-    acc::transitions::AnnouncePreLoadDestinationK2(slotValue);
+    // Latch even when the argument read fails — the engine is changing module
+    // regardless, and an un-latched load is exactly the burst this prevents.
+    acc::transitions::LatchPreLoadDestinationK2(exoStringPtr);
 }
