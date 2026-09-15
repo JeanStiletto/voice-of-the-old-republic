@@ -478,9 +478,11 @@ const char* Get(Id id) {
             // spoken intro got in the way of the start countdown.
             return "Espace pour monter une vitesse au signal sonore. Dirigez avec A et D. \xC9vitez les obstacles et touchez les plaques d'acc\xE9l\xE9ration pour battre le temps.";
         case Id::SwoopRaceControlsK2:
-            return "Espace pour monter une vitesse au signal sonore, W pour sauter un obstacle. Dirigez avec A et D. \xC9vitez les obstacles et touchez les plaques d'acc\xE9l\xE9ration pour battre le temps.";
+            return "W pour monter une vitesse au signal sonore, Espace pour sauter un obstacle. Dirigez avec A et D. \xC9vitez les obstacles et touchez les plaques d'acc\xE9l\xE9ration pour battre le temps.";
         case Id::SwoopRaceStuckHint:
             return "Bloqu\xE9. D\xE9portez-vous avec A ou D, puis appuyez sur Espace et W ensemble.";
+        case Id::SwoopRaceWrecked:
+            return "Swoop d\xE9truit. Course termin\xE9""e.";
         case Id::SwoopRaceEnded:
             return "Course de Swoop termin\xE9""e.";
         case Id::FmtSwoopRaceGear:
@@ -824,7 +826,7 @@ const char* Get(Id id) {
         case Id::KbNamePazaakOppHand:       return "Pazaak : Main de l'adversaire";
         case Id::KbNameTurretCyclePrev:     return "Tourelle : Cible pr\xE9""c\xE9""dente";
         case Id::KbNameTurretCycleNext:     return "Tourelle : Cible suivante";
-        case Id::KbNameSwoopJump:           return "Swoop : Sauter";
+        case Id::KbNameSwoopShift:           "Swoop : Monter une vitesse";
         // General
         case Id::KbNameHelpMenuOpen:        return "Aide des touches";
         case Id::KbNameHelpContext:         return "Aide contextuelle";
@@ -953,7 +955,7 @@ const char* Get(Id id) {
         //      shared rows 0-42 reuse the TutHint* wordings above; these
         //      cover KOTOR 2's own popups and the Ebon Hawk prologue lines.
         case Id::TutK2SwoopRace:
-            return "Passez la vitesse sup\xE9rieure avec la barre d'espace au signal sonore. Dirigez avec A et D pour \xE9viter les obstacles et toucher les acc\xE9l\xE9rateurs.";
+            return "Passez la vitesse sup\xE9rieure avec W au signal sonore et sautez les barres basses avec la barre d'espace. Dirigez avec A et D pour \xE9viter les obstacles et toucher les acc\xE9l\xE9rateurs.";
         case Id::TutK2ActionQueue:
             return "Appuyez sur Entr\xE9""e pour ajouter l'action par d\xE9""faut \xE0 la file de commandes ; les entr\xE9""es du menu d'action s'y ajoutent de la m\xEAme fa\xE7on. Plusieurs actions s'ex\xE9""cutent dans l'ordre d'ajout.";
         case Id::TutK2ActionRemove:
@@ -1092,7 +1094,7 @@ const char* Get(Id id) {
 
         // ---- KOTOR 2 controller twins (deliberate omissions: see strings.h).
         case Id::TutK2SwoopRacePad:
-            return "Appuyez sur A pour acc\xE9l\xE9rer et passer la vitesse au signal sonore. \xC9vitez les obstacles et touchez les acc\xE9l\xE9rateurs avec le stick gauche.";
+            return "Appuyez sur B pour acc\xE9l\xE9rer et passer la vitesse au signal sonore, et sur A pour sauter les barres basses. \xC9vitez les obstacles et touchez les acc\xE9l\xE9rateurs avec le stick gauche.";
         case Id::TutK2ActionQueuePad:
             return "Appuyez sur A pour ajouter l'action par d\xE9""faut \xE0 la file de commandes ; les entr\xE9""es du menu d'actions s'y ajoutent de la m\xEAme fa\xE7on. Plusieurs actions s'ex\xE9""cutent dans l'ordre d'ajout.";
         case Id::TutK2PlasmaTorchPad:

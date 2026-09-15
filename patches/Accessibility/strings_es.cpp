@@ -479,9 +479,11 @@ const char* Get(Id id) {
             // spoken intro got in the way of the start countdown.
             return "Espacio para subir de marcha con la se\xF1""al de audio. Gira con A y D. Esquiva los obst\xE1""culos y pisa los paneles aceleradores para batir el tiempo.";
         case Id::SwoopRaceControlsK2:
-            return "Espacio para subir de marcha con la se\xF1""al de audio y W para saltar un obst\xE1""culo. Gira con A y D. Esquiva los obst\xE1""culos y pisa los paneles aceleradores para batir el tiempo.";
+            return "W para subir de marcha con la se\xF1""al de audio y Espacio para saltar un obst\xE1""culo. Gira con A y D. Esquiva los obst\xE1""culos y pisa los paneles aceleradores para batir el tiempo.";
         case Id::SwoopRaceStuckHint:
             return "Atascado. Gira a un lado con A o D y luego pulsa espacio y W a la vez.";
+        case Id::SwoopRaceWrecked:
+            return "Swoop destrozado. Carrera terminada.";
         case Id::SwoopRaceEnded:
             return "Carrera de Swoop terminada.";
         case Id::FmtSwoopRaceGear:
@@ -825,7 +827,7 @@ const char* Get(Id id) {
         case Id::KbNamePazaakOppHand:       return "Pazaak: Mano del rival";
         case Id::KbNameTurretCyclePrev:     return "Torreta: Objetivo anterior";
         case Id::KbNameTurretCycleNext:     return "Torreta: Objetivo siguiente";
-        case Id::KbNameSwoopJump:           return "Swoop: Saltar";
+        case Id::KbNameSwoopShift:           "Swoop: Subir de marcha";
         // General
         case Id::KbNameHelpMenuOpen:        return "Ayuda de teclas";
         case Id::KbNameHelpContext:         return "Ayuda contextual";
@@ -954,7 +956,7 @@ const char* Get(Id id) {
         //      shared rows 0-42 reuse the TutHint* wordings above; these
         //      cover KOTOR 2's own popups and the Ebon Hawk prologue lines.
         case Id::TutK2SwoopRace:
-            return "Cambia de marcha con la barra espaciadora al o\xEDr la se\xF1""al sonora. Conduce con A y D para esquivar los obst\xE1""culos y pisar los aceleradores.";
+            return "Cambia de marcha con W al o\xEDr la se\xF1""al sonora y salta las barreras bajas con la barra espaciadora. Conduce con A y D para esquivar los obst\xE1""culos y pisar los aceleradores.";
         case Id::TutK2ActionQueue:
             return "Pulsa Intro para a\xF1""adir la acci\xF3n predeterminada a la cola de \xF3rdenes; las entradas del men\xFA de acciones se a\xF1""aden igual. Varias acciones se ejecutan en el orden en que las a\xF1""adiste.";
         case Id::TutK2ActionRemove:
@@ -1093,7 +1095,7 @@ const char* Get(Id id) {
 
         // ---- KOTOR 2 controller twins (deliberate omissions: see strings.h).
         case Id::TutK2SwoopRacePad:
-            return "Pulsa A para acelerar y cambiar de marcha al o\xEDr la se\xF1""al. Con el stick izquierdo esquivas los obst\xE1""culos y pisas los aceleradores.";
+            return "Pulsa B para acelerar y cambiar de marcha al o\xEDr la se\xF1""al, y A para saltar las barreras bajas. Con el stick izquierdo esquivas los obst\xE1""culos y pisas los aceleradores.";
         case Id::TutK2ActionQueuePad:
             return "Pulsa A para a\xF1""adir la acci\xF3n predeterminada a la cola de \xF3rdenes; las entradas del men\xFA de acciones se a\xF1""aden igual. Varias acciones se ejecutan en el orden en que las a\xF1""adiste.";
         case Id::TutK2PlasmaTorchPad:

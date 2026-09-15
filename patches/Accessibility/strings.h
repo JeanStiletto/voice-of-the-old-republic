@@ -1567,6 +1567,14 @@ enum class Id : int {
     // patch-20260914-163810. Tells the player the escape: steer aside, then
     // shift and jump together. Re-arms after real progress.
     SwoopRaceStuckHint,
+    // The track ended the race as a wreck, not at the line: KOTOR 2's hit
+    // scripts take 50 (obstacle) / 100 (mine) of the bike's 600 hit points and
+    // the heartbeat ends the race at zero, stamping 59:59.99 into the track's
+    // time globals instead of a time. Replaces the time-bearing race-end
+    // message in that case. Individual hits are NOT spoken — the HUD shows a
+    // damage gauge to sighted players and the race is loud enough already;
+    // what matters by ear is finished-with-a-time versus wrecked.
+    SwoopRaceWrecked,
     SwoopRaceEnded,
     // Gear-shift cue spoken urgently on each shift event so the player
     // hears "Gang 2 / 3 / 4 / 5" through NVDA's typed-character cancel.
@@ -2121,7 +2129,7 @@ enum class Id : int {
     KbNamePazaakOppHand,
     KbNameTurretCyclePrev,
     KbNameTurretCycleNext,
-    KbNameSwoopJump,
+    KbNameSwoopShift,
     //      General:
     KbNameHelpMenuOpen,
     KbNameHelpContext,

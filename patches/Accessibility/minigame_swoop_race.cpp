@@ -25,7 +25,7 @@
 #include "engine_game.h"      // IsKotor2 — gate ladder, jump watch, K2 keys
 #include "engine_offsets.h"   // Vector
 #include "engine_player.h"    // GetCameraPosition (jump-start log anchor)
-#include "hotkeys.h"          // Pressed(SwoopJump) — keyboard jump (K2)
+#include "hotkeys.h"          // Pressed(SwoopShift) — keyboard shift (K2)
 #include "log.h"
 #include "audio_bus.h"        // PlayCue — non-positional "you can shift now" cue
 #include "audio_cues.h"       // NavCue + GetNavCueResref (shift-ready resref)
@@ -113,6 +113,14 @@ constexpr uint32_t kMiniGameTypeSwoop           = 1;
 // +0x30 shift does not reach — its ctor twin @0x00833ba0 writes the same 100.0f
 // default to dword index 0x26 = +0x98.
 const size_t kFollowerSpeedOffset           = acc::off::Same(0x98);
+// hp / max_hp sit just below speed (swkotor.exe.h: looping +0x80,
+// sphere_radius +0x84, +0x88, hp +0x8c, max_hp +0x90, bump_damage +0x94,
+// speed +0x98; SetHitPoints @0x0066c900 / SetMaxHitPoints @0x0066c950 write
+// them). Below the script array on KOTOR 2 too — the first K2 player dump
+// (patch-20260914-143533) shows 600 / 600 there, the .are's Hit_Points /
+// Max_HPs for the Citadel bike.
+const size_t kFollowerHpOffset              = acc::off::Same(0x8c);
+const size_t kFollowerMaxHpOffset           = acc::off::Same(0x90);
 
 // CSWMiniPlayer (line 15382, extends CSWTrackFollower size 0x1a4).
 // Tunnel-frame offset (X=lane, Y=forward, Z=vertical) and the speed
@@ -220,19 +228,22 @@ constexpr float kGearShiftMaxDeltaMs      = 5.0f;
 // gate (gear 0 launch is unconditional; gear 5 is top). Gears 1..4 are gated.
 constexpr float kShiftGateSpeedK1[]       = { 0.0f, 60.0f, 100.0f, 150.0f,
                                               210.0f, 0.0f };
-// KOTOR 2's ladder is ONE NOTCH LOWER. Its onaccelerate.ncs (211TEL / 371NAR /
-// 510OND ship the same script; disassembled 2026-09-14, stack-accounted) gates
-// the upshift out of gear N on the CURRENT gear's own nominal minimum, not the
-// next gear's: gear 1 needs speed > 35, gear 2 > 60, gear 3 > 100, gear 4 >
-// 150 — the raw constants, NOT scaled by the swoop-upgrade factor (the factor
-// 1 + 0.2*upgrade0 scales the min speeds the script SETS, never the gates it
-// TESTS). An early press is a no-op there too: the else branch re-asserts the
-// current gear's acceleration. The envelope it sets: gear 1 [35f..70], gear 2
-// [60f..110], gear 3 [100f..155], gear 4 [150f..215], gear 5 min 210f.
-constexpr float kShiftGateSpeedK2[]       = { 0.0f, 35.0f, 60.0f, 100.0f,
-                                              150.0f, 0.0f };
+// KOTOR 2 uses the SAME ladder. A stack accounting of its onaccelerate.ncs
+// (2026-09-14) read the gates one notch lower (35 / 60 / 100 / 150) and two
+// rounds ran on that; the logs refuted it (rounds 4-5, patch-20260915-075412 /
+// -083506): every shift the engine accepted landed at 70 / 105-110 / 155 /
+// 214, and presses at 35-45 (gear 1), 76-86 (gear 2), 115-150 (gear 3),
+// 158-200 (gear 4) ran the script with no gear change. The gate out of gear
+// N is the NEXT gear's nominal minimum — 60 / 100 / 150 / 210 — i.e. the top
+// 5-10 units of each gear's envelope (gear 1 [35f..70], gear 2 [60f..110],
+// gear 3 [100f..155], gear 4 [150f..215]). The wrong table made the cue fire
+// up to 40 units early, the player pressed into a no-op and then heard the
+// next gear's cue right after the engine's own shift sound.
+constexpr float kShiftGateSpeedK2[]       = { 0.0f, 60.0f, 100.0f, 150.0f,
+                                              210.0f, 0.0f };
 constexpr int   kFirstGatedGear           = 1;
 constexpr int   kLastGatedGear            = 4;
+constexpr ULONGLONG kShiftReadyHoldMs     = 800;   // see TickShiftReady
 
 inline float ShiftGateSpeed(int gear) {
     return acc::game::IsKotor2() ? kShiftGateSpeedK2[gear]
@@ -338,6 +349,16 @@ struct State {
     // CURRENT gear; re-armed by TickGearWatch on every detected shift, so the
     // cue fires at most once per gear. See ShiftGateSpeed / TickShiftReady.
     bool          shift_ready_announced   = false;
+    ULONGLONG     last_gear_change_ms     = 0;   // see kShiftReadyHoldMs
+
+    // ---- Hit points (CSWTrackFollower +0x8c / +0x90). K2's hit scripts take
+    //      50 (obstacle) / 100 (mine) of the bike's 600 and the heartbeat ends
+    //      the race at 0 — round 3 reached that at 72 s and the mod announced
+    //      a finish time. Drops are logged only (the HUD has a damage gauge;
+    //      per-hit speech was tried in round 4 and cut as noise); `wrecked`
+    //      is decided when the race ends, see DecideWreckAtFinish.
+    int           last_hp                 = -1;
+    bool          wrecked                 = false;
 
     // ---- Jump state (KOTOR 2 only; K1 clamps offset.z to 0 so it never
     //      arms). Edge-detected on the tunnel offset's Z so a jump start and
@@ -513,6 +534,7 @@ constexpr float kRaceMinTopSpeed    = 40.0f;
 // it on the terminal stop; the definition with the HandleExit fallback is
 // further down).
 void SpeakRaceEndMessage();
+void DecideWreckAtFinish(void* miniGame);
 
 // Per-tick: cache the start stamp once, then freeze the elapsed at each
 // finish-band tick. Called only while the latch is alive.
@@ -557,6 +579,8 @@ void TickRaceTimer(void* miniGame) {
             acclog::Write("SwoopRace", "finish: script=%d envelope=%d coast=%d",
                           script_finished ? 1 : 0, envelope_finished ? 1 : 0,
                           coasted_to_stop ? 1 : 0);
+            // KOTOR 2 writes the same flag for a wreck; K1 cannot wreck.
+            if (acc::game::IsKotor2()) DecideWreckAtFinish(miniGame);
             SpeakRaceEndMessage();
             return;
         }
@@ -718,6 +742,7 @@ void EmitDiagSnapshot(void* miniGame) {
 void AnnounceGear(int gear, const char* why) {
     g_state.gear                  = gear;
     g_state.shift_ready_announced = false;
+    g_state.last_gear_change_ms   = GetTickCount64();
     char buf[64];
     const char* fmt = acc::strings::Get(acc::strings::Id::FmtSwoopRaceGear);
     if (fmt && *fmt) {
@@ -767,6 +792,74 @@ void TickGearWatch(void* miniGame) {
         g_state.last_max_speed = maxSpeed;
         AnnounceGear(g_state.gear + 1, why);
     }
+}
+
+// ============================================================================
+// Hit points (log only). K2's enemyhitfollower.ncs subtracts 50 per obstacle
+// collision, mine.ncs 100 per mine, both from the Citadel bike's 600; the
+// heartbeat ends the race when the percentage it keeps in the racedialog
+// local reaches 0 — round 3 (patch-20260914-204103) took exactly twelve hits
+// and the run ended at 72 s, which the mod announced as a finish time. Each
+// drop is logged; nothing is spoken here (round 4's "hit, N left" per drop
+// was cut as noise — the HUD's damage gauge is the sighted equivalent). The
+// wreck itself is decided at the race end (DecideWreckAtFinish): the engine
+// mirrors a script's hit-point write late — round 4 read 95 for three
+// seconds after the mine had zeroed the bike — so a live zero cannot be the
+// trigger, and the follower reads 0 once more when it is torn down after
+// the race. K1's obstacle script never touches hp, so nothing fires there.
+// ============================================================================
+
+void TickHitPoints(void* miniGame) {
+    void* player = SafeReadPtr(miniGame, kMiniGamePlayerOffset);
+    if (!player) return;
+    const int hp = static_cast<int>(SafeReadU32(player, kFollowerHpOffset));
+    if (hp < 0 || hp > 1000000) return;              // faulted / garbage
+    if (g_state.last_hp < 0) { g_state.last_hp = hp; return; }
+    if (hp >= g_state.last_hp) { g_state.last_hp = hp; return; }
+    const int drop = g_state.last_hp - hp;
+    g_state.last_hp = hp;
+    acclog::Write("SwoopRace", "hit: hp %d -> %d (drop %d of %u)",
+                  hp + drop, hp, drop, SafeReadU32(player, kFollowerMaxHpOffset));
+}
+
+// At the track's own race-end flag: finish or wreck? Both write MIN_RACE_GEAR
+// = 6. The Citadel heartbeat (heartbeat.ncs, disassembled) ends the race when
+// the bike's y passes 6000 (the line), when the hit-point percentage in the
+// racedialog local is <= 0, or on a menu quit; for the latter two it stamps
+// 59 / 59 / 99 into the track's time globals (`<MODULE>_SWOOP_MIN` / `_SEC` /
+// `_MSEC`, module = the area resref, "211TEL" on Citadel) where a finish
+// stores the real time. That stamp is the decision here, with a zero
+// hit-point read as the fallback. Round 4 (patch-20260915-075412) ended on a
+// mine at y≈3360 with the mod speaking "61.56 seconds" — this turns that into
+// "swoop wrecked". Names for the other two tracks follow the same pattern by
+// assumption; a miss reads -1 and the fallback decides, and the log line
+// shows which happened.
+void DecideWreckAtFinish(void* miniGame) {
+    void* player = SafeReadPtr(miniGame, kMiniGamePlayerOffset);
+    const int hp = player ? static_cast<int>(SafeReadU32(player, kFollowerHpOffset))
+                          : -1;
+
+    char area[96] = "";
+    if (!acc::engine::GetCurrentAreaResName(area, sizeof(area))) area[0] = '\0';
+    for (char* p = area; *p; ++p) {
+        if (*p >= 'a' && *p <= 'z') *p = static_cast<char>(*p - 'a' + 'A');
+    }
+    char name[128];
+    int stamp[3] = { -1, -1, -1 };
+    const char* const kSuffix[3] = { "_SWOOP_MIN", "_SWOOP_SEC", "_SWOOP_MSEC" };
+    if (area[0]) {
+        for (int i = 0; i < 3; ++i) {
+            std::snprintf(name, sizeof(name), "%s%s", area, kSuffix[i]);
+            stamp[i] = acc::engine::ReadGlobalNumber(name);
+        }
+    }
+    const bool forfeit_stamp = stamp[0] == 59 && stamp[1] == 59 && stamp[2] == 99;
+    const bool hp_zero       = hp == 0;
+    g_state.wrecked = forfeit_stamp || hp_zero;
+    acclog::Write("SwoopRace",
+                  "race end: %s (area=%s stamp=%d:%d.%d hp=%d)",
+                  g_state.wrecked ? "WRECK" : "finish",
+                  area[0] ? area : "?", stamp[0], stamp[1], stamp[2], hp);
 }
 
 // ============================================================================
@@ -863,6 +956,12 @@ void TickJumpWatch(void* miniGame) {
 // mod track with a different ladder degrades to silence, never a false cue.
 void TickShiftReady(void* miniGame) {
     if (g_state.shift_ready_announced) return;
+    // Hold after a gear change. On KOTOR 2 a late shift (at the old gear's
+    // top speed) is already above the NEXT gate, so the cue fired in the same
+    // tick as the "gear N" speech and read as a shift confirmation
+    // (round 3, 2026-09-14). A short gap keeps it a separate event; on K1 the
+    // gates sit a notch higher so the hold never applies.
+    if (GetTickCount64() - g_state.last_gear_change_ms < kShiftReadyHoldMs) return;
 
     const int gear = g_state.gear;
     if (gear < kFirstGatedGear || gear > kLastGatedGear) return;  // launch / top gear: no gate
@@ -930,10 +1029,14 @@ void SpeakRaceEndMessage() {
 
     char buf[160];
     const char* msg = nullptr;
+    // A wreck (hit points 0) is not a finish: no time, say what happened.
+    if (g_state.wrecked) {
+        msg = acc::strings::Get(acc::strings::Id::SwoopRaceWrecked);
+    }
     // If we captured a finish-line time, speak the time-bearing variant (it
     // leads with the number and includes the "race ended" phrase); otherwise
     // the plain exit cue.
-    if (g_state.have_race_time) {
+    else if (g_state.have_race_time) {
         const char* fmt = acc::strings::Get(acc::strings::Id::FmtSwoopRaceTime);
         if (fmt && *fmt) {
             int whole = static_cast<int>(g_state.race_time_seconds);
@@ -973,6 +1076,9 @@ void HandleEnter(void* mg) {
     g_state.jump_peak_z         = 0.0f;
     g_state.have_progress_mark  = false;
     g_state.stuck_hint_spoken   = false;
+    g_state.last_hp             = -1;
+    g_state.wrecked             = false;
+    g_state.last_gear_change_ms = 0;
     g_state.have_start_ms       = false;
     g_state.race_start_ms       = 0;
     g_state.race_mph            = 2;
@@ -1121,18 +1227,19 @@ void Tick() {
     // ---- In-race observation (only when the latch is alive). -------------
     if (!g_state.latched_mini_game) return;
 
-    // Keyboard jump (K2): the bare W hotkey. Space / pad A / pad B are handled
-    // at the client input hook (input_pipeline.cpp), where the engine's own
-    // Space-jump has to be intercepted; W never arrives there (the race polls
-    // it as an axis, not an event), so it is polled here instead.
+    // Keyboard shift (K2): the bare W hotkey. Space / pad A (jump) and pad B
+    // (shift) arrive as events at the client input hook (input_pipeline.cpp);
+    // W never does (the race polls it as an axis, not an event), so it is
+    // polled here instead.
     if (acc::game::IsKotor2() &&
-        acc::hotkeys::Pressed(acc::hotkeys::Action::SwoopJump)) {
-        TryJump();
+        acc::hotkeys::Pressed(acc::hotkeys::Action::SwoopShift)) {
+        TryShift();
     }
 
     TickGearWatch(g_state.latched_mini_game);
     TickShiftReady(g_state.latched_mini_game);
     TickJumpWatch(g_state.latched_mini_game);
+    TickHitPoints(g_state.latched_mini_game);   // log only; see DecideWreckAtFinish
     // TickRaceTimer first so have_start_ms is current this tick: it flips true
     // at the "Go!" launch (actual speed > 1 + fresh MIN_TIME stamp). Gate the
     // obstacle + accelpad proximity cues behind it so they stay silent through

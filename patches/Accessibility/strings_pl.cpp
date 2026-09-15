@@ -479,9 +479,11 @@ const char* Get(Id id) {
         case Id::SwoopRaceControls:
             return "Naci\x9Cnij spacj\xEA, aby zmieni\xE6 bieg na sygna\xB3 d\x9Fwi\xEAkowy. Steruj klawiszami A i D. Omijaj przeszkody i naje\xBF""d\xBF""aj na pola przyspieszenia, aby pobi\xE6 czas.";
         case Id::SwoopRaceControlsK2:
-            return "Naci\x9Cnij spacj\xEA, aby zmieni\xE6 bieg na sygna\xB3 d\x9Fwi\xEAkowy, a W, aby przeskoczy\xE6 przeszkod\xEA. Steruj klawiszami A i D. Omijaj przeszkody i naje\xBF""d\xBF""aj na pola przyspieszenia, aby pobi\xE6 czas.";
+            return "Naci\x9Cnij W, aby zmieni\xE6 bieg na sygna\xB3 d\x9Fwi\xEAkowy, a spacj\xEA, aby przeskoczy\xE6 przeszkod\xEA. Steruj klawiszami A i D. Omijaj przeszkody i naje\xBF""d\xBF""aj na pola przyspieszenia, aby pobi\xE6 czas.";
         case Id::SwoopRaceStuckHint:
             return "Utkn\xB9\xB3""e\x9C. Zjed\x9F w bok klawiszem A lub D, potem naci\x9Cnij spacj\xEA i W razem.";
+        case Id::SwoopRaceWrecked:
+            return "Swoop rozbity. Koniec wy\x9C""cigu.";
         case Id::SwoopRaceEnded:
             return "Koniec wy\x9C""cigu.";
         case Id::FmtSwoopRaceGear:
@@ -823,7 +825,7 @@ const char* Get(Id id) {
         case Id::KbNamePazaakOppHand:       return "Pazaak: R\xEAka przeciwnika";
         case Id::KbNameTurretCyclePrev:     return "Wie\xBFyczka: Poprzedni cel";
         case Id::KbNameTurretCycleNext:     return "Wie\xBFyczka: Nast\xEApny cel";
-        case Id::KbNameSwoopJump:           return "Swoop: Skok";
+        case Id::KbNameSwoopShift:           "Swoop: Wy\xBFszy bieg";
         // General
         case Id::KbNameHelpMenuOpen:        return "Pomoc klawiszy";
         case Id::KbNameHelpContext:         return "Pomoc kontekstowa";
@@ -930,7 +932,7 @@ const char* Get(Id id) {
         //      shared rows 0-42 reuse the TutHint* wordings above; these
         //      cover KOTOR 2's own popups and the Ebon Hawk prologue lines.
         case Id::TutK2SwoopRace:
-            return "Zmieniaj bieg spacj\xB9, gdy us\xB3yszysz sygna\xB3 d\x9Fwi\xEAkowy. Steruj klawiszami A i D, omijaj przeszkody i naje\xBF""d\xBF""aj na przyspieszacze.";
+            return "Zmieniaj bieg klawiszem W, gdy us\xB3yszysz sygna\xB3 d\x9Fwi\xEAkowy, a spacj\xB9 przeskakuj niskie barierki. Steruj klawiszami A i D, omijaj przeszkody i naje\xBF""d\xBF""aj na przyspieszacze.";
         case Id::TutK2ActionQueue:
             return "Naci\x9Cnij Enter, aby doda\xE6 domy\x9Cln\xB9 akcj\xEA do kolejki polece\xF1; pozycje z menu akcji trafiaj\xB9 tam tak samo. Kilka akcji wykonuje si\xEA w kolejno\x9C""ci dodania.";
         case Id::TutK2ActionRemove:
@@ -1069,7 +1071,7 @@ const char* Get(Id id) {
 
         // ---- KOTOR 2 controller twins (deliberate omissions: see strings.h).
         case Id::TutK2SwoopRacePad:
-            return "Naciskaj A, aby przyspiesza\xE6 i zmienia\xE6 bieg przy sygnale d\x9Fwi\xEAkowym. Lew\xB9 ga\xB3k\xB9 omijaj przeszkody i naje\xBF""d\xBF""aj na przyspieszacze.";
+            return "Naciskaj B, aby przyspiesza\xE6 i zmienia\xE6 bieg przy sygnale d\x9Fwi\xEAkowym, a A, aby przeskakiwa\xE6 niskie barierki. Lew\xB9 ga\xB3k\xB9 omijaj przeszkody i naje\xBF""d\xBF""aj na przyspieszacze.";
         case Id::TutK2ActionQueuePad:
             return "Naci\x9Cnij A, aby doda\xE6 domy\x9Cln\xB9 akcj\xEA do kolejki polece\xF1; pozycje z menu akcji trafiaj\xB9 tam tak samo. Kilka akcji wykonuje si\xEA w kolejno\x9C""ci dodania.";
         case Id::TutK2PlasmaTorchPad:

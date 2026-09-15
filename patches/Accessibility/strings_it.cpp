@@ -477,9 +477,11 @@ const char* Get(Id id) {
             // spoken intro got in the way of the start countdown.
             return "Spazio per salire di marcia al segnale audio. Sterza con A e D. Evita gli ostacoli e colpisci le piastre acceleratrici per battere il tempo.";
         case Id::SwoopRaceControlsK2:
-            return "Spazio per salire di marcia al segnale audio, W per saltare un ostacolo. Sterza con A e D. Evita gli ostacoli e colpisci le piastre acceleratrici per battere il tempo.";
+            return "W per salire di marcia al segnale audio, Spazio per saltare un ostacolo. Sterza con A e D. Evita gli ostacoli e colpisci le piastre acceleratrici per battere il tempo.";
         case Id::SwoopRaceStuckHint:
             return "Bloccato. Sterza di lato con A o D, poi premi spazio e W insieme.";
+        case Id::SwoopRaceWrecked:
+            return "Swoop distrutto. Gara finita.";
         case Id::SwoopRaceEnded:
             return "Corsa Swoop terminata.";
         case Id::FmtSwoopRaceGear:
@@ -823,7 +825,7 @@ const char* Get(Id id) {
         case Id::KbNamePazaakOppHand:       return "Pazaak: Mano avversario";
         case Id::KbNameTurretCyclePrev:     return "Torretta: Bersaglio precedente";
         case Id::KbNameTurretCycleNext:     return "Torretta: Bersaglio successivo";
-        case Id::KbNameSwoopJump:           return "Swoop: Salta";
+        case Id::KbNameSwoopShift:           "Swoop: Salire di marcia";
         // General
         case Id::KbNameHelpMenuOpen:        return "Aiuto tasti";
         case Id::KbNameHelpContext:         return "Aiuto contestuale";
@@ -952,7 +954,7 @@ const char* Get(Id id) {
         //      shared rows 0-42 reuse the TutHint* wordings above; these
         //      cover KOTOR 2's own popups and the Ebon Hawk prologue lines.
         case Id::TutK2SwoopRace:
-            return "Cambia marcia con la barra spaziatrice al segnale acustico. Sterza con A e D per evitare gli ostacoli e prendere le piastre di accelerazione.";
+            return "Cambia marcia con W al segnale acustico e salta le barre basse con la barra spaziatrice. Sterza con A e D per evitare gli ostacoli e prendere le piastre di accelerazione.";
         case Id::TutK2ActionQueue:
             return "Premi Invio per aggiungere l'azione predefinita alla coda dei comandi; le voci del menu azioni si accodano allo stesso modo. Pi\xF9 azioni vengono eseguite nell'ordine in cui le hai aggiunte.";
         case Id::TutK2ActionRemove:
@@ -1091,7 +1093,7 @@ const char* Get(Id id) {
 
         // ---- KOTOR 2 controller twins (deliberate omissions: see strings.h).
         case Id::TutK2SwoopRacePad:
-            return "Premi A per accelerare e cambiare marcia al segnale acustico. Con lo stick sinistro eviti gli ostacoli e prendi le piastre di accelerazione.";
+            return "Premi B per accelerare e cambiare marcia al segnale acustico e A per saltare le barre basse. Con lo stick sinistro eviti gli ostacoli e prendi le piastre di accelerazione.";
         case Id::TutK2ActionQueuePad:
             return "Premi A per aggiungere l'azione predefinita alla coda dei comandi; le voci del menu delle azioni si accodano allo stesso modo. Pi\xF9 azioni vengono eseguite nell'ordine in cui le hai aggiunte.";
         case Id::TutK2PlasmaTorchPad:

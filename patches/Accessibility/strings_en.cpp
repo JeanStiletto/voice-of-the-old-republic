@@ -470,11 +470,13 @@ const char* Get(Id id) {
             // spoken intro got in the way of the start countdown.
             return "Press space to shift up on the audio cue. Steer with A and D. Avoid the obstacles and hit the accelerator pads to beat the time.";
         case Id::SwoopRaceControlsK2:
-            // KOTOR 2: Space is re-routed to the shift (the engine's own Space
-            // is the jump there) and the jump gets W — see strings.h.
-            return "Press space to shift up on the audio cue and W to jump over an obstacle. Steer with A and D. Avoid the obstacles and hit the accelerator pads to beat the time.";
+            // KOTOR 2: Space jumps (the engine's own binding); the shift, which
+            // the engine only has on the left mouse button, gets W — see strings.h.
+            return "Press W to shift up on the audio cue and space to jump over an obstacle. Steer with A and D. Avoid the obstacles and hit the accelerator pads to beat the time.";
         case Id::SwoopRaceStuckHint:
             return "Stuck. Steer aside with A or D, then press space and W together.";
+        case Id::SwoopRaceWrecked:
+            return "Swoop wrecked. Race over.";
         case Id::SwoopRaceEnded:
             return "Swoop race ended.";
         case Id::FmtSwoopRaceGear:
@@ -824,7 +826,7 @@ const char* Get(Id id) {
         case Id::KbNamePazaakOppHand:       return "Pazaak: Opponent hand";
         case Id::KbNameTurretCyclePrev:     return "Turret: Previous target";
         case Id::KbNameTurretCycleNext:     return "Turret: Next target";
-        case Id::KbNameSwoopJump:           return "Swoop: Jump";
+        case Id::KbNameSwoopShift:           "Swoop: Shift up";
         // General
         case Id::KbNameHelpMenuOpen:        return "Key help";
         case Id::KbNameHelpContext:         return "Context help";
@@ -933,7 +935,7 @@ const char* Get(Id id) {
         //      shared rows 0-42 reuse the TutHint* wordings above; these
         //      cover KOTOR 2's own popups and the Ebon Hawk prologue lines.
         case Id::TutK2SwoopRace:
-            return "Shift up with the Space bar when you hear the audio cue. Steer with A and D to dodge obstacles and hit the accelerator pads.";
+            return "Shift up with W when you hear the audio cue and jump over low bars with the Space bar. Steer with A and D to dodge obstacles and hit the accelerator pads.";
         case Id::TutK2ActionQueue:
             return "Press Enter to add the default action to the command queue; entries from the action menu queue up the same way. Multiple actions run in the order you added them.";
         case Id::TutK2ActionRemove:
@@ -983,7 +985,7 @@ const char* Get(Id id) {
 
         // ---- KOTOR 2 controller twins (deliberate omissions: see strings.h).
         case Id::TutK2SwoopRacePad:
-            return "Press A to accelerate and shift up when you hear the audio cue. Dodge obstacles and hit the accelerator pads with the left stick.";
+            return "Press B to accelerate and shift up when you hear the audio cue, and A to jump over low bars. Dodge obstacles and hit the accelerator pads with the left stick.";
         case Id::TutK2ActionQueuePad:
             return "Press A to add the default action to the command queue; entries from the action menu queue up the same way. Multiple actions run in the order you added them.";
         case Id::TutK2PlasmaTorchPad:

@@ -35,9 +35,10 @@ bool IsActive();
 // KOTOR 2 only. Run the player bike's OnAccelerate (gear shift) / OnBrake
 // (jump) track script exactly as the engine's client input handler does on
 // its own events. Return false when there is no active K2 swoop race to act
-// on (nothing was run). The input pipeline calls TryShift for Space / pad A
-// (which the K2 engine would otherwise route to the JUMP) and TryJump for
-// pad B; Tick polls the SwoopJump hotkey (W) for the keyboard jump.
+// on (nothing was run). The input pipeline calls TryJump for Space / pad A
+// (the K2 engine's own jump events, run here so they are logged) and TryShift
+// for pad B; Tick polls the SwoopShift hotkey (W) for the keyboard shift —
+// the engine has no keyboard shift of its own.
 bool TryShift();
 bool TryJump();
 

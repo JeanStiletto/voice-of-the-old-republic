@@ -315,7 +315,112 @@ race was unplayable for four reasons, all now fixed:
   pulling relaunches back into the bar (now off in gear 0) and nothing said
   what to do (a stuck hint now does).
 
-What round 3 must show:
+Round 3 (`patch-20260914-204103.log`): everything above worked — 9 bars / 6
+blocks / 90 posts classified from the hitbump boxes exactly as the offline
+atlas says, 23 pads / 24 mines split, no mine hits, jump beeps at the right
+bars, finish via the script flag. New findings, fixed the same evening:
+
+- The race "finished" at 72 s at y≈2800 of 6000: it was a WRECK. The hit
+  script takes 50 of 600 hit points per collision and the heartbeat ends the
+  race at 0; the log shows exactly twelve gear-to-0 events. Hit points
+  (follower +0x8c) are now watched: "hit, N left" per drop, "swoop wrecked"
+  instead of a time at zero.
+- The shift-ready cue fired in the same tick as three of the gear changes (a
+  late shift is already above K2's next gate), which the player heard as a
+  shift confirmation. It now waits 0.8 s after a gear change.
+- Jump timing: the player pressed W within 0.1 s of the 1.35 s beep and
+  landed just short of the bar (MGC02, second press saved it), pressed too
+  early on his own at MGC01 and not at all at MGC04. The beep now fires at
+  1.0 s ("press now") and repeats once if the bike touches down with the bar
+  still ahead.
+
+Round 4 (`patch-20260915-075412.log`): hits spoken with the count, shift
+cues ≥ 1 s after the gear, beeps at 1.00 s, first three bars cleared. Then:
+
+- Two cascades (7 + 3 hits, 500 of 600 hp): the pad co-pilot swung the bike
+  to the next pad's lane (x 11) while it was still airborne from MGC03 /
+  MGC05, into the right-half bars MGC04 / MGC06 that guard those pads — the
+  bar pairs are closer than one jump's air distance. OPEN: bar-aware guide.
+- The end at 61.56 s was a wreck on mine 137, two units beside the pad lane
+  the guide was steering to; mines deal 100 (script disassembled), the
+  follower's hp mirror lagged three seconds, so the mod spoke a time. FIXED:
+  wreck decided at the finish flag from the heartbeat's 59:59.99 forfeit
+  stamp in `<AREA>_SWOOP_MIN/SEC/MSEC` (hp == 0 fallback).
+- Six `211TEL_MGE*` scenery objects sounded the block loop at phantom
+  positions, two of them right before the first bar. FIXED: skipped by name.
+- "Treffer. Noch N." was noise in the chaos (and said "Noch 19" after a
+  5-point bump). REMOVED — only finished-with-time vs "Swoop zerstört" is
+  spoken now.
+- Keys swapped on request: Space jumps, W shifts (pad A jump, pad B shift).
+
+Round 5 (`patch-20260915-083506.log`, two races: 104.88 s finish at 95 hp,
+then a wreck at 78.6 s): scenery skipped (`scenery=6`, no phantom loops), Space
+= jump consumed 55×, wreck detected from the 59:59.99 stamp, no hit speech.
+Two more root causes of "I cannot do this":
+
+- The K2 shift gates were wrong (misread disassembly): the engine accepts a
+  shift only above the NEXT gear's minimum (60 / 100 / 150 / 210, K1's
+  ladder) — every accepted shift landed at 70 / 105-110 / 155 / 214, every
+  earlier W press ran the script with no gear change. The cue fired up to 40
+  units early, so W "did nothing" and the next cue came right after the
+  engine's own shift sound. FIXED: K2 table = K1 table.
+- The pad co-pilot caught 23 of 23 pads (race 1) with the guide tone resting
+  ~90 % of the race, and no pad script plays a sound — so by ear nothing
+  happened at pads. FIXED: one burst of the pad tone per caught pad.
+- Still OPEN, the real time sink: the magnet's lane passes over mines (mine
+  142 at x 12 / y 4443 on the pad-132 lane, mine 137 beside pad 125) and
+  through right-half bars that guard pads; 10 obstacle hits + 2 mines in
+  race 1, 9 + 1 in race 2. Next lever: bar- and mine-aware guide.
+
+Round 6 (`patch-20260915-090027.log`, wreck at 37 s): gates right (cues at
+60 / 104 / 150, each shift within a second), pad burst on the hits. Then a
+mine on the centre lane (126 at y 320, 105 hp), a jump from x 11 that landed
+drifting into the right wall at x 20, and nine relaunches into the post — the
+predictive wall cue never fires while parked, and "steer aside" sent the bike
+across to the LEFT wall for the same again. ADDED: wall-pinned cue (thump on
+the wall's side every 0.7 s in gear 0 at |x| ≥ 16) and the jump beep panned
+to a half-bar's free side (centre = must jump).
+
+What round 7 must show:
+
+- `jump cue: … side=left|right|centre` matching the bar's x span; the beep
+  heard on that side.
+- Round 7 (patch-20260915-091337, two wrecks): 22 of 26 hits were posts —
+  six arriving at the wall ~0.7 s after the single thump, sixteen relaunching
+  from a park at |x| = 20 where the gear-0 thump had stopped on each relaunch.
+  Player chose an audible warning over a rail. REPLACED by the K2 wall LOOP:
+  `wall loop: side=…` whenever |tunnelX| ≥ 12.5 or the 20-tick projection
+  crosses 16, any gear; `wall loop: stop` once back inside 11.
+- Round 8 must show `wall loop: side=…` BEFORE every post `gear -> 0` (if any),
+  the loop still running through a relaunch from the wall, and post hits down
+  from ~11 per race.
+
+- `shift-ready cue: gear=1 … gate=60.00`, `gear=2 … gate=100.00`,
+  `gear=3 … gate=150.00`, `gear=4 … gate=210.00`, and W shifting within a
+  second of each cue (no `shift (OnAccelerate): ran` without a `gear ->`).
+- A pad-tone burst on every `CROSS … hit=1`.
+- With the K2 assist gap at 6: `guide=1` for a good share of each pad
+  approach (was ~10 %), `mag=1` only in the last ~6 u; the `CROSS` hit rate
+  tells whether 6 is too tight (misses with `abs` between 4 and 6 → raise
+  the near gain, not the gap).
+
+What round 5 had to show (met):
+
+- Inventory lines `class=scenery` for the six `211TEL_MGE0*` objects and no
+  `loop start slot=9[3-8]`; `hazards: posts=90 scenery=6 bars=9`.
+- `Diag.ClientHIE … CONSUMED — K2 swoop jump` on Space, `shift (OnAccelerate)`
+  runs on W; gears climb on W, the bike hops on Space.
+- No `Speech.spoke … Treffer` lines; at the end either `race end: finish
+  (area=211TEL stamp=M:S.C hp=N)` + the time, or `race end: WRECK (… stamp=
+  59:59.99 …)` + "Swoop zerstört. Rennen vorbei."
+
+Round-4 expectations (kept for reference):
+
+- `hit: hp 600 -> 550 (drop 50 of 600)` on the first collision.
+- `shift-ready cue:` lines at least 0.8 s after the preceding `gear ->`.
+- `jump cue:` at `ttc=1.00s`; `jump cue (again):` only after an early jump.
+
+Round-3 expectations (kept for reference):
 
 - `enemy pool: accelpads=23 mines=24`, `mine slot=… model=[mgf_mine01]`, and
   no `magnet slot=` line whose slot is a mine slot.

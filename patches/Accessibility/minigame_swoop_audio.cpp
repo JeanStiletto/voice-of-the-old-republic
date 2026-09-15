@@ -284,8 +284,16 @@ constexpr float       kObstacleForwardMargin = 10.0f;
 //     sits up to 46 units AWAY from the object's origin (MGC01's origin is at
 //     y=928, its bar at y=880). Position-based cues put them in the wrong
 //     place; the bike must JUMP them (apex ~9.8 > 6).
-//   * BLOCKS — anything taller than a jump (Nar Shaddaa's centre posts, the
-//     shuttles, Onderon's walls): steer around, like K1's rocks.
+//   * BLOCKS — anything taller than a jump (Nar Shaddaa's centre posts,
+//     Onderon's walls): steer around, like K1's rocks.
+//   * SCENERY — the `<track>_MGE*` hangar / shuttle dressing (six on Citadel).
+//     Their origins sit ~1000 units below the track and their hitbump box,
+//     folded into world space, lands mid-lane at y 798 / 829 / 1294 / 2460
+//     / 2460 / 6002 — where nothing collides: round 4 (patch-20260915-075412)
+//     drove through the "full-lane block" at y 1294 on the ground with no
+//     hit, while the warn loop played for it and for the two "blocks" just
+//     before the first bar. Those phantom loops were what made the bars sound
+//     like avoid-obstacles. Skipped by name, like the posts.
 // So on KOTOR 2 every obstacle is classified once from its collision box
 // (Gob part "hitbump", the very part K1's DoObstacleHitCheck tests; whole-gob
 // box as the fallback) in world space = origin + local box. Boxes that lie
@@ -297,21 +305,39 @@ constexpr float kLaneEdgeSkipU      = 17.0f;  // box wholly beyond this = edge p
 constexpr float kJumpableHeightU    = 8.0f;   // jump apex ~9.8 (v0 30, g 45.8)
 constexpr float kBarLaneMarginU     = 2.5f;   // bike sphere radius 2 + slack
 // Jump window against a 6.3-unit bar: z(t) = 30t - 22.9t^2 >= 6.3 for
-// t in [0.26, 1.05] s after the press. The cue fires kJumpCueLeadSec before the
-// bar so a ~0.4 s reaction lands inside that window. The jump itself is the
-// player's: the mod never presses it (an auto-jump was built and removed the
-// same day at the user's request — cues inform, they do not play).
-constexpr float kJumpCueLeadSec     = 1.35f;
+// t in [0.26, 1.05] s after the press. The cue means "press NOW": it fires
+// kJumpCueLeadSec before the bar, so a reaction anywhere from instant to
+// ~0.7 s lands inside that window. (1.35 s was tried in round 3: the player
+// pressed within 0.1 s of the beep and landed just short of the bar; a
+// later reaction at that lead would have been fine, an instant one is not.)
+// The jump itself is the player's: the mod never presses it (an auto-jump was
+// built and removed the same day at the user's request — cues inform, they
+// do not play). If the bike is airborne from an early press and touches down
+// with the bar still inside the window, the beep repeats once ("again").
+constexpr float kJumpCueLeadSec     = 1.0f;
+constexpr float kJumpCueMinLeadSec  = 0.25f;  // too late to help below this
+// Where the beep sits tells you the alternative: a bar covering only one half
+// of the lane gets the beep panned HARD to the free side ("jump, or drift
+// that way"), a bar with no room on either side (full lane, or the ±13
+// centre bars whose gaps to the posts are narrower than the bike) sits in the
+// middle ("you must jump"). Free = at least a bike's width plus slack between
+// the bar's end and the post contact line (posts from |x| 18.3, bike radius
+// 2 → contact at |x| ≈ 16.3; kLaneEdgeSkipU is the same line). Asked for by
+// the player after round 6 (patch-20260915-090027). Pan: lateral-only offset
+// from the listener, like the wall cue — 90° regardless of magnitude.
+constexpr float kBarFreeSideMinU    = 6.0f;
+constexpr float kJumpCuePanM        = 5.0f;
 constexpr const char* kJumpNowCueResref =
     acc::audio::GetNavCueResref(acc::audio::NavCue::SwoopJumpNow);
 
-enum HazardClass : uint8_t { kHazardBlock = 0, kHazardBar = 1, kHazardPost = 2 };
+enum HazardClass : uint8_t { kHazardBlock = 0, kHazardBar = 1, kHazardPost = 2,
+                             kHazardScenery = 3 };
 enum HazardState : uint8_t { kHazardUntried = 0, kHazardOk = 1, kHazardFailed = 2 };
 struct HazardInfo {
     uint8_t state;       // HazardState
     uint8_t cls;         // HazardClass (valid when state == kHazardOk)
     uint8_t from_part;   // 1 = "hitbump" part box, 0 = whole-gob box
-    uint8_t jump_cued;   // bar: the jump-now cue has fired for this pass
+    uint8_t jump_cued;   // bar: jump-now cues fired for this pass (max 2)
     Vector  mn, mx;      // model-local collision box
 };
 constexpr const char* kObstacleWarnLoopResref =
@@ -525,9 +551,42 @@ constexpr float       kCoastTicks    = 2.5f;
 // edges — that guard is one sign comparison, not a new subsystem.
 constexpr float       kWallLeadTicks    = 3.0f;   // ticks of velocity look-ahead (~0.1s)
 constexpr float       kWallEdgeOffsetU  = 20.0f;  // lane half-width in tunnel-offset units
+// KOTOR 2: the wall is not free. Lane-edge posts line both sides (mesh from
+// |x| 18.3, bike radius 2 → contact at |x| ≈ 16.3) and a post hit is a full
+// obstacle hit — 50 hit points, gear 0, parked against the next post. So on
+// K2 the cue has to arrive early enough to STOP steering outward, not just to
+// shorten the pin: it fires at the post line, not the clamp, with a ~0.4 s
+// lead (12 ticks) instead of 0.1 s. The overshoot guard still applies (only
+// when moving away from the target pad), so a deliberate swing toward a
+// side-lane pad at 11 stays silent. Round 6 (patch-20260915-090027) drifted
+// from 18 to 20 at speed 155 with no cue at all.
+constexpr float       kWallLeadTicksK2  = 20.0f;   // ~0.7 s at 30 ticks/s
+constexpr float       kWallEdgeOffsetK2U = 16.0f;
+inline float WallLeadTicks() {
+    return acc::game::IsKotor2() ? kWallLeadTicksK2 : kWallLeadTicks;
+}
+inline float WallEdgeOffsetU() {
+    return acc::game::IsKotor2() ? kWallEdgeOffsetK2U : kWallEdgeOffsetU;
+}
 constexpr float       kWallMinVel       = 0.5f;   // ignore slow drift (u/tick)
 constexpr ULONGLONG   kWallCueDebounceMs = 400;   // don't machine-gun while pinned
 constexpr float       kWallCuePanM      = 5.0f;   // ±pan of the cue to the wall side
+// KOTOR 2 wall LOOP. One thump at a predicted crossing was not enough: round
+// 7 (patch-20260915-091337) took 22 of 26 hits on the posts — six arriving
+// at the wall 0.7 s after a thump the player did not register, sixteen
+// relaunching from a park at |x| = 20 (the first build's gear-0 "pinned"
+// thump stopped on every relaunch, so it was one thump, silence, crash).
+// Player's call (2026-09-15): warn earlier and continuously, no rail. So on
+// K2 the wall thump is a LOOP on the wall's side that runs while the bike is
+// in the outer band (|x| >= kWallBandU — pads sit at 11, the post contact
+// line is 16.3) or projected to reach the post line within the lead, and
+// while parked against a post in any gear. It stops as soon as the bike is
+// back inside (hysteresis kWallBandHystU). K1 keeps the one-shot: its wall is
+// free, the cue there only shortens a pin.
+constexpr float       kWallBandU        = 12.5f;
+constexpr float       kWallBandHystU    = 1.5f;
+constexpr float       kWallLoopPanM     = 8.0f;   // lateral offset of the loop source
+constexpr float       kWallLoopFwdM     = 2.0f;   // slight forward so it reads beside, not behind
 constexpr const char* kWallCueResref =
     acc::audio::GetNavCueResref(acc::audio::NavCue::SwoopWallImpact);
 // FALLBACK combined accel-pad hit radius (player.Sphere_Radius +
@@ -565,12 +624,26 @@ constexpr float       kAccelpadHitRadiusU = 8.0f;
 // more bite. (The hit itself is still the engine's swept sphere test — this is
 // only how much lateral slack the assist forgives.)
 constexpr float       kSwoopAssistGapU = 16.0f;
+// KOTOR 2 gets its own, smaller gap. Its tracks lay the pads in three fixed
+// lanes 11 units apart (Citadel: x -11 / 0 / +11, forward gaps 200-300 u), so
+// with the Taris-tuned 16 u the next pad was ALWAYS inside the engage gap the
+// moment the previous one was passed: the magnet made every lane change, the
+// guide tone rested ~90 % of the race and 23 of 23 pads were caught with the
+// player only shifting and jumping (round 5, patch-20260915-083506). The
+// magnet also walked the bike into every mine and half-bar on a pad lane. At
+// 6 u a one-lane hop needs the player to swing ≥ 5 u toward it by ear before
+// the pull engages; the magnet still lands the last stretch (K2's catch
+// radius is 4 u — player 2 + pad 2 — against K1's 6). Same knob, per game.
+constexpr float       kSwoopAssistGapK2U = 6.0f;
+inline float AssistGapU() {
+    return acc::game::IsKotor2() ? kSwoopAssistGapK2U : kSwoopAssistGapU;
+}
 
 // Post-coast miss within the assist gap reads as "on the line" → release/hold:
 // the magnet finishes from here, so the player need not nail dead-center by ear.
 // (Was 4u — inside the catch radius, demanding a released coast land the hit on
 // its own. The magnet lands it now; the cue only has to get you into the gap.)
-constexpr float       kReleaseBand   = kSwoopAssistGapU;
+inline float ReleaseBand() { return AssistGapU(); }
 // Directional-tick geometry (camera-relative, mirroring the proven wall-impact
 // pan path) and cadence. Lateral ±pan at a slight forward depth gives a hard
 // but slightly-ahead L/R image (atan2(8,2) ≈ 76°), and the 3D distance
@@ -627,7 +700,7 @@ constexpr uint8_t     kSteerCueVolume = 54;
 //   is a final-approach gap-filler: the player must close the lane down to the
 //   gap by ear, and only then does the magnet quietly finish it. This is THE
 //   loosening lever — see kSwoopAssistGapU. (Tune the gap, not this.)
-constexpr float kSwoopMagnetEngageU   = kSwoopAssistGapU;  // lane-units; magnetism engages within
+inline float MagnetEngageU() { return AssistGapU(); }  // lane-units; magnetism engages within
 // Gains raised 2026-06-23 (0.06->0.15 far, 0.35->0.50 near) to compensate for
 // the removed widened-pad Override: the hit radius drops 8u -> vanilla 5u, so the
 // magnet must pull "reached ~8u" down to "crosses <=5u" — closing ~3 extra units.
@@ -738,6 +811,8 @@ struct SpatialAudioState {
     // Predictive overshoot/wall cue debounce: last time we fired the early
     // wall-impact sound, so it doesn't machine-gun while the bike sits pinned.
     ULONGLONG last_wall_cue_ms    = 0;
+    acc::audio::LoopSource wall_loop;     // K2 wall band, see kWallBandU
+    int       wall_loop_side       = 0;   // -1 left, +1 right, 0 silent
 
     // Lateral steering magnetism: throttle for the ~1/s SwoopAssist heartbeat
     // log (the assist writes offset.x every in-band tick; we only log once a
@@ -770,6 +845,10 @@ struct SpatialAudioState {
     int    mine_count = 0;
     int    mine_slot[kMgoArraySlotCount];
     Vector mine_pos[kMgoArraySlotCount];
+
+    // Airborne state last tick (offset.z) — the touchdown edge re-arms one
+    // "jump again" beep for a bar still ahead.
+    bool   was_airborne = false;
 
     // Track-axis probe (see TrackAxisUsable). Decided once per race from the
     // bike's own travel; until it is, the geometry cues stay silent.
@@ -917,10 +996,24 @@ int ObstacleLoopBudget() {
     return acc::game::IsKotor2() ? 6 : kMgoArraySlotCount;
 }
 
+// The `<track>_MGE*` scenery objects (see the constants block): the token
+// "_MGE" anywhere in the resref, case-insensitive. Same hand-rolled match as
+// the mine test in TickAccelpadCues — no <cctype> / locale in SEH-heavy code.
+bool IsSceneryObstacleName(const char* name) {
+    if (!name) return false;
+    for (const char* p = name; *p; ++p) {
+        if (p[0] == '_' && (p[1] == 'm' || p[1] == 'M') &&
+            (p[2] == 'g' || p[2] == 'G') && (p[3] == 'e' || p[3] == 'E')) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // Resolve and classify one obstacle's collision box (KOTOR 2). Fills `hz`
 // once; later ticks reuse it. Falls back to "failed" (= position-based cue,
 // the K1 behaviour) when neither the part nor the gob box reads sanely.
-void ResolveHazardBox(void* aur, HazardInfo& hz) {
+void ResolveHazardBox(void* aur, const char* name, HazardInfo& hz) {
     Vector mn = {0, 0, 0}, mx = {0, 0, 0};
     bool ok = ReadGobPartBoundingBox(aur, "hitbump", mn, mx);
     hz.from_part = ok ? 1 : 0;
@@ -938,6 +1031,7 @@ void ResolveHazardBox(void* aur, HazardInfo& hz) {
     if (!ok) { hz.state = kHazardFailed; return; }
     hz.state = kHazardOk;
     hz.mn = mn; hz.mx = mx;
+    if (IsSceneryObstacleName(name)) { hz.cls = kHazardScenery; return; }
     hz.cls = ((mx.z - mn.z) <= kJumpableHeightU) ? kHazardBar : kHazardBlock;
 }
 
@@ -948,12 +1042,18 @@ void TickObstacleCues(void* miniGame) {
         return;
     }
 
-    // Bike state for the K2 bar logic: lane position, forward position, speed.
+    // Bike state for the K2 bar logic: lane position, forward position, speed,
+    // and the airborne edge (offset.z) for the "jump again" repeat.
     const bool k2 = acc::game::IsKotor2();
     void*  player   = SafeReadPtr(miniGame, kMiniGamePlayerOffset);
     Vector bikePos  = {0, 0, 0};
     const bool bikeOk = ReadFollowerPosition(player, bikePos);
     const float bikeSpeed = SafeReadFloat(player, kFollowerSpeedOffset);
+    Vector tunnel = {0, 0, 0};
+    const bool tunOk = SafeReadVector(player, kMiniPlayerOffsetVectorOffset, tunnel);
+    const bool airborne = tunOk && tunnel.z > 0.25f;
+    const bool justLanded = g_state.was_airborne && !airborne;
+    g_state.was_airborne = airborne;
 
     // Listener anchor. During the race the engine swaps the controlled
     // creature (PartyLeader log goes handle=0xffffffff), so
@@ -1006,7 +1106,7 @@ void TickObstacleCues(void* miniGame) {
         ++candidate_count;
         return true;
     };
-    int posts_skipped = 0, bars_seen = 0, mines_in_range = 0;
+    int posts_skipped = 0, scenery_skipped = 0, bars_seen = 0, mines_in_range = 0;
 
     // Per-tick "still in range" flag. Slots flipped true here are
     // either Started (loop wasn't active) or just UpdatePosition'd
@@ -1043,7 +1143,7 @@ void TickObstacleCues(void* miniGame) {
 
         // ---- KOTOR 2: classify by collision box (see the constants block). ----
         HazardInfo& hz = g_state.hazards[i];
-        if (k2 && hz.state == kHazardUntried) ResolveHazardBox(aur, hz);
+        if (k2 && hz.state == kHazardUntried) ResolveHazardBox(aur, name, hz);
         const bool haveBox = k2 && hz.state == kHazardOk;
         // World box (origin + local; these objects are unrotated on straight
         // +Y tracks — the axis probe has already asserted +Y).
@@ -1052,7 +1152,9 @@ void TickObstacleCues(void* miniGame) {
         const float wy0 = haveBox ? pos.y + hz.mn.y : pos.y;
         const float wy1 = haveBox ? pos.y + hz.mx.y : pos.y;
         const float wz0 = haveBox ? pos.z + hz.mn.z : pos.z;
-        const bool  isPost = haveBox && (wx0 >= kLaneEdgeSkipU || wx1 <= -kLaneEdgeSkipU);
+        const bool  isScenery = haveBox && hz.cls == kHazardScenery;
+        const bool  isPost = haveBox && !isScenery &&
+                             (wx0 >= kLaneEdgeSkipU || wx1 <= -kLaneEdgeSkipU);
         // Where the hazard really is: box centre laterally (clamped to the
         // lane), leading edge forward, base height.
         Vector hazardPos = pos;
@@ -1076,7 +1178,8 @@ void TickObstacleCues(void* miniGame) {
                               pos.x, pos.y, pos.z,
                               hz.from_part ? "hitbump" : "gob",
                               wx0, wx1, wy0, wy1, wz0, pos.z + hz.mx.z,
-                              isPost ? "post" : (hz.cls == kHazardBar ? "bar" : "block"));
+                              isScenery ? "scenery" : isPost ? "post"
+                              : (hz.cls == kHazardBar ? "bar" : "block"));
             } else {
                 acclog::Write("SwoopRace",
                               "obstacle slot=%d ptr=%p vtable=%p name=[%s] "
@@ -1087,7 +1190,8 @@ void TickObstacleCues(void* miniGame) {
             }
         }
 
-        if (isPost) { ++posts_skipped; continue; }  // wall cue covers these
+        if (isPost)    { ++posts_skipped;   continue; }  // wall cue covers these
+        if (isScenery) { ++scenery_skipped; continue; }  // phantom boxes, never hit
 
         if (haveBox && hz.cls == kHazardBar) {
             // ---- Low bar: the jump-now cue; never the warn loop.
@@ -1102,14 +1206,31 @@ void TickObstacleCues(void* miniGame) {
                                 bikeX <= wx1 + kBarLaneMarginU;
             if (!inSpan || bikeSpeed <= 1.0f || gap <= 0.0f) continue;
             const float ttc = gap / bikeSpeed;
-            if (!hz.jump_cued && ttc <= kJumpCueLeadSec) {
-                hz.jump_cued = 1;
-                acc::audio::PlayCue(kJumpNowCueResref);
+            // First beep: "press now". Second beep: the bike was airborne from
+            // an earlier press and has just landed with the bar still ahead
+            // inside the window — press again.
+            const bool first  = hz.jump_cued == 0 && ttc <= kJumpCueLeadSec;
+            const bool repeat = hz.jump_cued == 1 && justLanded &&
+                                ttc <= kJumpCueLeadSec && ttc >= kJumpCueMinLeadSec;
+            if (first || repeat) {
+                ++hz.jump_cued;
+                // Free side: room between the bar's end and the post line.
+                const bool leftFree  = (wx0 + kLaneEdgeSkipU) >= kBarFreeSideMinU;
+                const bool rightFree = (kLaneEdgeSkipU - wx1) >= kBarFreeSideMinU;
+                const int  side = (leftFree == rightFree) ? 0 : (leftFree ? -1 : +1);
+                if (side == 0) {
+                    acc::audio::PlayCue(kJumpNowCueResref);
+                } else {
+                    Vector cue = listener_pos;
+                    cue.x += side * kJumpCuePanM;
+                    acc::audio::PlayCue3D(kJumpNowCueResref, cue);
+                }
                 acclog::Write("SwoopRace",
-                              "jump cue: slot=%d name=[%s] bar y=%.1f x[%.1f..%.1f] "
-                              "gap=%.1f speed=%.1f ttc=%.2fs bikeX=%.2f",
-                              i, name ? name : "(null)", wy0, wx0, wx1, gap,
-                              bikeSpeed, ttc, bikeX);
+                              "jump cue%s: slot=%d name=[%s] bar y=%.1f x[%.1f..%.1f] "
+                              "gap=%.1f speed=%.1f ttc=%.2fs bikeX=%.2f side=%s",
+                              repeat ? " (again)" : "", i, name ? name : "(null)",
+                              wy0, wx0, wx1, gap, bikeSpeed, ttc, bikeX,
+                              side == 0 ? "centre" : side < 0 ? "left" : "right");
             }
             continue;
         }
@@ -1219,8 +1340,9 @@ void TickObstacleCues(void* miniGame) {
     // each tick — non-zero values mark transitions.
     if (k2) {
         acclog::Trace("SwoopRace",
-                      "hazards: posts=%d bars=%d mines=%d/%d inRange",
-                      posts_skipped, bars_seen, mines_in_range, g_state.mine_count);
+                      "hazards: posts=%d scenery=%d bars=%d mines=%d/%d inRange",
+                      posts_skipped, scenery_skipped, bars_seen, mines_in_range,
+                      g_state.mine_count);
     }
     acclog::Trace("SwoopRace",
                   "scan: slots=%d obstacles=%d ahead=%d inRange=%d (%.0fm) "
@@ -1425,12 +1547,22 @@ void TickAccelpadCues(void* miniGame) {
                 (playerRadius > 0.0f && ahead_radius > 0.0f)
                     ? (playerRadius + ahead_radius)
                     : kAccelpadHitRadiusU;
+            const bool caught = acrx <= combinedRadius;
             acclog::Write("SwoopRace",
                           "CROSS slot=%d padX=%.2f crossErr=%.2f abs=%.2f "
                           "hit=%d radius=%.1f vel=%.2f",
                           g_state.prev_ahead_slot, g_state.prev_ahead_posX,
-                          crossErr, acrx, (acrx <= combinedRadius) ? 1 : 0,
+                          crossErr, acrx, caught ? 1 : 0,
                           combinedRadius, g_state.smoothed_vel);
+            // Pad caught: one centred burst of the pad's own tone. Neither
+            // game's accelpad script plays a sound (both disassembled — speed
+            // ×1.05, accel ×1.1, and on KOTOR 2 +100 hit points; the "boost"
+            // animation is the only feedback, visual). With the magnet
+            // catching every pad (23 of 23 in round 5, patch-20260915-083506)
+            // the guide tone rests almost the whole race, so by ear nothing
+            // said a pad had been scored at all — "I rarely hear an
+            // accelpad". Same sample as the guide so the identity is obvious.
+            if (caught) acc::audio::PlayCue(kAccelpadLoopResref);
         }
     }
 
@@ -1448,8 +1580,8 @@ void TickAccelpadCues(void* miniGame) {
     if (have_target) {
         coast = g_state.smoothed_vel * kCoastTicks;
         proj  = padErr - coast;
-        if (proj >  kReleaseBand)      desired = kSteerCmdRight;
-        else if (proj < -kReleaseBand) desired = kSteerCmdLeft;
+        if (proj >  ReleaseBand())      desired = kSteerCmdRight;
+        else if (proj < -ReleaseBand()) desired = kSteerCmdLeft;
         else                            desired = kSteerCmdAligned;
     }
 
@@ -1478,10 +1610,10 @@ void TickAccelpadCues(void* miniGame) {
     bool probeMagnetWrote = false;
     if (have_target && bikeOk && tunOk && player && inGear &&
         bikeSpeed > kSwoopMinRaceSpeed &&
-        std::fabs(padErr) <= kSwoopMagnetEngageU) {
+        std::fabs(padErr) <= MagnetEngageU()) {
         const acc::minigame::MagnetParams mp{
             kSwoopMagnetGainFar, kSwoopMagnetGainNear, kSwoopMagnetMaxStepU};
-        float t = 1.0f - std::fabs(padErr) / kSwoopMagnetEngageU;
+        float t = 1.0f - std::fabs(padErr) / MagnetEngageU();
         if (t < 0.0f) t = 0.0f;
         // Hold-through-crossing (item 2): in the last kSwoopMagnetHoldSec before
         // this gate's forward position is reached, ramp the pull to fully sticky
@@ -1549,9 +1681,9 @@ void TickAccelpadCues(void* miniGame) {
     // (world-X delta, same units as the offset delta).
     if (have_target && tunOk) {
         const float vel       = g_state.smoothed_vel;
-        const float projected = tunnel.x + vel * kWallLeadTicks;
-        const bool  toward_wall  = std::fabs(projected) >= kWallEdgeOffsetU &&
-                                   std::fabs(tunnel.x)  <  kWallEdgeOffsetU;
+        const float projected = tunnel.x + vel * WallLeadTicks();
+        const bool  toward_wall  = std::fabs(projected) >= WallEdgeOffsetU() &&
+                                   std::fabs(tunnel.x)  <  WallEdgeOffsetU();
         const bool  overshooting = vel * padErr < 0.0f;  // moving away from pad
         if (toward_wall && overshooting && std::fabs(vel) > kWallMinVel &&
             now - g_state.last_wall_cue_ms >= kWallCueDebounceMs) {
@@ -1566,6 +1698,43 @@ void TickAccelpadCues(void* miniGame) {
                           side > 0 ? "right" : "left", tunnel.x, vel,
                           projected, padErr);
         }
+    }
+
+    // ----- KOTOR 2 wall loop (see kWallBandU). Band OR projected crossing,
+    // any gear, with hysteresis so it does not chatter at the band edge.
+    if (acc::game::IsKotor2() && tunOk) {
+        const float proj = tunnel.x + g_state.smoothed_vel * WallLeadTicks();
+        int side = 0;
+        if (tunnel.x >= kWallBandU || proj >= kWallEdgeOffsetK2U)       side = +1;
+        else if (tunnel.x <= -kWallBandU || proj <= -kWallEdgeOffsetK2U) side = -1;
+        if (side == 0 && g_state.wall_loop_side != 0 &&
+            tunnel.x * g_state.wall_loop_side > kWallBandU - kWallBandHystU) {
+            side = g_state.wall_loop_side;   // still in the hysteresis band
+        }
+        if (side != 0) {
+            Vector cue = listener_pos;
+            cue.x += side * kWallLoopPanM;
+            cue.y += kWallLoopFwdM;
+            if (g_state.wall_loop.IsActive()) {
+                g_state.wall_loop.UpdatePosition(cue);
+            } else {
+                g_state.wall_loop.Start(
+                    kWallCueResref, cue, /*looping=*/true, /*spatial=*/true,
+                    /*priorityGroup=*/-1, /*volumeByte=*/kSwoopVolNearByte,
+                    /*maxVolDist=*/kSwoopFlatBandMaxM,
+                    /*minVolDist=*/kSwoopFlatBandMinM);
+            }
+            if (side != g_state.wall_loop_side) {
+                acclog::Write("SwoopRace",
+                              "wall loop: side=%s tunnelX=%.1f vel=%.2f proj=%.1f gear=%d",
+                              side > 0 ? "right" : "left", tunnel.x,
+                              g_state.smoothed_vel, proj, inGear ? 1 : 0);
+            }
+        } else if (g_state.wall_loop.IsActive()) {
+            g_state.wall_loop.Stop();
+            acclog::Write("SwoopRace", "wall loop: stop tunnelX=%.1f", tunnel.x);
+        }
+        g_state.wall_loop_side = side;
     }
 
     // ----- Continuous panned steering guide (see the function header). -----
@@ -1667,6 +1836,7 @@ void ResetSpatialAudio() {
     g_state.obstacle_diag_emitted = false;
     g_state.accelpad_diag_emitted = false;
     g_state.mine_count            = 0;
+    g_state.was_airborne          = false;
     for (int i = 0; i < kMgoArraySlotCount; ++i) {
         g_state.hazards[i].state       = kHazardUntried;
         g_state.hazards[i].cls         = kHazardBlock;
@@ -1680,6 +1850,8 @@ void ResetSpatialAudio() {
     g_state.steer_cmd             = kSteerCmdNone;
     g_state.guide_was_active      = false;
     g_state.last_wall_cue_ms      = 0;
+    g_state.wall_loop.Stop();
+    g_state.wall_loop_side        = 0;
     g_state.last_magnet_log_ms    = 0;
     g_state.have_prev_ahead       = false;
     g_state.prev_ahead_posX       = 0.0f;

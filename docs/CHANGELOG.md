@@ -33,28 +33,55 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
-<h2>v0.8.1</h2>
+<h2>Unreleased</h2>
 
 <h3>KOTOR 2 swoop racing:</h3>
 
-- Space shifts gears again in KOTOR 2 swoop races, and W jumps. KOTOR 2 rebound
+- KOTOR 2 swoop races can be shifted from the keyboard: W shifts up a gear
+  (a new rebindable "Swoop: Shift up" hotkey), Space jumps. KOTOR 2 rebound
   the race without telling anyone who plays by ear: its tracks moved the gear
   ladder from the "fire" script to a new "accelerate" script that the engine
   only triggers from the left mouse button (or a gamepad's B button), and gave
   Space to the new jump. So the first K2 race parked at speed zero while Space
   was pressed — the engine received every press and refused the jump because
-  the bike was still in gear 0. The mod now intercepts Space (and pad A) during
-  a KOTOR 2 race, runs the track's own gear-shift script through the engine's
-  runner and swallows the press so the engine's jump never fires; bare W (a new
-  rebindable "Swoop: Jump" hotkey) and pad B run the jump script. Left and right
-  mouse buttons keep their native meaning. KOTOR 1 is untouched.
+  the bike was still in gear 0. On a gamepad A jumps and B shifts, as the
+  engine intended. Left and right mouse buttons keep their native meaning.
+  KOTOR 1 is untouched.
+- The metallic "obstacle ahead" loop no longer plays for the six hangar and
+  shuttle models dressing the Citadel track. Their collision boxes compute
+  to spots in the middle of the lane where nothing collides — two of them
+  right before the first bar, so the loop and the jump beep sounded like the
+  same obstacle.
 - The spoken gear number now comes from the track scripts' own gear variable
   on both games, so a KOTOR 2 collision — which drops the bike to gear 0 and
   forces a relaunch — is announced as "gear 0" instead of leaving the count
   stuck (the previous top-speed-plateau counter could only ever go up).
-- The "shift now" cue uses KOTOR 2's own, lower gate ladder there (35 / 60 /
-  100 / 150 instead of KOTOR 1's 60 / 100 / 150 / 210), read from the shipped
-  `onaccelerate.ncs`; KOTOR 1 keeps its ladder.
+- The "shift now" cue on KOTOR 2 fires at the speed the track really accepts
+  a shift: 60 / 100 / 150 / 210, the same ladder as KOTOR 1. Two test rounds
+  ran with it one notch too low (a misread of the shift script), so the cue
+  came up to 40 units early, W did nothing, and the next gear's cue then
+  sounded right after the engine's own shift noise.
+- The KOTOR 2 steering assist now grabs a pad only once you are within 6
+  lane units of it, not 16. KOTOR 2 lays its pads in three fixed lanes 11
+  units apart, so at 16 the assist made every lane change by itself: the
+  guide tone stayed quiet, all pads were caught with no steering, and the
+  bike was walked into every mine and half-height bar sitting on a pad lane.
+  Now a one-lane hop needs you to swing most of the way by ear, as on KOTOR
+  1; the assist still lands the final stretch.
+- The jump beep now tells you the alternative. A bar that covers only one
+  half of the lane sounds hard on the free side: jump, or drift that way.
+  A bar with no room on either side sounds in the middle: you must jump.
+- On KOTOR 2 the wall thump is now continuous: it repeats on the wall's side
+  the whole time the bike is in the outer 7 units of the lane or heading into
+  them, and stops the moment you are back inside. On KOTOR 2 the wall is not
+  free as on KOTOR 1: posts line both edges, touching one costs 50 hit points
+  and drops you to gear 0, and relaunching from against a post is another
+  hit. Two test races took 22 of 26 hits that way, with a single thump that
+  was easy to miss in the mix.
+- A caught accelerator pad plays one short burst of the pad tone. Neither
+  game's pad script makes a sound, and on KOTOR 2 the steering assist catches
+  every pad on its own, so the guide tone stayed quiet and nothing by ear
+  said a pad had been scored.
 - The race entry cheat sheet on KOTOR 2 names the jump key.
 - KOTOR 2 tracks are now read by shape, not by object position. The obstacle
   loop used to sound every lane-edge post (90 of Citadel's 105 objects, none
@@ -74,6 +101,19 @@ and add the German in parentheses if it genuinely aids clarity.
   dead, which the "coasted to a stop" finish fallback took for the finish line
   ("23.22 seconds, race ended" at the first bar). The finish is now the track
   script's own finish flag; the fallback stays KOTOR 1 only.
+- A KOTOR 2 race that ends because the bike is wrecked now says "Swoop
+  wrecked. Race over." instead of a finish time. Obstacles take 50 and mines
+  100 of the bike's 600 hit points and the track ends the race at zero, which
+  the mod had been reading as a finish ("72.16 seconds" at the third bar).
+  Individual hits are not spoken — the on-screen damage gauge is the sighted
+  equivalent, and the race is loud enough.
+- The "shift now" cue waits 0.8 seconds after a gear change. On KOTOR 2 a
+  late shift already sits above the next gate, so the cue fired in the same
+  instant as the gear announcement and sounded like a shift confirmation.
+- The jump beep now means "press Space now": it sounds 1.0 seconds before a bar
+  instead of 1.35, because an instant reaction to the earlier beep landed the
+  bike just short of the bar. If you jumped too early and touch down with the
+  bar still ahead, the beep repeats once.
 - After a collision the steering assist stays off until you are back in gear,
   so you can steer clear of what you hit instead of being pulled back into it.
 - If the bike makes no headway for six seconds in gear 0 after the start, the
@@ -84,31 +124,9 @@ and add the German in parentheses if it genuinely aids clarity.
   variable and the jump velocity, and the first-sweep inventory prints each
   obstacle's collision box and class.
 
-<h3>KOTOR 2 on GOG:</h3>
-
-- The mod now works on the GOG release of KOTOR 2. It had never loaded there:
-  the GOG executable is Aspyr's 2015 build re-linked in 2021, with every
-  function and global at a different address, and the mod only carried the
-  Steam addresses — so the first hook's byte check failed and the game
-  silently ran unmodded (no log, no speech, no error). All 265 engine
-  addresses are now machine-translated to the GOG layout, verified offline
-  against the GOG executable and Aspyr's own per-store address data, and the
-  GOG build is detected and remapped at runtime. Steam KOTOR 2 and both
-  KOTOR 1 builds are unchanged.
-
 <h3>Bug fixes:</h3>
 
 - A key the game loses track of no longer stays pressed (both games). Cause: the engine reads the keyboard as a stream of press/release transitions and derives "is this key down" from that stream alone, but it throws the queued transitions away at every dialogue start and end, pause or quit popup, area transition, load screen, movie and focus change, and again whenever DirectInput briefly loses the device. A release that fell into one of those gaps left the key held forever: the camera spun after a conversation, the party walked off on its own. The mod now compares what the engine has been told with the true key state after every keyboard read, and re-delivers a lost release through the engine's own path within two frames. Presses are never invented and normal keypresses pass through untouched. The log names every re-delivered key (`KeyboardResync`).
-
-- KOTOR 2: opening Load Game with no saved games and pressing the arrow keys
-  no longer crashes the game. With an empty list the engine's own navigation
-  followed a stale pointer into freed memory and called into garbage; a guard
-  now detects that and safely does nothing, so you hear the "no saved games"
-  message and can close the screen normally. (KOTOR 1 was never affected.)
-- KOTOR 2: hardened the text reader that every menu announcement passes
-  through, so a control whose text has been freed or not yet filled in is read
-  as empty instead of crashing — the same empty-save-list situation exposed it,
-  but the fix protects every screen.
 
 <h3>Diagnostics:</h3>
 
@@ -130,6 +148,32 @@ and add the German in parentheses if it genuinely aids clarity.
   on its entrance passage read 50 metres north-south and was announced as
   "north-south". The cue now takes the median over every node in the zone, so
   a couple of nodes on a crossing cannot outvote the rest.
+
+<h2>v0.8.1</h2>
+
+<h3>KOTOR 2 on GOG:</h3>
+
+- The mod now works on the GOG release of KOTOR 2. It had never loaded there:
+  the GOG executable is Aspyr's 2015 build re-linked in 2021, with every
+  function and global at a different address, and the mod only carried the
+  Steam addresses — so the first hook's byte check failed and the game
+  silently ran unmodded (no log, no speech, no error). All 265 engine
+  addresses are now machine-translated to the GOG layout, verified offline
+  against the GOG executable and Aspyr's own per-store address data, and the
+  GOG build is detected and remapped at runtime. Steam KOTOR 2 and both
+  KOTOR 1 builds are unchanged.
+
+<h3>Bug fixes:</h3>
+
+- KOTOR 2: opening Load Game with no saved games and pressing the arrow keys
+  no longer crashes the game. With an empty list the engine's own navigation
+  followed a stale pointer into freed memory and called into garbage; a guard
+  now detects that and safely does nothing, so you hear the "no saved games"
+  message and can close the screen normally. (KOTOR 1 was never affected.)
+- KOTOR 2: hardened the text reader that every menu announcement passes
+  through, so a control whose text has been freed or not yet filled in is read
+  as empty instead of crashing — the same empty-save-list situation exposed it,
+  but the fix protects every screen.
 
 <h2>v0.8.0</h2>
 

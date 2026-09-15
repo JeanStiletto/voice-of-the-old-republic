@@ -136,9 +136,9 @@ enum class Action : int {
 
     // ----- Swoop race (polled only while a KOTOR 2 race is active) -----
     // KOTOR 2 put the jump on Space and moved the gear shift to the left
-    // mouse button; the mod keeps Space = shift (as on KOTOR 1) and gives the
-    // jump its own key. See minigame_swoop_race.cpp TryShift / TryJump.
-    SwoopJump,             // W          (hop over an obstacle)
+    // mouse button, leaving no keyboard shift; the mod gives the shift its own
+    // key. See minigame_swoop_race.cpp TryShift / TryJump.
+    SwoopShift,            // W          (shift up a gear)
 
     // ----- Dialog (polled only while a dialog panel is foreground) -----
     DialogRepeatLine,      // R          (re-speak the current NPC dialog line)

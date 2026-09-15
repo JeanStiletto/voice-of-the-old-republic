@@ -65,19 +65,23 @@ then `gear = GetGlobalNumber("MIN_RACE_GEAR")` and `speed = SWMG_GetPlayerSpeed(
 - `gear == -1` → play the `Penalty` sound object, no shift (false start)
 - `gear == 0` → **unconditional launch**: min 35·f0, max 70, accel 20·f1,
   tunnel ±20 lateral / +10 vertical (`SWMG_SetPlayerTunnelPos/Neg`)
-- `gear == 1` → shift iff `speed > 35`; sets min 60·f0, max 110, accel 8·f1
-- `gear == 2` → shift iff `speed > 60`; sets min 100·f0, max 155, accel 6·f1·f1
-- `gear == 3` → shift iff `speed > 100`; sets min 150·f0, max 215, accel 4·f1·f1
-- `gear == 4` → shift iff `speed > 150`; sets min 210·f0, max 210·2·f0(?), accel 2·f1·f1
+- `gear == 1` → shift iff `speed > 60`; sets min 60·f0, max 110, accel 8·f1
+- `gear == 2` → shift iff `speed > 100`; sets min 100·f0, max 155, accel 6·f1·f1
+- `gear == 3` → shift iff `speed > 150`; sets min 150·f0, max 215, accel 4·f1·f1
+- `gear == 4` → shift iff `speed > 210`; sets min 210·f0, max 210·2·f0(?), accel 2·f1·f1
 - gate failed → the else branch only re-asserts the current gear's
   acceleration (a no-op), exactly as K1's early press
 - on success: `SetGlobalNumber("MIN_RACE_GEAR", gear+1)`, fade the previous
   `Engine0N` sound, play `ShiftN` + `Engine0N`, `gearN` / `gearNl` animations
 
-**The gates are one notch lower than KOTOR 1's** (K1 `onfire.ncs` needs the
-NEXT gear's minimum: 60/100/150/210). They compare against the raw constants,
-not the upgrade-scaled minimums. `minigame_swoop_race.cpp` carries both ladders
-(`kShiftGateSpeedK1` / `kShiftGateSpeedK2`).
+**The gates are the same as KOTOR 1's** — the NEXT gear's minimum, 60 / 100
+/ 150 / 210, i.e. the top 5-10 units of each gear's envelope. The first
+stack accounting (2026-09-14) read them one notch lower (35 / 60 / 100 / 150)
+and two rounds shipped on that; rounds 4-5 refuted it: every accepted shift
+landed at 70 / 105-110 / 155 / 214 and presses at 35-45 / 76-86 / 115-150 /
+158-200 ran the script with no gear change (the else branch). The compare
+is `speed > <next gear's raw constant>`, not the upgrade-scaled minimum.
+`minigame_swoop_race.cpp` keeps both tables; they are now identical.
 
 ## 4. `MIN_RACE_GEAR` is the gear (both games)
 
@@ -164,10 +168,14 @@ scalar search for 0x19 lands there first, which cost one round.)
 
 The mod's resolution (input_pipeline.cpp + minigame_swoop_race.cpp): on a
 K2 race, event `0xd9` (Space / pad A) is consumed at the client input hook and
-`TryShift` runs the OnAccelerate runner itself; event `0x16` (pad B) is consumed
-and runs the OnBrake runner; the `SwoopJump` hotkey (bare W, polled in Tick
-because W is an axis poll, not an event, inside the race) runs the OnBrake
-runner from the keyboard. Left / right mouse keep their native meaning.
+`TryJump` runs the OnBrake runner (the engine's own meaning, run by the mod so
+it is logged); event `0x16` (pad B) is consumed and `TryShift` runs the
+OnAccelerate runner; the `SwoopShift` hotkey (bare W, polled in Tick because
+W is an axis poll, not an event, inside the race) runs the OnAccelerate runner
+from the keyboard. Left / right mouse keep their native meaning. (Rounds 1–4
+had the pair the other way round — Space shift, W jump — to match KOTOR 1; the
+player asked for Space = jump, W = shift on 2026-09-15, which is also the
+engine's own Space.)
 
 ## 7. What the tracks are made of (hazard atlas, offline + round 2)
 
@@ -200,7 +208,14 @@ Three shapes:
 - **Blocks**: taller than a jump — Nar Shaddaa's centre posts (x ±4, 13
   tall) and side pairs, its `mgfd/mgfu` fan bodies, Onderon's staggered wall
   pairs (gap in the middle) and its climbing track (box Z rises 111→384 with
-  the road), the `mge` shuttles/hangars near each finish (17 tall).
+  the road).
+- **Scenery, not hazards**: the `<track>_MGE*` shuttles / hangars (six on
+  Citadel, 17 tall). Their origins sit ~1000 units below the track and the
+  runtime world box (origin + hitbump box) lands mid-lane at y 798 / 829 /
+  1294 / 2460 / 2460 / 6002 — where nothing collides: round 4 drove through
+  the "full-lane block" at y 1294 on the ground with no hit while the warn
+  loop played for it. The mod skips them by name (`IsSceneryObstacleName`,
+  class `scenery` in the inventory line).
 
 **Mines are enemies, not obstacles.** Citadel's `Enemies` list is 23 pads
 (`mgf_acpad`, Trigger=1) + 24 mines (`mgf_mine01`, Trigger=0, OnHitFollower
@@ -232,16 +247,78 @@ back to the pad lane (x=0) into the bar — hence the gear-0 magnet gate. The
 "finish" the mod spoke at 23 s was the coast-to-a-stop fallback misreading
 that first stop.
 
-## 8. What the mod does with this (2026-09-14, two builds, awaiting round 3)
+## 7b. Hit points end the race (round 3)
+
+The Citadel bike has 600 hit points (`.are` Hit_Points / Max_HPs, follower
+`+0x8c` / `+0x90`). `enemyhitfollower.ncs` subtracts 50 per collision (the
+`CONSTI 50` local), writes the percentage into the `racedialog` local and the
+heartbeat ends the race when it reaches 0 (`MIN_RACE_GEAR` = 6, same write as
+a finish). Round 3 (patch-20260914-204103) took twelve gear-to-0 events and
+ended at y≈2800 of ~6000 with the mod announcing "72.16 seconds" — a wreck,
+not a finish. The mod now watches hp and speaks "hit, N left" per drop and
+"swoop wrecked" at zero (the finish path checks the wreck flag first).
+
+Round-3 timing facts: the player reacted to the jump beep within 0.1 s (at
+1.35 s lead that lands short of the bar; the window for a 6.3 bar is a press
+0.26–1.05 s before it), so the cue lead is 1.0 s and repeats once on a
+touchdown with the bar still ahead. A late upshift is already above K2's next
+gate, so the shift-ready cue fired in the same tick as the gear speech; it now
+holds 0.8 s after a gear change.
+
+## 7c. Round 4 (2026-09-15, patch-20260915-075412)
+
+- Two hit cascades (7 + 3 hits) came from the pad co-pilot: every bar guards a
+  pad ~55 units behind it in the bar's half (pad 117 at x 11 / y 1938 behind
+  MGC04, pad 121 at x 11 / y 2853 behind MGC06), and the guide swung the bike
+  to the next pad's x the instant the previous pad was passed — while the bike
+  was still airborne from the previous bar. MGC03→MGC04 are 188 units apart,
+  MGC05→MGC06 97; at 150–210 u/s that is less than one jump's air distance,
+  so the bike landed inside the next bar's span with ≤ 0.46 s to go. Not fixed
+  yet (bar-aware guide is the next lever).
+- The race ended on mine 137 at (−13, 3369), two units beside pad 125's lane
+  (x −11) the guide was steering to. `mine.ncs` (disassembled) deals **100**
+  hit points (obstacles 50, `enemyhitfollower.ncs`), drops the gear by two
+  (min 1) — not "0.35×speed" — and the heartbeat ended the race because the
+  racedialog hit-point percentage hit 0. The follower's `+0x8c` read 95 for
+  three more seconds (the engine's 5-point bump landed, the script's write
+  showed up late) and 0 only at teardown, so a live hp zero is not a usable
+  wreck trigger.
+- The heartbeat's finish condition is bike y > 6000; for a wreck or menu quit
+  it stamps 59 / 59 / 99 into `211TEL_SWOOP_MIN` / `_SEC` / `_MSEC` (a finish
+  stores the real time) and sets `FORFEIT_SWOOPRACE` only for the quit. The
+  mod now decides wreck-vs-finish at the flag from that stamp (name built
+  from the area resref; other tracks assumed to follow the pattern), hp == 0
+  as the fallback. Per-hit speech ("Treffer. Noch N.") was cut as noise — the
+  HUD has a damage gauge for sighted players.
+- Six `211TEL_MGE*` scenery objects sounded the block loop at phantom
+  positions (two of them right before the first bar), which made bars sound
+  like avoid-obstacles. Skipped by name now (section 7).
+- Bars: 2 of 9 span the full lane (MGC05, MGC07), 2 the centre 26 units
+  (MGC01, MGC09 — jump-only in practice), 5 half the lane (MGC02 left; MGC03,
+  04, 06, 08 right).
+- Keys swapped at the player's request: Space (engine-native) jumps, W shifts;
+  pad A jumps, pad B shifts (also the engine's own pad pair).
+- Round 5 (patch-20260915-083506, 104.88 s finish + a wreck): the shift gates
+  were wrong (section 3, corrected — K1's ladder), and the pad magnet did every
+  lane change: Citadel's pads sit in three lanes 11 u apart (x −11 / 0 / +11,
+  forward gaps 200-300 u) so the next pad was always inside the Taris-tuned
+  16 u assist gap; guide tone active ~10 % of ticks, 23/23 pads caught, and
+  the magnet drove the bike into mine 142 (x 12, on the pad-132 lane) and
+  the right-half bars. K2 now uses a 6 u gap (`kSwoopAssistGapK2U`); the
+  K2 catch radius is 4 (player 2 + pad 2) vs K1's 6. Neither game's
+  accelpad script plays a sound; the mod now plays a pad-tone burst per
+  caught pad (`CROSS … hit=1`).
+
+## 8. What the mod does with this (2026-09-15, four builds, awaiting round 5)
 
 Round-2 additions (`minigame_swoop_audio.cpp` / `minigame_swoop_race.cpp`):
 
 - Enemies split by model name: mines never become steering targets and are
   sounded as blocks through the warn loop; the inventory logs `mine`/`accelpad`
   per slot and an `enemy pool: accelpads=N mines=M` summary.
-- K2 obstacles classified from the hitbump box: posts skipped, bars get the
-  `SwoopJumpNow` cue (`mgs_warnbust`) at 1.35 s before the bar when the bike's
-  lane is inside the bar's span (the press stays the player's: a co-pilot
+- K2 obstacles classified from the hitbump box: posts and `_MGE` scenery
+  skipped, bars get the `SwoopJumpNow` cue (`mgs_warnbust`) at 1.0 s before
+  the bar when the bike's lane is inside the bar's span (the press stays the player's: a co-pilot
   auto-jump was built and removed the same day at the user's request — cues
   inform, they do not play);
   blocks keep the warn loop, panned to the box centre, timed from the leading
@@ -257,15 +334,15 @@ Round-2 additions (`minigame_swoop_audio.cpp` / `minigame_swoop_race.cpp`):
 
 Round-1 additions:
 
-- `input_pipeline.cpp`: Space / pad A (`0xd9`) → `TryShift`, pad B (`0x16`) →
-  `TryJump`, both consumed so the engine's own jump case never runs; no-ops
-  outside an active K2 race.
+- `input_pipeline.cpp`: Space / pad A (`0xd9`) → `TryJump`, pad B (`0x16`) →
+  `TryShift` (swapped 2026-09-15, see section 6), both consumed so the
+  engine's own cases never run; no-ops outside an active K2 race.
 - `minigame_swoop_race.cpp`: `TryShift` / `TryJump` call the engine's slot
-  runners on the player bike; `SwoopJump` hotkey (W) polled in Tick; gear from
+  runners on the player bike; `SwoopShift` hotkey (W) polled in Tick; gear from
   `MIN_RACE_GEAR` (both games, plateau fallback); per-game shift-ready gate
   ladder; K2 jump watch (log-only); the 1 Hz snapshot shows the gear global and
   the jump velocity.
-- `hotkeys` / `menus_keybinds` / `strings`: `SwoopJump` action (rebindable,
+- `hotkeys` / `menus_keybinds` / `strings`: `SwoopShift` action (rebindable,
   listed under Minigames), `SwoopRaceControlsK2` cheat sheet, both in all
   seven languages.
 - GOG K2: the two runner addresses are `Kotor2Only()` literals, so the

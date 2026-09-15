@@ -239,24 +239,28 @@ extern "C" int __cdecl OnClientHandleInputEvent(void* this_ptr,
         return 1;  // consume → consumed_exit (POP*5 + RET 8)
     }
 
-    // ---- KOTOR 2 swoop race: Space shifts, not jumps -----------------------
+    // ---- KOTOR 2 swoop race: Space / pad A jump, pad B shifts ---------------
     // K2's HandleInputEvent sends event 0xd9 (the MGshoot keymap row = Space,
     // pad A) and 0x1a (right mouse) to the bike's OnBrake runner — the JUMP —
     // and only 0x16 (pad B) / 0x19 (left mouse) to the OnAccelerate runner,
-    // the gear shift. No keyboard key shifts by default. Keep the KOTOR 1
-    // contract the mod already teaches ("Space to shift on the cue"): run the
-    // shift ourselves and swallow the press so the engine's jump case never
-    // sees it; give pad B the jump so a pad keeps both. Presses only — the
-    // engine's cases early-out on release anyway. TryShift/TryJump are no-ops
-    // (return false → pass through) outside an active K2 swoop race, so this
-    // touches nothing else that arrives as 0xd9 / 0x16.
+    // the gear shift. No keyboard key shifts by default. The mod keeps the
+    // engine's Space = jump (a first build swapped Space onto the shift to
+    // match KOTOR 1; the player found Space = jump, W = shift the intuitive
+    // pair — 2026-09-15) and gives the shift a keyboard key of its own (bare
+    // W, polled in swoop_race Tick because W is an axis there, not an event).
+    // Both events still go through the mod's own runners and are swallowed so
+    // every jump / shift is logged beside the race state and the pad and the
+    // keyboard share one code path. Presses only — the engine's cases
+    // early-out on release anyway. TryShift/TryJump are no-ops (return false →
+    // pass through) outside an active K2 swoop race, so this touches nothing
+    // else that arrives as 0xd9 / 0x16.
     if (param_2 != 0 && (param_1 == 0xd9 || param_1 == 0x16)) {
-        const bool handled = (param_1 == 0xd9) ? acc::swoop_race::TryShift()
-                                               : acc::swoop_race::TryJump();
+        const bool handled = (param_1 == 0xd9) ? acc::swoop_race::TryJump()
+                                               : acc::swoop_race::TryShift();
         if (handled) {
             acclog::Write("Diag.ClientHIE",
                           "seq=%u code=0x%x CONSUMED — K2 swoop %s",
-                          seq, param_1, param_1 == 0xd9 ? "shift" : "jump");
+                          seq, param_1, param_1 == 0xd9 ? "jump" : "shift");
             return 1;  // consume → consumed_exit
         }
     }

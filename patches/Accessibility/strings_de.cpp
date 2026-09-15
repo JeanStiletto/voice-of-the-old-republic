@@ -490,11 +490,13 @@ const char* Get(Id id) {
             // countdown so the shorter form is preferred.
             return "Leertaste zum Hochschalten beim Audiosignal. Mit A und D lenken. Weiche den Hindernissen aus und triff die Beschleunigerfelder, um die Zeit zu schlagen.";
         case Id::SwoopRaceControlsK2:
-            // KOTOR 2: Leertaste wird auf den Gangwechsel umgeleitet (die
-            // Engine legt dort den Sprung auf die Leertaste), Springen auf W.
-            return "Leertaste zum Hochschalten beim Audiosignal, W zum Springen \xFC""ber ein Hindernis. Mit A und D lenken. Weiche den Hindernissen aus und triff die Beschleunigerfelder, um die Zeit zu schlagen.";
+            // KOTOR 2: Leertaste springt (die Engine-Belegung); der Gangwechsel,
+            // den die Engine nur auf der linken Maustaste hat, liegt auf W.
+            return "W zum Hochschalten beim Audiosignal, Leertaste zum Springen \xFC""ber ein Hindernis. Mit A und D lenken. Weiche den Hindernissen aus und triff die Beschleunigerfelder, um die Zeit zu schlagen.";
         case Id::SwoopRaceStuckHint:
             return "Festgefahren. Mit A oder D zur Seite lenken, dann Leertaste und W zusammen dr\xFC""cken.";
+        case Id::SwoopRaceWrecked:
+            return "Swoop zerst\xF6rt. Rennen vorbei.";
         case Id::SwoopRaceEnded:
             return "Swoop-Rennen beendet.";
         case Id::FmtSwoopRaceGear:
@@ -845,7 +847,7 @@ const char* Get(Id id) {
         case Id::KbNamePazaakOppHand:       return "Pazaak: Gegnerhand";
         case Id::KbNameTurretCyclePrev:     return "Gesch\xFCtz: Ziel zur\xFC""ck";
         case Id::KbNameTurretCycleNext:     return "Gesch\xFCtz: Ziel vor";
-        case Id::KbNameSwoopJump:           return "Swoop: Springen";
+        case Id::KbNameSwoopShift:           "Swoop: Hochschalten";
         // General
         case Id::KbNameHelpMenuOpen:        return "Tastenhilfe";
         case Id::KbNameHelpContext:         return "Kontexthilfe";
@@ -952,7 +954,7 @@ const char* Get(Id id) {
         //      shared rows 0-42 reuse the TutHint* wordings above; these
         //      cover KOTOR 2's own popups and the Ebon Hawk prologue lines.
         case Id::TutK2SwoopRace:
-            return "Schalte mit der Leertaste hoch, wenn das Audiosignal ert\xF6nt. Mit A und D lenkst du, weichst Hindernissen aus und triffst die Beschleunigerfelder.";
+            return "Schalte mit W hoch, wenn das Audiosignal ert\xF6nt, und springe mit der Leertaste \xFC""ber niedrige Barrieren. Mit A und D lenkst du, weichst Hindernissen aus und triffst die Beschleunigerfelder.";
         case Id::TutK2ActionQueue:
             return "Mit der Eingabetaste f\xFC""gst du die Standardaktion in die Befehlsliste ein; auch Eintr\xE4ge aus dem Aktionsmen\xFC reihen sich dort ein. Mehrere Aktionen werden der Reihe nach ausgef\xFChrt.";
         case Id::TutK2ActionRemove:
@@ -1091,7 +1093,7 @@ const char* Get(Id id) {
 
         // ---- KOTOR 2 controller twins (deliberate omissions: see strings.h).
         case Id::TutK2SwoopRacePad:
-            return "Dr\xFC""cke A, um zu beschleunigen und hochzuschalten, wenn das Audiosignal ert\xF6nt. Mit dem linken Stick weichst du Hindernissen aus und triffst die Beschleunigerfelder.";
+            return "Dr\xFC""cke B, um zu beschleunigen und hochzuschalten, wenn das Audiosignal ert\xF6nt, und A, um \xFC""ber niedrige Barrieren zu springen. Mit dem linken Stick weichst du Hindernissen aus und triffst die Beschleunigerfelder.";
         case Id::TutK2ActionQueuePad:
             return "Mit A f\xFC""gst du die Standardaktion in die Befehlsliste ein; auch Eintr\xE4ge aus dem Aktionsmen\xFC reihen sich dort ein. Mehrere Aktionen werden der Reihe nach ausgef\xFChrt.";
         case Id::TutK2PlasmaTorchPad:
