@@ -233,7 +233,9 @@ turret-specific offsets plus one test round. The old "not present in KOTOR 2"
 note in the LLM docs and the agent memory is wrong and has been corrected.
 
 **Test items for the next K2 round.**
-Pazaak: (1) start a pazaak game — the board is acquired (log `Pazaak: acquired
+Pazaak — **DONE, passed in-game 2026-09-16.** The checklist below is spent;
+keep it only as a regression script if pazaak code is touched again.
+(1) start a pazaak game — the board is acquired (log `Pazaak: acquired
 board panel`), the opener speaks, and Up/Down move between hand / your table /
 opponent table / actions; (2) a +/- card offers the sign chooser and plays with
 the chosen sign; (3) one of K2's special cards reads by name ("tiebreaker",

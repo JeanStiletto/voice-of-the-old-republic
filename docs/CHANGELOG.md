@@ -11,7 +11,16 @@ under short topic subheadings (`<h3>Installer:</h3>`, `<h3>Bug fixes:</h3>`,
 etc.). Subsection headings use HTML tags so GitHub renders them as proper
 headings in the release body (markdown `**Installer:**` only renders as bold).
 
-Bullet rules:
+Every version section opens with an `<h3>Overview:</h3>` subsection listing
+**every** change in the release, one bullet each, **one short sentence** — the
+user-facing consequence only (what works now, the new hotkey, the problem
+fixed). No mechanism, no cause, no before/after. Most readers read only the
+overview and should come away knowing everything that changed; the topic
+subsections below it carry the full story for those who want it. Keep the
+overview in the same order as the subsections that follow, and fold log-only
+changes into a single trailing "Log only:" bullet.
+
+Bullet rules (these govern the topic subsections, not the overview):
 
 - **Lead with the user-facing change** ("X works now", "new hotkey Y", "X no
   longer does Z"); explanation comes after.
@@ -33,7 +42,37 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
-<h2>Unreleased</h2>
+<h2>v0.8.2</h2>
+
+<h3>Overview:</h3>
+
+- KOTOR 2 swoop races are playable by ear: W shifts up a gear, Space jumps, A
+  and D steer (on a gamepad, B and A).
+- A short chirp confirms each accepted swoop shift, and every gear change is
+  spoken.
+- A beep about 1.6 seconds before a low bar means jump now — or, when there is a
+  gap beside the bar, steer toward the beep.
+- A continuous thump warns you off the posts lining the KOTOR 2 lane edges.
+- Parked in gear 0, the mod speaks the way out ("Space, then W", "steer left,
+  then W").
+- Mines are warned like other obstacles and no longer attract the steering
+  assist.
+- The steering assist only grabs a pad within 6 lane units, so lane changes are
+  yours by ear.
+- Obstacles are classified by their real collision boxes, so hazard cues sound
+  where the hazard actually is.
+- A finished race speaks only the time; a wreck says "Swoop wrecked. Race over."
+- Loading a new area or watching a cutscene on KOTOR 2 no longer reads out the
+  game's internal menus.
+- A cutscene no longer leaves KOTOR 2 paused with the foreground window
+  orphaned.
+- A key the game loses track of no longer stays pressed (both games).
+- Area exits are announced in the direction you actually cross, not where the
+  trigger happens to be anchored.
+- A corridor crossed by another corridor is no longer described as running the
+  wrong way.
+- Log only: the camera-spin report now names what is driving the turn, and swoop
+  races record jumps, obstacle boxes and mine passes.
 
 <h3>KOTOR 2 swoop racing:</h3>
 
@@ -109,16 +148,27 @@ bullet says otherwise.
 <h3>Bug fixes:</h3>
 
 - Loading a new area on KOTOR 2 no longer reads out the game's internal menus.
-  Walking through a door between Citadel Station modules, or starting and
-  leaving a swoop race, spoke the screens the engine rebuilds behind the
-  loading screen — "Build: 427", "Add Power", "Name", the message log,
-  "control 8", the store and the save screen — before the area name. The mod
-  goes quiet during a load by watching the engine store the module it is about
-  to load, and on KOTOR 2 that watch sat on the wrong function: a neighbouring
-  one that reads the arrival waypoint, which the engine calls from a single
-  place. Doors, triggers, area events and scripted transitions therefore never
-  armed the silence. Loading a save was never affected, which is why the same
-  cantina was clean on a save load and noisy through a door.
+  Walking through a door between Citadel Station modules, starting or leaving a
+  swoop race, or watching a cutscene such as the Peragus docking scene spoke the
+  screens the engine rebuilds behind the loading screen — "Build: 427", "Add
+  Power", "Name", the message log, "control 8", the store and the save screen —
+  before the area name. The mod goes quiet during a load by watching the engine
+  store the module it is about to load, and there were two separate holes in
+  that silence. First, on KOTOR 2 the watch sat on the wrong function: a
+  neighbouring one that reads the arrival waypoint, which the engine calls from
+  a single place, so doors, triggers, area events and scripted transitions never
+  armed the silence at all. (Loading a save was never affected, which is why the
+  same cantina was clean on a save load and noisy through a door.) Second,
+  multi-segment cutscenes destroy and recreate the movie window between
+  segments, and the burst leaked through the sub-second gap in between; the mod
+  now stays quiet for a short tail after a movie ends rather than only while one
+  is on screen. The area name itself is a separate path and still speaks.
+- A cutscene that hands the foreground window to nobody no longer leaves KOTOR 2
+  paused and unresponsive. After the Peragus docking scene the window could end
+  up owned by no application at all, which the game reads as lost focus and
+  auto-pauses. The mod now takes the render window back, but only when the
+  foreground is genuinely orphaned — never from another program you deliberately
+  switched to, and never while a further cutscene segment is still playing.
 
 - A key the game loses track of no longer stays pressed (both games). Cause: the engine reads the keyboard as a stream of press/release transitions and derives "is this key down" from that stream alone, but it throws the queued transitions away at every dialogue start and end, pause or quit popup, area transition, load screen, movie and focus change, and again whenever DirectInput briefly loses the device. A release that fell into one of those gaps left the key held forever: the camera spun after a conversation, the party walked off on its own. The mod now compares what the engine has been told with the true key state after every keyboard read, and re-delivers a lost release through the engine's own path within two frames. Presses are never invented and normal keypresses pass through untouched. The log names every re-delivered key (`KeyboardResync`).
 
