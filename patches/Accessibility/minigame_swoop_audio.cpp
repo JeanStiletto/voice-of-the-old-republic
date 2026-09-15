@@ -431,7 +431,7 @@ constexpr float       kSwoopGuideSilenceU   = 5.0f;
 // distance curve ramps down toward ~⅓ at range, which let the tone blend into the
 // race mix. Floored here so the guide always cuts through (the cue slider still
 // scales it).
-constexpr int         kSwoopGuideMinVolByte = 90;
+constexpr int         kSwoopGuideMinVolByte = 118;  // 90 until 2026-09-15: "a bit too quiet" in the K2 mix
 
 // ----- Steering-guide controller (2026-06-20 rework) ------------------------
 //
@@ -560,7 +560,7 @@ constexpr float       kWallEdgeOffsetU  = 20.0f;  // lane half-width in tunnel-o
 // when moving away from the target pad), so a deliberate swing toward a
 // side-lane pad at 11 stays silent. Round 6 (patch-20260915-090027) drifted
 // from 18 to 20 at speed 155 with no cue at all.
-constexpr float       kWallLeadTicksK2  = 20.0f;   // ~0.7 s at 30 ticks/s
+constexpr float       kWallLeadTicksK2  = 35.0f;   // ~1.2 s at 30 ticks/s (20 = 0.3-0.7 s before every post hit of round 11, not enough)
 constexpr float       kWallEdgeOffsetK2U = 16.0f;
 inline float WallLeadTicks() {
     return acc::game::IsKotor2() ? kWallLeadTicksK2 : kWallLeadTicks;

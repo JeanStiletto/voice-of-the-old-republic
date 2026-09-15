@@ -96,6 +96,8 @@ and add the German in parentheses if it genuinely aids clarity.
 - After a collision in front of a bar, every relaunch gets the jump beep
   again, on the free side. It used to fall silent after two beeps per bar,
   and a relaunch straight into the bar is another hit.
+- The pad tone is louder, and the KOTOR 2 wall loop starts about 1.2 seconds
+  before a projected post contact instead of 0.7.
 - A caught accelerator pad plays one short burst of the pad tone. Neither
   game's pad script makes a sound, and on KOTOR 2 the steering assist catches
   every pad on its own, so the guide tone stayed quiet and nothing by ear

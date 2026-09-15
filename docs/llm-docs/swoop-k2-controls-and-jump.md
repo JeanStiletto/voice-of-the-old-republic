@@ -348,3 +348,96 @@ Round-1 additions:
 - GOG K2: the two runner addresses are `Kotor2Only()` literals, so the
   relocation table must be regenerated (`kdev sigscan --k2` + the two
   re-scripts) whenever they change.
+
+## 9. State at the end of 2026-09-15 (13 rounds) and how KOTOR 2 differs from KOTOR 1
+
+Read this first when resuming. Everything below is committed (6a938b6 and
+the tuning after it); the last three logs of the day are
+`patch-20260915-145054` (first finish, 103 s, 100 hp left) and
+`patch-20260915-150225` (wreck at 86 s, finish 73.36 s with 250 hp, finish
+96.6 s). Rounds 1-10 were all wrecks.
+
+### What the mod does now (KOTOR 2 only unless noted)
+
+- Keys: Space jumps (engine-native), W shifts (`SwoopShift` hotkey); pad A
+  jump, pad B shift. Both events run through the mod's runners and are logged.
+- Shift-ready cue at the gates the engine accepts: 60 / 100 / 150 / 210 (the
+  K1 ladder; section 3 has the correction), 0.8 s hold after a gear change.
+- Race end: finish vs wreck from the heartbeat's 59:59.99 stamp in
+  `211TEL_SWOOP_MIN/SEC/MSEC` (name from the area resref; other tracks
+  assumed), hp 0 fallback. No per-hit speech; hits logged only
+  (`hit: hp A -> B (drop N of 600)`, 50 = obstacle/post/bar, 100 = mine).
+- Hazards from the hitbump box: posts and `_MGE` scenery skipped, bars get
+  the jump beep (1.0 s before, one repeat on a touchdown with the bar still
+  ahead, re-armed while parked in gear 0), blocks/mines the panned warn loop.
+- Jump beep panned HARD to a half-bar's free side (`side=left|right`),
+  centre for full-lane and the ±13 centre bars. OPEN QUESTION (asked, not
+  answered): the player went the wrong way at 3 of 4 side beeps in round 11;
+  every other cue sounds where the DANGER is, so flipping the beep to the
+  bar's side ("bar here, go the other way or jump") is on the table.
+- Pad guide: assist gap 6 u (K1 keeps 16) because Citadel's pads sit in
+  three lanes 11 u apart; pad tone floor 118/127; one burst of the pad tone
+  per caught pad (`CROSS … hit=1`); mine-aware line — the tone and the
+  magnet aim 7 u beside a mine on the straight line to the next pad, sticky
+  until the mine is behind (`detour: mine slot=…`). Round 11: 7 detours, 0
+  mine hits.
+- Wall loop: the wall thump loops on the wall's side while |x| ≥ 12.5 or a
+  35-tick (~1.2 s) projection of the lateral velocity crosses the post line
+  at 16 while moving away from the guide target (`wall loop: side=… overshoot=1`).
+- Stuck hint after 6 s parked: "Links/Rechts lenken, dann W." at a wall,
+  "Zur Seite lenken, dann W und Leertaste." elsewhere.
+- Race cues that are positioned beside the listener use `PlayCue3DRaw`
+  (audio_bus): during a K2 race the party leader is the PARKED character,
+  and the character-relative shift of `PlayCue3D` moved the jump beep /
+  wall thump / aligned blip hundreds of units away (rounds 6-10 ran blind
+  on those cues).
+
+### Why KOTOR 2 is harder than KOTOR 1 for a player by ear
+
+- **Contact stops you.** K1's obstacle script cuts speed by 30 % and you
+  roll on; K2's drops you to gear 0, parks the bike touching what it hit,
+  and every relaunch (W) into the same object is another 50 hp. K1 has no
+  hit points at all; K2's 600 end the race after twelve hits. Relaunch
+  cascades are the single largest hit source in every round (10 of 12
+  hits in round 8, 27 of 33 in round 10, 4 of 10 in round 11).
+- **The wall is not free.** K1's edge is a clamp with no collision. K2 lines
+  both edges with posts (mesh from |x| 18.3, contact at 16.3): a post is a
+  full hit. By-ear swings overshoot by several units; on Taris that cost
+  nothing, here it is a hit and a park at |x| = 20. Rounds 7-8: 22 of 26
+  hits were posts.
+- **Pads sit 5 u from the danger line** (three lanes at −11 / 0 / +11,
+  posts at 16), so the overshoot margin on a side-lane pad is one bike
+  width. Taris pads scatter over ±20 with the wall free.
+- **Mines sit on the pad lanes and diagonals** (24 on Citadel), exactly the
+  line a tone-follower drives; 100 hp each. Taris rocks are scattered.
+- **Bars** (9, jump or drift to the free half) have no K1 equivalent and are
+  placed in front of the side-lane pads, so the pad tone leads into them.
+- **Catch radius** 4 u (player 2 + pad 2) vs K1's 6.
+- What is NOT harder: pads (three fixed lanes, long straights — the magnet
+  caught 23/23 at the old gap), gears (same ladder), and the finish line
+  (bike y > 6000).
+
+### Levers proposed and not yet decided (no auto-steering in any of them)
+
+1. **Relaunch guard**: while parked touching a post (|x| ≥ 16) or inside a
+   bar's span within a few units of it, W is swallowed and a "blocked" cue
+   sounds on that side; steer clear, then W works. Kills the cascades.
+2. **K1 parity on damage**: set the bike's hit points high enough that a
+   race cannot end by wreck (hp / max_hp at +0x8c / +0x90, written after
+   the launch, or the racedialog percentage the heartbeat reads). Hits
+   still stop you; the race always reaches the line.
+3. Assist gap 8 instead of 6 if side-pad overshoots persist (the magnet
+   brakes the swing near the pad); or the rail at |x| ≤ 14.5 (rejected by
+   the player — warn, don't rail).
+4. Beep side semantics (see the open question above).
+5. Pad tone loudness beyond the floor: hotter `acc_boost.wav`, or duck the
+   bike's `Engine0N` sound objects during the race.
+
+### Numbers per round (hits / mines / outcome)
+
+- round 5 (083506): 10+1 / 1 → 104.88 s finish with 95 hp; 9+1 / 1 → wreck.
+- round 8 (092622): 12 / 1 → wreck 33.7 s (posts, one wall).
+- round 9 (142030): 12 / 1 → wreck 41 s; 11 / 4 → wreck 86 s at y≈5300.
+- round 10 (143451): 3 races, 36 hits, 27 in cascades → three wrecks.
+- round 11 (145054, raw cues fixed): 10 / 0 → finish 103.07 s, 100 hp.
+- round 12 (150225): wreck 85.6 s; finish 73.36 s (250 hp); finish 96.6 s.

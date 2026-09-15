@@ -283,7 +283,20 @@ Offer the community resolution / widescreen + HR-menus patches as an installer o
 
 ## Monitor
 
-### KOTOR 2 swoop race — controls fixed in round 1, hazards rebuilt after round 2 (2026-09-14), awaiting round 3
+### KOTOR 2 swoop race — finishable since round 11 (2026-09-15), not yet winnable
+
+WHERE TO RESUME: read `docs/llm-docs/swoop-k2-controls-and-jump.md` section
+9 (state, K1 differences, the five undecided levers, per-round numbers).
+Best so far 73.36 s (round 12); the player's own target is the track's
+posted time, which he estimates at roughly half of that. Two decisions are
+waiting on the player: the relaunch guard + K1-parity hit points (offered
+twice, not answered), and whether the half-bar beep should sound on the free
+side (current) or on the bar's side (consistent with mines and walls; he went
+the wrong way at 3 of 4 side beeps in round 11). Last tuning (pad tone floor
+118, wall lead 35 ticks) went in after round 11 and is untested by log
+analysis — round 12's three races ran on it; analyse `patch-20260915-150225`
+first. The round-by-round history below is kept as evidence.
+
 
 Round 1 (`patch-20260914-143533.log`): the bike never launched — Space is the
 JUMP on KOTOR 2 (event `0xd9` → OnBrake slot, `onjump.ncs`), the gear ladder
