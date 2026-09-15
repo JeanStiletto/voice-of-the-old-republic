@@ -286,16 +286,31 @@ Offer the community resolution / widescreen + HR-menus patches as an installer o
 ### KOTOR 2 swoop race — finishable since round 11 (2026-09-15), not yet winnable
 
 WHERE TO RESUME: read `docs/llm-docs/swoop-k2-controls-and-jump.md` section
-9 (state, K1 differences, the five undecided levers, per-round numbers).
-Best so far 73.36 s (round 12); the player's own target is the track's
-posted time, which he estimates at roughly half of that. Two decisions are
-waiting on the player: the relaunch guard + K1-parity hit points (offered
-twice, not answered), and whether the half-bar beep should sound on the free
-side (current) or on the bar's side (consistent with mines and walls; he went
-the wrong way at 3 of 4 side beeps in round 11). Last tuning (pad tone floor
-118, wall lead 35 ticks) went in after round 11 and is untested by log
-analysis — round 12's three races ran on it; analyse `patch-20260915-150225`
-first. The round-by-round history below is kept as evidence.
+9, ending with "Round 12's 73.36 s race, dissected" — the per-incident time
+cost, the two engine constants found (speed→world 0.665, predictable
+landing point) and what was built on them. Best so far 73.36 s (round 12);
+the track's posted times are 58 s to qualify and 40 s best; a hit-free run
+computes to ~37 s, so the whole game is avoiding the two bar parks.
+Rounds 13 and 14 (`patch-20260915-162510`, `patch-20260915-203307`; best
+64.08 s) tested the bar-aware guide and measured the mines: the free side
+beside MGC03/06/08 is mined, mine collision is spherical with a combined
+reach of 5.1–6.2 u (the live sphere_radius of 2.0 is NOT it), and with that
+reach MGC06 has no path and is a must-jump that a jump from MGC05 clears
+only in a ≤ 0.13 s press window. Rebuilt 2026-09-15 late, installed in both
+games, UNTESTED, uncommitted: mine detour on the final line (strips
+included), virtual straight-ahead target after the last pad (the finish
+mine hit every race of rounds 12–14), measured reach in the strips (MGC03
+→ x −12.5, MGC04 −5.9, MGC02 +5.3, MGC06/08 none), wall-loop chatter gate on
+strips. Principle agreed with the player: nothing auto-steers unless there
+is a path (no sub-3 u corridor ever becomes a target). See the swoop doc's
+"Round 14" subsection. Next round: grep the newest K2 log for `bar strip:`
+(expect gap=0 for MGC06 now), `detour: mine` lines carrying `line x=`, a
+detour for the finish mine after pad 12, and `mine pass:` lines with hit=1
+whose minD3 exceeds 6.2 (would raise the reach). Decisions still open with
+the player: the mine beside MGC06 is only solvable DATA-side (move/remove it
+in the module via the KotOR_IO area-edit path) — offered, not decided;
+relaunch guard + K1-parity hit points; beep side semantics. The
+round-by-round history below is evidence.
 
 
 Round 1 (`patch-20260914-143533.log`): the bike never launched — Space is the

@@ -441,3 +441,208 @@ the tuning after it); the last three logs of the day are
 - round 10 (143451): 3 races, 36 hits, 27 in cascades → three wrecks.
 - round 11 (145054, raw cues fixed): 10 / 0 → finish 103.07 s, 100 hp.
 - round 12 (150225): wreck 85.6 s; finish 73.36 s (250 hp); finish 96.6 s.
+
+### Round 12's 73.36 s race, dissected (2026-09-15, evening) — and what was built on it
+
+The second race of `patch-20260915-150225` (lines 56166–94682): 6 hits,
+250 hp left, 21 of 23 pads, gear 5 only at 62 s. A hit-free run with the
+current gearing computes to ~37 s (gear 4 ramps +4/s, gear 5 +2/s, each pad
+about +10; the posted best is 40 s). The 36 s lost, in order:
+
+1. Bar pair MGC05/MGC06 (y 2701/2798), ~19 s: one hit, two relaunch hits,
+   5 s parked, 22 s to reach gear 5 again. The bike landed from the MGC05
+   jump at x −1.6 (MGC06's free side by 0.3 u, i.e. still inside the bike's
+   collision span) and the pad guide, aiming at pad 18 at x 11 BEHIND the bar
+   on its blocked side, dragged it to x 4 in the last 0.3 s.
+2. Bar pair MGC03/MGC04 (y 1692/1880), ~16 s: one hit, one relaunch hit,
+   6 s parked; the gear 5 shift that was 1 s away slipped to 6:11. The MGC03
+   jump was pressed 1.27 s after the beep, 30 u before the bar, landed 33 u
+   short of MGC04 (0.16 s of ground time), and in the air the guide had
+   steered from x 4 to 11.6 toward pad 14 — again behind the bar, blocked side.
+3. Mine slot 47 (0.6, 5906), ~0.7 s: after the last pad the guide has no
+   target, so the mine-aware line did not exist for it; the loop warned 1.2 s
+   ahead, the bike got from x −0.3 to −3.8. (Not fixed; needs a virtual
+   straight-ahead target after the last pad.)
+4. Two missed pads, ~1 s.
+
+Two engine facts fell out of the analysis, both now constants in
+`minigame_swoop_audio.cpp`:
+
+- **Speed units → world units: 0.665 per second** (`kSpeedToWorldPerSec`),
+  measured over 56 one-second windows from the per-tick probe lines, identical
+  in every speed bucket 30–250. All ttc maths before this divided world units
+  by the raw speed field, so "1.0 s" of jump lead was 1.5 s real, and the
+  "0.25 s" touchdown floor 0.38 s. The constants are now in real seconds.
+- **The landing point is predictable to 1–5 u**: landing = bike y +
+  t_land(z, vz) × speed × 0.665 with t_land from the arc (g 45.8), checked
+  against all 21 flights of the race (systematic +2.5 u = the in-air ramp plus
+  one tick of lag). Chained jumps (a press on the landing frame, logged as
+  2.6 s flights) are covered because the projection re-reads z and vz every
+  tick.
+
+Built after the analysis (untested in game at the time of writing; the log
+lines to look for are `bar detour:` and the `lead=`/`pair=` fields on
+`jump cue`):
+
+- **Bar-aware guide target** (rules 1–3 agreed with the player): the guide
+  (tone AND magnet, the mine detour's seam) aims at the free side of the
+  nearest half-bar the bike will meet ON THE GROUND — every bar ahead when
+  grounded (look-ahead 2.5 s of travel, min 60 u), only the first bar the
+  projected landing does not clear by 12 u when airborne (look-ahead 1.3 s
+  = reaction + window edge). Target = the bar's end ± 5 u (bike 2 + slack),
+  the pad itself if it already lies further out on that side, clamped to
+  |x| ≤ 12. Sticky until the bar is behind the bike; a flight that clears
+  it releases it at take-off (and cannot re-latch unless the projection
+  drops clearly short). Worst case at a half-bar: a missed pad. Full-lane
+  bars (MGC01/05/07/09) have no free side and are untouched. Consequence on
+  Citadel: pads 13, 14, 16, 18 (all inside a half-bar's span within ~1 s of
+  it) will usually be skipped in favour of passing the bar on the free side;
+  pads 8 and 29 are reachable in the air after a good jump.
+- **Jump beep 0.1 s earlier**: lead 1.6 s real (was 1.5). Press window after
+  the beep 0.55–1.34 s; round 12's presses were 0.75–1.27 s.
+- **Pair-aware lead**: when the next bar behind the cued one is close enough
+  that one jump clears both at the current speed with a press window ≥ 0.3 s
+  (the second bar's far edge inside the 0.26–1.05 s over-bar window), the
+  beep is placed LATER so a 0.9 s reaction lands mid-window. On Citadel that
+  needs ~330+ speed on the 96 u pair and ~370 on the 188 u pair, so it will
+  rarely fire; below that the second bar is a free-side pass. The earlier
+  idea of an EARLIER beep for the 188 u pair was dropped: landing as early
+  as possible still leaves 0.87 s to re-press against a 0.9 s reaction.
+
+Not built, still open: the relaunch guard and K1-parity hit points (lever 1
+and 2 above), the beep-side question (lever 4), the post-last-pad mine line
+(item 3 above), and the gear-3 ramp oddity (+6/s on the first pass, +20/s on
+the later two — the accelpad script multiplies acceleration by 1.1 per pad,
+which compounds; worth confirming before assuming W spam does anything).
+
+### Round 13 (`patch-20260915-162510`): the free side is mined — strips, pairs, mine-pass log
+
+Three races on the bar-aware guide above: 71.37 s (95 hp), WRECK at 85.75 s,
+71.10 s (240 hp). What the log showed:
+
+- **A mine sits in the free gap beside every left-free half-bar but MGC04**:
+  MGC03 has one at x −2.7 twelve units BEFORE the bar, MGC06 at −7.2 nine
+  units after, MGC08 at −8.8 nineteen after. The plain "bar end minus 5"
+  target (−5.8 / −6.3) drove into the MGC03 and MGC06 mines five times in
+  three races (logged as `drop 105`, gear −2). The mine detour had run but
+  the bar target overrode it.
+- **The mines are raised spheres, and the collision looks 3-D.** Mine z is
+  44–47 against the bike's ~40. A low mine (z 44.7) hit at 3.2 u lateral,
+  a high one (z 47.0) was passed clean at 3.1 u, and one more hit at 0–1 u
+  under a high one: so R (mine + bike) is between 7.0 and 7.7 and the reach
+  at the bike's height is sqrt(R² − dz²) — about 6 u for a low mine, 3 u
+  for a high one. Not decompiled; the `mine pass:` log line (below) exists
+  to confirm or refute it. Consequence either way: a mine cannot be jumped
+  (its top is at or above the 10 u apex).
+- **The detour engaged too early.** A 2.5 s look-ahead pulled the bike off
+  pad 7 (before MGC02) and pad 10 (before MGC03) in every race, 5.2–5.8 u
+  misses.
+- The wreck: two post cascades (a wild swing at y 380; going right into the
+  posts at MGC04 against the tone), the two strip mines, a short landing on
+  MGC05 with a relaunch, and finally a post hit while swinging hard right
+  onto pad 29 at hp 40.
+
+Built after round 13 (untested at the time of writing):
+
+- **Strips instead of "bar end minus 5"** (`ComputeBarGap`): each half-bar's
+  free side is the interval from the bar's end (5 u clearance) to the post
+  contact line (16.3, less 1.5 slack), minus every mine within 40 u of the
+  bar, each removed with its 3-D lateral reach plus 1.5 slack, using the
+  mine's and the bike's live sphere radius (fallback 5.5 + 2). Widest piece
+  ≥ 3 u wins; a piece ≥ 8 u targets its bar-near edge, a narrower one its
+  centre. On Citadel: MGC02 → +5.3 (right); MGC03 → −12.4 (4.8 u piece);
+  MGC04 → −5.9; MGC06 → −13.1 (3.4 u piece by the posts); MGC08 → NO strip
+  (must-jump; pad 29 behind it is caught in the air). The jump beep's side
+  now follows the strip: centred when there is none. The `bar strip:` line
+  logs every bar's result once per race.
+- **Pair-aware ground rule.** The strip is targeted on the ground only when
+  a jump would not save the bike: the bar has another bar within one flight
+  plus a re-jump (2.35 s of travel) before or after it, or the bike is
+  parked. A must-jump bar followed by a strip bar inside that distance
+  (MGC05 → MGC06) pre-positions to the follower's strip before the jump.
+  Isolated half-bars (MGC02, MGC08) keep the pad line and the beep; a flight
+  that lands short still falls back to the strip. Expected pad losses on a
+  clean run: 8, 13, 14, 16, 18.
+- **Pad timing.** A detour waits for a pad that lies before the bar unless
+  the pad is in the span and less than 1.0 s of travel in front of it.
+- **Wall loop silenced in the band while the guide itself asks for the
+  band** (MGC03/MGC06 strips); the projected-post-crossing warning stays.
+- **`mine pass:` log**: per mine, the minimum 3-D distance of every pass
+  within ±30 u, with its dx/dy/dz, the 2-D distance, the mine's radius, the
+  bike's z and hp before/after. Read it as: hits with d2 < R but minD3 > R
+  → flat collision (then the strips must use the full R laterally, which
+  removes MGC06's strip); clean passes with d2 < R and minD3 > R → 3-D
+  confirmed. `mine slot=` inventory lines now carry `radius=`.
+
+### Round 14 (`patch-20260915-203307`): 68.41 / 64.08 / 68.14 — the mine model measured, MGC06 is a must-jump
+
+What the `mine pass:` log settled:
+
+- **Mine collision is spherical about the mine's origin, and z matters.**
+  Three flights ~9 u above the MGC03 mine at 3.3 u lateral: clean. A
+  grounded pass at 3.97 u lateral / 3.18 u below a high mine (3-D 5.09):
+  HIT. A grounded pass at 3-D 6.20: clean. So the combined reach is between
+  5.1 and 6.2 u — and the live `sphere_radius` (2.0 on every mine, same as a
+  pad) is NOT the collision radius. `kMineCollisionRadiusU` = 6.2 (upper
+  bound) replaces the live radii in the strip maths. Bike ground z = 43.8
+  (not 40; the pads at z 40 are still caught because the pad test is its
+  own swept sphere).
+- **Jumping a mine**: a low one (centre 0.6 above the deck) is cleared in
+  the middle of a flight; a high one (3.2 above) only within ~0.3 s of the
+  apex. Not a strategy.
+- **MGC06 has no path.** With the measured reach its corridor between the
+  mine and the posts is 1.7 u for the bike's centre, under the 3 u minimum,
+  so it is a must-jump: centred beep, pad line, no corridor, no
+  pre-positioning. And a jump from MGC05 clears it only inside a ≤ 0.13 s
+  press window at speed ≤ 250 (the bike must still be above bar height at
+  MGC06, 98 u behind MGC05 — the over-bar window, not the landing, is the
+  constraint), so MGC06 is currently a hit in most runs. The by-ear
+  options are exhausted; the remaining lever is DATA-side (move or remove
+  the mine at (−7.2, 2807) in the module — the same KotOR_IO area-edit path
+  as the Tatooine pad-radius test), not decided.
+- MGC03's strip survives (5.5 u, target x −12.5), MGC04 (−5.9) and MGC02
+  (+5.3) unchanged, MGC08 none.
+
+Time lost per race (one big incident each plus the finish mine):
+
+- Race 1, ~20 s: the MGC06 pre-position line (x −13 from y 2350) passed a
+  mine at y 2535 at 3.97 u — outside the bar's 40 u mine window, and the
+  strip target overrode the mine detour. Then a short landing on MGC05 and
+  three relaunches into the right posts.
+- Race 2, ~6 s: the centre-lane mine at y 2232 with the detour tone active
+  for two seconds and no swing (player).
+- Race 3, ~18 s: after pad 17 a jump with no bar ahead and a swing to x −20
+  into the posts, three hits (player).
+- All three: the mine 186 u after the last pad (no guide target → no
+  detour), 100 hp and ~1 s each; pads missed 6 / 7 / 7 (≈5 of them are the
+  strips' price, ~3 s).
+
+Built after round 14 (untested at the time of writing):
+
+- **The mine detour now runs on the FINAL line** — the pad line, or the
+  strip a bar chose — instead of before the bar override (fixes race 1's
+  mine). Order in the pad sweep is now: bar-aware target, then mine-aware
+  line on that target; the `detour: mine` line logs the line it bent.
+- **Virtual target after the last pad** (`kVirtualTargetAheadU`): straight
+  ahead of the bike, so the finish mine gets a detour; the magnet stays off
+  for it unless a detour is active (a target at the bike's own x must not
+  damp steering).
+- **Measured mine reach in the strips** (see above; strip slack 1.0). MGC06
+  and MGC08 must-jump.
+- **Wall-loop chatter on strips**: the projected-crossing trigger now needs
+  ≥ 0.3 u/tick of lateral velocity while the guide asks for the band (it
+  flickered six times in 1.5 s at x −13.5 from 0.06–0.26 u/tick drift).
+- The principle agreed with the player, 2026-09-15 late: **nothing
+  auto-steers unless there is a path**. The magnet only pulls toward the
+  guide target, so this is enforced by never making a sub-3 u corridor a
+  target; the tone follows the same rule.
+- **Jump beep placed at the strip's real offset** (same placement as the
+  guide tone: world x, 10 u ahead of the listener) instead of a fixed ±5 u
+  hard pan, so the angle says how far the open strip is — a lean (MGC04,
+  4 u) sounds narrow, a swing (MGC03, 12 u) wide. No strip → centred =
+  "you must jump" (MGC06, MGC08, the full bars). The `jump cue` line now
+  carries `stripX=` and `offset=`. The player's reasoning: a hard pan said
+  "you may steer" but never "you have steered enough"; silence already
+  means clear (the beep fires only inside the span), and a more skilled
+  player than him should get the distance information even if he cannot
+  use it yet.

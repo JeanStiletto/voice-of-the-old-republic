@@ -37,6 +37,35 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h3>KOTOR 2 swoop racing:</h3>
 
+- The KOTOR 2 pad guide no longer steers you into a half-height bar. Every
+  such bar on the Citadel track has the next pad right behind it, on the
+  blocked side, so the tone and the assist led straight into the bar; both
+  parks of the best race so far were exactly that. Where two bars stand
+  close together, the guide now aims at the open strip beside the bar,
+  computed from the posts and the mines the track hides in that gap (three
+  of the four "free" sides are mined), and in the air it goes for the pad
+  only when the jump will come down past the bar. An isolated bar keeps the
+  usual line and the jump beep, and a bar with no open strip gets a centred
+  beep meaning "you must jump". The price of a bad jump is now a missed pad
+  instead of a stop. Nothing steers for you unless there is a real path: a
+  gap narrower than the bike plus its wobble is never a target.
+- The KOTOR 2 jump beep for a half-height bar now sounds from where the open
+  strip beside the bar really is, placed like the pad-guide tone, so its
+  angle tells you how far to steer to pass without jumping: a narrow angle
+  is a lean, a wide one a full swing. It used to be a fixed hard pan that
+  only named the side. A bar with no open strip keeps the centred beep,
+  which now means exactly "you must jump".
+- The KOTOR 2 mine detour now also guards the finish straight and the bar
+  strips. After the last pad the guide had no target, so the centre-lane
+  mine before the finish line was hit in every race; and a strip line was
+  never checked against mines on the way to it. Mine reach is now the
+  measured collision distance rather than the engine's nominal radius,
+  which is the same as a pad's and demonstrably not what the hit test uses.
+- The KOTOR 2 jump beep sounds 0.1 s earlier, and its timing is now computed
+  in real seconds (the bike covers two thirds of a world unit per speed unit
+  per second, which the old maths ignored). Where two bars stand close enough
+  that a single jump clears both at your current speed, the beep is placed
+  later so a normal reaction lands mid-window.
 - KOTOR 2 swoop races can be shifted from the keyboard: W shifts up a gear
   (a new rebindable "Swoop: Shift up" hotkey), Space jumps. KOTOR 2 rebound
   the race without telling anyone who plays by ear: its tracks moved the gear

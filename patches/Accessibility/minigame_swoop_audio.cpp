@@ -209,6 +209,7 @@ constexpr float       kAccelpadCueRangeM        = 300.0f;
 // sphere_radius has a direct witness: K2's SetSphereRadius @0x008352b0, reached
 // from CSWTrackFollower::Load's "Sphere_Radius" read, writes [this+0x84].
 const size_t kFollowerSphereRadiusOffset    = acc::off::Same(0x84);  // float
+const size_t kFollowerHpOffset              = acc::off::Same(0x8c);  // u32 (mine-pass log; witnesses in minigame_swoop_race.cpp)
 const size_t kFollowerSpeedOffset           = acc::off::Same(0x98);  // float
 
 // ----- Lateral-pan diagnostic (added 2026-06-20) -----
@@ -234,6 +235,10 @@ const size_t kFollowerSpeedOffset           = acc::off::Same(0x98);  // float
 // carries the follower's +0x30).
 const size_t kMiniGamePlayerOffset          = acc::off::Same(0x24);
 const size_t kMiniPlayerOffsetVectorOffset  = acc::off::Pick(0x1c4, 0x1f4);
+// KOTOR 2 jump velocity (CSWMiniGame +0x118, float, u/s; the jump watch in
+// minigame_swoop_race.cpp has the witnesses). With offset.z it gives the
+// remaining flight time, which the bar-aware guide turns into a landing point.
+const size_t kMiniGameJumpVelocityOffset    = acc::off::Kotor2Only(0x118);
 constexpr float  kRadToDeg                       = 57.2957795f;
 
 // ============================================================================
@@ -304,29 +309,54 @@ constexpr float kLaneHalfWidthU     = 20.0f;  // tunnel clamp (SWMG_SetPlayerTun
 constexpr float kLaneEdgeSkipU      = 17.0f;  // box wholly beyond this = edge post
 constexpr float kJumpableHeightU    = 8.0f;   // jump apex ~9.8 (v0 30, g 45.8)
 constexpr float kBarLaneMarginU     = 2.5f;   // bike sphere radius 2 + slack
-// Jump window against a 6.3-unit bar: z(t) = 30t - 22.9t^2 >= 6.3 for
-// t in [0.26, 1.05] s after the press. The cue means "press NOW": it fires
-// kJumpCueLeadSec before the bar, so a reaction anywhere from instant to
-// ~0.7 s lands inside that window. (1.35 s was tried in round 3: the player
-// pressed within 0.1 s of the beep and landed just short of the bar; a
-// later reaction at that lead would have been fine, an instant one is not.)
+// Speed units → world units per second. The follower's speed field is not
+// world u/s: the bike covers 0.665 world units per second per speed unit,
+// measured over 56 one-second windows at speeds 30–250 in round 12
+// (patch-20260915-150225; 0.665–0.668 in every speed bucket). Every
+// time-to-contact below is in REAL seconds through this factor; before it
+// existed the "1.0 s" lead was really 1.5 s.
+constexpr float kSpeedToWorldPerSec = 0.665f;
+// Jump physics (onjump.ncs: SWMG_SetJumpSpeed(30), gravity 45.8): the arc
+// z(t) = 30t - 22.9t^2 lands at kJumpAirSec and is above a 6.3-unit bar for
+// t in [kJumpOverBarFromSec, kJumpOverBarUntilSec] after the press. Round 12
+// logged 21 flights of 1.297–1.328 s at every speed.
+constexpr float kJumpGravity          = 45.8f;
+constexpr float kJumpAirSec           = 1.31f;
+constexpr float kJumpOverBarFromSec   = 0.26f;
+constexpr float kJumpOverBarUntilSec  = 1.05f;
+constexpr float kAirborneZ            = 0.25f;  // offset.z above this = in the air
+// The cue means "press NOW": it fires kJumpCueLeadSec before the bar, so the
+// press window (0.26–1.05 s before the bar) opens 0.55 s after the beep and
+// closes 1.34 s after it. Round 12's presses came 0.75–1.27 s after the beep
+// (five bars), one of them just past the old window's end (MGC03, landed
+// short of MGC04) — hence 0.1 s more lead than the 1.5 s that had been tuned
+// by ear. (1.35 speed-units = 2.0 s real was tried in round 3: the player
+// pressed within 0.1 s of the beep and landed just short of the bar.)
 // The jump itself is the player's: the mod never presses it (an auto-jump was
 // built and removed the same day at the user's request — cues inform, they
 // do not play). If the bike is airborne from an early press and touches down
 // with the bar still inside the window, the beep repeats once ("again").
-constexpr float kJumpCueLeadSec     = 1.0f;
-constexpr float kJumpCueMinLeadSec  = 0.25f;  // too late to help below this
-// Where the beep sits tells you the alternative: a bar covering only one half
-// of the lane gets the beep panned HARD to the free side ("jump, or drift
-// that way"), a bar with no room on either side (full lane, or the ±13
-// centre bars whose gaps to the posts are narrower than the bike) sits in the
-// middle ("you must jump"). Free = at least a bike's width plus slack between
-// the bar's end and the post contact line (posts from |x| 18.3, bike radius
-// 2 → contact at |x| ≈ 16.3; kLaneEdgeSkipU is the same line). Asked for by
-// the player after round 6 (patch-20260915-090027). Pan: lateral-only offset
-// from the listener, like the wall cue — 90° regardless of magnitude.
-constexpr float kBarFreeSideMinU    = 6.0f;
-constexpr float kJumpCuePanM        = 5.0f;
+constexpr float kJumpCueLeadSec     = 1.6f;
+constexpr float kJumpCueMinLeadSec  = 0.38f;  // too late to help below this
+// Bar pairs (Citadel: MGC03/04 188 u apart, MGC05/06 96 u): when ONE jump can
+// clear both — the second bar's far edge still inside the over-bar window at
+// the current speed, with a press window at least kPairMinWindowSec wide —
+// the beep for the first bar is placed so the player's usual reaction
+// (kJumpReactionSec, round 12's median) lands mid-window, i.e. LATER than the
+// single-bar lead. Same sound; the player learns nothing new. Otherwise the
+// normal lead, and the second bar is handled on the ground by the free-side
+// guide target (kBarFreeClearU) — a missed pad, not a park. On Citadel the
+// pair lead only fires above ~330 speed on the 96 u pair.
+constexpr float kJumpReactionSec    = 0.9f;
+constexpr float kPairMinWindowSec   = 0.3f;
+// Where the beep sits tells you the alternative: a half-bar with an open
+// strip (kPostContactU block: posts and mines removed) gets the beep placed
+// at the strip's real lateral offset, like the guide tone, so the angle says
+// HOW FAR ("jump, or steer that far"); a bar with no strip (full lane, the
+// ±13 centre bars, or a strip closed by a mine — MGC06/MGC08) sits in the
+// middle ("you must jump"). The side alone was asked for by the player after
+// round 6 (patch-20260915-090027); the distance after round 14 (a fixed hard
+// pan said "left" for a 4 u lean and a 12 u swing alike).
 constexpr const char* kJumpNowCueResref =
     acc::audio::GetNavCueResref(acc::audio::NavCue::SwoopJumpNow);
 
@@ -600,6 +630,84 @@ constexpr float       kWallBandU        = 12.5f;
 constexpr float       kMineClearU       = 7.0f;   // mine 2 + bike 2 + slack
 constexpr float       kMineDetourMaxU   = 12.0f;  // never detour into the wall band
 constexpr float       kMineBehindU      = 4.0f;   // mine this far behind = passed
+// Bar-aware line (KOTOR 2). Every right-blocked half-bar on Citadel has the
+// next pad 55 u behind it at x = 11, on the BLOCKED side, so the straight
+// line to the pad leads through the bar. Both parks of round 12's best race
+// (73 s; a clean run computes to ~37 s) were exactly that: the guide pulled
+// the bike from the free side (x -1.6) to x 4 in the 0.3 s before MGC06, and
+// from x 4 to 11.6 in the air before a flight that landed 33 u short of MGC04.
+// Rule: the bike will be GROUNDED in front of some bar — the nearest bar whose
+// far edge is not cleared by the current flight (grounded: every bar ahead;
+// airborne: landing point = bike y + remaining flight time × world speed,
+// validated on all 21 flights of round 12 to within 1–5 u). If that bar is
+// inside the look-ahead, has a free side, and the line to the pad crosses its
+// span there, the guide (tone AND magnet, like the mine detour) aims at the
+// free side, kBarFreeClearU beyond the bar's end. Airborne with the landing
+// past the bar by kBarLandClearU: the pad. The decision is sticky until the
+// bar is behind the bike, so a flight never swings back into the span late.
+// Worst case at a half-bar becomes a missed pad (~5 % speed), never a park.
+constexpr float       kBarFreeClearU    = 5.0f;   // bike 2 + slack beyond the bar's end
+constexpr float       kBarLandClearU    = 12.0f;  // landing this far past the far edge = cleared
+constexpr float       kBarDetourLeadSec = 2.5f;   // grounded: bars within this much travel
+constexpr float       kBarDetourMinLeadU = 60.0f; // ... but never less than this (parked/relaunch)
+// Airborne: a bar the landing does not clear counts only if it arrives too
+// soon for a second press (reaction + the window's early edge + slack).
+constexpr float       kReJumpSec        = kJumpReactionSec + kJumpOverBarFromSec + 0.15f;
+// The free side is not free: Citadel puts a mine in the gap beside every
+// left-free half-bar but MGC04 (MGC03: x -2.7 twelve units before the bar;
+// MGC06: x -7.2 nine units after; MGC08: x -8.8 nineteen after). Round 13
+// (patch-20260915-162510) drove into the MGC03 and MGC06 mines five times in
+// three races at the plain "bar end minus 5" target. So each half-bar's
+// free side is a STRIP: from the bar's end (kBarFreeClearU) to the post
+// contact line (kPostContactU, less slack), minus every mine within
+// kBarMineWindowU of the bar, each removed with its lateral reach plus
+// slack. The reach is 3-D: the mines are raised spheres (z 44-47 against
+// the bike's ~40), and a low mine hit at 3.2 u lateral while a high one was
+// passed clean at 3.1 — so reach = sqrt(R² − dz²) with R = mine radius +
+// bike radius, both read live (fallback below). The widest surviving piece
+// wins if it is at least kBarStripMinU; a wide strip targets its bar-near
+// edge, a narrow one its centre. No surviving piece = the bar is a
+// must-jump: centred beep, no ground detour. The `mine pass:` log line
+// records every close pass (minimum 3-D distance, its dx/dy/dz, hp before
+// and after) so the 3-D model can be confirmed or corrected from a log.
+constexpr float       kPostContactU     = 16.3f;  // post mesh from 18.3, bike radius 2
+constexpr float       kBarStripSlackU   = 1.0f;   // beyond posts / mine reach
+constexpr float       kBarStripMinU     = 3.0f;   // narrower = not a path = no free side
+constexpr float       kBarStripWideU    = 8.0f;   // at least this: aim at the bar-near edge
+constexpr float       kBarMineWindowU   = 40.0f;  // mine within this of the bar's front edge
+// Mine collision reach, MEASURED (round 14, patch-20260915-203307, `mine
+// pass:` lines): every mine reports sphere_radius 2.0 like a pad, but a hit
+// was recorded at a 3-D distance of 5.09 u and a clean grounded pass at
+// 6.20 u, and three flights 9 u above a mine at 3.3 u lateral were clean —
+// so the test is spherical about the mine's origin with a combined reach
+// between 5.1 and 6.2, not sphere_radius + sphere_radius. The upper bound
+// is used; the live radius is still logged. With it MGC06's corridor between
+// its mine and the posts is 1.7 u — not a path — and MGC06 is a must-jump.
+constexpr float       kMineCollisionRadiusU = 6.2f;
+constexpr float       kMinePassWindowU  = 30.0f;  // forward window of the mine-pass log
+// After the last pad nothing aimed the guide, so the mine-aware line did
+// not exist there and the centre-lane mine 186 u after Citadel's last pad
+// was hit in every race of rounds 12–14 (100 hp, ~1 s). A virtual target
+// straight ahead of the bike keeps the mine detour alive; the magnet stays
+// off unless a detour is active (a target at the bike's own x must not
+// damp the player's steering).
+constexpr float       kVirtualTargetAheadU = 400.0f;
+// Riding a strip beside the posts (MGC03 at x −12.5) the wall loop's
+// projected-crossing trigger chattered on and off six times in 1.5 s from
+// drift velocities of 0.06–0.26 u/tick (round 14, 34:12–34:13). While the
+// guide asks for the band, the projection needs a real velocity.
+constexpr float       kWallLoopBandMinVel = 0.3f;   // u/tick
+// Ground rule: a half-bar's strip is targeted on the ground only when a jump
+// would not save the bike — the bar is part of a PAIR (another bar within one
+// flight plus a re-jump of it, either way), or the bike is parked. An
+// isolated half-bar keeps the pad line and the beep, so the pad behind it
+// (8 behind MGC02, 29 behind MGC08) stays catchable in the air; a flight
+// that lands short still falls back to the strip (the airborne rule). And
+// the detour waits for a pad that lies BEFORE the bar unless the pad sits in
+// the span too close in front of it to move over afterwards
+// (kBarAfterPadLeadSec): round 13 lost pads 7 and 10 in every race to a
+// detour that engaged 2.5 s early.
+constexpr float       kBarAfterPadLeadSec = 1.0f;
 constexpr float       kWallBandHystU    = 1.5f;
 constexpr float       kWallLoopPanM     = 8.0f;   // lateral offset of the loop source
 constexpr float       kWallLoopFwdM     = 2.0f;   // slight forward so it reads beside, not behind
@@ -862,6 +970,29 @@ struct SpatialAudioState {
     int    mine_count = 0;
     int    mine_slot[kMgoArraySlotCount];
     Vector mine_pos[kMgoArraySlotCount];
+    float  mine_radius[kMgoArraySlotCount];   // sphere_radius, live (0 = read faulted)
+
+    // Mine-pass log (see kMinePassWindowU): per mine slot, the closest 3-D
+    // approach of the current pass and the hp when the pass began.
+    bool   mine_pass_open[kMgoArraySlotCount];
+    float  mine_pass_min_d3[kMgoArraySlotCount];
+    float  mine_pass_dx[kMgoArraySlotCount];
+    float  mine_pass_dy[kMgoArraySlotCount];
+    float  mine_pass_dz[kMgoArraySlotCount];
+    int    mine_pass_hp0[kMgoArraySlotCount];
+    float  ground_z = 40.0f;   // bike world z last seen on the ground (mine reach)
+
+    // KOTOR 2 bars in world space (the obstacle sweep rebuilds this every
+    // tick from the resolved boxes; the pad sweep, which runs first, reads the
+    // previous tick's copy — the geometry is static). The bar-aware guide
+    // (kBarFreeClearU) and the pair-aware jump lead (kPairMinWindowSec) read it.
+    // has_gap / gap_x / gap_side: the free-side strip (kPostContactU block).
+    struct BarInfo { int slot; float x0, x1, y0, y1; bool has_gap; float gap_x; int gap_side; };
+    int     bar_count = 0;
+    BarInfo bars[kMgoArraySlotCount];
+    int     bar_detour_slot      = -1;   // bar the guide is skirting, -1 none
+    int     bar_air_cleared_slot = -1;   // bar released mid-flight (landing past it)
+    bool    bar_gap_diag_emitted = false;
 
     // Airborne state last tick (offset.z) — the touchdown edge re-arms one
     // "jump again" beep for a bar still ahead.
@@ -1052,6 +1183,109 @@ void ResolveHazardBox(void* aur, const char* name, HazardInfo& hz) {
     hz.cls = ((mx.z - mn.z) <= kJumpableHeightU) ? kHazardBar : kHazardBlock;
 }
 
+// ============================================================================
+// KOTOR 2 half-bar free-side strips (kPostContactU block) + the mine-pass log.
+// ============================================================================
+
+// Lateral reach of mine `m` at the bike's ground height: sqrt(R² − dz²) plus
+// slack, R = the measured combined reach (kMineCollisionRadiusU — the live
+// sphere_radius is NOT the collision radius, see there).
+float MineLateralReach(int m, float bikeZ, float /*playerRadius*/) {
+    const float R  = kMineCollisionRadiusU;
+    const float dz = g_state.mine_pos[m].z - bikeZ;
+    const float sq = R * R - dz * dz;
+    return (sq > 0.0f ? std::sqrt(sq) : 0.0f) + kBarStripSlackU;
+}
+
+// One side's strip [lo, hi] minus every mine near the bar. Returns the width
+// of the widest surviving piece (0 = none) and its bounds.
+float WidestStripPiece(float lo, float hi, float barY, float bikeZ, float playerRadius,
+                       float& outLo, float& outHi) {
+    float pl[8], ph[8]; int n = 0;
+    if (lo < hi) { pl[0] = lo; ph[0] = hi; n = 1; }
+    for (int m = 0; m < g_state.mine_count && n > 0; ++m) {
+        if (std::fabs(g_state.mine_pos[m].y - barY) > kBarMineWindowU) continue;
+        const float reach = MineLateralReach(m, bikeZ, playerRadius);
+        const float mlo = g_state.mine_pos[m].x - reach;
+        const float mhi = g_state.mine_pos[m].x + reach;
+        float nl[8], nh[8]; int k = 0;
+        for (int i = 0; i < n; ++i) {
+            if (mhi <= pl[i] || mlo >= ph[i]) {            // untouched piece
+                if (k < 8) { nl[k] = pl[i]; nh[k] = ph[i]; ++k; }
+                continue;
+            }
+            if (mlo > pl[i] && k < 8) { nl[k] = pl[i]; nh[k] = mlo;   ++k; }
+            if (mhi < ph[i] && k < 8) { nl[k] = mhi;   nh[k] = ph[i]; ++k; }
+        }
+        for (int i = 0; i < k; ++i) { pl[i] = nl[i]; ph[i] = nh[i]; }
+        n = k;
+    }
+    float best = 0.0f;
+    for (int i = 0; i < n; ++i) {
+        const float w = ph[i] - pl[i];
+        if (w > best) { best = w; outLo = pl[i]; outHi = ph[i]; }
+    }
+    return best;
+}
+
+// Fills bar.has_gap / gap_x / gap_side (-1 left strip, +1 right strip).
+void ComputeBarGap(SpatialAudioState::BarInfo& bar, float bikeZ, float playerRadius) {
+    float lLo = 0.0f, lHi = 0.0f, rLo = 0.0f, rHi = 0.0f;
+    const float lw = WidestStripPiece(-kPostContactU + kBarStripSlackU, bar.x0 - kBarFreeClearU,
+                                      bar.y0, bikeZ, playerRadius, lLo, lHi);
+    const float rw = WidestStripPiece(bar.x1 + kBarFreeClearU, kPostContactU - kBarStripSlackU,
+                                      bar.y0, bikeZ, playerRadius, rLo, rHi);
+    bar.has_gap = false; bar.gap_x = 0.0f; bar.gap_side = 0;
+    const bool lOk = lw >= kBarStripMinU, rOk = rw >= kBarStripMinU;
+    if (!lOk && !rOk) return;
+    const bool useLeft = lOk && (!rOk || lw >= rw);
+    bar.has_gap  = true;
+    bar.gap_side = useLeft ? -1 : +1;
+    if (useLeft) bar.gap_x = (lw >= kBarStripWideU) ? lHi : 0.5f * (lLo + lHi);
+    else         bar.gap_x = (rw >= kBarStripWideU) ? rLo : 0.5f * (rLo + rHi);
+}
+
+// Mine-pass log: per mine, the closest 3-D approach while the mine is within
+// kMinePassWindowU ahead or behind, logged once when it falls behind, with
+// the hp before and after. Hits at a 2-D distance inside R but a 3-D one
+// outside it would say the collision is flat; clean passes the other way
+// round say it is spherical (the model kPostContactU's block assumes).
+void TrackMinePasses(void* player, const Vector& bikePos, float playerRadius) {
+    const int hp = static_cast<int>(SafeReadU32(player, kFollowerHpOffset));
+    for (int m = 0; m < g_state.mine_count; ++m) {
+        const int slot = g_state.mine_slot[m];
+        if (slot < 0 || slot >= kMgoArraySlotCount) continue;
+        const Vector& mp = g_state.mine_pos[m];
+        const float dx = mp.x - bikePos.x, dy = mp.y - bikePos.y, dz = mp.z - bikePos.z;
+        if (dy > kMinePassWindowU) continue;                     // still far ahead
+        if (dy < -kMinePassWindowU) {
+            if (!g_state.mine_pass_open[slot]) continue;
+            g_state.mine_pass_open[slot] = false;
+            const float pdx = g_state.mine_pass_dx[slot], pdy = g_state.mine_pass_dy[slot],
+                        pdz = g_state.mine_pass_dz[slot];
+            const int hp0 = g_state.mine_pass_hp0[slot];
+            acclog::Write("SwoopRace",
+                          "mine pass: slot=%d mine=(%.1f,%.1f,%.1f) r=%.2f bikeR=%.2f bikeZ=%.2f "
+                          "minD3=%.2f at dx=%.2f dy=%.2f dz=%.2f d2=%.2f hp %d->%d hit=%d",
+                          slot, mp.x, mp.y, mp.z, g_state.mine_radius[m], playerRadius,
+                          bikePos.z, g_state.mine_pass_min_d3[slot], pdx, pdy, pdz,
+                          std::sqrt(pdx * pdx + pdy * pdy), hp0, hp,
+                          (hp0 > 0 && hp < hp0) ? 1 : 0);
+            continue;
+        }
+        const float d3 = std::sqrt(dx * dx + dy * dy + dz * dz);
+        if (!g_state.mine_pass_open[slot]) {
+            g_state.mine_pass_open[slot]   = true;
+            g_state.mine_pass_min_d3[slot] = d3;
+            g_state.mine_pass_dx[slot] = dx; g_state.mine_pass_dy[slot] = dy; g_state.mine_pass_dz[slot] = dz;
+            g_state.mine_pass_hp0[slot]    = hp;
+        } else if (d3 < g_state.mine_pass_min_d3[slot]) {
+            g_state.mine_pass_min_d3[slot] = d3;
+            g_state.mine_pass_dx[slot] = dx; g_state.mine_pass_dy[slot] = dy; g_state.mine_pass_dz[slot] = dz;
+        }
+    }
+}
+
 void TickObstacleCues(void* miniGame) {
     void* mgoArray = ResolveMgoArray();
     if (!mgoArray) {
@@ -1066,9 +1300,10 @@ void TickObstacleCues(void* miniGame) {
     Vector bikePos  = {0, 0, 0};
     const bool bikeOk = ReadFollowerPosition(player, bikePos);
     const float bikeSpeed = SafeReadFloat(player, kFollowerSpeedOffset);
+    const float playerRadius = SafeReadFloat(player, kFollowerSphereRadiusOffset);
     Vector tunnel = {0, 0, 0};
     const bool tunOk = SafeReadVector(player, kMiniPlayerOffsetVectorOffset, tunnel);
-    const bool airborne = tunOk && tunnel.z > 0.25f;
+    const bool airborne = tunOk && tunnel.z > kAirborneZ;
     const bool justLanded = g_state.was_airborne && !airborne;
     g_state.was_airborne = airborne;
     // Parked (gear 0 after a hit): every bar's beep re-arms, so each relaunch
@@ -1135,6 +1370,11 @@ void TickObstacleCues(void* miniGame) {
     // (loop already running). At end of tick, any slot whose loop is
     // active but flag is false has gone out of range and gets Stop'd.
     bool active_this_tick[kMgoArraySlotCount] = {};
+
+    // This tick's bars (K2), published to g_state after the sweep so the
+    // pair lookup inside it reads a consistent (last tick's) list.
+    SpatialAudioState::BarInfo newBars[kMgoArraySlotCount];
+    int newBarCount = 0;
 
     for (int i = 0; i < kMgoArraySlotCount; ++i) {
         // mgoArray->objects[i]
@@ -1218,6 +1458,18 @@ void TickObstacleCues(void* miniGame) {
         if (haveBox && hz.cls == kHazardBar) {
             // ---- Low bar: the jump-now cue; never the warn loop.
             ++bars_seen;
+            SpatialAudioState::BarInfo cur;
+            cur.slot = i; cur.x0 = wx0; cur.x1 = wx1; cur.y0 = wy0; cur.y1 = wy1;
+            ComputeBarGap(cur, g_state.ground_z, playerRadius);
+            if (newBarCount < kMgoArraySlotCount) newBars[newBarCount++] = cur;
+            if (!g_state.bar_gap_diag_emitted && g_state.mine_count > 0) {
+                acclog::Write("SwoopRace",
+                              "bar strip: slot=%d name=[%s] y=%.0f x[%.1f..%.1f] gap=%d side=%s "
+                              "target=%.1f (bikeZ=%.1f bikeR=%.2f)",
+                              i, name ? name : "(null)", wy0, wx0, wx1, cur.has_gap ? 1 : 0,
+                              cur.gap_side < 0 ? "left" : cur.gap_side > 0 ? "right" : "none",
+                              cur.gap_x, g_state.ground_z, playerRadius);
+            }
             const float gap = wy0 - (bikeOk ? bikePos.y : listener_pos.y);
             if (gap < -kObstacleForwardMargin || gap > kObstacleCueRangeM) {
                 hz.jump_cued = 0;   // passed / far: re-arm
@@ -1228,32 +1480,70 @@ void TickObstacleCues(void* miniGame) {
             const bool inSpan = bikeX >= wx0 - kBarLaneMarginU &&
                                 bikeX <= wx1 + kBarLaneMarginU;
             if (!inSpan || bikeSpeed <= 1.0f || gap <= 0.0f) continue;
-            const float ttc = gap / bikeSpeed;
+            const float vWorld = bikeSpeed * kSpeedToWorldPerSec;   // world u/s
+            const float ttc    = gap / vWorld;                       // real seconds
+            // Lead: the single-bar constant, or — when the next bar behind
+            // this one is close enough that one jump clears both at this
+            // speed with a press window of at least kPairMinWindowSec — the
+            // later "pair" lead that centres the usual reaction in that
+            // window (see kJumpReactionSec). The bar list is last tick's.
+            float lead = kJumpCueLeadSec;
+            bool  pair = false;
+            {
+                float nextY0 = 0.0f, nextY1 = 0.0f;  bool haveNext = false;
+                for (int b = 0; b < g_state.bar_count; ++b) {
+                    const SpatialAudioState::BarInfo& nb = g_state.bars[b];
+                    if (nb.slot == i || nb.y0 <= wy0) continue;
+                    if (!haveNext || nb.y0 < nextY0) {
+                        nextY0 = nb.y0; nextY1 = nb.y1; haveNext = true;
+                    }
+                }
+                if (haveNext) {
+                    const float reach  = (nextY1 + kBarLaneMarginU - wy0) / vWorld;
+                    const float window = kJumpOverBarUntilSec - reach - kJumpOverBarFromSec;
+                    if (window >= kPairMinWindowSec) {
+                        lead = kJumpOverBarFromSec + 0.5f * window + kJumpReactionSec;
+                        pair = true;
+                    }
+                }
+            }
             // First beep: "press now". Second beep: the bike was airborne from
             // an earlier press and has just landed with the bar still ahead
             // inside the window — press again.
-            const bool first  = hz.jump_cued == 0 && ttc <= kJumpCueLeadSec;
+            const bool first  = hz.jump_cued == 0 && ttc <= lead;
             const bool repeat = hz.jump_cued == 1 && justLanded &&
-                                ttc <= kJumpCueLeadSec && ttc >= kJumpCueMinLeadSec;
+                                ttc <= lead && ttc >= kJumpCueMinLeadSec;
             if (first || repeat) {
                 ++hz.jump_cued;
-                // Free side: room between the bar's end and the post line.
-                const bool leftFree  = (wx0 + kLaneEdgeSkipU) >= kBarFreeSideMinU;
-                const bool rightFree = (kLaneEdgeSkipU - wx1) >= kBarFreeSideMinU;
-                const int  side = (leftFree == rightFree) ? 0 : (leftFree ? -1 : +1);
+                // Free side = the surviving strip (posts and mines removed);
+                // none = centred, "you must jump".
+                const int  side = cur.has_gap ? cur.gap_side : 0;
+                // Half-bar with a strip: the beep sits at the strip's REAL
+                // lateral offset, placed exactly like the guide tone (world
+                // x, kSwoopGuidePanForwardRefM ahead), so its angle reads as
+                // distance in the vocabulary the player already uses for pad
+                // lanes — a narrow angle is "four units, lean", a wide one
+                // "twelve, jump unless already moving". No strip: centred,
+                // "you must jump". (Was a fixed ±5 u hard pan, which said the
+                // side but never how far — asked for by the player after
+                // round 14.)
                 if (side == 0) {
                     acc::audio::PlayCue(kJumpNowCueResref);
                 } else {
                     Vector cue = listener_pos;
-                    cue.x += side * kJumpCuePanM;
+                    cue.x  = cur.gap_x;
+                    cue.y += kSwoopGuidePanForwardRefM;
                     acc::audio::PlayCue3DRaw(kJumpNowCueResref, cue);
                 }
                 acclog::Write("SwoopRace",
                               "jump cue%s: slot=%d name=[%s] bar y=%.1f x[%.1f..%.1f] "
-                              "gap=%.1f speed=%.1f ttc=%.2fs bikeX=%.2f side=%s",
+                              "gap=%.1f speed=%.1f ttc=%.2fs lead=%.2fs pair=%d bikeX=%.2f side=%s "
+                              "stripX=%.1f offset=%.1f",
                               repeat ? " (again)" : "", i, name ? name : "(null)",
-                              wy0, wx0, wx1, gap, bikeSpeed, ttc, bikeX,
-                              side == 0 ? "centre" : side < 0 ? "left" : "right");
+                              wy0, wx0, wx1, gap, bikeSpeed, ttc, lead, pair ? 1 : 0, bikeX,
+                              side == 0 ? "centre" : side < 0 ? "left" : "right",
+                              side == 0 ? 0.0f : cur.gap_x,
+                              side == 0 ? 0.0f : cur.gap_x - bikeX);
             }
             continue;
         }
@@ -1265,6 +1555,8 @@ void TickObstacleCues(void* miniGame) {
         // Y=3742) and asserted per race on K2 by the axis probe.
         admit(i, hazardPos, name, obstacles_ahead, obstacles_in_range);
     }
+    for (int b = 0; b < newBarCount; ++b) g_state.bars[b] = newBars[b];
+    g_state.bar_count = newBarCount;
 
     // ---- KOTOR 2 mines (collected by the pad sweep this tick): blocks. ----
     for (int m = 0; m < g_state.mine_count; ++m) {
@@ -1354,6 +1646,9 @@ void TickObstacleCues(void* miniGame) {
     // the first one).
     if (!g_state.obstacle_diag_emitted && obstacles_found > 0) {
         g_state.obstacle_diag_emitted = true;
+    }
+    if (!g_state.bar_gap_diag_emitted && g_state.mine_count > 0 && newBarCount > 0) {
+        g_state.bar_gap_diag_emitted = true;
     }
 
     // Single rolling-state line. inRange = obstacles that triggered
@@ -1493,16 +1788,19 @@ void TickAccelpadCues(void* miniGame) {
             void* vt = SafeReadPtr(enemy, 0);
             acclog::Write("SwoopRace",
                           "%s slot=%d ptr=%p vtable=%p model=[%s] "
-                          "pos=(%.2f,%.2f,%.2f)",
+                          "pos=(%.2f,%.2f,%.2f) radius=%.2f",
                           isMine ? "mine" : "accelpad", i, enemy, vt,
-                          modelName ? modelName : "(null)", pos.x, pos.y, pos.z);
+                          modelName ? modelName : "(null)", pos.x, pos.y, pos.z,
+                          SafeReadFloat(enemy, kFollowerSphereRadiusOffset));
         }
 
         if (isMine) {
             ++mines_found;
             if (g_state.mine_count < kMgoArraySlotCount) {
-                g_state.mine_slot[g_state.mine_count] = i;
-                g_state.mine_pos[g_state.mine_count]  = pos;
+                g_state.mine_slot[g_state.mine_count]   = i;
+                g_state.mine_pos[g_state.mine_count]    = pos;
+                g_state.mine_radius[g_state.mine_count] =
+                    SafeReadFloat(enemy, kFollowerSphereRadiusOffset);
                 ++g_state.mine_count;
             }
             continue;   // never a steering target
@@ -1516,6 +1814,10 @@ void TickAccelpadCues(void* miniGame) {
             ahead_slot = i; ahead_y = pos.y; ahead_pos = pos;
             ahead_radius = SafeReadFloat(enemy, kFollowerSphereRadiusOffset);
         }
+    }
+
+    if (bikeOk && player && acc::game::IsKotor2() && g_state.mine_count > 0) {
+        TrackMinePasses(player, bikePos, playerRadius);
     }
 
     if (!g_state.accelpad_diag_emitted && (accelpads_found + mines_found) > 0) {
@@ -1593,24 +1895,165 @@ void TickAccelpadCues(void* miniGame) {
     // padErr/fwdGap are always the TRUE nearest-gate values — scoring (the CROSS
     // interpolation) and the preview both rely on them, so they must not move.
     // coast = where the bike drifts if you release now. proj = post-coast miss.
-    const bool have_target = (ahead_slot >= 0) && bikeOk;
+    // ----- Virtual target after the last pad (see kVirtualTargetAheadU):
+    // straight ahead of the bike, so the mine-aware line below keeps working
+    // to the finish. The magnet is gated off for it unless a detour is active.
+    bool virtualTarget = false;
+    if (ahead_slot < 0 && bikeOk && acc::game::IsKotor2() && bikeSpeed > kSwoopMinRaceSpeed) {
+        virtualTarget = true;
+        ahead_pos = bikePos;
+        ahead_pos.y += kVirtualTargetAheadU;
+    }
+    const bool have_target = (ahead_slot >= 0 || virtualTarget) && bikeOk;
     const float padErr = have_target ? (ahead_pos.x - bikePos.x) : 0.0f;
     const float fwdGap = have_target ? (ahead_pos.y - refY) : -1.0f;
 
-    // ----- Mine-aware line (see kMineClearU). guide_pos / guideErr are what
-    // the tone and the magnet steer to; padErr stays the true pad error.
-    Vector guide_pos = ahead_pos;
-    float  guideErr  = padErr;
+    Vector guide_pos = ahead_pos;   // what the tone and the magnet steer to
+    float  guideErr  = padErr;     // padErr stays the true pad error
+
+    // ----- Bar-aware line (see kBarFreeClearU and the kPostContactU block).
+    // Applied after the mine detour; when both bite the bar wins (a park costs
+    // 16-19 s, a mine 100 hp and a downshift). Reads the obstacle sweep's bar
+    // cache (with each bar's free-side strip) from last tick.
+    int   bar_detour_slot = -1;
+    const bool airborne = tunOk && tunnel.z > kAirborneZ;
+    if (!airborne) g_state.bar_air_cleared_slot = -1;   // per-flight latch
+    if (bikeOk && !airborne) g_state.ground_z = bikePos.z;
+    float groundedY = refY;   // where the bike is next on the ground
+    float barY      = 0.0f;
+    const char* barWhy = "";
+    if (have_target && acc::game::IsKotor2() && g_state.bar_count > 0 && fwdGap > 0.0f) {
+        const float vWorld = bikeSpeed * kSpeedToWorldPerSec;   // world u/s
+        if (airborne) {
+            // Remaining flight from the arc: z + vz*t - g*t^2/2 = 0.
+            const float vz   = SafeReadFloat(miniGame, kMiniGameJumpVelocityOffset);
+            const float disc = vz * vz + 2.0f * kJumpGravity * tunnel.z;
+            const float tLand = (vz + std::sqrt(disc > 0.0f ? disc : 0.0f)) / kJumpGravity;
+            groundedY = refY + tLand * vWorld;
+        }
+        float lookAhead = (airborne ? kReJumpSec : kBarDetourLeadSec) * vWorld;
+        if (lookAhead < kBarDetourMinLeadU) lookAhead = kBarDetourMinLeadU;
+        // Two bars closer than one flight plus a re-jump are a pair: a jump
+        // over the first can land in front of the second with no time left.
+        const float pairDist = (kJumpOverBarUntilSec + kReJumpSec) * vWorld;
+        const bool  parked   = acc::engine::ReadGlobalNumber("MIN_RACE_GEAR") == 0;
+
+        // The nearest bar the bike will meet on the ground inside the
+        // look-ahead. The bar already being skirted stays selected until it is
+        // behind the bike (the detour moves the line off the span, which would
+        // otherwise flip the decision every tick -- the mines' hysteresis), with
+        // one exception: a flight that clears it by kBarLandClearU releases it
+        // (rule "pull to the pad only when the landing is past the bar");
+        // once released in the air it re-engages only if the projection falls
+        // clearly short, so it cannot chatter at the threshold.
+        int best = -1;
+        for (int b = 0; b < g_state.bar_count; ++b) {
+            const SpatialAudioState::BarInfo& bar = g_state.bars[b];
+            if (bar.y1 + kBarLaneMarginU < refY) continue;             // behind the bike
+            const bool sticky = bar.slot == g_state.bar_detour_slot;
+            if (airborne) {
+                const float clear = (bar.slot == g_state.bar_air_cleared_slot)
+                                        ? kBarLaneMarginU : kBarLandClearU;
+                if (bar.y1 + clear <= groundedY) {                       // cleared by the flight
+                    if (sticky) g_state.bar_air_cleared_slot = bar.slot;
+                    continue;
+                }
+            }
+            if (!sticky && bar.y0 > groundedY + lookAhead) continue;    // too far to matter
+            if (sticky) { best = b; break; }
+            if (best < 0 || bar.y0 < g_state.bars[best].y0) best = b;
+        }
+
+        // Which bar's strip, if any: the nearest bar itself, or -- when the
+        // nearest is a must-jump (no strip) and a strip bar follows it within
+        // pair distance -- that follower, pre-positioned before the jump
+        // (MGC05 full, then MGC06 96 u later: be at MGC06's strip before
+        // jumping MGC05).
+        int target = -1;
+        if (best >= 0) {
+            const SpatialAudioState::BarInfo& nearest = g_state.bars[best];
+            if (nearest.has_gap) {
+                target = best;
+            } else if (!airborne) {
+                for (int b = 0; b < g_state.bar_count; ++b) {
+                    const SpatialAudioState::BarInfo& f = g_state.bars[b];
+                    if (!f.has_gap || f.y0 <= nearest.y0 || f.y0 - nearest.y0 >= pairDist) continue;
+                    if (target < 0 || f.y0 < g_state.bars[target].y0) target = b;
+                }
+            }
+        }
+        if (target >= 0) {
+            const SpatialAudioState::BarInfo& bar = g_state.bars[target];
+            const bool sticky = bar.slot == g_state.bar_detour_slot;
+            // Where the straight line to the pad crosses the bar's front edge.
+            float t = (bar.y0 - refY) / fwdGap;
+            if (t < 0.0f) t = 0.0f; else if (t > 1.0f) t = 1.0f;
+            const float pathX   = bikePos.x + (ahead_pos.x - bikePos.x) * t;
+            const bool  crosses = pathX >= bar.x0 - kBarLaneMarginU &&
+                                  pathX <= bar.x1 + kBarLaneMarginU;
+            // Pad timing: a pad that lies before the bar is caught first,
+            // unless it sits in the span too close in front of the bar to
+            // move over afterwards.
+            const bool padBehindBar = ahead_pos.y > bar.y0;
+            const bool padInSpan    = ahead_pos.x >= bar.x0 - kBarLaneMarginU &&
+                                      ahead_pos.x <= bar.x1 + kBarLaneMarginU;
+            const bool padTooClose  = !padBehindBar && padInSpan &&
+                                      (bar.y0 - ahead_pos.y) < kBarAfterPadLeadSec * vWorld;
+            const bool timingOk     = padBehindBar || padTooClose;
+            bool engage = false;
+            if (sticky || parked)  { engage = true;              barWhy = sticky ? "sticky" : "parked"; }
+            else if (airborne)     { engage = crosses;           barWhy = "landing short"; }
+            else if (crosses && timingOk) {
+                // Ground: only a pair (a bar within pair distance either way)
+                // justifies leaving the pad line; an isolated half-bar keeps
+                // the beep and the pad behind it.
+                bool pair = target != best;   // pre-positioning for a follower
+                for (int b = 0; b < g_state.bar_count && !pair; ++b) {
+                    const SpatialAudioState::BarInfo& o = g_state.bars[b];
+                    if (o.slot == bar.slot) continue;
+                    if (std::fabs(o.y0 - bar.y0) < pairDist) pair = true;
+                }
+                engage = pair;
+                barWhy = "pair";
+            }
+            if (engage) {
+                guide_pos.x = bar.gap_x;
+                guideErr    = bar.gap_x - bikePos.x;
+                bar_detour_slot = bar.slot;
+                barY = bar.y0;
+            }
+        }
+    }
+    if (bar_detour_slot != g_state.bar_detour_slot) {
+        if (bar_detour_slot >= 0) {
+            acclog::Write("SwoopRace",
+                          "bar detour: slot=%d guideX=%.1f why=%s (pad slot=%d padX=%.1f padY=%.0f "
+                          "bikeX=%.1f barY=%.0f airborne=%d groundY=%.0f fwdGap=%.0f)",
+                          bar_detour_slot, guide_pos.x, barWhy, ahead_slot, ahead_pos.x,
+                          ahead_pos.y, bikePos.x, barY, airborne ? 1 : 0, groundedY, fwdGap);
+        } else {
+            acclog::Write("SwoopRace", "bar detour: clear (pad slot=%d bikeX=%.1f airborne=%d groundY=%.0f)",
+                          ahead_slot, bikePos.x, airborne ? 1 : 0, groundedY);
+        }
+        g_state.bar_detour_slot = bar_detour_slot;
+    }
+
+    // ----- Mine-aware line (see kMineClearU), on the FINAL line: the pad,
+    // or the strip the bar-aware block above chose (round 14 lost a race's
+    // best 20 s to a strip line that passed a mine at 4 u unchecked).
     int    detour_slot = -1;
-    if (have_target && acc::game::IsKotor2() && fwdGap > 0.0f) {
+    const float line_x   = guide_pos.x;
+    const float line_y   = (bar_detour_slot >= 0) ? barY : ahead_pos.y;
+    const float lineGap  = have_target ? (line_y - refY) : -1.0f;
+    if (have_target && acc::game::IsKotor2() && lineGap > 0.0f) {
         float  bestDy = 1e9f;
         Vector mine   = {0.0f, 0.0f, 0.0f};
         for (int m = 0; m < g_state.mine_count; ++m) {
             const Vector& mpos = g_state.mine_pos[m];
             const float dy = mpos.y - refY;
-            if (dy < -kMineBehindU || dy > fwdGap) continue;   // behind, or beyond the pad
-            const float t = dy <= 0.0f ? 0.0f : dy / fwdGap;
-            const float pathX = bikePos.x + (ahead_pos.x - bikePos.x) * t;
+            if (dy < -kMineBehindU || dy > lineGap) continue;   // behind, or beyond the line's end
+            const float t = dy <= 0.0f ? 0.0f : dy / lineGap;
+            const float pathX = bikePos.x + (line_x - bikePos.x) * t;
             // Hysteresis: the mine already being detoured stays a detour
             // until it is behind (the detour itself moves the path off it,
             // which flipped the decision every tick in round 10).
@@ -1619,10 +2062,10 @@ void TickAccelpadCues(void* miniGame) {
             if (dy < bestDy) { bestDy = dy; mine = mpos; detour_slot = g_state.mine_slot[m]; }
         }
         if (detour_slot >= 0) {
-            // Pass on the pad's side; a mine on the pad lane → toward the centre.
+            // Pass on the line's side; a mine on the line → toward the centre.
             float side;
-            if (std::fabs(ahead_pos.x - mine.x) < 2.0f) side = (mine.x > 0.0f) ? -1.0f : +1.0f;
-            else                                          side = (ahead_pos.x < mine.x) ? -1.0f : +1.0f;
+            if (std::fabs(line_x - mine.x) < 2.0f) side = (mine.x > 0.0f) ? -1.0f : +1.0f;
+            else                                    side = (line_x < mine.x) ? -1.0f : +1.0f;
             float gx = mine.x + side * kMineClearU;
             if (std::fabs(gx) > kMineDetourMaxU) gx = mine.x - side * kMineClearU;
             guide_pos.x = gx;
@@ -1632,13 +2075,14 @@ void TickAccelpadCues(void* miniGame) {
     if (detour_slot != g_state.detour_slot) {
         if (detour_slot >= 0) {
             acclog::Write("SwoopRace",
-                          "detour: mine slot=%d guideX=%.1f (pad slot=%d padX=%.1f bikeX=%.1f fwdGap=%.0f)",
-                          detour_slot, guide_pos.x, ahead_slot, ahead_pos.x, bikePos.x, fwdGap);
+                          "detour: mine slot=%d guideX=%.1f (line x=%.1f y=%.0f pad slot=%d padX=%.1f bikeX=%.1f fwdGap=%.0f)",
+                          detour_slot, guide_pos.x, line_x, line_y, ahead_slot, ahead_pos.x, bikePos.x, fwdGap);
         } else {
             acclog::Write("SwoopRace", "detour: clear (pad slot=%d)", ahead_slot);
         }
         g_state.detour_slot = detour_slot;
     }
+
 
     int   desired = kSteerCmdNone;
     float coast   = 0.0f;
@@ -1675,6 +2119,7 @@ void TickAccelpadCues(void* miniGame) {
     const bool inGear = acc::engine::ReadGlobalNumber("MIN_RACE_GEAR") >= 1;
     bool probeMagnetWrote = false;
     if (have_target && bikeOk && tunOk && player && inGear &&
+        (!virtualTarget || detour_slot >= 0) &&
         bikeSpeed > kSwoopMinRaceSpeed &&
         std::fabs(guideErr) <= MagnetEngageU()) {
         const acc::minigame::MagnetParams mp{
@@ -1777,10 +2222,17 @@ void TickAccelpadCues(void* miniGame) {
         const float vel  = g_state.smoothed_vel;
         const float proj = tunnel.x + vel * WallLeadTicks();
         const bool  overshoot = !have_target || vel * guideErr < 0.0f;
+        // The band is unconditional — except while the guide itself asks for
+        // it: a half-bar's strip beside the posts (MGC03 at x −12.4, MGC06 at
+        // −13.1) would otherwise ride under a permanent wall thump. The
+        // projected post crossing still warns there.
+        const bool guideInBand = have_target && bar_detour_slot >= 0 &&
+                                 std::fabs(guide_pos.x) >= kWallBandU - kWallBandHystU;
+        const bool projOk = overshoot && (!guideInBand || std::fabs(vel) >= kWallLoopBandMinVel);
         int side = 0;
-        if (tunnel.x >= kWallBandU || (overshoot && proj >= kWallEdgeOffsetK2U))       side = +1;
-        else if (tunnel.x <= -kWallBandU || (overshoot && proj <= -kWallEdgeOffsetK2U)) side = -1;
-        if (side == 0 && g_state.wall_loop_side != 0 &&
+        if ((!guideInBand && tunnel.x >= kWallBandU) || (projOk && proj >= kWallEdgeOffsetK2U))       side = +1;
+        else if ((!guideInBand && tunnel.x <= -kWallBandU) || (projOk && proj <= -kWallEdgeOffsetK2U)) side = -1;
+        if (side == 0 && !guideInBand && g_state.wall_loop_side != 0 &&
             tunnel.x * g_state.wall_loop_side > kWallBandU - kWallBandHystU) {
             side = g_state.wall_loop_side;   // still in the hysteresis band
         }
@@ -1926,6 +2378,12 @@ void ResetSpatialAudio() {
     g_state.wall_loop.Stop();
     g_state.wall_loop_side        = 0;
     g_state.detour_slot           = -1;
+    g_state.bar_count             = 0;
+    g_state.bar_detour_slot       = -1;
+    g_state.bar_air_cleared_slot  = -1;
+    g_state.bar_gap_diag_emitted  = false;
+    g_state.ground_z              = 40.0f;
+    for (int i = 0; i < kMgoArraySlotCount; ++i) g_state.mine_pass_open[i] = false;
     g_state.last_magnet_log_ms    = 0;
     g_state.have_prev_ahead       = false;
     g_state.prev_ahead_posX       = 0.0f;
