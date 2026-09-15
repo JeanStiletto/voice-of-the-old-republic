@@ -1573,6 +1573,19 @@ enum class Id : int {
     // relaunches. Shortest possible: direction, then the shift key.
     SwoopRaceStuckHintLeft,     // wall on the right: steer left, then W
     SwoopRaceStuckHintRight,    // wall on the left:  steer right, then W
+    // Parked right in front of a KOTOR 2 low bar (minigame_swoop_audio.h
+    // ParkedBar), spoken after 1.5 s instead of 6: the escape is a fixed key
+    // sequence and round 16 (patch-20260915-212249) burned up to 11
+    // relaunches at 50 hp each waiting for the generic hint. Wedged between
+    // the bar's end and the posts: steer away from the wall FIRST (a jump or
+    // W from the wall hits the pillar), then Space, then W. A bar with an
+    // open strip: the guide tone already points at it, follow it, then W. No
+    // strip: Space from the standstill, then W — the arc is above bar height
+    // before W has moved the bike the two units into the bar.
+    SwoopRaceStuckBarWallLeft,  // wall on the right: steer left, then Space, then W
+    SwoopRaceStuckBarWallRight, // wall on the left:  steer right, then Space, then W
+    SwoopRaceStuckBarStrip,     // follow the tone, then W
+    SwoopRaceStuckBarJump,      // Space, then W
     // The track ended the race as a wreck, not at the line: KOTOR 2's hit
     // scripts take 50 (obstacle) / 100 (mine) of the bike's 600 hit points and
     // the heartbeat ends the race at zero, stamping 59:59.99 into the track's

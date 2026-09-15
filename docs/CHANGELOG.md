@@ -37,142 +37,74 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h3>KOTOR 2 swoop racing:</h3>
 
-- The KOTOR 2 pad guide no longer steers you into a half-height bar. Every
-  such bar on the Citadel track has the next pad right behind it, on the
-  blocked side, so the tone and the assist led straight into the bar; both
-  parks of the best race so far were exactly that. Where two bars stand
-  close together, the guide now aims at the open strip beside the bar,
-  computed from the posts and the mines the track hides in that gap (three
-  of the four "free" sides are mined), and in the air it goes for the pad
-  only when the jump will come down past the bar. An isolated bar keeps the
-  usual line and the jump beep, and a bar with no open strip gets a centred
-  beep meaning "you must jump". The price of a bad jump is now a missed pad
-  instead of a stop. Nothing steers for you unless there is a real path: a
-  gap narrower than the bike plus its wobble is never a target.
-- The KOTOR 2 jump beep for a half-height bar now sounds from where the open
-  strip beside the bar really is, placed like the pad-guide tone, so its
-  angle tells you how far to steer to pass without jumping: a narrow angle
-  is a lean, a wide one a full swing. It used to be a fixed hard pan that
-  only named the side. A bar with no open strip keeps the centred beep,
-  which now means exactly "you must jump".
-- The KOTOR 2 mine detour now also guards the finish straight and the bar
-  strips. After the last pad the guide had no target, so the centre-lane
-  mine before the finish line was hit in every race; and a strip line was
-  never checked against mines on the way to it. Mine reach is now the
-  measured collision distance rather than the engine's nominal radius,
-  which is the same as a pad's and demonstrably not what the hit test uses.
-- The KOTOR 2 jump beep sounds 0.1 s earlier, and its timing is now computed
-  in real seconds (the bike covers two thirds of a world unit per speed unit
-  per second, which the old maths ignored). Where two bars stand close enough
-  that a single jump clears both at your current speed, the beep is placed
-  later so a normal reaction lands mid-window.
-- KOTOR 2 swoop races can be shifted from the keyboard: W shifts up a gear
-  (a new rebindable "Swoop: Shift up" hotkey), Space jumps. KOTOR 2 rebound
-  the race without telling anyone who plays by ear: its tracks moved the gear
-  ladder from the "fire" script to a new "accelerate" script that the engine
-  only triggers from the left mouse button (or a gamepad's B button), and gave
-  Space to the new jump. So the first K2 race parked at speed zero while Space
-  was pressed — the engine received every press and refused the jump because
-  the bike was still in gear 0. On a gamepad A jumps and B shifts, as the
-  engine intended. Left and right mouse buttons keep their native meaning.
-  KOTOR 1 is untouched.
-- The metallic "obstacle ahead" loop no longer plays for the six hangar and
-  shuttle models dressing the Citadel track. Their collision boxes compute
-  to spots in the middle of the lane where nothing collides — two of them
-  right before the first bar, so the loop and the jump beep sounded like the
-  same obstacle.
-- The spoken gear number now comes from the track scripts' own gear variable
-  on both games, so a KOTOR 2 collision — which drops the bike to gear 0 and
-  forces a relaunch — is announced as "gear 0" instead of leaving the count
-  stuck (the previous top-speed-plateau counter could only ever go up).
-- The "shift now" cue on KOTOR 2 fires at the speed the track really accepts
-  a shift: 60 / 100 / 150 / 210, the same ladder as KOTOR 1. Two test rounds
-  ran with it one notch too low (a misread of the shift script), so the cue
-  came up to 40 units early, W did nothing, and the next gear's cue then
-  sounded right after the engine's own shift noise.
-- The KOTOR 2 steering assist now grabs a pad only once you are within 6
-  lane units of it, not 16. KOTOR 2 lays its pads in three fixed lanes 11
-  units apart, so at 16 the assist made every lane change by itself: the
-  guide tone stayed quiet, all pads were caught with no steering, and the
-  bike was walked into every mine and half-height bar sitting on a pad lane.
-  Now a one-lane hop needs you to swing most of the way by ear, as on KOTOR
-  1; the assist still lands the final stretch.
-- KOTOR 2: the panned race cues (jump beep to the free side, wall thump,
-  "on the line" blip) are audible again for the whole race. They were placed
-  relative to the character, and during a KOTOR 2 race the character is the
-  one parked at the start while the camera follows the bike, so every one of
-  them drifted hundreds of units away within seconds of the start. KOTOR 1
-  was never affected.
-- The jump beep now tells you the alternative. A bar that covers only one
-  half of the lane sounds hard on the free side: jump, or drift that way.
-  A bar with no room on either side sounds in the middle: you must jump.
-- On KOTOR 2 the wall thump is now continuous: it repeats on the wall's side
-  the whole time the bike is in the outer 7 units of the lane or heading into
-  them, and stops the moment you are back inside. On KOTOR 2 the wall is not
-  free as on KOTOR 1: posts line both edges, touching one costs 50 hit points
-  and drops you to gear 0, and relaunching from against a post is another
-  hit. Two test races took 22 of 26 hits that way, with a single thump that
-  was easy to miss in the mix.
-- The pad tone on KOTOR 2 now steers around mines. Citadel puts its mines on
-  the pad lanes and on the straight lines between pads, exactly where a
-  player following the tone drives; one test race lost 420 of 600 hit points
-  to four of them. When a mine sits on the line to the next pad, the tone
-  (and the assist's final pull) aim at a point beside the mine until it is
-  behind you, then at the pad again.
-- The KOTOR 2 wall loop no longer sounds on a normal swing toward a side-lane
-  pad. It sounds when you are in the outer band, or moving outward past the
-  pad you are aiming for.
-- After a collision in front of a bar, every relaunch gets the jump beep
-  again, on the free side. It used to fall silent after two beeps per bar,
-  and a relaunch straight into the bar is another hit.
-- The pad tone is louder, and the KOTOR 2 wall loop starts about 1.2 seconds
-  before a projected post contact instead of 0.7.
-- A caught accelerator pad plays one short burst of the pad tone. Neither
-  game's pad script makes a sound, and on KOTOR 2 the steering assist catches
-  every pad on its own, so the guide tone stayed quiet and nothing by ear
-  said a pad had been scored.
-- The race entry cheat sheet on KOTOR 2 names the jump key.
-- KOTOR 2 tracks are now read by shape, not by object position. The obstacle
-  loop used to sound every lane-edge post (90 of Citadel's 105 objects, none
-  reachable from the lane) and placed the real hazards at their object
-  origins, up to 46 units away from the thing you hit. Each obstacle's
-  collision box is now read from the engine once per race: posts stay silent,
-  low bars get a "jump now" beep about 1.4 seconds ahead when they span your
-  lane, and blocks keep the panned warning loop at their true position.
-- Mines no longer attract the swoop co-pilot. KOTOR 2 keeps its mines in the
-  same pool as the accelerator pads, so the steering assist locked onto two
-  mines in the first playable race and drove the bike into both. Mines are
-  told apart by model and now warn like other blocks.
-- The "shift now" cue is audible on KOTOR 2. Its sample only exists in KOTOR
-  1's archives, so it had been firing silently there; KOTOR 2 plays a sibling
-  droid chirp that both games ship.
-- A collision no longer ends the race in speech. KOTOR 2 hits stop the bike
-  dead, which the "coasted to a stop" finish fallback took for the finish line
-  ("23.22 seconds, race ended" at the first bar). The finish is now the track
-  script's own finish flag; the fallback stays KOTOR 1 only.
-- A KOTOR 2 race that ends because the bike is wrecked now says "Swoop
-  wrecked. Race over." instead of a finish time. Obstacles take 50 and mines
-  100 of the bike's 600 hit points and the track ends the race at zero, which
-  the mod had been reading as a finish ("72.16 seconds" at the third bar).
-  Individual hits are not spoken — the on-screen damage gauge is the sighted
-  equivalent, and the race is loud enough.
-- The "shift now" cue waits 0.8 seconds after a gear change. On KOTOR 2 a
-  late shift already sits above the next gate, so the cue fired in the same
-  instant as the gear announcement and sounded like a shift confirmation.
-- The jump beep now means "press Space now": it sounds 1.0 seconds before a bar
-  instead of 1.35, because an instant reaction to the earlier beep landed the
-  bike just short of the bar. If you jumped too early and touch down with the
-  bar still ahead, the beep repeats once.
-- After a collision the steering assist stays off until you are back in gear,
-  so you can steer clear of what you hit instead of being pulled back into it.
-- If the bike makes no headway for six seconds in gear 0 after the start, the
-  mod says how to get out, as short as it can: "Steer aside, then W and
-  Space." Parked against a wall it names the way out instead: "Steer left,
-  then W." or "Steer right, then W."
-- Diagnostics: every jump start and landing is logged with speed, gear, air
-  time and peak height, the once-per-second race snapshot shows the gear
-  variable and the jump velocity, and the first-sweep inventory prints each
-  obstacle's collision box and class.
+KOTOR 2's swoop races are playable by ear now. The KOTOR 2 tracks rebind the
+race compared to KOTOR 1 and add obstacles KOTOR 1 does not have, so most of
+this is new behaviour for KOTOR 2 only; KOTOR 1 races are unchanged unless a
+bullet says otherwise.
+
+- **Keys.** W shifts up a gear (a new rebindable "Swoop: Shift up" hotkey) and
+  Space jumps; A and D steer. On a gamepad B shifts and A jumps. KOTOR 2 put
+  the gear ladder on an "accelerate" input the engine only offers on the left
+  mouse button, and gave Space to a new jump, so before this Space did
+  nothing in gear 0. On KOTOR 1 Space still shifts. The race entry cheat
+  sheet names the keys.
+- **Shifting.** The same short droid chirp as on KOTOR 1 says when a shift
+  is accepted (at 60 / 100 / 150 / 210, never within 0.8 s of the last gear
+  change), and every gear change is spoken, including "gear 0" after a
+  collision. KOTOR 2 had been silent, then played a sample four times as long.
+- **Low bars, a KOTOR 2 hazard.** A beep about 1.6 s before a bar that spans
+  your lane means press Space now. Where the bar covers only part of the lane
+  and there is a real gap beside it, the beep sounds from that gap at its true
+  distance, so its angle says how far to steer to pass without jumping (a
+  narrow angle is a lean, a wide one a full swing). A centred beep means you
+  must jump. If you jumped early and land with the bar still ahead, the beep
+  repeats once; after a collision in front of a bar every relaunch gets it
+  again.
+- **Walls stop you on KOTOR 2.** Posts line both lane edges; touching one
+  costs 50 of the bike's 600 hit points and drops you to gear 0, and shifting
+  (W) or jumping while against a post is another hit. The wall thump is
+  continuous while you are in the outer band or heading into it, on the
+  wall's side, and starts about 1.2 s before a projected contact. Steer away
+  until it stops, then jump or shift. It does not sound on a normal swing
+  toward a side-lane pad.
+- **Getting unstuck.** Parked in gear 0 in front of a bar, the mod speaks the
+  escape after 1.5 s, matched to where you are: wedged between the bar's end
+  and the posts, "steer left, then Space, then W" (or right); at a bar with
+  an open gap beside it, "follow the tone, then W"; at a bar with no way
+  round, "Space, then W" (a jump from the standstill clears the bar before W
+  moves you into it), with one centred beep the moment you park. Anywhere
+  else the hint comes after six seconds: "steer aside, then W and Space", or
+  at a wall "steer left, then W" / "steer right, then W". The steering assist
+  stays off until you are back in gear, so it cannot pull you back into what
+  you hit.
+- **Mines.** KOTOR 2 puts mines on the pad lanes, on the lines between pads,
+  and beside the bars. They cannot be jumped and cost 100 hit points. The
+  pad tone (and the assist's final pull) bend around a mine that sits on the
+  line you are on and straighten out once it is behind you, including on the
+  finish straight and on the lines beside bars. Mines warn like other
+  blocks; they no longer attract the assist.
+- **Pad guide.** The assist grabs a pad only within 6 lane units, not 16,
+  because KOTOR 2 lays its pads in three lanes 11 units apart and at 16 it
+  drove every lane change itself, into every mine and bar on the way. A lane
+  hop is now yours by ear; the assist lands the last stretch. Where two bars
+  stand close together the guide aims at the open gap beside the bar
+  (computed from the posts and the mines) instead of the pad behind it, and
+  nothing steers for you unless there is a real path. A caught pad plays one
+  burst of the pad tone. The tone is louder.
+- **Hazards are read by shape.** Each obstacle's collision box is read from
+  the engine once per race: posts stay silent (the wall thump covers them),
+  bars beep, blocks and mines keep the panned warning loop at their true
+  position, and the hangar and shuttle models dressing the Citadel track are
+  ignored. Before this the loop sounded 90 unreachable posts and placed real
+  hazards up to 46 units from the thing you hit, and the panned cues were
+  placed relative to the parked character rather than the bike.
+- **Race end.** Only the time is spoken, about a second after the finish so
+  the finish sound has faded under it ("Time: 46.41 seconds"). A wreck says
+  "Swoop wrecked. Race over." Individual hits are not spoken. A collision no
+  longer ends the race in speech, and a wreck is no longer read as a finish.
+- **Diagnostics (log only).** Jump start and landing, the once-per-second
+  snapshot, each obstacle's box and class, every bar's open gap, every bar
+  detour, and every close pass of a mine with its 3-D distance and hit points.
 
 <h3>Bug fixes:</h3>
 

@@ -484,6 +484,14 @@ const char* Get(Id id) {
             return "Sterza a sinistra, poi W.";
         case Id::SwoopRaceStuckHintRight:
             return "Sterza a destra, poi W.";
+        case Id::SwoopRaceStuckBarWallLeft:
+            return "Sterza a sinistra, poi Spazio, poi W.";
+        case Id::SwoopRaceStuckBarWallRight:
+            return "Sterza a destra, poi Spazio, poi W.";
+        case Id::SwoopRaceStuckBarStrip:
+            return "Segui il suono, poi W.";
+        case Id::SwoopRaceStuckBarJump:
+            return "Spazio, poi W.";
         case Id::SwoopRaceWrecked:
             return "Swoop distrutto. Gara finita.";
         case Id::SwoopRaceEnded:
@@ -491,7 +499,7 @@ const char* Get(Id id) {
         case Id::FmtSwoopRaceGear:
             return "Marcia %d";
         case Id::FmtSwoopRaceTime:
-            return "Tempo: %d,%02d secondi. Corsa Swoop terminata.";
+            return "Tempo: %d,%02d secondi.";
 
         case Id::TurretGameStarted:
             // Terse opener ? concatenated with TurretGameControls below

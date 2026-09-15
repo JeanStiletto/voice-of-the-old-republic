@@ -102,7 +102,7 @@ namespace KotorAccessibilityInstaller
         // WAV samples shipped into <game>/Override/ for the engine's
         // ResLoader to pick up by bare resref. Uninstall removes
         // AllOverrideAssetNamesEverInstalled, not this list — see below.
-        private static readonly string[] OverrideAssets = { "acc_boost.wav", "acc_turret_loop.wav", "acc_turret_lock.wav", "acc_turret_tick.wav", "acc_steer_ok.wav" };
+        private static readonly string[] OverrideAssets = { "acc_boost.wav", "acc_turret_loop.wav", "acc_turret_lock.wav", "acc_turret_tick.wav", "acc_steer_ok.wav", "acc_shift.wav" };
         public static IReadOnlyList<string> OverrideAssetNames => OverrideAssets;
 
         // Override assets earlier versions shipped and current ones do not.

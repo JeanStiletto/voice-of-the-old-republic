@@ -351,6 +351,16 @@ Round-1 additions:
 
 ## 9. State at the end of 2026-09-15 (13 rounds) and how KOTOR 2 differs from KOTOR 1
 
+> Status 2026-09-15 late (round 17, `patch-20260915-213959`: 70.43 / 99.97 /
+> 56.34; round 16 had a 46.41 s qualifier): the race is playable by ear and the
+> player considers the rest skill. The known-issues entry and its round-by-round
+> history moved to `archiev/k2-swoop-race-rounds-2026-09.md`; the shipped
+> behaviour is described in `docs/CHANGELOG.md` (Unreleased, "KOTOR 2 swoop
+> racing"). Still open, not scheduled: the mine beside MGC06 (data-side only),
+> the relaunch guard (superseded by the parked-bar hints unless they prove
+> insufficient), and the mine detour's side choice when the bike is already on
+> the far side of the line.
+
 Read this first when resuming. Everything below is committed (6a938b6 and
 the tuning after it); the last three logs of the day are
 `patch-20260915-145054` (first finish, 103 s, 100 hp left) and
@@ -646,3 +656,46 @@ Built after round 14 (untested at the time of writing):
   means clear (the beep fires only inside the span), and a more skilled
   player than him should get the distance information even if he cannot
   use it yet.
+
+### Round 15 (`patch-20260915-210405`): 69.97 / 85.67 / 79.95 — what the rebuild fixed and what is left
+
+Confirmed working (three races, all committed in 122cd3a):
+
+- **The finish mine was not hit once** (rounds 12–14: every race). The
+  virtual target's detour shows as `detour: mine ... pad slot=-1`.
+- **MGC03/MGC04 passed clean in all three races** on the strip (x −12.6 →
+  −5.9), and MGC02 on +5.3. No `drop 105` at a strip.
+- The strip line's mine check ran (`line x=-12.6` / `line x=-5.9` in the
+  detour lines).
+
+What cost time — every race one park, all at the two must-jump bars:
+
+- **MGC06 (races 1 and 2, ~20 s each)**: the MGC05 jump landed 26–29 u
+  short of MGC06, exactly as computed (no path, no fix by ear). Then the
+  relaunch cascade: after the hit the bike ends at x +19.9 (the tone points
+  at pad 18 at x 11, the player steers right while parked, overshoots into
+  the posts), and W from there is another 50 hp.
+- **MGC08 (races 2 and 3, ~25 and ~30 s)**: both jumps were pressed AT the
+  beep (jump start within the same second and at the same y as the cue;
+  round 14's MGC08 presses came 0.7 s after it) and landed 40–60 u short.
+  Race 3's cascade at x +19.9 was seven relaunch hits over 13 s, the stuck
+  hint ("Links lenken, dann W") at 6 s.
+- **Mines on the pad line (races 1 and 3, ~6–8 s each, at gear 5)**: the
+  mine at y 2232 with the detour tone active for 2 s and no swing — the
+  second time (round 14 race 2 was the first), both right after the gear
+  shift whose 0.87 s cue sample covered the tone; and the mine at y 2535
+  crossed mid-swing coming back from an overshoot to x −20 (the detour's
+  side choice was the line's side, i.e. across the mine from the bike).
+- Pads missed 4 / 4 / 4, mostly the strips' price.
+
+Changed after round 15: the shift-ready cue is the 0.2 s astromech chirp on
+both games (Override asset `acc_shift.wav`; the K2 sibling was 0.87 s).
+
+Open, in order of cost: (1) the parked relaunch cascade at must-jump bars —
+a centred beep while parked in a bar's span ("jump first, then W": from a
+standstill the arc clears the bar 2 u ahead before W has moved the bike
+into it) or the relaunch guard; (2) the pressed-at-the-beep MGC08 jumps
+(a player habit, or Space mashing — `jump (OnBrake): ran` counts would
+tell); (3) the mine detour's side choice when the bike is already on the
+far side of the line (prefer the bike's side when it is still inside the
+wall band limit); (4) MGC06 itself: data-side only.

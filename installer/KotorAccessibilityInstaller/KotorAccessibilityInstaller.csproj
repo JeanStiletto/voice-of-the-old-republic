@@ -93,6 +93,13 @@
          retired when the steering magnet replaced the discrete co-pilot guide,
          so only this aligned cue is still played. -->
     <EmbeddedResource Include="Resources\acc_steer_ok.wav" />
+    <!-- Swoop-race "shift up now" chirp (audio_cues.h SwoopShiftReady, resref
+         acc_shift): a byte-identical copy of the 0.2 s astromech attack chirp
+         c_drdastro_atk1, which sits in BOTH games' streamsounds folders but is
+         key-indexed only in KOTOR 1 — so on KOTOR 2 the cue was silent, then
+         played the 0.87 s assassin-droid sibling instead ("too long"). Shipping
+         it under our own resref gives both games the same short beep. -->
+    <EmbeddedResource Include="Resources\acc_shift.wav" />
     <!-- Vanilla prioritygroups.2da. The installer appends the mod's
          dedicated full-volume audio priority group to whatever copy is in
          Override (or this bundled vanilla if absent) — see

@@ -60,7 +60,8 @@ enum class NavCue {
     SwoopSteerAligned,      // acc_steer_ok (rising tone — on the line / release)
     // "You can shift up a gear now" cue (swoop_race.cpp TickShiftReady). Was a
     // bare literal there; centralised here so the glossary can audition it.
-    SwoopShiftReady,        // c_drdastro_atk1 (short droid-attack chirp)
+    SwoopShiftReady,        // acc_shift (the 0.2 s astromech chirp c_drdastro_atk1,
+                            //   shipped under our own resref — see the resolver note)
     // KOTOR 2 only in practice (K1's bike cannot jump): a low bar that spans the
     // bike's lane is close enough that a jump pressed now clears it
     // (minigame_swoop_audio.cpp, the hazard sweep). One-shot per bar.
@@ -93,21 +94,22 @@ constexpr const char* GetNavCueResref(NavCue cue) {
         case NavCue::SwoopSteerLeft:           return "acc_steer_l";
         case NavCue::SwoopSteerRight:          return "acc_steer_r";
         case NavCue::SwoopSteerAligned:        return "acc_steer_ok";
-        case NavCue::SwoopShiftReady:          return "c_drdastro_atk1";
+        case NavCue::SwoopShiftReady:          return "acc_shift";
         case NavCue::SwoopJumpNow:             return "mgs_warnbust";
     }
     return "";
 }
 
-// Per-game resolution. The table above is what the K1 install ships; KOTOR 2's
-// Sounds.bif lacks c_drdastro_atk1 (only the droid's .utc/.ssf exist there), so
-// the shift-ready cue was silent for the whole first K2 swoop round
-// (patch-20260914-163810). Use this wherever a race cue or the glossary
-// audition plays, so both hear the same sample.
+// Per-game resolution. Kept as the single seam for a cue whose sample differs
+// per game; currently none does. History: the shift-ready cue was the vanilla
+// c_drdastro_atk1, which KOTOR 2 ships only in streamsounds\ (not key-indexed,
+// so the engine's resref lookup fails — silent for the whole first K2 swoop
+// round, patch-20260914-163810). The K2 fallback c_drdasasin_atk1 is 0.87 s
+// against the chirp's 0.20 s — "too long" at the gear change, and it masked
+// the guide tone at the mine after the gear-5 shift (rounds 14/15). The chirp
+// now ships as the Override asset acc_shift.wav (byte-identical in both
+// games' streamsounds), so both games hear the same short beep.
 inline const char* GetNavCueResrefForGame(NavCue cue) {
-    if (cue == NavCue::SwoopShiftReady && acc::game::IsKotor2()) {
-        return "c_drdasasin_atk1";  // assassin-droid chirp: same family, in both games
-    }
     return GetNavCueResref(cue);
 }
 

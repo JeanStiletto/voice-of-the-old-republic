@@ -486,6 +486,14 @@ const char* Get(Id id) {
             return "Skr\xEA\xE6 w lewo, potem W.";
         case Id::SwoopRaceStuckHintRight:
             return "Skr\xEA\xE6 w prawo, potem W.";
+        case Id::SwoopRaceStuckBarWallLeft:
+            return "Skr\xEA\xE6 w lewo, potem Spacja, potem W.";
+        case Id::SwoopRaceStuckBarWallRight:
+            return "Skr\xEA\xE6 w prawo, potem Spacja, potem W.";
+        case Id::SwoopRaceStuckBarStrip:
+            return "Pod\xB9\xBF""aj za d\x9F""wi\xEAkiem, potem W.";
+        case Id::SwoopRaceStuckBarJump:
+            return "Spacja, potem W.";
         case Id::SwoopRaceWrecked:
             return "Swoop rozbity. Koniec wy\x9C""cigu.";
         case Id::SwoopRaceEnded:
@@ -493,7 +501,7 @@ const char* Get(Id id) {
         case Id::FmtSwoopRaceGear:
             return "Bieg %d";
         case Id::FmtSwoopRaceTime:
-            return "Czas: %d.%02d sekundy. Koniec wy\x9C""cigu.";
+            return "Czas: %d.%02d sekundy.";
 
         case Id::TurretGameStarted:
             return "Wie\xBFyczka.";

@@ -284,6 +284,11 @@ inline const char* ShiftReadyCueResref() {
 // (~2 s at 30 fps) is comfortably past that without making true exits
 // feel laggy.
 constexpr int   kExitDebounceTicks        = 60;
+// The finish-line time is spoken this long after the finish so the engine's
+// race-end sound has faded under it ("the end race sound is louder than the
+// TTS", round 16). Inside the exit debounce (60 ticks ≈ 2 s); the exit path
+// flushes it regardless. A wreck is spoken immediately.
+constexpr ULONGLONG kRaceEndSpeakDelayMs  = 1200;
 
 // Per-tick diagnostic snapshot cadence. 1 Hz keeps the log usable
 // while still capturing the speed curve.
@@ -375,6 +380,13 @@ struct State {
     float         progress_mark_y         = 0.0f;
     ULONGLONG     progress_mark_ms        = 0;
     bool          stuck_hint_spoken       = false;
+    ParkedBar     stuck_bar_spoken_for    = ParkedBar::None;   // re-arms when the situation changes
+
+    // ---- Delayed race-end time (see kRaceEndSpeakDelayMs): the finish sound
+    //      drowns speech spoken on the same frame, so the time waits.
+    bool          race_end_pending        = false;
+    ULONGLONG     race_end_due_ms         = 0;
+    char          race_end_msg[160]       = {};
     // (Side-wall collision state moved to swoop_spatial_audio.cpp — see the
     // note where the old detector used to live.)
 
@@ -814,6 +826,10 @@ void TickHitPoints(void* miniGame) {
     if (!player) return;
     const int hp = static_cast<int>(SafeReadU32(player, kFollowerHpOffset));
     if (hp < 0 || hp > 1000000) return;              // faulted / garbage
+    // After the finish the engine zeroes the follower (max hp 0 too): that
+    // final "hp 400 -> 0 (drop 400 of 0)" is not a hit, so keep it out of the
+    // per-race hit count a log reader would tally.
+    if (SafeReadU32(player, kFollowerMaxHpOffset) == 0) return;
     if (g_state.last_hp < 0) { g_state.last_hp = hp; return; }
     if (hp >= g_state.last_hp) { g_state.last_hp = hp; return; }
     const int drop = g_state.last_hp - hp;
@@ -873,6 +889,12 @@ void DecideWreckAtFinish(void* miniGame) {
 
 constexpr float     kStuckProgressU = 15.0f;   // forward gain that counts as progress
 constexpr ULONGLONG kStuckHoldMs    = 6000;    // no progress for this long -> hint
+// Parked right in front of a low bar (GetParkedBarSituation, KOTOR 2): the
+// situation is unambiguous and the escape is a fixed key sequence, so the
+// hint comes after this much instead — round 16 (patch-20260915-212249)
+// spent up to 11 relaunches, 50 hp each, waiting for the six-second hint,
+// and the hint then said "steer left, then W" without the jump.
+constexpr ULONGLONG kStuckBarHoldMs = 1500;
 
 constexpr float kStuckWallU = 13.0f;   // |tunnel x| at/beyond this = parked at a wall
 
@@ -883,35 +905,49 @@ void TickStuckHint(void* miniGame) {
     const ULONGLONG now = GetTickCount64();
     if (!g_state.have_progress_mark ||
         cam.y - g_state.progress_mark_y >= kStuckProgressU) {
-        g_state.have_progress_mark = true;
-        g_state.progress_mark_y    = cam.y;
-        g_state.progress_mark_ms   = now;
-        g_state.stuck_hint_spoken  = false;    // progress re-arms the hint
+        g_state.have_progress_mark   = true;
+        g_state.progress_mark_y      = cam.y;
+        g_state.progress_mark_ms     = now;
+        g_state.stuck_hint_spoken    = false;    // progress re-arms the hint
+        g_state.stuck_bar_spoken_for = ParkedBar::None;
         return;
     }
-    if (g_state.stuck_hint_spoken) return;
-    if (now - g_state.progress_mark_ms < kStuckHoldMs) return;
     if (g_state.race_time_announced) return;   // finished, not stuck
     void* player = SafeReadPtr(miniGame, kMiniGamePlayerOffset);
     const float speed = player ? SafeReadFloat(player, kFollowerSpeedOffset) : 0.0f;
     const int   gear  = acc::engine::ReadGlobalNumber(kGearGlobalName);
     if (gear != 0 || speed > 2.0f) return;     // moving or in gear: not pinned
-    g_state.stuck_hint_spoken = true;
+    const ParkedBar bar  = GetParkedBarSituation();
+    const ULONGLONG hold = (bar != ParkedBar::None) ? kStuckBarHoldMs : kStuckHoldMs;
+    if (now - g_state.progress_mark_ms < hold) return;
+    // Once per situation: a hint already spoken for THIS situation stays
+    // spoken until progress; a changed situation (off the wall now, or the
+    // bar classified after a generic hint) gets its own.
+    if (g_state.stuck_hint_spoken && bar == g_state.stuck_bar_spoken_for) return;
+    g_state.stuck_hint_spoken    = true;
+    g_state.stuck_bar_spoken_for = bar;
     // At a wall the direction is known (K2 posts from |x| ≈ 16.3; 13 leaves
     // the pad lanes at 11 out of it): say which way, then the shift key.
     Vector off = {0.0f, 0.0f, 0.0f};
     const bool offOk = player && SafeReadVector(player, kMiniPlayerOffsetVectorOffset, off);
     acc::strings::Id id = acc::strings::Id::SwoopRaceStuckHint;
-    if (offOk && off.x >= kStuckWallU)       id = acc::strings::Id::SwoopRaceStuckHintLeft;
-    else if (offOk && off.x <= -kStuckWallU) id = acc::strings::Id::SwoopRaceStuckHintRight;
+    const char* why = "generic";
+    switch (bar) {
+        case ParkedBar::WallRight: id = acc::strings::Id::SwoopRaceStuckBarWallLeft;  why = "bar, wall right"; break;
+        case ParkedBar::WallLeft:  id = acc::strings::Id::SwoopRaceStuckBarWallRight; why = "bar, wall left";  break;
+        case ParkedBar::Strip:     id = acc::strings::Id::SwoopRaceStuckBarStrip;     why = "bar, strip";      break;
+        case ParkedBar::MustJump:  id = acc::strings::Id::SwoopRaceStuckBarJump;      why = "bar, must jump";  break;
+        case ParkedBar::None:
+            if (offOk && off.x >= kStuckWallU)       { id = acc::strings::Id::SwoopRaceStuckHintLeft;  why = "wall right"; }
+            else if (offOk && off.x <= -kStuckWallU) { id = acc::strings::Id::SwoopRaceStuckHintRight; why = "wall left"; }
+            break;
+    }
     const char* msg = acc::strings::Get(id);
     if (msg && *msg) prism::SpeakUrgent(msg);
     acclog::Write("SwoopRace", "stuck hint: no progress for %llums at y=%.1f "
                   "(gear=%d speed=%.1f tunnelX=%.1f) [%s]",
                   now - g_state.progress_mark_ms, cam.y, gear, speed,
-                  offOk ? off.x : 0.0f,
-                  id == acc::strings::Id::SwoopRaceStuckHintLeft ? "wall right"
-                  : id == acc::strings::Id::SwoopRaceStuckHintRight ? "wall left" : "generic");
+                  offOk ? off.x : 0.0f, why);
 }
 
 // ============================================================================
@@ -1061,11 +1097,33 @@ void SpeakRaceEndMessage() {
         }
     }
     if (!msg) msg = acc::strings::Get(acc::strings::Id::SwoopRaceEnded);
-    if (msg && *msg) prism::SpeakUrgent(msg);
+    if (msg && *msg) {
+        if (g_state.wrecked || !g_state.have_race_time) {
+            prism::SpeakUrgent(msg);   // a wreck: say it now
+        } else {
+            // The time waits out the finish sound (see kRaceEndSpeakDelayMs);
+            // FlushRaceEndSpeech speaks it from the tick, or at once on exit.
+            std::snprintf(g_state.race_end_msg, sizeof(g_state.race_end_msg), "%s", msg);
+            g_state.race_end_pending = true;
+            g_state.race_end_due_ms  = GetTickCount64() + kRaceEndSpeakDelayMs;
+        }
+    }
     acclog::Write("SwoopRace",
-                  "spoke race end: [%s] (raceTime=%.2f have=%d)",
+                  "spoke race end: [%s] (raceTime=%.2f have=%d%s)",
                   msg ? msg : "", g_state.race_time_seconds,
-                  g_state.have_race_time ? 1 : 0);
+                  g_state.have_race_time ? 1 : 0,
+                  g_state.race_end_pending ? " delayed" : "");
+}
+
+// Speaks the pending race time once its delay has elapsed (force = the race
+// module is exiting: speak whatever is pending now rather than lose it).
+void FlushRaceEndSpeech(bool force) {
+    if (!g_state.race_end_pending) return;
+    if (!force && GetTickCount64() < g_state.race_end_due_ms) return;
+    g_state.race_end_pending = false;
+    prism::SpeakUrgent(g_state.race_end_msg);
+    acclog::Write("SwoopRace", "spoke race time%s: [%s]",
+                  force ? " (flushed on exit)" : "", g_state.race_end_msg);
 }
 
 // ============================================================================
@@ -1125,6 +1183,7 @@ void HandleExit() {
     acclog::Write("SwoopRace",
                   "EXIT after %llu ms (debounced %d ticks)",
                   dur, kExitDebounceTicks);
+    FlushRaceEndSpeech(/*force=*/true);   // a delayed time must not die with the module
     // Stop every obstacle + accelpad loop — some may still be active
     // if the race ended while objects were in range.
     ResetSpatialAudio();
@@ -1261,6 +1320,7 @@ void Tick() {
         TickSpatialAudio(g_state.latched_mini_game);
     }
     TickStuckHint(g_state.latched_mini_game);
+    FlushRaceEndSpeech(/*force=*/false);
     EmitDiagSnapshot(g_state.latched_mini_game);
 }
 

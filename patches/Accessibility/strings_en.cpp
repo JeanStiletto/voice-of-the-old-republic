@@ -479,6 +479,14 @@ const char* Get(Id id) {
             return "Steer left, then W.";
         case Id::SwoopRaceStuckHintRight:
             return "Steer right, then W.";
+        case Id::SwoopRaceStuckBarWallLeft:
+            return "Steer left, then Space, then W.";
+        case Id::SwoopRaceStuckBarWallRight:
+            return "Steer right, then Space, then W.";
+        case Id::SwoopRaceStuckBarStrip:
+            return "Follow the tone, then W.";
+        case Id::SwoopRaceStuckBarJump:
+            return "Space, then W.";
         case Id::SwoopRaceWrecked:
             return "Swoop wrecked. Race over.";
         case Id::SwoopRaceEnded:
@@ -488,7 +496,7 @@ const char* Get(Id id) {
         case Id::FmtSwoopRaceTime:
             // Time-FIRST: the post-race auto-movement fires other speech that
             // interrupts this cue, so the number must lead to survive a cut.
-            return "Time: %d.%02d seconds. Swoop race ended.";
+            return "Time: %d.%02d seconds.";
 
         case Id::TurretGameStarted:
             // Terse opener ? concatenated with TurretGameControls below

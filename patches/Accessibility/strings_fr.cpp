@@ -485,6 +485,14 @@ const char* Get(Id id) {
             return "Braquez \xE0 gauche, puis W.";
         case Id::SwoopRaceStuckHintRight:
             return "Braquez \xE0 droite, puis W.";
+        case Id::SwoopRaceStuckBarWallLeft:
+            return "Braquez \xE0 gauche, puis Espace, puis W.";
+        case Id::SwoopRaceStuckBarWallRight:
+            return "Braquez \xE0 droite, puis Espace, puis W.";
+        case Id::SwoopRaceStuckBarStrip:
+            return "Suivez le son, puis W.";
+        case Id::SwoopRaceStuckBarJump:
+            return "Espace, puis W.";
         case Id::SwoopRaceWrecked:
             return "Swoop d\xE9truit. Course termin\xE9""e.";
         case Id::SwoopRaceEnded:
@@ -492,7 +500,7 @@ const char* Get(Id id) {
         case Id::FmtSwoopRaceGear:
             return "Vitesse %d";
         case Id::FmtSwoopRaceTime:
-            return "Temps : %d,%02d secondes. Course de Swoop termin\xE9""e.";
+            return "Temps : %d,%02d secondes.";
 
         case Id::TurretGameStarted:
             // Terse opener ? concatenated with TurretGameControls below

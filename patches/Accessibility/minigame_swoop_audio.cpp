@@ -368,6 +368,7 @@ struct HazardInfo {
     uint8_t cls;         // HazardClass (valid when state == kHazardOk)
     uint8_t from_part;   // 1 = "hitbump" part box, 0 = whole-gob box
     uint8_t jump_cued;   // bar: jump-now cues fired for this pass (max 2)
+    uint8_t park_cued;   // bar: the parked "you must jump" beep fired this park
     Vector  mn, mx;      // model-local collision box
 };
 constexpr const char* kObstacleWarnLoopResref =
@@ -708,6 +709,12 @@ constexpr float       kWallLoopBandMinVel = 0.3f;   // u/tick
 // (kBarAfterPadLeadSec): round 13 lost pads 7 and 10 in every race to a
 // detour that engaged 2.5 s early.
 constexpr float       kBarAfterPadLeadSec = 1.0f;
+// Parked-in-front-of-a-bar classification (ParkedBar in the header): the
+// bar's front edge within this far ahead of the parked bike, and the wall
+// threshold the stuck hint already uses (kStuckWallU in the race module).
+constexpr float       kParkedBarAheadU  = 15.0f;
+constexpr float       kParkedWallU      = 13.0f;
+constexpr float       kBarStripRestU    = 1.5f;   // guide rests only this close to a strip target
 constexpr float       kWallBandHystU    = 1.5f;
 constexpr float       kWallLoopPanM     = 8.0f;   // lateral offset of the loop source
 constexpr float       kWallLoopFwdM     = 2.0f;   // slight forward so it reads beside, not behind
@@ -993,6 +1000,7 @@ struct SpatialAudioState {
     int     bar_detour_slot      = -1;   // bar the guide is skirting, -1 none
     int     bar_air_cleared_slot = -1;   // bar released mid-flight (landing past it)
     bool    bar_gap_diag_emitted = false;
+    ParkedBar parked_bar         = ParkedBar::None;   // see GetParkedBarSituation
 
     // Airborne state last tick (offset.z) — the touchdown edge re-arms one
     // "jump again" beep for a bar still ahead.
@@ -1375,6 +1383,7 @@ void TickObstacleCues(void* miniGame) {
     // pair lookup inside it reads a consistent (last tick's) list.
     SpatialAudioState::BarInfo newBars[kMgoArraySlotCount];
     int newBarCount = 0;
+    g_state.parked_bar = ParkedBar::None;   // re-classified by the bar branch each tick
 
     for (int i = 0; i < kMgoArraySlotCount; ++i) {
         // mgoArray->objects[i]
@@ -1473,12 +1482,39 @@ void TickObstacleCues(void* miniGame) {
             const float gap = wy0 - (bikeOk ? bikePos.y : listener_pos.y);
             if (gap < -kObstacleForwardMargin || gap > kObstacleCueRangeM) {
                 hz.jump_cued = 0;   // passed / far: re-arm
+                hz.park_cued = 0;
                 continue;
             }
-            if (parked) { hz.jump_cued = 0; continue; }   // re-arm for the relaunch
             const float bikeX = bikeOk ? bikePos.x : listener_pos.x;
             const bool inSpan = bikeX >= wx0 - kBarLaneMarginU &&
                                 bikeX <= wx1 + kBarLaneMarginU;
+            if (parked) {
+                hz.jump_cued = 0;   // re-arm for the relaunch
+                // Parked right in front of this bar, inside its span: classify
+                // the escape (see ParkedBar in the header) for the stuck hint,
+                // and — off the wall, no strip — play the centred beep once per
+                // park: "jump first, then W". At the wall the beep stays
+                // silent (a jump there hits the pillar; rounds 15/16 lost 7 and
+                // 11 relaunches that way) and the wall loop is the cue.
+                if (inSpan && gap > -kBarLaneMarginU && gap <= kParkedBarAheadU &&
+                    g_state.parked_bar == ParkedBar::None) {
+                    if (bikeX >= kParkedWallU)       g_state.parked_bar = ParkedBar::WallRight;
+                    else if (bikeX <= -kParkedWallU) g_state.parked_bar = ParkedBar::WallLeft;
+                    else if (cur.has_gap)            g_state.parked_bar = ParkedBar::Strip;
+                    else {
+                        g_state.parked_bar = ParkedBar::MustJump;
+                        if (!hz.park_cued) {
+                            hz.park_cued = 1;
+                            acc::audio::PlayCue(kJumpNowCueResref);
+                            acclog::Write("SwoopRace",
+                                          "parked beep: slot=%d name=[%s] bar y=%.1f gap=%.1f bikeX=%.2f",
+                                          i, name ? name : "(null)", wy0, gap, bikeX);
+                        }
+                    }
+                }
+                continue;
+            }
+            hz.park_cued = 0;
             if (!inSpan || bikeSpeed <= 1.0f || gap <= 0.0f) continue;
             const float vWorld = bikeSpeed * kSpeedToWorldPerSec;   // world u/s
             const float ttc    = gap / vWorld;                       // real seconds
@@ -2268,7 +2304,13 @@ void TickAccelpadCues(void* miniGame) {
     // distance (urgency), floored so it stays audible. Rests (silent) only when
     // you're within ~the catch radius of the pad — the magnet finishes from there.
     bool guide_active = false;
-    if (have_target && bikeOk && std::fabs(guideErr) > kSwoopGuideSilenceU) {
+    // Rest radius: the pad's catch radius for a pad, but a strip target is
+    // only 5 u past the bar's end, so resting 5 u short of it leaves the bike
+    // still touching the bar with nothing to hear — round 17
+    // (patch-20260915-213959, 21:42:44) sat 2.5 u off the MGC04 strip, inside
+    // the span, with "follow the tone" spoken and the tone silent.
+    const float restU = (bar_detour_slot >= 0) ? kBarStripRestU : kSwoopGuideSilenceU;
+    if (have_target && bikeOk && std::fabs(guideErr) > restU) {
         const float dx = guide_pos.x - listener_pos.x;
         const float dy = guide_pos.y - listener_pos.y;
         const float dz = guide_pos.z - listener_pos.z;
@@ -2357,16 +2399,22 @@ void TickSpatialAudio(void* miniGame) {
     TickObstacleCues(miniGame);
 }
 
+ParkedBar GetParkedBarSituation() {
+    return g_state.parked_bar;
+}
+
 void ResetSpatialAudio() {
     g_state.obstacle_diag_emitted = false;
     g_state.accelpad_diag_emitted = false;
     g_state.mine_count            = 0;
     g_state.was_airborne          = false;
+    g_state.parked_bar            = ParkedBar::None;
     for (int i = 0; i < kMgoArraySlotCount; ++i) {
         g_state.hazards[i].state       = kHazardUntried;
         g_state.hazards[i].cls         = kHazardBlock;
         g_state.hazards[i].from_part   = 0;
         g_state.hazards[i].jump_cued   = 0;
+        g_state.hazards[i].park_cued   = 0;
     }
     g_state.prev_bike_x           = 0.0f;
     g_state.have_prev_bike_x      = false;
