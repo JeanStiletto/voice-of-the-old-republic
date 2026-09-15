@@ -91,6 +91,21 @@ bool PlayCue3D(const char* resref, const Vector& worldPosition,
                uint8_t priorityGroup = 0,
                uint8_t baseVolume    = kCueVolumeFull);
 
+// Same one-shot WITHOUT the (camera - character) shift: the position is
+// taken as already relative to the engine's own listener (the camera). For
+// cues built from GetCameraPosition() ± an offset, i.e. "beside the
+// listener": the swoop race's panned jump beep, wall thump and aligned blip.
+// Why it exists: during a KOTOR 2 swoop race the party leader still resolves
+// to the PARKED character (PartyLeader log: leader=server-object, name=the
+// PC) while the camera follows the bike 6000 units down the track, so
+// PlayCue3D's shift moved those cues by (camera - character) — hundreds of
+// units off, fading to nothing as the race went on (rounds 6-10, 2026-09-15:
+// "I hear the warning only when it's too late"). On KOTOR 1 the leader lookup
+// fails during the race and PlayCue3D already fell through to raw.
+bool PlayCue3DRaw(const char* resref, const Vector& listenerSpacePosition,
+                  uint8_t priorityGroup = 0,
+                  uint8_t baseVolume    = kCueVolumeFull);
+
 // Engine resource-reference tag: a fixed 16-byte, NOT necessarily
 // NUL-terminated char buffer. Lookup is case-insensitive; FillResRef
 // lowercases defensively to match every engine callsite.

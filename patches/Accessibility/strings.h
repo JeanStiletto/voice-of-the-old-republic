@@ -1567,6 +1567,12 @@ enum class Id : int {
     // patch-20260914-163810. Tells the player the escape: steer aside, then
     // shift and jump together. Re-arms after real progress.
     SwoopRaceStuckHint,
+    // Same, when the park is against a lane-edge wall (|tunnel x| >= 13): the
+    // direction to steer is known, and on KOTOR 2 a relaunch from the wall is
+    // another post hit — round 8 (patch-20260915-092622) sat at x 20 for ten
+    // relaunches. Shortest possible: direction, then the shift key.
+    SwoopRaceStuckHintLeft,     // wall on the right: steer left, then W
+    SwoopRaceStuckHintRight,    // wall on the left:  steer right, then W
     // The track ended the race as a wreck, not at the line: KOTOR 2's hit
     // scripts take 50 (obstacle) / 100 (mine) of the bike's 600 hit points and
     // the heartbeat ends the race at zero, stamping 59:59.99 into the track's

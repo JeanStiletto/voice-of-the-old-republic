@@ -481,7 +481,11 @@ const char* Get(Id id) {
         case Id::SwoopRaceControlsK2:
             return "W para subir de marcha con la se\xF1""al de audio y Espacio para saltar un obst\xE1""culo. Gira con A y D. Esquiva los obst\xE1""culos y pisa los paneles aceleradores para batir el tiempo.";
         case Id::SwoopRaceStuckHint:
-            return "Atascado. Gira a un lado con A o D y luego pulsa espacio y W a la vez.";
+            return "Ap\xE1rtate y pulsa W y Espacio.";
+        case Id::SwoopRaceStuckHintLeft:
+            return "Gira a la izquierda y pulsa W.";
+        case Id::SwoopRaceStuckHintRight:
+            return "Gira a la derecha y pulsa W.";
         case Id::SwoopRaceWrecked:
             return "Swoop destrozado. Carrera terminada.";
         case Id::SwoopRaceEnded:

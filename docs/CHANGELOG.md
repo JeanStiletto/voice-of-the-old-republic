@@ -68,6 +68,12 @@ and add the German in parentheses if it genuinely aids clarity.
   bike was walked into every mine and half-height bar sitting on a pad lane.
   Now a one-lane hop needs you to swing most of the way by ear, as on KOTOR
   1; the assist still lands the final stretch.
+- KOTOR 2: the panned race cues (jump beep to the free side, wall thump,
+  "on the line" blip) are audible again for the whole race. They were placed
+  relative to the character, and during a KOTOR 2 race the character is the
+  one parked at the start while the camera follows the bike, so every one of
+  them drifted hundreds of units away within seconds of the start. KOTOR 1
+  was never affected.
 - The jump beep now tells you the alternative. A bar that covers only one
   half of the lane sounds hard on the free side: jump, or drift that way.
   A bar with no room on either side sounds in the middle: you must jump.
@@ -78,6 +84,18 @@ and add the German in parentheses if it genuinely aids clarity.
   and drops you to gear 0, and relaunching from against a post is another
   hit. Two test races took 22 of 26 hits that way, with a single thump that
   was easy to miss in the mix.
+- The pad tone on KOTOR 2 now steers around mines. Citadel puts its mines on
+  the pad lanes and on the straight lines between pads, exactly where a
+  player following the tone drives; one test race lost 420 of 600 hit points
+  to four of them. When a mine sits on the line to the next pad, the tone
+  (and the assist's final pull) aim at a point beside the mine until it is
+  behind you, then at the pad again.
+- The KOTOR 2 wall loop no longer sounds on a normal swing toward a side-lane
+  pad. It sounds when you are in the outer band, or moving outward past the
+  pad you are aiming for.
+- After a collision in front of a bar, every relaunch gets the jump beep
+  again, on the free side. It used to fall silent after two beeps per bar,
+  and a relaunch straight into the bar is another hit.
 - A caught accelerator pad plays one short burst of the pad tone. Neither
   game's pad script makes a sound, and on KOTOR 2 the steering assist catches
   every pad on its own, so the guide tone stayed quiet and nothing by ear
@@ -117,8 +135,9 @@ and add the German in parentheses if it genuinely aids clarity.
 - After a collision the steering assist stays off until you are back in gear,
   so you can steer clear of what you hit instead of being pulled back into it.
 - If the bike makes no headway for six seconds in gear 0 after the start, the
-  mod says how to get out: steer aside with A or D, then press Space and W
-  together.
+  mod says how to get out, as short as it can: "Steer aside, then W and
+  Space." Parked against a wall it names the way out instead: "Steer left,
+  then W." or "Steer right, then W."
 - Diagnostics: every jump start and landing is logged with speed, gear, air
   time and peak height, the once-per-second race snapshot shows the gear
   variable and the jump velocity, and the first-sweep inventory prints each

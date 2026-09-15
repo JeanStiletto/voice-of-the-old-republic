@@ -481,7 +481,11 @@ const char* Get(Id id) {
         case Id::SwoopRaceControlsK2:
             return "Naci\x9Cnij W, aby zmieni\xE6 bieg na sygna\xB3 d\x9Fwi\xEAkowy, a spacj\xEA, aby przeskoczy\xE6 przeszkod\xEA. Steruj klawiszami A i D. Omijaj przeszkody i naje\xBF""d\xBF""aj na pola przyspieszenia, aby pobi\xE6 czas.";
         case Id::SwoopRaceStuckHint:
-            return "Utkn\xB9\xB3""e\x9C. Zjed\x9F w bok klawiszem A lub D, potem naci\x9Cnij spacj\xEA i W razem.";
+            return "Zjed\x9F w bok, potem W i spacja.";
+        case Id::SwoopRaceStuckHintLeft:
+            return "Skr\xEA\xE6 w lewo, potem W.";
+        case Id::SwoopRaceStuckHintRight:
+            return "Skr\xEA\xE6 w prawo, potem W.";
         case Id::SwoopRaceWrecked:
             return "Swoop rozbity. Koniec wy\x9C""cigu.";
         case Id::SwoopRaceEnded:

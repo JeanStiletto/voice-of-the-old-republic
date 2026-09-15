@@ -584,6 +584,22 @@ constexpr float       kWallCuePanM      = 5.0f;   // ±pan of the cue to the wal
 // back inside (hysteresis kWallBandHystU). K1 keeps the one-shot: its wall is
 // free, the cue there only shortens a pin.
 constexpr float       kWallBandU        = 12.5f;
+// Mine-aware guide line (KOTOR 2). Citadel's 24 mines sit on the pad lanes
+// and on the diagonals between pads (126 at x 1.5 / y 320 on the centre
+// lane between the first two pads; 141, 142, 145 on the diagonals). The
+// player steering by the pad tone follows the straight line to the next pad
+// and runs over them: round 9 (patch-20260915-142030) took four mines in one
+// race, 420 of 600 hit points, more than every post and bar together. A
+// sighted player sees the mine and bends the line; this bends the tone. When
+// a mine lies within kMineClearU of the straight line from the bike to the
+// next pad, the guide (tone AND magnet) aims at a point kMineClearU beside
+// the mine — on the pad's side, or toward the lane centre if the mine sits
+// on the pad lane — clamped inside kMineDetourMaxU to stay out of the wall
+// band. Once the mine is behind the bike the target is the pad again. padErr
+// itself (crossing scores, diagnostics) is never touched.
+constexpr float       kMineClearU       = 7.0f;   // mine 2 + bike 2 + slack
+constexpr float       kMineDetourMaxU   = 12.0f;  // never detour into the wall band
+constexpr float       kMineBehindU      = 4.0f;   // mine this far behind = passed
 constexpr float       kWallBandHystU    = 1.5f;
 constexpr float       kWallLoopPanM     = 8.0f;   // lateral offset of the loop source
 constexpr float       kWallLoopFwdM     = 2.0f;   // slight forward so it reads beside, not behind
@@ -813,6 +829,7 @@ struct SpatialAudioState {
     ULONGLONG last_wall_cue_ms    = 0;
     acc::audio::LoopSource wall_loop;     // K2 wall band, see kWallBandU
     int       wall_loop_side       = 0;   // -1 left, +1 right, 0 silent
+    int       detour_slot          = -1;  // mine the guide is detouring, -1 none
 
     // Lateral steering magnetism: throttle for the ~1/s SwoopAssist heartbeat
     // log (the assist writes offset.x every in-band tick; we only log once a
@@ -1054,6 +1071,11 @@ void TickObstacleCues(void* miniGame) {
     const bool airborne = tunOk && tunnel.z > 0.25f;
     const bool justLanded = g_state.was_airborne && !airborne;
     g_state.was_airborne = airborne;
+    // Parked (gear 0 after a hit): every bar's beep re-arms, so each relaunch
+    // in front of a bar gets the beep again, on the free side. Round 9 lost
+    // seven hits in five seconds relaunching into MGC03 with no cue at all
+    // (the two beeps per pass had been spent before the hit).
+    const bool parked = k2 && acc::engine::ReadGlobalNumber("MIN_RACE_GEAR") == 0;
 
     // Listener anchor. During the race the engine swaps the controlled
     // creature (PartyLeader log goes handle=0xffffffff), so
@@ -1201,6 +1223,7 @@ void TickObstacleCues(void* miniGame) {
                 hz.jump_cued = 0;   // passed / far: re-arm
                 continue;
             }
+            if (parked) { hz.jump_cued = 0; continue; }   // re-arm for the relaunch
             const float bikeX = bikeOk ? bikePos.x : listener_pos.x;
             const bool inSpan = bikeX >= wx0 - kBarLaneMarginU &&
                                 bikeX <= wx1 + kBarLaneMarginU;
@@ -1223,7 +1246,7 @@ void TickObstacleCues(void* miniGame) {
                 } else {
                     Vector cue = listener_pos;
                     cue.x += side * kJumpCuePanM;
-                    acc::audio::PlayCue3D(kJumpNowCueResref, cue);
+                    acc::audio::PlayCue3DRaw(kJumpNowCueResref, cue);
                 }
                 acclog::Write("SwoopRace",
                               "jump cue%s: slot=%d name=[%s] bar y=%.1f x[%.1f..%.1f] "
@@ -1574,6 +1597,49 @@ void TickAccelpadCues(void* miniGame) {
     const float padErr = have_target ? (ahead_pos.x - bikePos.x) : 0.0f;
     const float fwdGap = have_target ? (ahead_pos.y - refY) : -1.0f;
 
+    // ----- Mine-aware line (see kMineClearU). guide_pos / guideErr are what
+    // the tone and the magnet steer to; padErr stays the true pad error.
+    Vector guide_pos = ahead_pos;
+    float  guideErr  = padErr;
+    int    detour_slot = -1;
+    if (have_target && acc::game::IsKotor2() && fwdGap > 0.0f) {
+        float  bestDy = 1e9f;
+        Vector mine   = {0.0f, 0.0f, 0.0f};
+        for (int m = 0; m < g_state.mine_count; ++m) {
+            const Vector& mpos = g_state.mine_pos[m];
+            const float dy = mpos.y - refY;
+            if (dy < -kMineBehindU || dy > fwdGap) continue;   // behind, or beyond the pad
+            const float t = dy <= 0.0f ? 0.0f : dy / fwdGap;
+            const float pathX = bikePos.x + (ahead_pos.x - bikePos.x) * t;
+            // Hysteresis: the mine already being detoured stays a detour
+            // until it is behind (the detour itself moves the path off it,
+            // which flipped the decision every tick in round 10).
+            const bool sticky = g_state.mine_slot[m] == g_state.detour_slot;
+            if (!sticky && std::fabs(mpos.x - pathX) >= kMineClearU) continue;
+            if (dy < bestDy) { bestDy = dy; mine = mpos; detour_slot = g_state.mine_slot[m]; }
+        }
+        if (detour_slot >= 0) {
+            // Pass on the pad's side; a mine on the pad lane → toward the centre.
+            float side;
+            if (std::fabs(ahead_pos.x - mine.x) < 2.0f) side = (mine.x > 0.0f) ? -1.0f : +1.0f;
+            else                                          side = (ahead_pos.x < mine.x) ? -1.0f : +1.0f;
+            float gx = mine.x + side * kMineClearU;
+            if (std::fabs(gx) > kMineDetourMaxU) gx = mine.x - side * kMineClearU;
+            guide_pos.x = gx;
+            guideErr    = gx - bikePos.x;
+        }
+    }
+    if (detour_slot != g_state.detour_slot) {
+        if (detour_slot >= 0) {
+            acclog::Write("SwoopRace",
+                          "detour: mine slot=%d guideX=%.1f (pad slot=%d padX=%.1f bikeX=%.1f fwdGap=%.0f)",
+                          detour_slot, guide_pos.x, ahead_slot, ahead_pos.x, bikePos.x, fwdGap);
+        } else {
+            acclog::Write("SwoopRace", "detour: clear (pad slot=%d)", ahead_slot);
+        }
+        g_state.detour_slot = detour_slot;
+    }
+
     int   desired = kSteerCmdNone;
     float coast   = 0.0f;
     float proj    = 0.0f;
@@ -1610,10 +1676,10 @@ void TickAccelpadCues(void* miniGame) {
     bool probeMagnetWrote = false;
     if (have_target && bikeOk && tunOk && player && inGear &&
         bikeSpeed > kSwoopMinRaceSpeed &&
-        std::fabs(padErr) <= MagnetEngageU()) {
+        std::fabs(guideErr) <= MagnetEngageU()) {
         const acc::minigame::MagnetParams mp{
             kSwoopMagnetGainFar, kSwoopMagnetGainNear, kSwoopMagnetMaxStepU};
-        float t = 1.0f - std::fabs(padErr) / MagnetEngageU();
+        float t = 1.0f - std::fabs(guideErr) / MagnetEngageU();
         if (t < 0.0f) t = 0.0f;
         // Hold-through-crossing (item 2): in the last kSwoopMagnetHoldSec before
         // this gate's forward position is reached, ramp the pull to fully sticky
@@ -1636,7 +1702,7 @@ void TickAccelpadCues(void* miniGame) {
         // smoothed_vel is bike-X velocity (+ = right); padErr = padX − bikeX (+ =
         // pad to the right), so subtracting the velocity lead damps inward motion
         // on either side. mappedErr = −(target error).
-        const float brakedErr = padErr - kSwoopMagnetBrakeTicks * g_state.smoothed_vel;
+        const float brakedErr = guideErr - kSwoopMagnetBrakeTicks * g_state.smoothed_vel;
         const float newOffX =
             acc::minigame::MagnetStep(tunnel.x, -brakedErr, gain, mp);
         Vector newOff = tunnel;
@@ -1690,7 +1756,7 @@ void TickAccelpadCues(void* miniGame) {
             const int side = (vel > 0.0f) ? +1 : -1;
             Vector cue = listener_pos;
             cue.x += (side > 0) ? +kWallCuePanM : -kWallCuePanM;
-            acc::audio::PlayCue3D(kWallCueResref, cue);
+            acc::audio::PlayCue3DRaw(kWallCueResref, cue);
             g_state.last_wall_cue_ms = now;
             acclog::Write("SwoopRace",
                           "wall predict side=%s tunnelX=%.1f vel=%.2f "
@@ -1703,10 +1769,17 @@ void TickAccelpadCues(void* miniGame) {
     // ----- KOTOR 2 wall loop (see kWallBandU). Band OR projected crossing,
     // any gear, with hysteresis so it does not chatter at the band edge.
     if (acc::game::IsKotor2() && tunOk) {
-        const float proj = tunnel.x + g_state.smoothed_vel * WallLeadTicks();
+        // The projection counts only on a true overshoot — moving AWAY from
+        // the guide target (or with no target). Round 9 showed it firing on
+        // every fast swing toward a side-lane pad (proj crosses 16 from x 6
+        // while the magnet is about to catch the pad at 11), which trains
+        // the ear to ignore it. The band itself is unconditional.
+        const float vel  = g_state.smoothed_vel;
+        const float proj = tunnel.x + vel * WallLeadTicks();
+        const bool  overshoot = !have_target || vel * guideErr < 0.0f;
         int side = 0;
-        if (tunnel.x >= kWallBandU || proj >= kWallEdgeOffsetK2U)       side = +1;
-        else if (tunnel.x <= -kWallBandU || proj <= -kWallEdgeOffsetK2U) side = -1;
+        if (tunnel.x >= kWallBandU || (overshoot && proj >= kWallEdgeOffsetK2U))       side = +1;
+        else if (tunnel.x <= -kWallBandU || (overshoot && proj <= -kWallEdgeOffsetK2U)) side = -1;
         if (side == 0 && g_state.wall_loop_side != 0 &&
             tunnel.x * g_state.wall_loop_side > kWallBandU - kWallBandHystU) {
             side = g_state.wall_loop_side;   // still in the hysteresis band
@@ -1726,9 +1799,9 @@ void TickAccelpadCues(void* miniGame) {
             }
             if (side != g_state.wall_loop_side) {
                 acclog::Write("SwoopRace",
-                              "wall loop: side=%s tunnelX=%.1f vel=%.2f proj=%.1f gear=%d",
+                              "wall loop: side=%s tunnelX=%.1f vel=%.2f proj=%.1f gear=%d overshoot=%d",
                               side > 0 ? "right" : "left", tunnel.x,
-                              g_state.smoothed_vel, proj, inGear ? 1 : 0);
+                              vel, proj, inGear ? 1 : 0, overshoot ? 1 : 0);
             }
         } else if (g_state.wall_loop.IsActive()) {
             g_state.wall_loop.Stop();
@@ -1743,12 +1816,12 @@ void TickAccelpadCues(void* miniGame) {
     // distance (urgency), floored so it stays audible. Rests (silent) only when
     // you're within ~the catch radius of the pad — the magnet finishes from there.
     bool guide_active = false;
-    if (have_target && bikeOk && std::fabs(padErr) > kSwoopGuideSilenceU) {
-        const float dx = ahead_pos.x - listener_pos.x;
-        const float dy = ahead_pos.y - listener_pos.y;
-        const float dz = ahead_pos.z - listener_pos.z;
+    if (have_target && bikeOk && std::fabs(guideErr) > kSwoopGuideSilenceU) {
+        const float dx = guide_pos.x - listener_pos.x;
+        const float dy = guide_pos.y - listener_pos.y;
+        const float dz = guide_pos.z - listener_pos.z;
         const float dist = std::sqrt(dx * dx + dy * dy + dz * dz);
-        Vector cue_pos = ahead_pos;
+        Vector cue_pos = guide_pos;
         cue_pos.y = listener_pos.y + kSwoopGuidePanForwardRefM;
         int vol_byte = SwoopVolumeByte(dist, kAccelpadCueRangeM);
         if (vol_byte < kSwoopGuideMinVolByte) vol_byte = kSwoopGuideMinVolByte;
@@ -1777,7 +1850,7 @@ void TickAccelpadCues(void* miniGame) {
     if (have_target && g_state.guide_was_active && !guide_active) {
         Vector cue = listener_pos;                      // centred — no pan
         cue.y = listener_pos.y + kSteerAlignedFwdM;
-        acc::audio::PlayCue3D(kSteerAlignedResref, cue,
+        acc::audio::PlayCue3DRaw(kSteerAlignedResref, cue,
                               /*priorityGroup=*/0, kSteerCueVolume);
         acclog::Trace("SwoopRace", "guide aligned: padErr=%.2f slot=%d",
                       padErr, ahead_slot);
@@ -1852,6 +1925,7 @@ void ResetSpatialAudio() {
     g_state.last_wall_cue_ms      = 0;
     g_state.wall_loop.Stop();
     g_state.wall_loop_side        = 0;
+    g_state.detour_slot           = -1;
     g_state.last_magnet_log_ms    = 0;
     g_state.have_prev_ahead       = false;
     g_state.prev_ahead_posX       = 0.0f;

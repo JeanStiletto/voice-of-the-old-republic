@@ -480,7 +480,11 @@ const char* Get(Id id) {
         case Id::SwoopRaceControlsK2:
             return "W pour monter une vitesse au signal sonore, Espace pour sauter un obstacle. Dirigez avec A et D. \xC9vitez les obstacles et touchez les plaques d'acc\xE9l\xE9ration pour battre le temps.";
         case Id::SwoopRaceStuckHint:
-            return "Bloqu\xE9. D\xE9portez-vous avec A ou D, puis appuyez sur Espace et W ensemble.";
+            return "\xC9""cartez-vous, puis W et Espace.";
+        case Id::SwoopRaceStuckHintLeft:
+            return "Braquez \xE0 gauche, puis W.";
+        case Id::SwoopRaceStuckHintRight:
+            return "Braquez \xE0 droite, puis W.";
         case Id::SwoopRaceWrecked:
             return "Swoop d\xE9truit. Course termin\xE9""e.";
         case Id::SwoopRaceEnded:

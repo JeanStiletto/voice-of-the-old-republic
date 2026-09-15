@@ -479,7 +479,11 @@ const char* Get(Id id) {
         case Id::SwoopRaceControlsK2:
             return "W per salire di marcia al segnale audio, Spazio per saltare un ostacolo. Sterza con A e D. Evita gli ostacoli e colpisci le piastre acceleratrici per battere il tempo.";
         case Id::SwoopRaceStuckHint:
-            return "Bloccato. Sterza di lato con A o D, poi premi spazio e W insieme.";
+            return "Spostati di lato, poi W e Spazio.";
+        case Id::SwoopRaceStuckHintLeft:
+            return "Sterza a sinistra, poi W.";
+        case Id::SwoopRaceStuckHintRight:
+            return "Sterza a destra, poi W.";
         case Id::SwoopRaceWrecked:
             return "Swoop distrutto. Gara finita.";
         case Id::SwoopRaceEnded:

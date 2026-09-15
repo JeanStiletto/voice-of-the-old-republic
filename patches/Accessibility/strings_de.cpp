@@ -494,7 +494,11 @@ const char* Get(Id id) {
             // den die Engine nur auf der linken Maustaste hat, liegt auf W.
             return "W zum Hochschalten beim Audiosignal, Leertaste zum Springen \xFC""ber ein Hindernis. Mit A und D lenken. Weiche den Hindernissen aus und triff die Beschleunigerfelder, um die Zeit zu schlagen.";
         case Id::SwoopRaceStuckHint:
-            return "Festgefahren. Mit A oder D zur Seite lenken, dann Leertaste und W zusammen dr\xFC""cken.";
+            return "Zur Seite lenken, dann W und Leertaste.";
+        case Id::SwoopRaceStuckHintLeft:
+            return "Links lenken, dann W.";
+        case Id::SwoopRaceStuckHintRight:
+            return "Rechts lenken, dann W.";
         case Id::SwoopRaceWrecked:
             return "Swoop zerst\xF6rt. Rennen vorbei.";
         case Id::SwoopRaceEnded:

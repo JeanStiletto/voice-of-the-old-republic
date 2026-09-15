@@ -394,6 +394,16 @@ What round 7 must show:
 - Round 8 must show `wall loop: side=…` BEFORE every post `gear -> 0` (if any),
   the loop still running through a relaunch from the wall, and post hits down
   from ~11 per race.
+- Round 9 (patch-20260915-142030, wreck at 41 s and at 86 s reaching y≈5300
+  of 6000): posts down to 1-3 per race. Race 2 lost 420 hp to FOUR mines (126
+  on the centre lane at the start, 141 / 142 / 145 on the pad diagonals) and
+  the rest to two bars each followed by relaunch hits with no beep. The wall
+  loop fired on every fast pad swing (proj from x 6). ADDED: mine-aware guide
+  line (`detour: mine slot=…` / `detour: clear`), wall projection only on
+  overshoot (`overshoot=1`), bar beep re-armed while parked.
+- Round 10 must show `detour:` lines before the mines that used to hit, no
+  `hit: … drop 105` on a detoured mine, `jump cue:` before each relaunch in
+  front of a bar, and `wall loop:` only with `overshoot=1` or |tunnelX| ≥ 12.5.
 
 - `shift-ready cue: gear=1 … gate=60.00`, `gear=2 … gate=100.00`,
   `gear=3 … gate=150.00`, `gear=4 … gate=210.00`, and W shifting within a

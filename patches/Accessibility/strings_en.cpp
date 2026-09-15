@@ -474,7 +474,11 @@ const char* Get(Id id) {
             // the engine only has on the left mouse button, gets W — see strings.h.
             return "Press W to shift up on the audio cue and space to jump over an obstacle. Steer with A and D. Avoid the obstacles and hit the accelerator pads to beat the time.";
         case Id::SwoopRaceStuckHint:
-            return "Stuck. Steer aside with A or D, then press space and W together.";
+            return "Steer aside, then W and Space.";
+        case Id::SwoopRaceStuckHintLeft:
+            return "Steer left, then W.";
+        case Id::SwoopRaceStuckHintRight:
+            return "Steer right, then W.";
         case Id::SwoopRaceWrecked:
             return "Swoop wrecked. Race over.";
         case Id::SwoopRaceEnded:

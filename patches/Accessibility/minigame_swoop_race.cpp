@@ -874,6 +874,8 @@ void DecideWreckAtFinish(void* miniGame) {
 constexpr float     kStuckProgressU = 15.0f;   // forward gain that counts as progress
 constexpr ULONGLONG kStuckHoldMs    = 6000;    // no progress for this long -> hint
 
+constexpr float kStuckWallU = 13.0f;   // |tunnel x| at/beyond this = parked at a wall
+
 void TickStuckHint(void* miniGame) {
     if (!g_state.have_start_ms) return;        // not launched yet / countdown
     Vector cam = {0.0f, 0.0f, 0.0f};
@@ -895,11 +897,21 @@ void TickStuckHint(void* miniGame) {
     const int   gear  = acc::engine::ReadGlobalNumber(kGearGlobalName);
     if (gear != 0 || speed > 2.0f) return;     // moving or in gear: not pinned
     g_state.stuck_hint_spoken = true;
-    const char* msg = acc::strings::Get(acc::strings::Id::SwoopRaceStuckHint);
+    // At a wall the direction is known (K2 posts from |x| ≈ 16.3; 13 leaves
+    // the pad lanes at 11 out of it): say which way, then the shift key.
+    Vector off = {0.0f, 0.0f, 0.0f};
+    const bool offOk = player && SafeReadVector(player, kMiniPlayerOffsetVectorOffset, off);
+    acc::strings::Id id = acc::strings::Id::SwoopRaceStuckHint;
+    if (offOk && off.x >= kStuckWallU)       id = acc::strings::Id::SwoopRaceStuckHintLeft;
+    else if (offOk && off.x <= -kStuckWallU) id = acc::strings::Id::SwoopRaceStuckHintRight;
+    const char* msg = acc::strings::Get(id);
     if (msg && *msg) prism::SpeakUrgent(msg);
     acclog::Write("SwoopRace", "stuck hint: no progress for %llums at y=%.1f "
-                  "(gear=%d speed=%.1f)", now - g_state.progress_mark_ms, cam.y,
-                  gear, speed);
+                  "(gear=%d speed=%.1f tunnelX=%.1f) [%s]",
+                  now - g_state.progress_mark_ms, cam.y, gear, speed,
+                  offOk ? off.x : 0.0f,
+                  id == acc::strings::Id::SwoopRaceStuckHintLeft ? "wall right"
+                  : id == acc::strings::Id::SwoopRaceStuckHintRight ? "wall left" : "generic");
 }
 
 // ============================================================================

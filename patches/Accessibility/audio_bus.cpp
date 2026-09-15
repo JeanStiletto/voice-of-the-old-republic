@@ -285,8 +285,13 @@ bool PlayCue(const char* resref, uint8_t priorityGroup,
     }
 }
 
-bool PlayCue3D(const char* resref, const Vector& worldPosition,
-               uint8_t priorityGroup, uint8_t baseVolume) {
+namespace {
+
+// Shared body of PlayCue3D / PlayCue3DRaw. `characterRelative` applies the
+// (camera - character) shift described at PlayCue3D; Raw skips it.
+bool PlayCue3DImpl(const char* resref, const Vector& worldPosition,
+                   uint8_t priorityGroup, uint8_t baseVolume,
+                   bool characterRelative) {
     if (!resref || !*resref) return false;
     void* exoSound = GetCExoSound();
     if (!exoSound) return false;
@@ -305,10 +310,10 @@ bool PlayCue3D(const char* resref, const Vector& worldPosition,
     // camera listener — no effect on other engine audio.
     //
     // Skipped in view mode (the listener detour already substitutes the
-    // cursor; double-compensation would mis-place cues).
+    // cursor; double-compensation would mis-place cues) and for Raw.
     //
     // Fail-safe on chain failure: pass raw position through.
-    if (!acc::view_mode::IsActive()) {
+    if (characterRelative && !acc::view_mode::IsActive()) {
         Vector charPos, camPos;
         if (acc::engine::GetPlayerPosition(charPos) &&
             acc::engine::GetCameraPosition(camPos)) {
@@ -336,6 +341,20 @@ bool PlayCue3D(const char* resref, const Vector& worldPosition,
         pitch::EndScopedZero();
         return false;
     }
+}
+
+}  // namespace
+
+bool PlayCue3D(const char* resref, const Vector& worldPosition,
+               uint8_t priorityGroup, uint8_t baseVolume) {
+    return PlayCue3DImpl(resref, worldPosition, priorityGroup, baseVolume,
+                         /*characterRelative=*/true);
+}
+
+bool PlayCue3DRaw(const char* resref, const Vector& listenerSpacePosition,
+                  uint8_t priorityGroup, uint8_t baseVolume) {
+    return PlayCue3DImpl(resref, listenerSpacePosition, priorityGroup, baseVolume,
+                         /*characterRelative=*/false);
 }
 
 }  // namespace acc::audio
