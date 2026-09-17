@@ -193,15 +193,43 @@ bool PartyTableIsNPCAvailable(int npcSlot);
 // allowed to pick — false on story-locked but available companions.
 bool PartyTableIsNPCSelectable(int npcSlot);
 
+// Roster size the party-select screen renders: 9 on KOTOR 1, 12 on KOTOR 2
+// (its CSWGuiPartySelection ctor builds 12 party_data elements, and
+// GetIsNPCAvailable bounds-checks `< 0xc`).
+int PartyRosterSlotCount();
+
+// One party-select roster portrait (CSWGuiPartySelectionButton), read through
+// the per-game member offsets in this header.
+struct PartyPortrait {
+    int      npcSlot;   // roster index; the arg the CSWPartyTable accessors take
+    int      partyId;   // party index at panel open, -1 if not a member (snapshot)
+    int      selected;  // LIVE in-party flag, flipped by every toggle
+    uint32_t flags;     // engine flag word (diagnostics only on KOTOR 1)
+};
+
+// True iff `control` is a party-select portrait. SEH-guarded vtable read, so a
+// garbage control pointer answers false.
+bool IsPartyPortrait(void* control);
+
+// Reads a portrait's fields. False when `control` is not a portrait or a read
+// faults; `out` is then left with npcSlot/partyId -1 and selected 0.
+bool ReadPartyPortrait(void* control, PartyPortrait* out);
+
+// The panel's count of companions currently chosen (the engine refuses an add
+// once it reaches 2). -1 on fault.
+int PartySelectionChosenCount(void* panel);
+
 // Resolves a PartySelection roster slot to a display name. Tries the engine's
 // live creature via GetNPCObject: first the client-side universal-name
 // accessor, then — when that can't see the handle (the Endar Spire slot-0
 // occupant Trask is a live server object with no client-side name) — the
 // server creature's stats.first_name (else its tag), so the tutorial slot
-// names the actual occupant rather than the fixed-roster "Bastila". Falls back
-// to the fixed-roster name table when no live creature resolves (companion
-// recruited but not in the current module). False on unavailable / unresolved
-// / SEH; outBuf is always NUL-terminated.
+// names the actual occupant rather than the fixed-roster "Bastila". On KOTOR 1
+// it falls back to the fixed-roster name table when no live creature resolves
+// (companion recruited but not in the current module). KOTOR 2 has no table:
+// its GetNPCObject template-loads a benched companion, which is how its own
+// hover handler names the portrait. False on unavailable / unresolved / SEH;
+// outBuf is always NUL-terminated.
 bool GetPartyNpcNameForSlot(int npcSlot, char* outBuf, size_t bufSize);
 
 }  // namespace acc::engine
@@ -295,26 +323,42 @@ constexpr int       kPartyTableMaxMembers          = 11;
 // Bounds are <0xc (K2's 12-NPC roster). Its sibling 0x005FAD70 is the
 // K2-only PUPPET variant (array at +0x14c, 3 slots) — do not confuse them.
 // GetIsNPCAvailable 0x005FA960 reads the avail array at table+0x4c.
-// GetNPCSelectability has NO confirmed K2 twin yet — the shape-adjacent
-// 0x005FA9C0 (array at +0x11c) lacks K1's avail gate and 0xff default and
-// may be K2's influence accessor, so it stays R(); PartyTableIsNPCSelectable
-// declines under its SEH on KOTOR 2.
+// GetNPCSelectability K2 twin 0x005FB140 (witnessed 2026-09-17): K1's body —
+// GetIsNPCAvailable gate, 0xff when unavailable, else the byte at
+// table+0x7c+slot — and K2's OnPanelAdded 0x0089E000 calls it per slot exactly
+// where K1's does, dimming the portrait and clearing flag bit 0 on a zero.
+// (The shape-adjacent 0x005FA9C0 once suspected here lacks the avail gate.)
 const uintptr_t kAddrCSWPartyTableGetIsNPCAvailable = acc::addr::Pick(0x005636B0, 0x005FA960);
-const uintptr_t kAddrCSWPartyTableGetNPCSelectability = acc::addr::R(0x005637C0);
+const uintptr_t kAddrCSWPartyTableGetNPCSelectability = acc::addr::Pick(0x005637C0, 0x005FB140);
 const uintptr_t kAddrCSWPartyTableGetNPCObject = acc::addr::Pick(0x00564700, 0x005FAAF0);
 
-// PartySelection renders 9 portraits in a 3x3 grid.
+// CSWGuiPartySelectionButton members, relative to the CONTROL pointer (what
+// panel.controls[] and the chain hold). Use ReadPartyPortrait, not these.
 //
-// KOTOR 2 HAS 12, NOT 9 — read off its CSWGuiPartySelection constructor, which
-// builds party_data as 12 elements of 0x478 where KOTOR 1 builds 9 of 0x454.
-// This one deliberately stays `constexpr` and stays 9, because it is one of the
-// handful of constants C++ will not let go runtime: it sizes the real array
-// `kCompanionNamesBySlot[]` in engine_player_party.cpp. Widening it to 12 there
-// would leave three null names, and making it runtime does not compile.
+// KOTOR 1: the party_data element IS the portrait control (9 of 0x454):
+//   +0x1c4 selected (SetSelected @0x006be370), +0x448 flags (uninitialised
+//   heap on some slots — never a gate), +0x44c partyId, +0x450 roster slot.
 //
-// So KOTOR 2 needs its own roster table rather than a wider shared one — which
-// it needs anyway, since kCompanionNamesBySlot holds KOTOR 1 story characters
-// and none of them are in KOTOR 2. Until that exists, the bound is correct for
-// KOTOR 1 and merely truncating on KOTOR 2 (slots 9..11 read as unavailable),
-// which is the safe direction to be wrong in: no out-of-range name lookup.
-constexpr int kPartyRosterSlotCount = 9;
+// KOTOR 2 (witnessed 2026-09-17, ctor 0x0089CF30 + OnPanelAdded 0x0089E000 +
+// hover handler 0x0089EFF0): the element (12 of 0x478, from panel+0x84) holds
+// the 3D preview model pointer at +0, and the BTN_NPCn control starts at +4 —
+// the ctor loads "BTN_NPC%d" into element+4 and stores the element pointer
+// into the button's +0x5c, which the handlers read back. So each element field
+// sits 4 bytes lower relative to the control:
+//   selected +0x1d0 — IsSelected 0x0089CF10 / SetSelected 0x0089CE20 on the
+//     button, which its ctor 0x0089CDA0 zeroes;
+//   flags    element+0x468 -> +0x464 — written for EVERY slot by OnPanelAdded
+//     (bit 0 = selectable, bit 2 = forced member);
+//   partyId  element+0x46c -> +0x468 — the Done/Back handlers restore
+//     selection from `[panel+0x4f0+i*0x478] != -1`;
+//   npcSlot  element+0x470 -> +0x46c — the ctor stores the loop index there,
+//     and the hover handler passes it to GetIsNPCAvailable / GetNPCObject.
+const size_t kPartyPortraitSelectedOffset = acc::off::Pick(0x1c4, 0x1d0);
+const size_t kPartyPortraitFlagsOffset    = acc::off::Pick(0x448, 0x464);
+const size_t kPartyPortraitPartyIdOffset  = acc::off::Pick(0x44c, 0x468);
+const size_t kPartyPortraitNpcSlotOffset  = acc::off::Pick(0x450, 0x46c);
+
+// CSWGuiPartySelection chosen-companion count: K1 panel+0x68 (OnToggled
+// @0x006bf2a0), K2 panel+0x6c (its click handler 0x0089EB50 increments it
+// only while `< 2`, and the count label 0x0089FA10 shows `2 - [+0x6c]`).
+const size_t kPartySelectionChosenCountOffset = acc::off::Pick(0x68, 0x6c);

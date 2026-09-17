@@ -283,6 +283,45 @@ Offer the community resolution / widescreen + HR-menus patches as an installer o
 
 ## Monitor
 
+### KOTOR 2 party selection read "control 13..24" — fix built 2026-09-17, awaiting test (GitHub issues 6 and 7)
+
+Reported by ricki35 (issue 6 on 2026-09-09, issue 7 on 2026-09-16, the same bug).
+Nobody on our side had reached the K2 party selection screen before. Root cause,
+from K2 decompiles (the attached patch logs were both KOTOR 1 sessions): the K2
+`kVtableCSWGuiPartySelectionButton` constant was never witnessed and matched
+nothing, so no portrait was recognised and every one fell through to the
+"control N" placeholder. The K2 portrait control also sits 4 bytes into its
+data element, so every K2 member offset was off by 4 and the roster index had
+never been ported. Fixed via one shared reader (`ReadPartyPortrait` /
+`PartySelectionChosenCount`), a 12-slot roster, the K2 GetNPCSelectability twin,
+and BTN_ACCEPT dropped from the chain on K2 as on K1. K2 names come from the
+engine (GetNPCObject template-loads benched companions); the K1 fixed name table
+is untouched. Engine model: `docs/llm-docs/ingame-screens-reference.md`,
+partyselection K2 section. GOG tables regenerated, validator green.
+
+What to check in the next K2 round: on the party screen, arrowing speaks
+"<name>, in party" or "<name>, available" for recruited companions only; Enter
+toggles; a third add speaks "Party full"; OK commits the chosen party. The
+`Menus.PartyPortrait` trace lines carry slot, selected, flags, partyId and
+availability for every portrait read. KOTOR 1 needs one regression pass over the
+same screen (the reader is shared code).
+
+Two side findings from the same report:
+
+- **The attached K2 crash dump (`swkotor2.exe.3164.dmp`, 2026-09-15, mod 0.8.1)
+  is unrelated to the party screen.** Null dereference in the engine's
+  dialogue-camera update: the object lookup for the conversation's camera or
+  speaker returns null and the result is called through. No mod frame is on the
+  stack. The session's K2 patch log was not attached, so a mod contribution is
+  neither shown nor excluded. Ask for it if the crash recurs.
+- **The tester's log bundle held only KOTOR 1 logs because their installer is
+  older than v0.7.2.** Its system-info.txt has the pre-v0.7.2 one-game format
+  ("Game: KOTOR 1", the `swkotor*.dmp` pattern that also caught K2 dumps). Two-game
+  collection shipped in v0.7.2 and the installer self-updater in v0.8.0, so an
+  older EXE keeps updating the mod but never replaces itself. The current
+  collector is correct. Such a tester has to download the current installer
+  once by hand.
+
 ### Lost key releases (stuck turn / walk) — engine-level fix built 2026-09-14, KOTOR 2 confirmed the same day, KOTOR 1 untested
 
 The KOTOR 2 uncommanded-camera-spin report of 2026-09-14 (`patch-20260914-085546.log`,

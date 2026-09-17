@@ -2257,11 +2257,13 @@ const size_t    kCharacterPanelCharRightButtonOffset    = acc::off::Kotor1Only(0
 // `bit_flags &= ~4` + AddEvent(0x27, OnToggled) pair, plus the 0x1c4 stride
 // from BTN_BACK +0x36f4 (BTN_DONE +0x28b0 sits apart).
 //
-// KOTOR 1 only, matching what the id constant it replaces already encoded:
-// K2's partyselect_p.gui gives every portrait its own BTN_NPCn and has no
-// single add button, so the filter was already inert there.
+// KOTOR 2 has the same button (partyselect_p.gui id 40, strref 38455 — the
+// "Add" a K2 tester heard). The old "K2 has no add button" note here was
+// wrong. Its ctor 0x0089CF30 loads "BTN_ACCEPT" into panel+0x4728, and the
+// shared click handler 0x0089EB50 special-cases `control == panel+0x4728` to
+// act on the hovered portrait — the same handler every BTN_NPCn carries.
 // Historical id: 38.
-const size_t    kPartySelectionPanelAcceptButtonOffset  = acc::off::Kotor1Only(0x38b8);
+const size_t    kPartySelectionPanelAcceptButtonOffset  = acc::off::Pick(0x38b8, 0x4728);
 
 // CSWGuiMainMenu BTN_WARP — the developer module-warp button, which both
 // games leave in the title screen's layout. It opens a raw module list

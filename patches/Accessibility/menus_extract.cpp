@@ -1010,8 +1010,8 @@ const char* TrySingleRowListBox(void* control, char* outBuf, size_t bufSize) {
     return source;
 }
 
-// 7b. PartySelection portrait resolver (vtable=0x00756BB8). The
-//     CSWGuiPartySelection panel exposes 9 portrait slots, one per
+// 7b. PartySelection portrait resolver (CSWGuiPartySelectionButton). The
+//     CSWGuiPartySelection panel exposes 9 portrait slots (12 on KOTOR 2), one per
 //     companion roster index. Each portrait is a
 //     CSWGuiPartySelectionButton sub-classed from CSWGuiButton: the
 //     standard text offsets carry nothing (set programmatically by
@@ -1019,25 +1019,11 @@ const char* TrySingleRowListBox(void* control, char* outBuf, size_t bufSize) {
 //     not a caption), so the speculative reader in section 8 below
 //     returns empty and the user hears "control N".
 //
-//     Per-portrait layout (observed via PanelWalk / PartyPortrait
-//     traces; structure size and exact field semantics inferred):
-//       +0x448 (int)  flag word. For slots that OnPanelAdded fully
-//                     initialises (the active-party slots) bit 0
-//                     mirrors the engine's "is selectable" gate
-//                     and bit 1 marks "in active party". BUT
-//                     OnPanelAdded does NOT touch this field for
-//                     every roster slot — in patch-20260526-120026
-//                     slots 6/7/8 carry uninitialised heap garbage
-//                     (0xfffffff9, 0x5f484c41, 0x39000001) whose
-//                     low bit happens to be 1, so this field
-//                     cannot be used as a selectability gate.
-//                     Trace-logged for diagnostics only.
-//       +0x44c (int)  CSWParty index when the slot is in the
-//                     active party at panel-open; 0xffffffff
-//                     (-1) otherwise. Reliable.
-//       +0x450 (int)  NPC roster slot index (0..8) — the param
-//                     OnEnter passes to CSWPartyTable::GetNPCObject.
-//                     Reliable.
+//     Per-portrait layout: engine_player.h, kPartyPortrait*Offset (both
+//     games, with witnesses); read through ReadPartyPortrait. The roster
+//     index and the live selected flag are reliable on both games; the
+//     KOTOR 1 flag word is not (uninitialised heap on some slots), so it is
+//     trace-logged for diagnostics only.
 //
 //     Spoiler rule: only reveal the companion's name when the slot
 //     is in the active party OR the engine's own
@@ -1053,69 +1039,25 @@ const char* TryPartyPortrait(void* control, char* outBuf, size_t bufSize,
                              bool& claimedVtable) {
     const char* source = nullptr;
     claimedVtable = false;
-    // The vtable read must sit under SEH: the walked control array can hold
-    // a non-null GARBAGE entry (KOTOR 2 chargen name panel, WER offset
-    // 0x198511, 2026-08-01 — the crash was exactly this line unguarded).
-    // Same crash class as Batch 1's FocusProbe lesson: an unreadable control
-    // is skipped, never trusted.
-    void** vt = nullptr;
-    __try {
-        vt = *reinterpret_cast<void***>(control);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return nullptr;
-    }
-    if (reinterpret_cast<uintptr_t>(vt) != kVtableCSWGuiPartySelectionButton) {
-        return nullptr;
-    }
+    // IsPartyPortrait guards the vtable read: the walked control array can
+    // hold a non-null GARBAGE entry (KOTOR 2 chargen name panel, WER offset
+    // 0x198511, 2026-08-01 — the crash was an unguarded read here).
+    if (!IsPartyPortrait(control)) return nullptr;
     claimedVtable = true;
-    // Live "selected" flag written by
-    // CSWGuiPartySelectionButton::SetSelected @0x006be370 on every
-    // toggle (OnToggled @0x006bf2a0 → SetSelected). 1 = currently in
-    // the party for this screen, 0 = on the bench. This is the
-    // ground-truth that changes as the user adds/removes companions —
-    // the partyId field at +0x44c is only a snapshot taken once in
-    // OnPanelAdded and never updated, so reading it left the spoken
-    // status frozen at the panel-open composition.
-    // KOTOR 2 values from its own CSWGuiPartySelection::OnPanelAdded, whose
-    // per-slot loop strides 0x478 (its CSWGuiPartySelectionData) from an array
-    // at panel+0x84 and performs the identical operations on the identical
-    // fields: `flags & ~1 | 2` then `| 1` then `& ~2`, and partyId set to -1
-    // when GetIsMember fails or to GetIndex's result when it succeeds.
-    //   flags   0x448 -> 0x468
-    //   partyId 0x44c -> 0x46c
-    // `selected` is the field directly after the embedded button in both, and
-    // the button sizes are independently established (0x1c4 / 0x1d0): KOTOR 1's
-    // SetSelected writes this+0x1c4, and KOTOR 2's button constructor zeroes
-    // this+0x1d0.
-    //
-    // npcSlot is STILL Todo, deliberately. KOTOR 2's element has FOUR trailing
-    // dwords where KOTOR 1 has three, so which of 0x470 / 0x474 is the roster
-    // index cannot be settled by position, and neither game's OnPanelAdded
-    // writes it — it comes from somewhere else that has not been traced. It is
-    // also not worth tracing yet: the only consumer is
-    // GetPartyNpcNameForSlot, which resolves through kCompanionNamesBySlot —
-    // a table of KOTOR 1 story characters that KOTOR 2 shares none of. That
-    // path needs a KOTOR 2 name source before this offset buys anything.
-    const size_t kPartyPortraitSelectedOffset = acc::off::Pick(0x1c4, 0x1d0);
-    const size_t kPartyPortraitFlagsOffset = acc::off::Pick(0x448, 0x468);
-    const size_t kPartyPortraitPartyIdOffset = acc::off::Pick(0x44c, 0x46c);
-    const size_t kPartyPortraitNpcSlotOffset = acc::off::Todo(0x450);
-    int npcSlot = -1, flags = 0, partyId = -1, selected = 0;
-    __try {
-        auto* base = reinterpret_cast<unsigned char*>(control);
-        selected = *reinterpret_cast<int*>(base + kPartyPortraitSelectedOffset);
-        flags   = *reinterpret_cast<int*>(base + kPartyPortraitFlagsOffset);
-        partyId = *reinterpret_cast<int*>(base + kPartyPortraitPartyIdOffset);
-        npcSlot = *reinterpret_cast<int*>(base + kPartyPortraitNpcSlotOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        npcSlot = -1;
-    }
+    // `selected` is the LIVE flag every toggle flips — the ground truth as
+    // the user adds/removes companions. partyId is only a panel-open
+    // snapshot; reading it left the spoken status frozen at the opening
+    // composition.
+    PartyPortrait portrait;
+    ReadPartyPortrait(control, &portrait);
+    int npcSlot = portrait.npcSlot;
+    int selected = portrait.selected;
+    uint32_t flags = portrait.flags;
+    int partyId = portrait.partyId;
     bool inActiveParty = selected != 0;
-    bool available = (npcSlot >= 0 &&
-                      npcSlot < kPartyRosterSlotCount &&
-                      PartyTableIsNPCAvailable(npcSlot));
+    bool available = PartyTableIsNPCAvailable(npcSlot);
     if ((inActiveParty || available) &&
-        npcSlot >= 0 && npcSlot < kPartyRosterSlotCount) {
+        npcSlot >= 0 && npcSlot < PartyRosterSlotCount()) {
         char name[128];
         if (GetPartyNpcNameForSlot(npcSlot, name, sizeof(name)) &&
             name[0]) {
@@ -1149,7 +1091,7 @@ const char* TryPartyPortrait(void* control, char* outBuf, size_t bufSize,
     acclog::Trace("Menus.PartyPortrait",
                   "slot=%d selected=%d flags=0x%x partyId=%d "
                   "available=%d inActiveParty=%d text=\"%s\"",
-                  npcSlot, selected, (unsigned)flags, partyId,
+                  npcSlot, selected, flags, partyId,
                   available ? 1 : 0, inActiveParty ? 1 : 0,
                   source ? outBuf : "");
     return source;

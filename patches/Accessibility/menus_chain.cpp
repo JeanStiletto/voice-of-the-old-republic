@@ -17,8 +17,7 @@
 #include "engine_game.h"     // IsKotor2 — per-game cursor-warp hit-test shims
 #include "engine_offsets.h"
 #include "engine_panels.h"
-#include "engine_player.h"   // PartyTableIsNPCAvailable / *Selectable /
-                              // kPartyRosterSlotCount
+#include "engine_player.h"   // ReadPartyPortrait / PartyTableIsNPCAvailable
 #include "engine_reads.h"
 #include "log.h"
 #include "menus_chargen_attr.h"
@@ -755,46 +754,28 @@ bool IsDecorativeControl(void* panel, void* c,
         return true;
     }
     // PartySelection portraits with no currently-selectable
-    // companion. The panel renders all 9 roster slots in a fixed
-    // 3x3 grid; sighted players see empty / greyed slots, but a
-    // blind navigator has nothing actionable on them (the engine
-    // refuses Add/OK anyway) and the spoiler rule from
+    // companion. The panel renders every roster slot in a fixed grid
+    // (9 on KOTOR 1, 12 on KOTOR 2); sighted players see empty / greyed
+    // slots, but a blind navigator has nothing actionable on them (the
+    // engine refuses Add/OK anyway) and the spoiler rule from
     // menus_extract section 7b means we deliberately don't speak
     // a name. Treating them as decorative drops them from the
     // chain entirely so arrow keys only step through usable picks.
     //
-    // The per-portrait flag word at +0x448 is NOT a reliable gate
-    // — patch-20260526-120026.log slots 6/7/8 had values
-    // 0xfffffff9 / 0x5f484c41 / 0x39000001 (clearly uninitialised
-    // heap memory whose low bit randomly happens to be 1).
-    // OnPanelAdded apparently only writes that field for some
-    // slots, so trusting bit 0 leaks 3 unnamed "control N" entries
-    // into the chain. The NPC roster index at +0x450 IS reliable
-    // (clean 0..8 in the log), so route the decision through the
+    // The KOTOR 1 flag word is NOT a reliable gate —
+    // patch-20260526-120026.log slots 6/7/8 had values
+    // 0xfffffff9 / 0x5f484c41 / 0x39000001 (uninitialised heap whose
+    // low bit randomly happens to be 1). The roster index IS
+    // reliable on both games, so route the decision through the
     // engine: keep the portrait if the slot is in the active
     // party (partyId >= 0) OR the engine's own GetIsNPCAvailable
     // returns true for that roster index.
     if (pk == PanelKind::PartySelection) {
-        void** vt = *reinterpret_cast<void***>(c);
-        if (reinterpret_cast<uintptr_t>(vt) == kVtableCSWGuiPartySelectionButton) {
-            const size_t kPartyPortraitPartyIdOffset = acc::off::Todo(0x44c);
-            const size_t kPartyPortraitNpcSlotOffset = acc::off::Todo(0x450);
-            int partyId = -1, npcSlot = -1;
-            __try {
-                auto* base = reinterpret_cast<unsigned char*>(c);
-                partyId = *reinterpret_cast<int*>(
-                    base + kPartyPortraitPartyIdOffset);
-                npcSlot = *reinterpret_cast<int*>(
-                    base + kPartyPortraitNpcSlotOffset);
-            } __except (EXCEPTION_EXECUTE_HANDLER) {
-                partyId = -1;
-                npcSlot = -1;
-            }
-            bool inActiveParty = partyId >= 0;
-            bool available = (npcSlot >= 0 &&
-                              npcSlot < kPartyRosterSlotCount &&
-                              PartyTableIsNPCAvailable(npcSlot));
-            if (!inActiveParty && !available) return true;
+        PartyPortrait portrait;
+        if (ReadPartyPortrait(c, &portrait) &&
+            portrait.partyId < 0 &&
+            !PartyTableIsNPCAvailable(portrait.npcSlot)) {
+            return true;
         }
     }
     // WorkbenchUpgrade slot buttons (matched by position in the panel's

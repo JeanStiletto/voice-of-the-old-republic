@@ -63,6 +63,8 @@ and add the German in parentheses if it genuinely aids clarity.
   arrow keys, in both games.
 - On the KOTOR 2 map, up and down no longer read map notes when the map has no
   buttons.
+- The KOTOR 2 party selection screen reads each companion's name and whether
+  they are in the party, instead of "control 13".
 
 <h3>Swoop racing:</h3>
 
@@ -120,6 +122,14 @@ and add the German in parentheses if it genuinely aids clarity.
   areas where the map offers no buttons, the game itself answered up and down
   by stepping through its map notes and reading each one. The mod now keeps
   those keys on the map, for the keyboard and the controller alike.
+- **KOTOR 2 party selection works like KOTOR 1's.** Every companion portrait
+  used to read as "control 13", "control 14" and so on, so there was no way to
+  tell who you were picking. Each recruited companion is now read as their name
+  plus "in party" or "available", Enter adds or removes them, and "Party full" is
+  spoken when two are already chosen. Companions you have not recruited and empty
+  slots are skipped. Names come from the game itself, so they match your game's
+  language. The separate Add button is skipped too, because Enter on a
+  companion does the same thing.
 
 <h2>v0.8.2</h2>
 

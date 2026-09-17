@@ -27,6 +27,7 @@
 #include "engine_input.h"
 #include "engine_offsets.h"
 #include "engine_panels.h"
+#include "engine_player.h"   // ReadPartyPortrait — party-full Enter check
 #include "engine_reads.h"
 #include "log.h"
 #include "menus_chargen_attr.h"
@@ -183,28 +184,21 @@ void HandleEnterActivation(void* activePanel, int code, int val, bool& consumed)
         acc::engine::IsInventoryItemRow(e.control);
 
     // PartySelection portrait Enter where the add will be refused because the
-    // party is full. The engine's CSWGuiPartySelection::OnToggled @0x006bf2a0
-    // early-outs an *add* (portrait not yet selected) once two companions are
-    // chosen — selected_count at panel +0x68 climbs to 2 and the toggle does
-    // nothing, leaving no state change for the focus monitor to re-announce.
-    // We still let the engine run (the no-op path plays its UI click sound and
-    // refreshes the count label) but speak "Gruppe voll" so the silent refusal
-    // is audible. selected flag at portrait +0x1c4 (written by
-    // CSWGuiPartySelectionButton::SetSelected @0x006be370): 1 = in party.
+    // party is full. The engine's click handler (K1 OnToggled @0x006bf2a0,
+    // K2 0x0089EB50) early-outs an *add* (portrait not yet selected) once two
+    // companions are chosen — the panel's chosen count climbs to 2 and the
+    // toggle does nothing, leaving no state change for the focus monitor to
+    // re-announce. We still let the engine run (the no-op path plays its UI
+    // click sound and refreshes the count label) but speak "Gruppe voll" so
+    // the silent refusal is audible.
     bool isPartyAddBlocked = false;
     if (acc::engine::IdentifyPanel(g_chainPanel) ==
             acc::engine::PanelKind::PartySelection) {
-        void** vt = *reinterpret_cast<void***>(e.control);
-        if (reinterpret_cast<uintptr_t>(vt) == kVtableCSWGuiPartySelectionButton) {
-            __try {
-                int selected = *reinterpret_cast<int*>(
-                    reinterpret_cast<unsigned char*>(e.control) + 0x1c4);
-                int selCount = *reinterpret_cast<int*>(
-                    reinterpret_cast<unsigned char*>(g_chainPanel) + 0x68);
-                isPartyAddBlocked = (selected == 0 && selCount > 1);
-            } __except (EXCEPTION_EXECUTE_HANDLER) {
-                isPartyAddBlocked = false;
-            }
+        acc::engine::PartyPortrait portrait;
+        if (acc::engine::ReadPartyPortrait(e.control, &portrait)) {
+            isPartyAddBlocked =
+                portrait.selected == 0 &&
+                acc::engine::PartySelectionChosenCount(g_chainPanel) > 1;
         }
     }
 

@@ -124,7 +124,12 @@ const uintptr_t kVtableCSWGuiPortraitCharGen     = acc::addr::Pick(0x00759ea8, 0
 // CSWGuiPartySelectionButton vtable (a roster portrait on the party-select
 // screen — a CSWGuiButton subclass). Named here because three call sites test
 // for it: the chain filter, the chain's input handler and the label extractor.
-const uintptr_t kVtableCSWGuiPartySelectionButton = acc::addr::Pick(0x00756BB8, 0x009A6D9C);
+// KOTOR 2 witnessed 2026-09-17 in the button constructor 0x0089CDA0
+// (`MOV [EAX],0x9a40fc` after the CSWGuiRadioButton base store), which the
+// portrait element's constructor 0x0089DAC0 runs. The earlier 0x009A6D9C was
+// never witnessed and matched nothing, so on KOTOR 2 every portrait fell
+// through to the "control N" placeholder (GitHub issues 6 and 7).
+const uintptr_t kVtableCSWGuiPartySelectionButton = acc::addr::Pick(0x00756BB8, 0x009A40FC);
 
 // CSWCCreature::GetPortraitId — __thiscall, no args, returns the portrait
 // row index into portraits.2da (verified live: returned 24 → 25 across a

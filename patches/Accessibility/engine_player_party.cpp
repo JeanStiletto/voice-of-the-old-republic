@@ -369,8 +369,56 @@ typedef int  (__thiscall* PFN_PartyTableGetNPCObject)(void*, int, int, int);
 
 }  // namespace
 
+int PartyRosterSlotCount() {
+    return acc::game::IsKotor2() ? 12 : 9;
+}
+
+bool IsPartyPortrait(void* control) {
+    if (!control) return false;
+    __try {
+        void** vt = *reinterpret_cast<void***>(control);
+        return reinterpret_cast<uintptr_t>(vt) ==
+               kVtableCSWGuiPartySelectionButton;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+bool ReadPartyPortrait(void* control, PartyPortrait* out) {
+    if (!out) return false;
+    out->npcSlot = -1;
+    out->partyId = -1;
+    out->selected = 0;
+    out->flags = 0;
+    if (!IsPartyPortrait(control)) return false;
+    __try {
+        auto* base = reinterpret_cast<unsigned char*>(control);
+        out->selected = *reinterpret_cast<int*>(base + kPartyPortraitSelectedOffset);
+        out->flags    = *reinterpret_cast<uint32_t*>(base + kPartyPortraitFlagsOffset);
+        out->partyId  = *reinterpret_cast<int*>(base + kPartyPortraitPartyIdOffset);
+        out->npcSlot  = *reinterpret_cast<int*>(base + kPartyPortraitNpcSlotOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        out->npcSlot = -1;
+        out->partyId = -1;
+        out->selected = 0;
+        return false;
+    }
+    return true;
+}
+
+int PartySelectionChosenCount(void* panel) {
+    if (!panel) return -1;
+    __try {
+        return *reinterpret_cast<int*>(
+            reinterpret_cast<unsigned char*>(panel) +
+            kPartySelectionChosenCountOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+}
+
 bool PartyTableIsNPCAvailable(int npcSlot) {
-    if (npcSlot < 0 || npcSlot >= kPartyRosterSlotCount) return false;
+    if (npcSlot < 0 || npcSlot >= PartyRosterSlotCount()) return false;
     void* table = GetServerPartyTable();
     if (!table) return false;
     __try {
@@ -383,7 +431,7 @@ bool PartyTableIsNPCAvailable(int npcSlot) {
 }
 
 bool PartyTableIsNPCSelectable(int npcSlot) {
-    if (npcSlot < 0 || npcSlot >= kPartyRosterSlotCount) return false;
+    if (npcSlot < 0 || npcSlot >= PartyRosterSlotCount()) return false;
     void* table = GetServerPartyTable();
     if (!table) return false;
     __try {
@@ -403,7 +451,8 @@ bool PartyTableIsNPCSelectable(int npcSlot) {
 // world PartySelection case). Order matches the engine's roster index:
 //   0 Bastila, 1 Canderous, 2 Carth, 3 HK-47, 4 Jolee, 5 Juhani,
 //   6 Mission, 7 T3-M4, 8 Zaalbar.
-static const char* const kCompanionNamesBySlot[kPartyRosterSlotCount] = {
+// KOTOR 1 only — KOTOR 2 names come from the engine (see the fallback below).
+static const char* const kK1CompanionNamesBySlot[9] = {
     "Bastila Shan",
     "Canderous Ordo",
     "Carth Onasi",
@@ -418,7 +467,7 @@ static const char* const kCompanionNamesBySlot[kPartyRosterSlotCount] = {
 bool GetPartyNpcNameForSlot(int npcSlot, char* outBuf, size_t bufSize) {
     if (!outBuf || bufSize == 0) return false;
     outBuf[0] = '\0';
-    if (npcSlot < 0 || npcSlot >= kPartyRosterSlotCount) return false;
+    if (npcSlot < 0 || npcSlot >= PartyRosterSlotCount()) return false;
     void* table = GetServerPartyTable();
     if (table) {
         uint32_t handle = 0;
@@ -485,7 +534,13 @@ bool GetPartyNpcNameForSlot(int npcSlot, char* outBuf, size_t bufSize) {
     // Engine path didn't resolve — most often because the companion is on
     // the roster but not in the current module (open-world PartySelection
     // screen, away from base). Fall back to the fixed-roster table.
-    const char* fixed = kCompanionNamesBySlot[npcSlot];
+    //
+    // KOTOR 2 has no table and needs none: its GetNPCObject template-loads a
+    // benched companion, and its own hover handler 0x0089EFF0 names the
+    // portrait from exactly that creature (logging "I am broken" when it
+    // fails). An unresolved KOTOR 2 slot stays nameless rather than guessed.
+    if (acc::game::IsKotor2()) return false;
+    const char* fixed = kK1CompanionNamesBySlot[npcSlot];
     if (!fixed || !fixed[0]) return false;
     size_t nlen = strlen(fixed);
     if (nlen + 1 > bufSize) return false;

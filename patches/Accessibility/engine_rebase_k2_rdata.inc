@@ -22,6 +22,7 @@
     { 0x009A1EFC, 0x009916DC },  // (inline) { acc::addr::Pick(0x007585f8, 0x009A1EFC), PanelKind::MouseSettings },
     { 0x009A2554, 0x009922F4 },  // kVtableCSWGuiJournalItemEntry
     { 0x009A3FBC, 0x0099466C },  // kVtableCSWGuiSaveLoad
+    { 0x009A40FC, 0x00991EEC },  // kVtableCSWGuiPartySelectionButton
     { 0x009A421C, 0x00994B24 },  // kVtableSaveGameEditbox
     { 0x009A42C4, 0x00994BCC },  // kVtableCSWGuiSaveNamePanel
     { 0x009A597C, 0x0098EEBC },  // kVtableCSWGuiMainMenu
@@ -29,7 +30,6 @@
     { 0x009A6034, 0x0099009C },  // kVtableCSWGuiWagerPopup
     { 0x009A614C, 0x009901B4 },  // kVtableCSWGuiPazaakStart / kVtablePazaakStart
     { 0x009A6404, 0x0099046C },  // kVtableCSWGuiPazaakGame
-    { 0x009A6D9C, 0x00991E44 },  // kVtableCSWGuiPartySelectionButton
     { 0x009A76C4, 0x00992DC4 },  // kVtableCSWGuiInGameItemEntry
     { 0x009A785C, 0x00992F5C },  // kVtableCSWGuiStoreItemEntry
     { 0x009A79B4, 0x009930B4 },  // kVtableCSWGuiStore

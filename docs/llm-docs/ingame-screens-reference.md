@@ -451,6 +451,40 @@ Mission Vao, T3-M4, Zaalbar) — needed for the open-world case where
 benched companions aren't in the current module so the engine accessor
 returns 0.
 
+### KOTOR 2 (Steam, decompiled 2026-09-17 — GitHub issues 6 and 7)
+
+The screen was never reached in a K2 test before the issues; every portrait
+spoke "control 13..24" because the button vtable constant was unwitnessed
+and wrong. Code now reads everything through `ReadPartyPortrait` /
+`PartySelectionChosenCount` (engine_player_party.cpp), offsets in
+engine_player.h.
+
+- `partyselect_p.gui`: 12 BTN_NPC0..11 (ids 13-22, 46-47; two pairs share a
+  grid cell — gender-exclusive recruits), LBL_NA/LBL_CHAR per slot,
+  BTN_ACCEPT id 40 ("Add", strref 38455), BTN_BACK 50, BTN_DONE 51,
+  LBL_NPC_NAME / LBL_NPC_LEVEL (filled on hover), LBL_COUNT.
+- Ctor `0x0089CF30`: party_data = 12 elements of 0x478 from panel+0x84.
+  **Element ≠ control:** element+0 is the 3D preview model pointer, the
+  BTN_NPCn control starts at element+4, and the button's +0x5c points back
+  to its element. Element fields: +0x468 flags, +0x46c partyId, +0x470
+  roster slot (ctor writes the loop index). Relative to the control subtract
+  4. Button vtable `0x009A40FC` (ctor `0x0089CDA0`); selected at
+  control+0x1d0 (IsSelected `0x0089CF10`, SetSelected `0x0089CE20`).
+- OnPanelAdded `0x0089E000`: writes flags for ALL 12 slots (unlike K1) —
+  unavailable: bit0 cleared, partyId -1; available: bit0 set, bit1 = creature
+  resolved in module, partyId from IsMember `0x005FAFD0`;
+  GetNPCSelectability `0x005FB140` == 0 dims the portrait and clears bit0;
+  bit2 = forced member (selected + unselectable in forced mode).
+  panel+0x50ac = "party change allowed" (else click shows strref at +0x50b0).
+- Click handler `0x0089EB50` (event 0x27 on every BTN_NPCn AND on BTN_ACCEPT
+  at panel+0x4728, which acts on the hovered element at panel+0x48f8):
+  bit0 clear → message box; else toggle, chosen count panel+0x6c capped
+  at 2 (silent no-op when full).
+- Hover handler `0x0089EFF0` (event 0): GetNPCObject(slot,0,1) → server
+  creature → stats (+0x1198) name into LBL_NPC_NAME. GetNPCObject template-
+  loads benched companions, so no fixed name table is needed on K2.
+- Done `0x0089ED90`, input `0x0089DE70` (0x28/0x2e cancel, 0x29/0x2d done).
+
 ---
 
 ## party_switch_engine_surfaces

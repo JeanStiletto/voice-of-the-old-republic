@@ -1133,7 +1133,9 @@ equip-panel id family found on the way. The ledger:
   BTN_AUTO (65) and BTN_LEVELUP (66) — real actions the old filter would
   have DROPPED from the chain. K2 set is just BTN_3DCHAR (id 5).
   kPartySelectionAddBtnId is K1-only (-1 on K2 — the panel has no single
-  add button; every portrait is its own BTN_NPCn). Equip OK/Back filtering
+  add button; every portrait is its own BTN_NPCn). **CORRECTED 2026-09-17:** K2 does have BTN_ACCEPT
+  (panel+0x4728); the offset is now Pick'd — see ingame-screens-reference.md,
+  partyselection K2 section. Equip OK/Back filtering
   rides the per-game constants. Offset-keyed entries (equip party-cycle,
   level-up back/cancel, map note-stepper) were already Pick'd or compare
   inert.
