@@ -356,6 +356,7 @@ Viele Menschen haben mir beim Testen des Spiels geholfen, alle Fehler gefunden, 
 - ABlindFellow
 - zargontheevilgod
 - zersiax
+- ricki35
 
 **Grundlagen und Abhängigkeiten:**
 

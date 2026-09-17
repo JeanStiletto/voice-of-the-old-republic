@@ -356,6 +356,7 @@ KOTOR — это трёхмерная ролевая игра, поэтому б
 - ABlindFellow
 - zargontheevilgod
 - zersiax
+- ricki35
 
 **Основы и зависимости:**
 

@@ -356,6 +356,7 @@ Beaucoup de personnes m'ont aidé à tester le jeu, ont trouvé tous les bugs qu
 - ABlindFellow
 - zargontheevilgod
 - zersiax
+- ricki35
 
 **Fondations et dépendances :**
 
