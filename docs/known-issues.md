@@ -68,51 +68,6 @@ product names and vendor ids decoded correctly). The device-present XInput
 branch is unverified — no controller was attached.** Next step is one tester
 session on an Ally.
 
-### K1 dialogue replies unnavigable for zack on 0.7.8.1 — cursor-state dependent; expected fixed by the v0.7.9 re-park (diagnosed 2026-08-25, awaiting zack's confirmation on the next release)
-
-Zack's report (`userlogs/zack078dialoguesnotspeaking.7z`, 0.7.8.1, English,
-`k1-patch-20260824-212526.log`): arrows in conversation click but never speak,
-number keys select blind. Log forensics established TWO separate defects:
-
-1. **During the NPC voice line** (reply store empty): our dialog listbox spec
-   consumed Up/Down and drove the PREVIOUS node's stale rows — click, then
-   silence, `Menus.DialogReply: selected (src=none)` (11× in zack's session).
-   **FIXED 2026-08-25** (nav liveness gate + "Reply options not yet available"
-   phrase, `navLive` in menus_listbox.cpp) — awaiting in-game test.
-
-2. **After the reply break** (replies live): arrows did nothing on zack's
-   machine — ~35 presses across 4 conversations, one exception. Mechanics,
-   established from his log + dev logs + a live dev test 2026-08-25:
-   - The mod never drove the live cinematic reply list: at the reply break the
-     entry-text overlay panel is foreground, our chain declines it, and the
-     keys fall through to the ENGINE, whose native CSWGuiListBox keyboard
-     handler (`HandleInputEvent @0x0041ce20`, InputIndex 61/62 = the
-     `KEYBOARD_K`/`KEYBOARD_L` log lines) moves the selection; our monitor
-     speaks the change. The in-code claim "the engine does not navigate the
-     reply listbox by keyboard" was true only for the droid/computer
-     interfaces it came from.
-   - That native path is CURSOR-STATE dependent. Zack's `CameraSpinDiag`
-     mouseX trace correlates 1:1: cursor parked at 24 → his single working
-     arrow press (21:31:36, inside the 21:31:16–36 parked window); cursor
-     re-centered to 400 → every other press dead. The engine repositions the
-     cursor between dialogue nodes (the same behaviour the K2 Peragus console
-     fix documented — "the game can bring the cursor back between nodes"),
-     and 0.7.8.1 parks only once per conversation, so from the first node
-     transition on his cursor sat at screen centre and keyboard nav was dead.
-   - The v0.7.9 re-park on every new reply set (7f3d919, written for the K2
-     consoles) closes exactly this: live dev test 2026-08-25 13:35 shows the
-     re-park firing at the break, mouseX pinned at 24 across it, and five
-     arrow navigations all spoken (`patch-20260825-133518.log`).
-   - Why most 0.7.8.1 players are fine: per-node cursor repositioning killing
-     the native nav evidently depends on machine/session state not fully
-     pinned down (zack: windowed 800x600, cursor never touched by hand; but
-     the dev box is windowed too and July logs navigated fine with the same
-     one-park-per-conversation code). The re-park makes the whole question
-     moot by re-asserting the parked state at every node, so pinning the
-     exact engine trigger is not planned unless it resurfaces post-0.7.9.
-   - Follow-up: ship v0.7.9 to zack (or a test build) and have him confirm
-     arrows speak replies after each voice line.
-
 ### KOTOR 2 crash entering the Peragus Fuel Depot — third-party item, engine null-deref (diagnosed 2026-08-24, no code change yet)
 
 Kenny's game died on the area transition into the Fuel Depot
@@ -174,74 +129,6 @@ Follow-ups to decide:
   inventory, `BaseItemGuard` line in the patch log. On Kenny's save the
   Fuel Depot should load with the id=106 line. Remove the two test files
   from both Overrides before release.
-
-### Galaxy-map travel never loaded the destination — fix built 2026-08-20, awaiting test
-
-A tester finished KOTOR 2's prologue, flew to Peragus, watched the movie and
-landed back on the Ebon Hawk with the star map open — three times in a row,
-which is where the run ended (`k2-patch-20260820-143622.log`, 14:49-14:51,
-bundle `userlogs/tutorialreset0781.7z`).
-
-Cause: one Enter drove both the star map's accept (`GalaxyMap: accept/travel`)
-and the in-world interact dispatcher (`Interact: Enter gate -- ALLOW,
-kind=InGameGalaxyMap` → a queued `AddUseObjectAction` on the Galaxy Map
-placeable). `IsForegroundUiBlocking`'s kind blacklist did not carry
-`InGameGalaxyMap`, and the engine does not push that panel onto `modal_stack`,
-so neither of the other two block rules covered it. The queued action outlived
-the 25-second movie and fired at the end of the travel cutscene — the star map
-re-opened with no keypress behind it, and `Transition: pre-load` never appeared
-for any of the three attempts, so the module change was never requested at all.
-
-Fixed by blacklisting the kind. Same failure class as the save-name popup
-(commit `21d8a99`), which was closed with a per-popup latch rather than at the
-gate; a latch cannot fix this one, because the poll router runs *before* the
-menus consume in the same tick (visible in the log — the interact dispatch is
-logged above `accept/travel`).
-
-Test: KOTOR 2 prologue, Galaxy Map → Peragus II → Enter. Expect the movie, then
-Peragus, and a `Transition: pre-load` line in the log. Then the same on KOTOR 1
-(Ebon Hawk → any planet), where the double-fire also existed but the immediate
-module load hid it.
-
-### Chain drives a freed panel when its address is reused — fix built 2026-08-20, awaiting test
-
-Two KOTOR 2 chargen runs crashed while arrowing the Fähigkeiten list
-(logs `patch-20260819-063818` / `patch-20260819-221733`, dump
-`swkotor2.exe.3664.dmp`). The access violation is in the engine, inside
-`CSWGuiSkillsCharGen::IsClassSkill`'s K2 twin, dereferencing the panel's
-`chargen_creature` (`+0x68`) — a field the constructor sets from its
-`param_2` and nothing rewrites.
-
-Root cause is NOT a chargen binding problem. The chain was still bound to
-the Attribute panel after the engine freed it: its buttons dispatched with
-`is_active` reading 2622030025 (freed memory), and the Skills panel was
-then allocated onto the same block, which is why it appeared at the
-Attribute panel's old address with a half-written creature field. The
-engine's own handlers then walked that field and died.
-
-`ValidateChainPanel` could not catch it: it tests membership in `panels[]`,
-which the address passes again as soon as a new panel occupies it.
-
-Evidence it is address reuse and not a chargen invariant: the healthy run
-`patch-20260820-105008` shows the Skills panel at its own address with
-`+0x68` valid and stable, costs resolving (Preis 2 / 2 / 1), descriptions
-and remaining points all correct — on the same screen the user has used
-for months.
-
-Fix: `ChainPanelIdentityHolds` records the panel's vtable at RebindChain
-time and compares it before anything drives that panel — the FireActivate
-dispatch, the cursor warp, and the chain step (which now rebinds instead).
-Trips loudly as `ChainIdentity STALE`.
-
-Known gap: reuse by a panel of the SAME class passes the vtable compare.
-That needs a generation token; the vtable version landed first because it
-is falsifiable on the known repro.
-
-Two dead ends worth not repeating: the crash is not a transient
-init race (the field stayed zero for 7s), and gating our announcements on
-a "binding ready" probe is wrong — it suppressed cost, description and
-warp on healthy panels while fixing nothing, because the probe was reading
-a symptom of the recycled memory.
 
 ## Unreproduced
 
