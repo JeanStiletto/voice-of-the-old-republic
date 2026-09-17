@@ -130,6 +130,13 @@ int MoveAxisScancode(MoveAxis axis);
 // N-hotkey snap-turn. Auto-loads the config on first use.
 int TurnScancode(bool left);
 
+// DIK scancode of the minigame steer bind (Action283 MGActionLeft/Right), the
+// input the swoop race polls to steer. Distinct from the walk strafe (281) and
+// the camera turn (284) — on a vanilla ini neither of those is A/D, so a stick
+// driving them would not steer the bike. Falls back to DIK A / D. Used by the
+// pad's movement driver while a race is up. Auto-loads the config on first use.
+int MinigameSteerScancode(bool left);
+
 // True iff any bound movement/turn key is currently held down. Union of all
 // four directional buckets plus the legacy German-layout extras (Z/C/Y), so it
 // never regresses below the old hardcoded {W,S,A,D,C,Y} movement check.

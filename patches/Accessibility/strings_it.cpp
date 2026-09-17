@@ -475,7 +475,7 @@ const char* Get(Id id) {
             // Short cheat sheet. Full keymap (Enter/Mouse 1 also work,
             // Pause pauses the race, etc.) is in the manual ? verbose
             // spoken intro got in the way of the start countdown.
-            return "Spazio per salire di marcia al segnale audio. Sterza con A e D. Evita gli ostacoli e colpisci le piastre acceleratrici per battere il tempo.";
+            return "W o Spazio per salire di marcia al segnale audio. Sterza con A e D. Evita gli ostacoli e colpisci le piastre acceleratrici per battere il tempo.";
         case Id::SwoopRaceControlsK2:
             return "W per salire di marcia al segnale audio, Spazio per saltare un ostacolo. Sterza con A e D. Evita gli ostacoli e colpisci le piastre acceleratrici per battere il tempo.";
         case Id::SwoopRaceStuckHint:
@@ -1134,6 +1134,24 @@ const char* Get(Id id) {
             return "I kit di riparazione curano i droidi. Tira il grilletto sinistro, vai su Medico con la croce sinistra e destra e premi A.";
         case Id::TutK2SecuritySpikePad:
             return "Questa serratura supera le tue capacit\xE0; usa una sonda di sicurezza. Seleziona il contenitore, tira il grilletto sinistro per il menu delle azioni e scegli Sicurezza.";
+        case Id::SwoopRaceControlsPad:
+            return "B per salire di marcia al segnale audio. Sterza con lo stick sinistro. Evita gli ostacoli e colpisci le piastre acceleratrici per battere il tempo.";
+        case Id::SwoopRaceControlsK2Pad:
+            return "B per salire di marcia al segnale audio, A per saltare un ostacolo. Sterza con lo stick sinistro. Evita gli ostacoli e colpisci le piastre acceleratrici per battere il tempo.";
+        case Id::SwoopRaceStuckHintPad:
+            return "Spostati di lato, poi B e A.";
+        case Id::SwoopRaceStuckHintLeftPad:
+            return "Sterza a sinistra, poi B.";
+        case Id::SwoopRaceStuckHintRightPad:
+            return "Sterza a destra, poi B.";
+        case Id::SwoopRaceStuckBarWallLeftPad:
+            return "Sterza a sinistra, poi A, poi B.";
+        case Id::SwoopRaceStuckBarWallRightPad:
+            return "Sterza a destra, poi A, poi B.";
+        case Id::SwoopRaceStuckBarStripPad:
+            return "Segui il suono, poi B.";
+        case Id::SwoopRaceStuckBarJumpPad:
+            return "A, poi B.";
 
         case Id::FmtModLoadedVersion:   return "Voice of the Old Republic caricato, versione %s";
         case Id::FmtChargenFeatUnnamed: return "Talento %u";

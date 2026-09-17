@@ -477,7 +477,7 @@ const char* Get(Id id) {
             // Short cheat sheet. Full keymap (Enter/Mouse 1 also work,
             // Pause pauses the race, etc.) is in the manual ? verbose
             // spoken intro got in the way of the start countdown.
-            return "Espacio para subir de marcha con la se\xF1""al de audio. Gira con A y D. Esquiva los obst\xE1""culos y pisa los paneles aceleradores para batir el tiempo.";
+            return "W o Espacio para subir de marcha con la se\xF1""al de audio. Gira con A y D. Esquiva los obst\xE1""culos y pisa los paneles aceleradores para batir el tiempo.";
         case Id::SwoopRaceControlsK2:
             return "W para subir de marcha con la se\xF1""al de audio y Espacio para saltar un obst\xE1""culo. Gira con A y D. Esquiva los obst\xE1""culos y pisa los paneles aceleradores para batir el tiempo.";
         case Id::SwoopRaceStuckHint:
@@ -1136,6 +1136,24 @@ const char* Get(Id id) {
             return "Los kits de reparaci\xF3n curan a los droides. Tira del gatillo izquierdo, ve a M\xE9""dico con la cruceta izquierda y derecha y pulsa A.";
         case Id::TutK2SecuritySpikePad:
             return "Esta cerradura supera tus habilidades; usa una ganz\xFA""a electr\xF3nica. Enfoca el contenedor, tira del gatillo izquierdo para el men\xFA de acciones y elige Seguridad.";
+        case Id::SwoopRaceControlsPad:
+            return "B para subir de marcha con la se\xF1""al de audio. Gira con el stick izquierdo. Esquiva los obst\xE1""culos y pisa los paneles aceleradores para batir el tiempo.";
+        case Id::SwoopRaceControlsK2Pad:
+            return "B para subir de marcha con la se\xF1""al de audio y A para saltar un obst\xE1""culo. Gira con el stick izquierdo. Esquiva los obst\xE1""culos y pisa los paneles aceleradores para batir el tiempo.";
+        case Id::SwoopRaceStuckHintPad:
+            return "Ap\xE1rtate y pulsa B y A.";
+        case Id::SwoopRaceStuckHintLeftPad:
+            return "Gira a la izquierda y pulsa B.";
+        case Id::SwoopRaceStuckHintRightPad:
+            return "Gira a la derecha y pulsa B.";
+        case Id::SwoopRaceStuckBarWallLeftPad:
+            return "Gira a la izquierda, luego A, luego B.";
+        case Id::SwoopRaceStuckBarWallRightPad:
+            return "Gira a la derecha, luego A, luego B.";
+        case Id::SwoopRaceStuckBarStripPad:
+            return "Sigue el tono, luego B.";
+        case Id::SwoopRaceStuckBarJumpPad:
+            return "A, luego B.";
 
         case Id::FmtModLoadedVersion:   return "Voice of the Old Republic cargado, versi\xF3n %s";
         case Id::FmtChargenFeatUnnamed: return "Dote %u";

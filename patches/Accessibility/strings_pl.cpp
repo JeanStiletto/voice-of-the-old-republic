@@ -477,7 +477,7 @@ const char* Get(Id id) {
         case Id::SwoopRaceStarted:
             return "Wy\x9C""cig \x9C""cigaczy.";
         case Id::SwoopRaceControls:
-            return "Naci\x9Cnij spacj\xEA, aby zmieni\xE6 bieg na sygna\xB3 d\x9Fwi\xEAkowy. Steruj klawiszami A i D. Omijaj przeszkody i naje\xBF""d\xBF""aj na pola przyspieszenia, aby pobi\xE6 czas.";
+            return "Naci\x9Cnij W lub spacj\xEA, aby zmieni\xE6 bieg na sygna\xB3 d\x9Fwi\xEAkowy. Steruj klawiszami A i D. Omijaj przeszkody i naje\xBF""d\xBF""aj na pola przyspieszenia, aby pobi\xE6 czas.";
         case Id::SwoopRaceControlsK2:
             return "Naci\x9Cnij W, aby zmieni\xE6 bieg na sygna\xB3 d\x9Fwi\xEAkowy, a spacj\xEA, aby przeskoczy\xE6 przeszkod\xEA. Steruj klawiszami A i D. Omijaj przeszkody i naje\xBF""d\xBF""aj na pola przyspieszenia, aby pobi\xE6 czas.";
         case Id::SwoopRaceStuckHint:
@@ -1112,6 +1112,24 @@ const char* Get(Id id) {
             return "Zestawy naprawcze lecz\xB9 droidy. Poci\xB9gnij lewy spust, przejd\x9F krzy\xBF""akiem w lewo i w prawo do Medycyny i naci\x9Cnij A.";
         case Id::TutK2SecuritySpikePad:
             return "Ten zamek przerasta twoje umiej\xEAtno\x9C""ci; u\xBFyj prze\xB3""amywacza zabezpiecze\xF1. Wybierz pojemnik, poci\xB9gnij lewy spust, aby otworzy\xE6 menu akcji, i wybierz Zabezpieczenia.";
+        case Id::SwoopRaceControlsPad:
+            return "Naci\x9Cnij B, aby zmieni\xE6 bieg na sygna\xB3 d\x9Fwi\xEAkowy. Steruj lew\xB9 ga\xB3k\xB9. Omijaj przeszkody i naje\xBF""d\xBF""aj na pola przyspieszenia, aby pobi\xE6 czas.";
+        case Id::SwoopRaceControlsK2Pad:
+            return "Naci\x9Cnij B, aby zmieni\xE6 bieg na sygna\xB3 d\x9Fwi\xEAkowy, a A, aby przeskoczy\xE6 przeszkod\xEA. Steruj lew\xB9 ga\xB3k\xB9. Omijaj przeszkody i naje\xBF""d\xBF""aj na pola przyspieszenia, aby pobi\xE6 czas.";
+        case Id::SwoopRaceStuckHintPad:
+            return "Zjed\x9F w bok, potem B i A.";
+        case Id::SwoopRaceStuckHintLeftPad:
+            return "Skr\xEA\xE6 w lewo, potem B.";
+        case Id::SwoopRaceStuckHintRightPad:
+            return "Skr\xEA\xE6 w prawo, potem B.";
+        case Id::SwoopRaceStuckBarWallLeftPad:
+            return "Skr\xEA\xE6 w lewo, potem A, potem B.";
+        case Id::SwoopRaceStuckBarWallRightPad:
+            return "Skr\xEA\xE6 w prawo, potem A, potem B.";
+        case Id::SwoopRaceStuckBarStripPad:
+            return "Pod\xB9\xBF""aj za d\x9Fwi\xEAkiem, potem B.";
+        case Id::SwoopRaceStuckBarJumpPad:
+            return "A, potem B.";
 
         case Id::FloorPuzzleIntro:
             return "Zagadka p\xB3yt pod\xB3ogowych: dziewi\xEA\xE6 p\xB3yt w siatce trzy na trzy, "

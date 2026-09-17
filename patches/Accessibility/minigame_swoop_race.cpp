@@ -18,6 +18,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "binding_hints.h"    // Text — keyboard or controller wording
 #include "engine_app.h"       // GetServerApp (real race-timer read — see
                               //   TickRaceTimer)
 #include "engine_area.h"      // GetClientArea + map-pin chain (back-pointer),
@@ -25,7 +26,9 @@
 #include "engine_game.h"      // IsKotor2 — gate ladder, jump watch, K2 keys
 #include "engine_offsets.h"   // Vector
 #include "engine_player.h"    // GetCameraPosition (jump-start log anchor)
-#include "hotkeys.h"          // Pressed(SwoopShift) — keyboard shift (K2)
+#include "engine_keymap.h"    // GameActionScancode — KOTOR 1's MGshoot bind
+#include "hotkeys.h"          // Pressed(SwoopShift) — keyboard shift
+#include "key_inject.h"       // Tap — KOTOR 1 shift through the MGshoot key
 #include "log.h"
 #include "audio_bus.h"        // PlayCue — non-positional "you can shift now" cue
 #include "audio_cues.h"       // NavCue + GetNavCueResref (shift-ready resref)
@@ -172,6 +175,11 @@ const size_t kMiniGameJumpVelocityOffset    = acc::off::Kotor2Only(0x118);
 const uintptr_t kAddrK2RunOnAccelerateScript = acc::addr::Kotor2Only(0x00838e10);
 const uintptr_t kAddrK2RunOnBrakeScript      = acc::addr::Kotor2Only(0x00838ec0);
 typedef void (__thiscall* PFN_RunFollowerSlotScript)(void* follower, int flag);
+
+// KOTOR 1's shift input: [Keymapping] Action217 = keymap.2da row 17 MGshoot
+// (event 0xd9), Space when the ini has no line for it. See TryShift.
+constexpr int kK1MGShootActionId = 217;
+constexpr int kDikSpace          = 0x39;
 
 // CSWMGObstacle / CSWMiniEnemy position-resolution offsets, vtable
 // downcast slots, and the global CSWMiniGameObjectArray layout were
@@ -942,7 +950,7 @@ void TickStuckHint(void* miniGame) {
             else if (offOk && off.x <= -kStuckWallU) { id = acc::strings::Id::SwoopRaceStuckHintRight; why = "wall left"; }
             break;
     }
-    const char* msg = acc::strings::Get(id);
+    const char* msg = acc::binding_hints::Text(id);
     if (msg && *msg) prism::SpeakUrgent(msg);
     acclog::Write("SwoopRace", "stuck hint: no progress for %llums at y=%.1f "
                   "(gear=%d speed=%.1f tunnelX=%.1f) [%s]",
@@ -1058,7 +1066,8 @@ void AnnounceEntry() {
     // KOTOR 2 rebinds the race: Space is the JUMP (OnBrake slot -> onjump.ncs)
     // and the gear shift moved to the OnAccelerate slot — see the string's
     // comment in strings.h for the input ids behind that.
-    const char* controls = acc::strings::Get(
+    // Worded for the controller when one is connected (binding_hints).
+    const char* controls = acc::binding_hints::Text(
         acc::game::IsKotor2() ? acc::strings::Id::SwoopRaceControlsK2
                               : acc::strings::Id::SwoopRaceControls);
     if ((!opener || !*opener) && (!controls || !*controls)) return;
@@ -1227,7 +1236,24 @@ bool RunPlayerSlotScript(uintptr_t runner, const char* what) {
 bool IsActive() { return g_state.active; }
 
 bool TryShift() {
-    return RunPlayerSlotScript(kAddrK2RunOnAccelerateScript, "shift (OnAccelerate)");
+    if (acc::game::IsKotor2()) {
+        return RunPlayerSlotScript(kAddrK2RunOnAccelerateScript, "shift (OnAccelerate)");
+    }
+    // KOTOR 1: the shift is CSWMiniPlayer::Fire (the gun bank runs
+    // onfire.ncs, the gear ladder), which HandleInputEvent @0x00621210 calls
+    // on event 0xd9 — the MGshoot keymap row, Action217, Space by default.
+    // Pressed through the player's own bind rather than by calling Fire, so
+    // the engine's guards on that case (module + area present, not paused)
+    // stay the engine's. The press reaches the client input hook as 0xd9,
+    // where TryJump declines on KOTOR 1 and the engine shifts.
+    if (!g_state.active || !g_state.latched_mini_game) return false;
+    int scan = acc::engine_keymap::GameActionScancode(kK1MGShootActionId);
+    if (scan == 0) scan = kDikSpace;
+    acc::key_inject::Tap(scan);
+    acclog::Write("SwoopRace", "shift (MGshoot key, scan 0x%02x): injected "
+                  "(gear global=%d)", scan,
+                  acc::engine::ReadGlobalNumber(kGearGlobalName));
+    return true;
 }
 
 bool TryJump() {
@@ -1298,12 +1324,12 @@ void Tick() {
     // ---- In-race observation (only when the latch is alive). -------------
     if (!g_state.latched_mini_game) return;
 
-    // Keyboard shift (K2): the bare W hotkey. Space / pad A (jump) and pad B
-    // (shift) arrive as events at the client input hook (input_pipeline.cpp);
-    // W never does (the race polls it as an axis, not an event), so it is
-    // polled here instead.
-    if (acc::game::IsKotor2() &&
-        acc::hotkeys::Pressed(acc::hotkeys::Action::SwoopShift)) {
+    // Keyboard shift: the bare W hotkey, on BOTH games so the muscle memory
+    // carries between them (KOTOR 1's Space still shifts too). On KOTOR 2
+    // Space / pad A (jump) and pad B (shift) arrive as events at the client
+    // input hook (input_pipeline.cpp); W never does (the race polls it as an
+    // axis, not an event), so it is polled here instead.
+    if (acc::hotkeys::Pressed(acc::hotkeys::Action::SwoopShift)) {
         TryShift();
     }
 

@@ -170,6 +170,32 @@ pad's. Everything below is shared with KOTOR 2 — same helpers, two sources.
   the board directly, through `pazaak::TryHandlePadAction`: Y stand, X end turn,
   LB your hand, RB both boards, L3 the opponent's remaining card count.
 
+### Swoop race (added 2026-09-17, both games, untested with a pad)
+
+The race uses KOTOR 2's own engine pad bindings on both games, so one
+controller layout works in both:
+
+- B — shift up. KOTOR 1: the mod presses the player's MGshoot bind (Action217,
+  Space), which is the engine's own shift. KOTOR 2: the engine's pad-B event
+  0x16, run through `swoop_race::TryShift`.
+- A — jump on KOTOR 2 (event 0xd9 → `TryJump`). Idle on KOTOR 1, which has no
+  jump.
+- Left stick — steer. When the mod drives the pad (KOTOR 1, or a KOTOR 2 engine
+  that never saw the pad) `pad_movement` holds the minigame steer bind
+  (Action283, A/D) and nothing else. It does not hold the walk or camera binds:
+  on a vanilla ini they are not A/D, and walking forward would press W, which
+  is now the race's shift key.
+- Every other button's world job is suppressed while the race is up: Start
+  would press Space (the shift on KOTOR 1), R3 would hold a turn key, and the
+  LT action menu has nothing to act on. On KOTOR 2 the manager seam hands
+  every pad code straight to the engine during a race, so A can never become
+  an interact or B an Escape.
+
+On the keyboard, W shifts on both games now. KOTOR 1's Space still shifts, so
+the key a KOTOR 2 player learned works when they come back.
+
+The race's spoken opener and the KOTOR 2 stuck hints name controller buttons
+when a pad is connected (`binding_hints` twins `SwoopRace*Pad`).
 
 In menus the pad simply IS the keyboard: D-Pad navigates (with a 400 ms / 150 ms
 auto-repeat the mod supplies, since KOTOR 1 has no engine repeat gate to

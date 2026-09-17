@@ -172,7 +172,10 @@ K2 race, event `0xd9` (Space / pad A) is consumed at the client input hook and
 it is logged); event `0x16` (pad B) is consumed and `TryShift` runs the
 OnAccelerate runner; the `SwoopShift` hotkey (bare W, polled in Tick because
 W is an axis poll, not an event, inside the race) runs the OnAccelerate runner
-from the keyboard. Left / right mouse keep their native meaning. (Rounds 1–4
+from the keyboard. Since 2026-09-17 W also shifts on KOTOR 1 (TryShift presses
+the MGshoot bind there, so the engine's own 0xd9 → Fire path does the shift),
+and the pad's race bindings are shared by both games —
+`docs/kotor1-controller-port.md`, "Swoop race". Left / right mouse keep their native meaning. (Rounds 1–4
 had the pair the other way round — Space shift, W jump — to match KOTOR 1; the
 player asked for Space = jump, W = shift on 2026-09-15, which is also the
 engine's own Space.)

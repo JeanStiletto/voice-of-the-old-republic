@@ -488,7 +488,7 @@ const char* Get(Id id) {
             // Pause pauses the race, etc.) is documented in the manual
             // ? verbose spoken intro got in the way of the start
             // countdown so the shorter form is preferred.
-            return "Leertaste zum Hochschalten beim Audiosignal. Mit A und D lenken. Weiche den Hindernissen aus und triff die Beschleunigerfelder, um die Zeit zu schlagen.";
+            return "W oder Leertaste zum Hochschalten beim Audiosignal. Mit A und D lenken. Weiche den Hindernissen aus und triff die Beschleunigerfelder, um die Zeit zu schlagen.";
         case Id::SwoopRaceControlsK2:
             // KOTOR 2: Leertaste springt (die Engine-Belegung); der Gangwechsel,
             // den die Engine nur auf der linken Maustaste hat, liegt auf W.
@@ -1134,6 +1134,24 @@ const char* Get(Id id) {
             return "Mit Reparatur-Kits reparierst du Droiden. Ziehe den linken Trigger, gehe mit dem Steuerkreuz links und rechts zu Medizin und dr\xFC""cke A.";
         case Id::TutK2SecuritySpikePad:
             return "Dieses Schloss \xFC""bersteigt deine F\xE4higkeiten; benutze einen System\xFC""berbr\xFC""cker. Fokussiere die Kiste, ziehe den linken Trigger f\xFCr das Aktionsmen\xFC und w\xE4hle Sicherheit.";
+        case Id::SwoopRaceControlsPad:
+            return "B zum Hochschalten beim Audiosignal. Mit dem linken Stick lenken. Weiche den Hindernissen aus und triff die Beschleunigerfelder, um die Zeit zu schlagen.";
+        case Id::SwoopRaceControlsK2Pad:
+            return "B zum Hochschalten beim Audiosignal, A zum Springen \xFC""ber ein Hindernis. Mit dem linken Stick lenken. Weiche den Hindernissen aus und triff die Beschleunigerfelder, um die Zeit zu schlagen.";
+        case Id::SwoopRaceStuckHintPad:
+            return "Zur Seite lenken, dann B und A.";
+        case Id::SwoopRaceStuckHintLeftPad:
+            return "Links lenken, dann B.";
+        case Id::SwoopRaceStuckHintRightPad:
+            return "Rechts lenken, dann B.";
+        case Id::SwoopRaceStuckBarWallLeftPad:
+            return "Links lenken, dann A, dann B.";
+        case Id::SwoopRaceStuckBarWallRightPad:
+            return "Rechts lenken, dann A, dann B.";
+        case Id::SwoopRaceStuckBarStripPad:
+            return "Dem Ton folgen, dann B.";
+        case Id::SwoopRaceStuckBarJumpPad:
+            return "A, dann B.";
 
         case Id::FloorPuzzleIntro:
             return "Bodenplatten-R\xE4tsel: neun Platten in drei mal drei Anordnung, "

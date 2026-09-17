@@ -5,6 +5,7 @@
 #include "hotkeys.h"          // IsForegroundGame
 #include "key_inject.h"
 #include "log.h"
+#include "minigame_swoop_race.h"  // IsActive — the race steers, it does not walk
 #include "pad_input.h"
 #include "pad_quickmenu.h"    // IsOpen — the quick menu stands the stick down
 
@@ -12,15 +13,16 @@ namespace acc::pad::movement {
 
 namespace {
 
-// The six directions the two sticks drive, in the order the arrays below use.
+// The directions the two sticks drive, in the order the arrays below use. The
+// last pair is the swoop race's steer, which is its own bind (see Tick).
 enum Dir {
-    kFwd = 0, kBack, kStrafeL, kStrafeR, kTurnL, kTurnR,
+    kFwd = 0, kBack, kStrafeL, kStrafeR, kTurnL, kTurnR, kSteerL, kSteerR,
     kDirCount
 };
 
 const char* const kDirName[kDirCount] = {
     "forward", "back", "strafe left", "strafe right",
-    "camera left", "camera right",
+    "camera left", "camera right", "race steer left", "race steer right",
 };
 
 // Which scancode each direction presses. Resolved per press rather than
@@ -41,6 +43,8 @@ int ScancodeFor(int dir) {
         case kStrafeR: return acc::engine_keymap::MoveAxisScancode(MA::TurnRight);
         case kTurnL:   return acc::engine_keymap::TurnScancode(/*left=*/true);
         case kTurnR:   return acc::engine_keymap::TurnScancode(/*left=*/false);
+        case kSteerL:  return acc::engine_keymap::MinigameSteerScancode(/*left=*/true);
+        case kSteerR:  return acc::engine_keymap::MinigameSteerScancode(/*left=*/false);
         default:       return 0;
     }
 }
@@ -48,7 +52,7 @@ int ScancodeFor(int dir) {
 // Scancode currently held per direction, 0 = not held. The scancode is stored
 // rather than a bool so a rebind mid-hold still releases the key we actually
 // pressed.
-int g_held[kDirCount] = {0, 0, 0, 0, 0, 0};
+int g_held[kDirCount] = {0, 0, 0, 0, 0, 0, 0, 0};
 
 // Press above, release below. The gap is what stops a stick resting near a
 // diagonal boundary from chattering a key on and off every frame. Both are
@@ -103,8 +107,31 @@ void Tick() {
     // The quick menu is the one overlay that DOES stand the stick down. Its
     // entries are one-shot game actions chosen in a moment, and walking off
     // into a firefight while browsing them would be nobody's intent.
-    if (!acc::pad::Connected() || !acc::hotkeys::IsForegroundGame() ||
-        !acc::pad::InWorld() || acc::pad::quickmenu::IsOpen()) {
+    if (!acc::pad::Connected() || !acc::hotkeys::IsForegroundGame()) {
+        ReleaseAll();
+        return;
+    }
+
+    // A swoop race steers on its own bind, MGActionLeft/Right, and nothing
+    // else: the walk and camera binds are not A/D on a vanilla ini, so they
+    // would not steer, and forward would press W — the race's shift key
+    // (swoop_race Tick polls it), turning a push up the stick into a shift.
+    // Checked ahead of the world gate, which is not the question in a race.
+    if (acc::swoop_race::IsActive()) {
+        for (int d = kFwd; d <= kTurnR; ++d) SetHeld(d, false);
+        float sx = 0.0f, sy = 0.0f;
+        if (acc::pad::StickVector(sx, sy)) {
+            DriveAxis(sx, kSteerL, kSteerR);
+        } else {
+            SetHeld(kSteerL, false);
+            SetHeld(kSteerR, false);
+        }
+        return;
+    }
+    SetHeld(kSteerL, false);
+    SetHeld(kSteerR, false);
+
+    if (!acc::pad::InWorld() || acc::pad::quickmenu::IsOpen()) {
         ReleaseAll();
         return;
     }

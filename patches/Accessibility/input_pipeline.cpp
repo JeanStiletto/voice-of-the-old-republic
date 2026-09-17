@@ -253,8 +253,10 @@ extern "C" int __cdecl OnClientHandleInputEvent(void* this_ptr,
     // keyboard share one code path. Presses only — the engine's cases
     // early-out on release anyway. TryShift/TryJump are no-ops (return false →
     // pass through) outside an active K2 swoop race, so this touches nothing
-    // else that arrives as 0xd9 / 0x16.
-    if (param_2 != 0 && (param_1 == 0xd9 || param_1 == 0x16)) {
+    // else that arrives as 0xd9 / 0x16. KOTOR 2 only: on KOTOR 1 TryShift
+    // presses Space, whose own 0xd9 must reach the engine's shift untouched.
+    if (acc::game::IsKotor2() && param_2 != 0 &&
+        (param_1 == 0xd9 || param_1 == 0x16)) {
         const bool handled = (param_1 == 0xd9) ? acc::swoop_race::TryJump()
                                                : acc::swoop_race::TryShift();
         if (handled) {

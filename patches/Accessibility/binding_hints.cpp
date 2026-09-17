@@ -81,6 +81,17 @@ constexpr Twin kTwins[] = {
     { S::TutK2SoloMode, S::TutK2SoloModePad },
     { S::TutK2RepairKit, S::TutK2RepairKitPad },
     { S::TutK2SecuritySpike, S::TutK2SecuritySpikePad },
+    // Swoop race — spoken by minigame_swoop_race.cpp, not a tutorial popup,
+    // but it names controls all the same.
+    { S::SwoopRaceControls, S::SwoopRaceControlsPad },
+    { S::SwoopRaceControlsK2, S::SwoopRaceControlsK2Pad },
+    { S::SwoopRaceStuckHint, S::SwoopRaceStuckHintPad },
+    { S::SwoopRaceStuckHintLeft, S::SwoopRaceStuckHintLeftPad },
+    { S::SwoopRaceStuckHintRight, S::SwoopRaceStuckHintRightPad },
+    { S::SwoopRaceStuckBarWallLeft, S::SwoopRaceStuckBarWallLeftPad },
+    { S::SwoopRaceStuckBarWallRight, S::SwoopRaceStuckBarWallRightPad },
+    { S::SwoopRaceStuckBarStrip, S::SwoopRaceStuckBarStripPad },
+    { S::SwoopRaceStuckBarJump, S::SwoopRaceStuckBarJumpPad },
     // The J/L-swap ids share their pad wording with the K1 twins — the pad
     // texts name no letter keys, so one pad id serves both games.
     { S::TutK2OpenScreens, S::TutHintOpenScreensPad },

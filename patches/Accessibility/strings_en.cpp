@@ -468,7 +468,7 @@ const char* Get(Id id) {
             // Short cheat sheet. Full keymap (Enter/Mouse 1 also work,
             // Pause pauses the race, etc.) is in the manual ? verbose
             // spoken intro got in the way of the start countdown.
-            return "Press space to shift up on the audio cue. Steer with A and D. Avoid the obstacles and hit the accelerator pads to beat the time.";
+            return "Press W or space to shift up on the audio cue. Steer with A and D. Avoid the obstacles and hit the accelerator pads to beat the time.";
         case Id::SwoopRaceControlsK2:
             // KOTOR 2: Space jumps (the engine's own binding); the shift, which
             // the engine only has on the left mouse button, gets W — see strings.h.
@@ -1026,6 +1026,24 @@ const char* Get(Id id) {
             return "Repair kits heal droids. Pull the left trigger, step to Medical with the D-pad left and right, and press A.";
         case Id::TutK2SecuritySpikePad:
             return "This lock is beyond your skill; use a security spike. Focus the container, pull the left trigger for the action menu, and choose Security.";
+        case Id::SwoopRaceControlsPad:
+            return "Press B to shift up on the audio cue. Steer with the left stick. Avoid the obstacles and hit the accelerator pads to beat the time.";
+        case Id::SwoopRaceControlsK2Pad:
+            return "Press B to shift up on the audio cue and A to jump over an obstacle. Steer with the left stick. Avoid the obstacles and hit the accelerator pads to beat the time.";
+        case Id::SwoopRaceStuckHintPad:
+            return "Steer aside, then B and A.";
+        case Id::SwoopRaceStuckHintLeftPad:
+            return "Steer left, then B.";
+        case Id::SwoopRaceStuckHintRightPad:
+            return "Steer right, then B.";
+        case Id::SwoopRaceStuckBarWallLeftPad:
+            return "Steer left, then A, then B.";
+        case Id::SwoopRaceStuckBarWallRightPad:
+            return "Steer right, then A, then B.";
+        case Id::SwoopRaceStuckBarStripPad:
+            return "Follow the tone, then B.";
+        case Id::SwoopRaceStuckBarJumpPad:
+            return "A, then B.";
 
         // ---- Controller wording for the tutorial hints above. Selected by
         //      binding_hints::Text() when a gamepad is present; see strings.h.

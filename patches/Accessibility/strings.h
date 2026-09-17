@@ -2358,6 +2358,19 @@ enum class Id : int {
     TutK2SoloModePad,
     TutK2RepairKitPad,
     TutK2SecuritySpikePad,
+    //      Swoop race, both games, mirroring the SwoopRace* keyboard ids. The
+    //      pad's race bindings match across the games: B shifts up, the left
+    //      stick steers, and A jumps on KOTOR 2 (KOTOR 1 has no jump, so its
+    //      opener names no A). See minigame_swoop_race.cpp.
+    SwoopRaceControlsPad,
+    SwoopRaceControlsK2Pad,
+    SwoopRaceStuckHintPad,
+    SwoopRaceStuckHintLeftPad,
+    SwoopRaceStuckHintRightPad,
+    SwoopRaceStuckBarWallLeftPad,
+    SwoopRaceStuckBarWallRightPad,
+    SwoopRaceStuckBarStripPad,
+    SwoopRaceStuckBarJumpPad,
 
     // ---- Rakatan temple floor-plate puzzle (floor_puzzle.cpp; Unknown
     //      World Temple Main Floor, module unk_m44ab). A 3x3 lights-out

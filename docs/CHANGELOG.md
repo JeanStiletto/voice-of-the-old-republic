@@ -42,6 +42,38 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>v0.8.3</h2>
+
+<h3>Overview:</h3>
+
+- W shifts up a gear in KOTOR 1 swoop races too, so the same key works in both
+  games.
+- Swoop races can be played on a controller in both games: B shifts up, A jumps
+  (KOTOR 2) and the left stick steers.
+- With a controller connected, the swoop race controls summary and the KOTOR 2
+  stuck hints name controller buttons instead of keys.
+
+<h3>Swoop racing:</h3>
+
+- **W shifts on KOTOR 1.** The "Swoop: Shift up" hotkey now works in both
+  games, so a player coming back from KOTOR 2 keeps the key they learned.
+  Space still shifts on KOTOR 1, and the race controls summary names both.
+- **Controller bindings, both games.** B shifts up and the left stick steers.
+  A jumps on KOTOR 2; KOTOR 1 has no jump, so A does nothing there. KOTOR 1
+  had no race bindings before: the stick pressed the walk keys, which don't
+  steer on a default key setup, and Start pressed Space, which shifted by
+  accident.
+- **Other buttons are ignored during a race.** Start, the right stick press
+  and the left trigger's action menu no longer fire their world actions
+  mid-race. Escape on the keyboard still opens the game menu.
+- **KOTOR 2's own controller handling is left alone in a race.** The mod no
+  longer turns A into "interact" or B into Escape while a race is running, so
+  the game's jump and shift always get the press.
+- **Controller wording for race speech.** With a controller connected, the
+  controls summary spoken at the start of a race names B, A and the left stick
+  instead of W, Space, A and D. All KOTOR 2 stuck hints switch too, for
+  example "Steer left, then A, then B." Available in all seven languages.
+
 <h2>v0.8.2</h2>
 
 <h3>Overview:</h3>

@@ -418,13 +418,14 @@ void InitDefaults() {
     bind(Action::TurretCyclePrev,   'Q',       0, 0,         kModShift | kModCtrl | kModAlt | kModAltGr);
     bind(Action::TurretCycleNext,   'E',       0, 0,         kModShift | kModCtrl | kModAlt | kModAltGr);
 
-    // ----- Swoop race (KOTOR 2) -----
-    // Bare W shifts up a gear. Polled only while a KOTOR 2 swoop race is
-    // active (minigame_swoop_race.cpp); in the race W is otherwise dead — the
-    // engine polls only the lateral axis and the mouse there, and its only
-    // shift inputs are the left mouse button and pad B. Space keeps the K2
-    // engine's own meaning, the jump (run through the mod's runner at the
-    // client input hook so it is logged). Forbid every modifier.
+    // ----- Swoop race (both games) -----
+    // Bare W shifts up a gear. Polled only while a swoop race is active
+    // (minigame_swoop_race.cpp). On KOTOR 2 W is otherwise dead in the race —
+    // the engine polls only the lateral axis and the mouse there, and its only
+    // shift inputs are the left mouse button and pad B; Space keeps the K2
+    // engine's own meaning, the jump. On KOTOR 1 Space is the engine's shift
+    // and stays one; W is the same shift so the key carries between the games.
+    // Forbid every modifier.
     bind(Action::SwoopShift,        'W',       0, 0,         kModShift | kModCtrl | kModAlt | kModAltGr);
 
     // ----- Dialog -----

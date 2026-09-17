@@ -68,6 +68,11 @@ int s_axisVkCount[kMoveAxisCount] = {0, 0, 0, 0};
 // reads keyboard via DirectInput, which sees scancodes only.
 int s_turnScan[2] = {0, 0};
 
+// The same shape for Action283 (MGActionLeft/Right), the minigame steer the
+// swoop race polls — [0]=left [1]=right, 0 = no ini line → the A/D fallback in
+// MinigameSteerScancode(). The pad's stick steers the race by holding these.
+int s_mgSteerScan[2] = {0, 0};
+
 // Default VK per axis (WASD) — always seeded so the buckets are never empty,
 // even before the ini is read or if it is missing. Index matches MoveAxis.
 constexpr int kAxisDefaultVk[kMoveAxisCount] = {'W', 'S', 'A', 'D'};
@@ -340,6 +345,8 @@ void ReloadGameConfig() {
     }
     s_turnScan[0] = 0;
     s_turnScan[1] = 0;
+    s_mgSteerScan[0] = 0;
+    s_mgSteerScan[1] = 0;
     char path[MAX_PATH];
     if (!ResolveIniPath(path, sizeof(path))) {
         s_gameLoaded = false;  // patch dir unknown yet — retry on next query
@@ -418,6 +425,11 @@ void ReloadGameConfig() {
                     int di = (c.axis == 2) ? 0 : 1;
                     int sc = InputIndexToScancode(inputIndex);
                     if (sc != 0 && s_turnScan[di] == 0) s_turnScan[di] = sc;
+                }
+                if ((c.axis == 2 || c.axis == 3) && c.actionId == 283) {
+                    int di = (c.axis == 2) ? 0 : 1;
+                    int sc = InputIndexToScancode(inputIndex);
+                    if (sc != 0 && s_mgSteerScan[di] == 0) s_mgSteerScan[di] = sc;
                 }
             }
         }
@@ -530,6 +542,13 @@ int TurnScancode(bool left) {
     int idx = left ? 0 : 1;
     if (s_turnScan[idx] != 0) return s_turnScan[idx];
     return left ? 0x1E : 0x20;  // DIK A / D fallback (vanilla / ini unreadable)
+}
+
+int MinigameSteerScancode(bool left) {
+    if (!s_gameLoaded) ReloadGameConfig();
+    int idx = left ? 0 : 1;
+    if (s_mgSteerScan[idx] != 0) return s_mgSteerScan[idx];
+    return left ? 0x1E : 0x20;  // DIK A / D — keymap.2da's MGActionLeft/Right
 }
 
 bool ForwardBackwardKeyHeld() {

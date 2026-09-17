@@ -25,6 +25,7 @@
 #include "map_ui_cursor.h"   // IsActive — the map screen owns the left stick
 #include "menus_chain.h"     // g_chain* — which Quick Menu entry is focused
 #include "minigame_pazaak.h" // TryHandlePadAction — the board owns Y and X
+#include "minigame_swoop_race.h" // IsActive / TryShift / TryJump — the race owns A and B
 #include "narrated_target.h" // TryGet — is there a target to open the menu on?
 #include "pad_diag.h"        // the device census — what the machine actually
                              // has, as opposed to what we managed to bind
@@ -1470,6 +1471,28 @@ void PollButtons() {
     // first and falls back to the ordinary interact when the queue is closed.
     const bool triggerHeld = g_ltHeld || g_rtHeld;
 
+    // A swoop race owns the face buttons, with the bindings KOTOR 2's own
+    // engine gives its pad: B shifts up, A jumps (KOTOR 1 has no jump, so A is
+    // idle there). Every other button's world job is suppressed for the race —
+    // Start would press the pause key, which is Space, KOTOR 1's shift; the
+    // right stick press would hold a turn key; X, the left stick press and the
+    // shoulders act on a party and targets the race does not have.
+    if (acc::swoop_race::IsActive()) {
+        if (rising(kBtnB) && !triggerHeld) {
+            acclog::Write("Pad", "B -> swoop race shift");
+            acc::swoop_race::TryShift();
+        }
+        if (rising(kBtnA) && !triggerHeld) {
+            if (acc::swoop_race::TryJump()) {
+                acclog::Write("Pad", "A -> swoop race jump");
+            } else {
+                acclog::Write("Pad", "A in the swoop race — no jump on this "
+                                     "game, ignored");
+            }
+        }
+        return;
+    }
+
     if (rising(kBtnA) && !g_rtHeld) DispatchA();
     if (rising(kBtnB) && !triggerHeld) DispatchB();
     if (rising(kBtnShoulderL)) DispatchShoulder(/*right=*/false);
@@ -1691,7 +1714,9 @@ void PollTriggers() {
     // directions: in a menu the pad is simply the keyboard, and there is no
     // action menu to toggle over an engine panel. A suspended menu is exactly
     // that case — a blocking panel is up, so InWorldSurface() is already false.
-    if (lt && InWorldSurface()) {
+    // Not in a swoop race either: there is nothing to act on, and the race
+    // runs on regardless.
+    if (lt && InWorldSurface() && !acc::swoop_race::IsActive()) {
         NoteNavPress();
         ToggleActionMenu();
     }
@@ -1738,6 +1763,11 @@ bool TranslateClientEvent(int code, int value) {
             // the manager codes use: button actually down means the mouse
             // sent it, so stand down.
             if (PhysDown(VK_RBUTTON)) return false;
+            // The orient holds a turn key, and in a swoop race that steers.
+            if (acc::swoop_race::IsActive()) {
+                acclog::Write("Pad", "right stick press in the swoop race — ignored");
+                return true;
+            }
             acclog::Write("Pad", "right stick press -> camera orient");
             acc::hotkeys::PadPress(acc::hotkeys::Action::CameraOrient);
             return true;
@@ -1772,6 +1802,16 @@ Verdict TranslateManagerEvent(int& code, int& value) {
     }
 
     const int raw = code;
+
+    // ---- Swoop race: every pad input is the engine's ------------------------
+    // KOTOR 2's race is fully pad-driven by the engine itself — the left stick
+    // steers, and A / B reach the client input hook as 0xd9 / 0x16, where
+    // input_pipeline runs them through TryJump / TryShift. Nothing here may
+    // turn A into an interact or B into Esc while a race is up.
+    if (acc::swoop_race::IsActive()) {
+        acclog::Trace("Pad", "engine code %d left to the engine — swoop race", raw);
+        return Verdict::NotPad;
+    }
 
     // ---- Left stick -> nav ------------------------------------------------
     // The engine's own preamble keys on val == +/-1 for these two codes, so

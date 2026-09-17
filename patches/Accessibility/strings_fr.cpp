@@ -476,7 +476,7 @@ const char* Get(Id id) {
             // Short cheat sheet. Full keymap (Enter/Mouse 1 also work,
             // Pause pauses the race, etc.) is in the manual ? verbose
             // spoken intro got in the way of the start countdown.
-            return "Espace pour monter une vitesse au signal sonore. Dirigez avec A et D. \xC9vitez les obstacles et touchez les plaques d'acc\xE9l\xE9ration pour battre le temps.";
+            return "W ou Espace pour monter une vitesse au signal sonore. Dirigez avec A et D. \xC9vitez les obstacles et touchez les plaques d'acc\xE9l\xE9ration pour battre le temps.";
         case Id::SwoopRaceControlsK2:
             return "W pour monter une vitesse au signal sonore, Espace pour sauter un obstacle. Dirigez avec A et D. \xC9vitez les obstacles et touchez les plaques d'acc\xE9l\xE9ration pour battre le temps.";
         case Id::SwoopRaceStuckHint:
@@ -1135,6 +1135,24 @@ const char* Get(Id id) {
             return "Les kits de r\xE9paration soignent les dro\xEF""des. Tirez la g\xE2""chette gauche, allez sur M\xE9""dical avec la croix gauche et droite, puis appuyez sur A.";
         case Id::TutK2SecuritySpikePad:
             return "Cette serrure d\xE9passe vos comp\xE9tences ; utilisez une sonde de s\xE9""curit\xE9. Ciblez le conteneur, tirez la g\xE2""chette gauche pour le menu d'actions, et choisissez S\xE9""curit\xE9.";
+        case Id::SwoopRaceControlsPad:
+            return "B pour monter une vitesse au signal sonore. Dirigez avec le stick gauche. \xC9vitez les obstacles et touchez les plaques d'acc\xE9l\xE9ration pour battre le temps.";
+        case Id::SwoopRaceControlsK2Pad:
+            return "B pour monter une vitesse au signal sonore, A pour sauter un obstacle. Dirigez avec le stick gauche. \xC9vitez les obstacles et touchez les plaques d'acc\xE9l\xE9ration pour battre le temps.";
+        case Id::SwoopRaceStuckHintPad:
+            return "\xC9""cartez-vous, puis B et A.";
+        case Id::SwoopRaceStuckHintLeftPad:
+            return "Braquez \xE0 gauche, puis B.";
+        case Id::SwoopRaceStuckHintRightPad:
+            return "Braquez \xE0 droite, puis B.";
+        case Id::SwoopRaceStuckBarWallLeftPad:
+            return "Braquez \xE0 gauche, puis A, puis B.";
+        case Id::SwoopRaceStuckBarWallRightPad:
+            return "Braquez \xE0 droite, puis A, puis B.";
+        case Id::SwoopRaceStuckBarStripPad:
+            return "Suivez le son, puis B.";
+        case Id::SwoopRaceStuckBarJumpPad:
+            return "A, puis B.";
 
         case Id::FmtModLoadedVersion:   return "Voice of the Old Republic charg\xE9, version %s";
         case Id::FmtChargenFeatUnnamed: return "Don %u";
