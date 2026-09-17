@@ -34,22 +34,69 @@ float DistXYSq(const Vector& a, const Vector& b) {
     return dx * dx + dy * dy;
 }
 
-// Find the index of the path_point nearest to `target` in XY. Linear
-// scan — N ≤ kMaxNodes, trivial cost per call.
-int FindNearestNode(const std::vector<PathPointSnapshot>& nodes,
-                    const Vector& target) {
-    int n = static_cast<int>(nodes.size());
+// Pick the path_point a route should start / end on for `target`.
+//
+// Plain nearest-in-XY is wrong on shipped K2 path data (2026-09-17 log,
+// 202tel/203tel .pth): 203tel has an unlinked point half a metre from a
+// linked one right outside the Exchange door, so every route to or from
+// that door died; 202tel's jail-cell points (a separately linked group
+// behind d_Jail) were nearest to corridor positions through the cell wall.
+// So, in preference order:
+//   1) nearest node that has links AND is walkmesh-clear from target
+//   2) nearest node that has links (walls unavailable / nothing clear)
+//   3) nearest node at all (degenerate graph with no links)
+// This only chooses among existing nodes — it never adds links, so areas
+// the author left unconnected stay unreachable. 2D wall test for the same
+// reason as the smoother: nodes carry no z; it can only over-block.
+int FindAnchorNode(const acc::engine::navgraph::NavGraphSnapshot& graph,
+                   const acc::engine::WallEdge* walls, int wallCount,
+                   const Vector& target, const char* role) {
+    const int n = static_cast<int>(graph.nodes.size());
     if (n <= 0) return -1;
-    int best = 0;
-    float bestSq = DistXYSq(nodes[0].pos, target);
-    for (int i = 1; i < n; ++i) {
-        float d = DistXYSq(nodes[i].pos, target);
-        if (d < bestSq) {
-            bestSq = d;
-            best   = i;
+    const float kInf = std::numeric_limits<float>::infinity();
+    int   nearestAny = -1,    nearestLinked = -1,   nearestClear = -1;
+    float anySq      = kInf,  linkedSq      = kInf, clearSq      = kInf;
+    int   rejectedByWall = 0;
+    for (int i = 0; i < n; ++i) {
+        const Vector& p = graph.nodes[i].pos;
+        float d = DistXYSq(p, target);
+        if (d < anySq) { anySq = d; nearestAny = i; }
+
+        int lo = 0, hi = 0;
+        acc::engine::navgraph::NeighbourRange(graph, i, lo, hi);
+        if (hi <= lo) continue;
+        if (d < linkedSq) { linkedSq = d; nearestLinked = i; }
+
+        // Wall test only for candidates that could still win — keeps the
+        // O(nodes × walls) cost to a handful of segment tests in practice.
+        if (!walls || wallCount <= 0 || d >= clearSq) continue;
+        Vector hit{};
+        if (acc::engine::SegmentCrossesWalkmesh(walls, wallCount, target, p,
+                                                hit, /*ignoreZ=*/true)) {
+            ++rejectedByWall;
+            continue;
         }
+        clearSq = d; nearestClear = i;
     }
-    return best;
+
+    int chosen = nearestClear >= 0  ? nearestClear
+               : nearestLinked >= 0 ? nearestLinked
+               : nearestAny;
+    if (chosen != nearestAny) {
+        acclog::Write("Pathfind", "Anchor(%s): chose node %d (%s, %.2fm) over "
+                      "nearest node %d (%.2fm, %s) wallRejects=%d",
+                      role, chosen,
+                      chosen == nearestClear ? "linked+clear" : "linked, no clear",
+                      std::sqrt(DistXYSq(graph.nodes[chosen].pos, target)),
+                      nearestAny, std::sqrt(anySq),
+                      nearestAny == nearestLinked ? "behind wall" : "unlinked",
+                      rejectedByWall);
+    } else if (nearestClear < 0) {
+        acclog::Write("Pathfind", "Anchor(%s): no linked wall-clear node; "
+                      "fallback node %d (%.2fm) walls=%d wallRejects=%d",
+                      role, chosen, std::sqrt(anySq), wallCount, rejectedByWall);
+    }
+    return chosen;
 }
 
 // Diagnostic: find the closest (smallest-t along a→b) walkmesh edge that
@@ -132,8 +179,19 @@ bool ComputePath(void* area,
         return true;
     }
 
-    int startNode = FindNearestNode(graph.nodes, start);
-    int goalNode  = FindNearestNode(graph.nodes, goal);
+    // Wall cache pulled from spatial::change_detector (built once per
+    // area-load by Pillar 1's BuildAreaWallCache). Used for anchor-node
+    // selection and the smoothing pass below; both degrade gracefully if
+    // it isn't ready yet.
+    const acc::engine::WallEdge* walls = nullptr;
+    int wallCount = 0;
+    bool haveWalls = acc::spatial::change_detector::GetCachedWalls(
+                         walls, wallCount)
+                     && walls != nullptr && wallCount > 0;
+    if (!haveWalls) { walls = nullptr; wallCount = 0; }
+
+    int startNode = FindAnchorNode(graph, walls, wallCount, start, "start");
+    int goalNode  = FindAnchorNode(graph, walls, wallCount, goal,  "goal");
     if (startNode < 0 || goalNode < 0) {
         acclog::Write("Pathfind", "ComputePath: nearest-node resolution failed");
         return false;
@@ -261,17 +319,10 @@ bool ComputePath(void* area,
     // is; the path is "where to go from here", not "current position +
     // where to go".
     //
-    // Wall cache pulled from spatial::change_detector (built once per
-    // area-load by Pillar 1's BuildAreaWallCache); if it isn't ready
-    // yet (rare — would mean smoothing requested before the
-    // change-detector ticked once after area enter), skip smoothing
-    // and return the raw path. Safe degradation: first beacon target
-    // is the previous behaviour.
-    const acc::engine::WallEdge* walls = nullptr;
-    int wallCount = 0;
-    bool haveWalls = acc::spatial::change_detector::GetCachedWalls(
-                         walls, wallCount)
-                     && walls != nullptr && wallCount > 0;
+    // Wall cache fetched above; if it isn't ready yet (rare — would mean
+    // smoothing requested before the change-detector ticked once after
+    // area enter), skip smoothing and return the raw path. Safe
+    // degradation: first beacon target is the previous behaviour.
     if (haveWalls && outWaypoints.size() >= 2) {
         acclog::Write("Pathfind", "Smooth: begin anchor=(%.2f,%.2f) "
                       "wallCount=%d raw=%zu",

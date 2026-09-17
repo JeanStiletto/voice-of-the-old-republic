@@ -69,6 +69,8 @@ and add the German in parentheses if it genuinely aids clarity.
   instead of only when you stop on it.
 - Exits whose door is named after its destination say that name once instead of
   twice.
+- Routes to places you can walk to no longer fail with "No path" on maps with
+  badly placed path points.
 
 <h3>Swoop racing:</h3>
 
@@ -148,6 +150,14 @@ and add the German in parentheses if it genuinely aids clarity.
   to read its name twice, as in "To Entertainment Module 081 North to To
   Entertainment Module 081" on Citadel Station. The destination is now dropped
   when it matches the door's name.
+- **Routes no longer fail with "No path" on walkable ground.** Some maps ship
+  path points that are unlinked or sit behind a wall. Examples on Citadel
+  Station are an unlinked point outside the Bumani Exchange door in
+  Residential 082 West, and the jail cell points next to the corridor in
+  Residential 082 East. A route could start or end on such a point and fail. Routes
+  now start and end on the nearest linked point you can reach without crossing
+  a wall. No new links are added, so areas the map keeps apart still say
+  "No path".
 
 <h2>v0.8.2</h2>
 
