@@ -57,6 +57,8 @@ and add the German in parentheses if it genuinely aids clarity.
 - The Quick Menu no longer says "control -1" while you move through it.
 - Mod items whose name or description exists only in English are read out in
   stores, inventories and the world instead of "control 3" or "No description".
+- On the KOTOR 2 map screen, the controller's beacon and walk-to chords work,
+  and the map's context help names them.
 
 <h3>Swoop racing:</h3>
 
@@ -101,6 +103,11 @@ and add the German in parentheses if it genuinely aids clarity.
   (or any language the item has) when your language has none. Applies to
   store, inventory and container rows and to items lying in the world, in both
   games.
+- **Beacon and walk-to chords work on the KOTOR 2 map.** Left trigger with left
+  shoulder button starts a beacon to the selected map hint, right trigger with
+  right shoulder button walks there. Before, the game read the shoulder button
+  alone and switched to the Journal. Both triggers together on the map now name
+  these two chords, and no longer read out the facing-in-degrees line.
 
 <h2>v0.8.2</h2>
 

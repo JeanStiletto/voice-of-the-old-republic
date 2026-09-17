@@ -837,6 +837,32 @@ void DispatchB() {
     InjectMenuKey(kInputEsc1);
 }
 
+// The shoulder chords: LT + LB beacons to the focused object, RT + RB walks
+// to it. Returns true when the matching trigger is held and the chord fired —
+// the caller's signal that the bare shoulder job must not also run. Marking the
+// trigger chorded is what stops its own solo job firing on release.
+//
+// Shared by all three places a shoulder press arrives: KOTOR 1's poll, and on
+// KOTOR 2 both the in-world client route and the manager route, which is the
+// only one a shoulder reaches while a panel such as the map is up.
+bool DispatchShoulderChord(bool right) {
+    if (!right && g_ltHeld) {
+        g_ltChorded = true;
+        acclog::Write("Pad", "LT + LB -> beacon to focus");
+        acc::cycle_input::DispatchPadAction(
+            acc::cycle_input::PadAction::BeaconFocus);
+        return true;
+    }
+    if (right && g_rtHeld) {
+        g_rtChorded = true;
+        acclog::Write("Pad", "RT + RB -> walk to focus");
+        acc::cycle_input::DispatchPadAction(
+            acc::cycle_input::PadAction::WalkToFocus);
+        return true;
+    }
+    return false;
+}
+
 void DispatchShoulder(bool right) {
     // The Pazaak board first. The shoulders are idle there — the engine's
     // sub-screen step has no sub-screens to reach — so they carry the board's
@@ -847,22 +873,8 @@ void DispatchShoulder(bool right) {
     }
 
     // The chords come first — a shoulder taken during a trigger hold is the
-    // chord, and marking the trigger chorded is what stops its own solo job
-    // firing on release.
-    if (!right && g_ltHeld) {
-        g_ltChorded = true;
-        acclog::Write("Pad", "LT + LB -> beacon to focus");
-        acc::cycle_input::DispatchPadAction(
-            acc::cycle_input::PadAction::BeaconFocus);
-        return;
-    }
-    if (right && g_rtHeld) {
-        g_rtChorded = true;
-        acclog::Write("Pad", "RT + RB -> walk to focus");
-        acc::cycle_input::DispatchPadAction(
-            acc::cycle_input::PadAction::WalkToFocus);
-        return;
-    }
+    // chord, never the sub-screen step or the target cycle.
+    if (DispatchShoulderChord(right)) return;
 
     // On the container and the store the keyboard's Q / E carry the mode
     // toggle (take vs give, buy vs sell). Same routing as KOTOR 2: a synthetic
@@ -1705,22 +1717,10 @@ bool TranslateClientEvent(int code, int value) {
 
     switch (code) {
         case kPadClientShoulderL:
-            // Bare LB stays the engine's Cycle Target (Left); only the chord
-            // is ours, and consuming it stops the engine ALSO cycling.
-            if (!g_ltHeld) return false;
-            g_ltChorded = true;
-            acclog::Write("Pad", "LT + LB -> beacon to focus");
-            acc::cycle_input::DispatchPadAction(
-                acc::cycle_input::PadAction::BeaconFocus);
-            return true;
-
         case kPadClientShoulderR:
-            if (!g_rtHeld) return false;
-            g_rtChorded = true;
-            acclog::Write("Pad", "RT + RB -> walk to focus");
-            acc::cycle_input::DispatchPadAction(
-                acc::cycle_input::PadAction::WalkToFocus);
-            return true;
+            // Bare LB / RB stay the engine's Cycle Target; only the chord is
+            // ours, and consuming it stops the engine ALSO cycling.
+            return DispatchShoulderChord(code == kPadClientShoulderR);
 
         case kPadClientStickR:
             // R3 shares InputIndex 1 with MOUSE_BUTTON1 — the RIGHT MOUSE
@@ -1936,6 +1936,14 @@ Verdict TranslateManagerEvent(int& code, int& value) {
         if (acc::pazaak::TryHandlePadAction(
                 code == kPadShoulderR ? acc::pazaak::PadAction::ReviewTable
                                       : acc::pazaak::PadAction::ReviewHand)) {
+            return Verdict::Consumed;
+        }
+        // The chords, off the world. In the world the shoulder arrives on the
+        // client route too and TranslateClientEvent takes the chord there, so
+        // claiming it here as well would fire it twice. On a panel this is the
+        // only route — without it LT + LB on the map reached the engine as a
+        // bare LB and stepped to the next sub-screen instead of the beacon.
+        if (!InWorldSurface() && DispatchShoulderChord(code == kPadShoulderR)) {
             return Verdict::Consumed;
         }
         acc::engine::UiBlockState blk;

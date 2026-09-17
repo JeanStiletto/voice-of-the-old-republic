@@ -326,9 +326,12 @@ constexpr Entry kEntries[] = {
     { S::HelpKeyPadCancelCombat,   Grp::Controller, 0,      false, Dev::Pad },
     { S::HelpKeyPadCopyLastSpoken, Grp::Controller,
       kWorld | kDialog | kMenu, false, Dev::Pad },
-    { S::HelpKeyPadWalkToFocus,    Grp::Controller, 0,      false, Dev::Pad },
-    { S::HelpKeyPadBeacon,         Grp::Controller, 0,      false, Dev::Pad },
-    { S::HelpKeyPadDegrees,        Grp::Controller, kWorld | kMap, false, Dev::Pad },
+    // Tagged for the map: walking and beaconing to a map hint is the point of
+    // picking one there. The degrees line is not — on the map it adds nothing
+    // a player acts on, so the map's summary leaves it out.
+    { S::HelpKeyPadWalkToFocus,    Grp::Controller, kMap,   false, Dev::Pad },
+    { S::HelpKeyPadBeacon,         Grp::Controller, kMap,   false, Dev::Pad },
+    { S::HelpKeyPadDegrees,        Grp::Controller, kWorld, false, Dev::Pad },
     { S::HelpKeyPadCameraOrient,   Grp::Controller, kWorld, false, Dev::Pad },
     { S::HelpKeyPadHelp,           Grp::Controller, 0,      false, Dev::Pad },
     { S::HelpKeyPadQuickMenu,      Grp::Controller, kWorld, false, Dev::Pad },
