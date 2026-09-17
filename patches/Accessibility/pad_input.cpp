@@ -660,11 +660,15 @@ bool DispatchWorldDpad(int code) {
 // world's objects are on the horizontal one, and they are all one category:
 // exactly what the horizontal axis is for everywhere else in the mod.
 //
-// So the map screen gets the same D-Pad the world does, through the mod's own
-// Map cycle context — which is also what the keyboard's `,` / `.` already do
-// here. Left and right step the hints (spoken name, bearing and distance, with
-// the virtual cursor panning to each); up and down step the category, of which
-// the map has one.
+// So left and right step the hints through the mod's own Map cycle context —
+// which is also what the keyboard's `,` / `.` already do here (spoken name,
+// bearing and distance, with the virtual cursor panning to each).
+//
+// Up and down are NOT the category step they are in the world: the map has one
+// category, so that step only ever repeated it. They decline instead and fall
+// through to ordinary menu navigation, exactly the arrow keys' job on this
+// screen — the chain walks the panel's real buttons (party selection, return
+// to base, whatever the area offers).
 //
 // Gated on HasActiveMapPanel, the same predicate DispatchPadAction uses to
 // pick Map over World context, so the two can never disagree about which
@@ -675,8 +679,6 @@ bool DispatchMapDpad(int code) {
     switch (code) {
         case kPadDpadLeft:  return acc::cycle_input::DispatchPadAction(PA::ItemPrev);
         case kPadDpadRight: return acc::cycle_input::DispatchPadAction(PA::ItemNext);
-        case kPadDpadUp:    return acc::cycle_input::DispatchPadAction(PA::CategoryPrev);
-        case kPadDpadDown:  return acc::cycle_input::DispatchPadAction(PA::CategoryNext);
         default:            return false;
     }
 }
@@ -973,10 +975,14 @@ void DispatchDpadHold(int code) {
     // The object cycle — in the world, and on the map screen, which runs the
     // same cycle over its hints. Left is the nearest object and right the
     // farthest: the two ends of the very run the taps were stepping through,
-    // and exactly what Ctrl + comma / period reach on the keyboard. Up and
-    // down step the CATEGORY, a short ring with no end worth jumping to, so
-    // they keep their repeat and nothing more.
-    if (InWorldSurface() || acc::engine::HasActiveMapPanel()) {
+    // and exactly what Ctrl + comma / period reach on the keyboard. In the
+    // world up and down step the CATEGORY, a short ring with no end worth
+    // jumping to, so they keep their repeat and nothing more. On the map up
+    // and down walk the panel's buttons (DispatchMapDpad), so their hold is the
+    // list's Home / End below.
+    const bool mapHorizontal = acc::engine::HasActiveMapPanel() &&
+                               (code == kPadDpadLeft || code == kPadDpadRight);
+    if (InWorldSurface() || mapHorizontal) {
         if (code == kPadDpadLeft) {
             acclog::Write("Pad", "D-Pad left held -> nearest object");
             acc::cycle_input::DispatchPadAction(PA::ItemFirst);

@@ -59,6 +59,10 @@ and add the German in parentheses if it genuinely aids clarity.
   stores, inventories and the world instead of "control 3" or "No description".
 - On the KOTOR 2 map screen, the controller's beacon and walk-to chords work,
   and the map's context help names them.
+- On the map screen, D-Pad up and down move through the map's buttons like the
+  arrow keys, in both games.
+- On the KOTOR 2 map, up and down no longer read map notes when the map has no
+  buttons.
 
 <h3>Swoop racing:</h3>
 
@@ -108,6 +112,14 @@ and add the German in parentheses if it genuinely aids clarity.
   right shoulder button walks there. Before, the game read the shoulder button
   alone and switched to the Journal. Both triggers together on the map now name
   these two chords, and no longer read out the facing-in-degrees line.
+- **D-Pad up and down navigate the map's buttons.** They used to switch the
+  hint category, and the map has only one. They now move through entries
+  such as Party Selection and Return to Base, exactly like the arrow keys.
+  Holding up or down jumps to the first or last button. Both games.
+- **No map notes on up and down when the map has no buttons (KOTOR 2).** In
+  areas where the map offers no buttons, the game itself answered up and down
+  by stepping through its map notes and reading each one. The mod now keeps
+  those keys on the map, for the keyboard and the controller alike.
 
 <h2>v0.8.2</h2>
 
