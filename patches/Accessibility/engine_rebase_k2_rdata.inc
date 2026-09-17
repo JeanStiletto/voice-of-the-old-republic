@@ -13,6 +13,7 @@
     { 0x00987F14, 0x00994C44 },  // kVtableEditbox
     { 0x0098C0CC, 0x009A4CF4 },  // kVtableCAurGUIStringInternal
     { 0x0099DD3C, 0x0098D85C },  // kVtableCSWGamepadMenuIos
+    { 0x0099E5EC, 0x0098E1EC },  // kVtableCSWGuiInGameMessages
     { 0x009A183C, 0x00990F74 },  // kVtableCSWGuiOptions
     { 0x009A18DC, 0x00991014 },  // (inline) { acc::addr::Pick(0x007581e8, 0x009A18DC), PanelKind::FeedbackOptio...
     { 0x009A1A9C, 0x009911D4 },  // (inline) { acc::addr::Pick(0x007586f8, 0x009A1A9C), PanelKind::GraphicsSetti...

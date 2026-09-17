@@ -65,6 +65,8 @@ and add the German in parentheses if it genuinely aids clarity.
   buttons.
 - The KOTOR 2 party selection screen reads each companion's name and whether
   they are in the party, instead of "control 13".
+- The KOTOR 2 message log can be read: Left and Right switch between Dialog,
+  Feedback, Combat, Good Effects and Bad Effects, Up and Down read the lines.
 - Walking through a small crossing or corridor piece announces it reliably
   instead of only when you stop on it.
 - Exits whose door is named after its destination say that name once instead of
@@ -136,6 +138,12 @@ and add the German in parentheses if it genuinely aids clarity.
   slots are skipped. Names come from the game itself, so they match your game's
   language. The separate Add button is skipped too, because Enter on a
   companion does the same thing.
+- **The KOTOR 2 message log is readable.** The journal's Message Log button
+  opens a copy of the screen the mod did not recognise, so nothing on it could
+  be read, and after a tutorial popup the arrow keys went back to the journal.
+  Now Left and Right step through Dialog, Feedback, Combat, Good Effects and Bad
+  Effects, announcing each view with its number of entries and stopping at both
+  ends, and Up and Down read the lines of the view you are on.
 
 <h3>World navigation:</h3>
 

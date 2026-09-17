@@ -1706,6 +1706,10 @@ const size_t    kExaminePanelHandleOffset         = acc::off::Todo(0x984);
 //   dialog_lb    @+0x344   (dialog history)
 //   show_button  @+0x76c   (toggles between feedback / dialog view)
 //   exit_button  @+0x930
+// KOTOR 2 has TWO instances: the CGuiInGame slot one and a second the
+// CSWGuiInGameJournal ctor (0x007FAE60) builds and keeps at journal+0x1a20 —
+// the one the journal's "Nachrichten-Log" button opens. IdentifyPanel
+// therefore also matches the class vtable (engine_panels.cpp).
 // KOTOR 2 rebuilt this panel (ctor 0x00757C40): separate LB_MESSAGES /
 // LB_DIALOG / LB_COMBAT / LB_EFFECTS_GOOD / LB_EFFECTS_BAD listboxes with a
 // four-way view-button row (BTN_DIALOG 0x1c7c / BTN_FEEDBACK 0x1e4c /
@@ -1716,6 +1720,24 @@ const size_t kInGameMessagesMessagesListBoxOffset = acc::off::Pick(0x64, 0x68); 
 const size_t kInGameMessagesDialogListBoxOffset   = acc::off::Pick(0x344, 0x358);   // LB_DIALOG
 const size_t kInGameMessagesShowButtonOffset      = acc::off::Kotor1Only(0x76c);
 const size_t kInGameMessagesExitButtonOffset      = acc::off::Pick(0x930, 0x12fc);  // BTN_EXIT
+// KOTOR 2's other three listboxes, their two effect headings and the view-
+// button row. Offsets read off the ctor's name-binding calls (control name
+// string pushed, then `this + off`). Each view switch (Dialog 0x0075A310,
+// Feedback 0x0075A4A0, Combat 0x0075A630, Effects 0x0075A7C0) sets the
+// kControlVisibleBit on exactly its own listbox(es) and clears the rest;
+// Effects shows GOOD and BAD together (it may re-hide BAD afterwards). The
+// buttons all share click handler 0x0075A2B0, which switches on the view
+// index the ctor stores at button+0x5c: DIALOG 0, FEEDBACK 1, COMBAT 2,
+// EFFECTS 3.
+const size_t kInGameMessagesCombatListBoxOffset      = acc::off::Kotor2Only(0x648);   // LB_COMBAT
+const size_t kInGameMessagesEffectsGoodListBoxOffset = acc::off::Kotor2Only(0x938);   // LB_EFFECTS_GOOD
+const size_t kInGameMessagesEffectsBadListBoxOffset  = acc::off::Kotor2Only(0xc28);   // LB_EFFECTS_BAD
+const size_t kInGameMessagesEffectsGoodLabelOffset   = acc::off::Kotor2Only(0x106c);  // LBL_EFFECTS_GOOD
+const size_t kInGameMessagesEffectsBadLabelOffset    = acc::off::Kotor2Only(0x11b4);  // LBL_EFFECTS_BAD
+const size_t kInGameMessagesDialogButtonOffset       = acc::off::Kotor2Only(0x1c7c);  // BTN_DIALOG
+const size_t kInGameMessagesFeedbackButtonOffset     = acc::off::Kotor2Only(0x1e4c);  // BTN_FEEDBACK
+const size_t kInGameMessagesCombatButtonOffset       = acc::off::Kotor2Only(0x201c);  // BTN_COMBAT
+const size_t kInGameMessagesEffectsButtonOffset      = acc::off::Kotor2Only(0x21ec);  // BTN_EFFECTS
 
 // CSWGuiDialog (and Cinematic / ComputerCamera variants which share base
 // layout):

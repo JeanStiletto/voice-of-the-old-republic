@@ -1204,6 +1204,11 @@ enum class Id : int {
     //      panel becomes foreground (titleOverride). Two channels — the
     //      combat log and the dialog history.
     MessagesTitleCombatLog,
+    // KOTOR 2 message screen view announce (Left/Right switches Dialog /
+    // Feedback / Combat / good effects / bad effects). %s = the engine's own
+    // button or heading text for the view, %d = its line count.
+    FmtMessagesView,
+    FmtMessagesViewEmpty,
 
     // ---- In-game map UI (CSWGuiInGameMap, Phase 5 lay-off 6).
     //      Two image-only buttons sit on either side of the map render

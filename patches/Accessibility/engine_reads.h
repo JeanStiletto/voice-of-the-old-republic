@@ -130,6 +130,19 @@ bool IsSlider(void* control);
 bool IsListBox(void* control);
 bool IsEditbox(void* control);
 
+// CSWGuiControl.bit_flags read, SEH-guarded. 0 on fault — callers treat
+// that as "not visible / not usable", never the wrong direction.
+uint32_t ReadControlBitFlags(void* control);
+
+// bit_flags & kControlVisibleBit — the engine's own "shown" bit, which
+// panels with several stacked listboxes (store, crafting, messages) flip to
+// pick the one on screen. False on fault.
+bool IsControlVisible(void* control);
+
+// Row count of a CSWGuiListBox (its controls array size), -1 on fault or an
+// implausible size. Reads no row pointers.
+int ReadListBoxRowCount(void* listBox);
+
 // CSWGuiButtonToggle.field2_0x1c8 bit 0 — HandleInputEvent XORs on
 // activate, Draw branches on (& 1) for which border to render.
 bool ReadToggleState(void* toggle);

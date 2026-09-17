@@ -341,6 +341,8 @@ const char* Get(Id id) {
 
         case Id::DialogNoReplyOptions:          return "Aucune option de r\xE9ponse";  // Aucune option de réponse
         case Id::MessagesTitleCombatLog:     return "Journal de combat.";
+        case Id::FmtMessagesView:            return "%s, %d entr\xE9""es";
+        case Id::FmtMessagesViewEmpty:       return "%s, vide";
 
         case Id::MapPrevNote:                return "Note pr\xE9""c\xE9""dente";
         case Id::MapNextNote:                return "Note suivante";

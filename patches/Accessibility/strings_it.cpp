@@ -340,6 +340,8 @@ const char* Get(Id id) {
 
         case Id::DialogNoReplyOptions:          return "Nessuna opzione di risposta";
         case Id::MessagesTitleCombatLog:     return "Registro di combattimento.";
+        case Id::FmtMessagesView:            return "%s, %d voci";
+        case Id::FmtMessagesViewEmpty:       return "%s, vuoto";
 
         case Id::MapPrevNote:                return "Nota precedente";
         case Id::MapNextNote:                return "Nota successiva";

@@ -61,6 +61,20 @@ bool IsWorkbenchUpgradeStructural(void* panel) {
     return HasVtable(panel, kVtableCSWGuiUpgrade);
 }
 
+// CSWGuiInGameMessages, second instance. KOTOR 2's journal constructs its
+// own messages panel (journal ctor 0x007FAE60 stores it at journal+0x1a20)
+// and its "Nachrichten-Log" button opens THAT one, which the CGuiInGame slot
+// table never sees — every K2 log up to 2026-09-17 shows it as "first sight
+// UNKNOWN panel ... vtable=0x0099e5ec". Vtable from the RTTI census
+// (.?AVCSWGuiInGameMessages@@). KOTOR 1 has one instance only, reached by
+// its slot, so no K1 value is needed.
+const uintptr_t kVtableCSWGuiInGameMessages = acc::addr::Kotor2Only(0x0099E5EC);
+
+bool IsInGameMessagesStructural(void* panel) {
+    if (!acc::addr::Ok(kVtableCSWGuiInGameMessages)) return false;
+    return HasVtable(panel, kVtableCSWGuiInGameMessages);
+}
+
 // CSWGuiUpgradeItemSelect (upgradeitems.gui / upgradeitems_p.gui) — the
 // workbench per-category item picker. Vtable equality, same reasoning as
 // CSWGuiUpgrade above; K1 symbol CSWGuiUpgradeItemSelect_vtable, K2 from the
@@ -779,6 +793,9 @@ PanelKind IdentifyPanel(void* panel) {
     }
     if (IsWorkbenchUpgradeStructural(panel)) {
         return recordAndReturn(PanelKind::WorkbenchUpgrade, "WorkbenchUpgrade");
+    }
+    if (IsInGameMessagesStructural(panel)) {
+        return recordAndReturn(PanelKind::InGameMessages, "InGameMessages");
     }
     if (IsWorkbenchItemsStructural(panel)) {
         return recordAndReturn(PanelKind::WorkbenchItems, "WorkbenchItems");

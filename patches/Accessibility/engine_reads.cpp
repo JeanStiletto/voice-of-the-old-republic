@@ -494,6 +494,33 @@ bool IsSlider(void* control) {
     }
 }
 
+uint32_t ReadControlBitFlags(void* control) {
+    if (!control) return 0;
+    __try {
+        return *reinterpret_cast<uint32_t*>(
+            reinterpret_cast<unsigned char*>(control) + kControlBitFlagsOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+}
+
+bool IsControlVisible(void* control) {
+    return (ReadControlBitFlags(control) & kControlVisibleBit) != 0;
+}
+
+int ReadListBoxRowCount(void* listBox) {
+    if (!listBox) return -1;
+    __try {
+        auto* list = reinterpret_cast<CExoArrayList*>(
+            reinterpret_cast<unsigned char*>(listBox) + kListBoxControlsOffset);
+        int size = list->size;
+        if (size < 0 || size > 4096) return -1;
+        return size;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+}
+
 bool IsListBox(void* control) {
     if (!control) return false;
     __try {

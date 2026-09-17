@@ -24,6 +24,7 @@
 #include "prism.h"
 
 using acc::engine::IdentifyPanel;
+using acc::engine::ReadListBoxRowCount;
 using acc::engine::PanelKind;
 using acc::menus::detail::FindControlById;
 
@@ -164,20 +165,8 @@ void AnnounceFamilyTitleOnFgEdge(void* fg, PanelKind pk, bool edge,
     s_retryTitle = false;
 }
 
-// CSWGuiControl.bit_flags read, SEH-guarded. 0 on fault — callers treat
-// that as "not visible / not usable", never the wrong direction.
-uint32_t ReadControlBitFlags(void* control) {
-    if (!control) return 0;
-    __try {
-        return *reinterpret_cast<uint32_t*>(
-            reinterpret_cast<unsigned char*>(control) + kControlBitFlagsOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return 0;
-    }
-}
-
 bool IsListBoxVisible(void* listBox) {
-    return (ReadControlBitFlags(listBox) & kStoreListBoxVisibleBit) != 0;
+    return acc::engine::IsControlVisible(listBox);
 }
 
 // The item list the user can currently act on: LB_SHOPITEMS in create
@@ -216,20 +205,6 @@ int ReadListBoxSelection(void* listBox) {
         return *reinterpret_cast<short*>(
             reinterpret_cast<unsigned char*>(listBox) +
             kListBoxSelectionIndexOffset);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return -1;
-    }
-}
-
-// Row count of a listbox, -1 on fault.
-int ReadListBoxRowCount(void* listBox) {
-    if (!listBox) return -1;
-    __try {
-        auto* list = reinterpret_cast<CExoArrayList*>(
-            reinterpret_cast<unsigned char*>(listBox) + kListBoxControlsOffset);
-        int size = list->size;
-        if (size < 0 || size > 4096) return -1;
-        return size;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return -1;
     }

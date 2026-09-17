@@ -345,6 +345,8 @@ const char* Get(Id id) {
 
         case Id::DialogNoReplyOptions:          return "Brak opcji odpowiedzi";
         case Id::MessagesTitleCombatLog:     return "Dziennik walki.";
+        case Id::FmtMessagesView:            return "%s, %d pozycji";
+        case Id::FmtMessagesViewEmpty:       return "%s, puste";
 
         case Id::MapPrevNote:                return "Poprzedni znacznik mapy";
         case Id::MapNextNote:                return "Nast\xEApny znacznik mapy";

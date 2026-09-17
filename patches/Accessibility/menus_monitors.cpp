@@ -1205,13 +1205,21 @@ void* FindActiveSubScreenPanel() {
     void* panelData[kCap];
     int panelCount = acc::engine::ReadPanelArray(
         acc::engine::GetGuiManager(), panelData, kCap);
+    // The journal stays in panels[] underneath the screens it opens (KOTOR 2's
+    // message log, the quest-items list), and panels[] order says nothing
+    // about which is on top — a closed tutorial popup reshuffled it so the
+    // journal came first and took the keys back (patch-20260917-173602.log).
+    // So the journal only wins when nothing else is open.
+    void* journal = nullptr;
     for (int i = 0; i < panelCount; ++i) {
         void* p = panelData[i];
         if (!p) continue;
         PanelKind k = IdentifyPanel(p);
-        if (FindSpec(k)) return p;
+        if (!FindSpec(k)) continue;
+        if (k != PanelKind::InGameJournal) return p;
+        if (!journal) journal = p;
     }
-    return nullptr;
+    return journal;
 }
 
 bool IsInGameSubScreenKind(PanelKind k) {
