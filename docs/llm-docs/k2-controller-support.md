@@ -346,6 +346,11 @@ long and every other step speaks the "control N" placeholder. The mod
 identifies the panel by vtable (`PanelKind::GamepadQuickMenu`) and drops the
 captionless children in `IsDecorativeControl`.
 
+**Superseded 2026-09-17:** the chain no longer drives it — its entries only
+fire from the panel's own handler on its own `+0x68` selection, so the mod
+passes the keys to the engine and reads the selection instead
+(`pad_quickmenu.cpp`; see docs/kotor2-controller-plan.md Phase 3).
+
 The lesson generalises past this panel: "custom quads, the chain cannot see
 them" was inferred from the ctor building fixed `0x1d0`-byte widget arrays.
 Fixed arrays of widgets and registration in the panel's

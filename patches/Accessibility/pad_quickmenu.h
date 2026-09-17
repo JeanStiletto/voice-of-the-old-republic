@@ -43,7 +43,34 @@ void Toggle();
 bool HandleNavCode(int code);
 
 // Self-disarm: closes if the world drops out from under it (area load,
-// teardown). Cheap when closed.
+// teardown). Cheap when closed. Also runs the KOTOR 2 engine-menu reader below.
 void Tick();
+
+// ---------------------------------------------------------------------------
+// KOTOR 2: the engine's own quick menu (CSWGamepadMenuIos)
+// ---------------------------------------------------------------------------
+// The engine menu keeps its own selected entry and performs an entry only when
+// its OWN input handler receives activate — it switches on that selection. The
+// navigation chain used to take Up/Down/Enter for itself and click the entry's
+// button, which has no handler attached: the selection never moved and Quick
+// Save (like every entry) did nothing. Moving the mouse also let the engine
+// hover the captionless icon quads, spoken as "control -1".
+//
+// So the engine drives the menu and the mod only reads it: the manager hook
+// hands the menu's nav / activate / cancel codes to the engine untouched, and
+// Tick speaks the selected entry's caption whenever the selection changes.
+// Two exceptions are consumed instead:
+//   * Up on the first entry and Down on the last. The engine wraps; this menu
+//     clamps like every other list in the mod, and the repeated caption is the
+//     boundary cue.
+//   * Activate on Help, whose engine panel is a bare controller picture. It
+//     opens the mod's key list instead.
+// Home / End (the D-Pad hold) are swallowed: the engine has no jump, and the
+// chain must not act on a panel it no longer drives.
+
+// Manager-hook filter. Returns true when `panel` is the engine quick menu and
+// `code` is one of its keys; `consume` then says whether the caller must
+// swallow the event (true) or pass it to the engine untouched (false).
+bool FilterEngineMenuInput(void* panel, int code, int value, bool& consume);
 
 }  // namespace acc::pad::quickmenu

@@ -940,7 +940,8 @@ void Dispatch() {
 
     // The mod's own quick menu (Y): self-disarm only — its navigation comes
     // from the pad seam. Cheap when closed. Opens on KOTOR 1, and on a KOTOR 2
-    // whose engine pad is dead, where its own panel is unreachable.
+    // whose engine pad is dead, where its own panel is unreachable. On KOTOR 2
+    // it also speaks the ENGINE quick menu's selection as the engine moves it.
     PHASE("pad_quickmenu", acc::pad::quickmenu::Tick());
 
     // Release the level-up wizard's overlay pause once the panel closes

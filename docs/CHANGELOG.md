@@ -52,6 +52,11 @@ and add the German in parentheses if it genuinely aids clarity.
   (KOTOR 2) and the left stick steers.
 - With a controller connected, the swoop race controls summary and the KOTOR 2
   stuck hints name controller buttons instead of keys.
+- The KOTOR 2 controller Quick Menu (Y) works: every entry, including Quick
+  Save, does what it should, and the menu stops at its first and last entry.
+- The Quick Menu no longer says "control -1" while you move through it.
+- Mod items whose name or description exists only in English are read out in
+  stores, inventories and the world instead of "control 3" or "No description".
 
 <h3>Swoop racing:</h3>
 
@@ -73,6 +78,29 @@ and add the German in parentheses if it genuinely aids clarity.
   controls summary spoken at the start of a race names B, A and the left stick
   instead of W, Space, A and D. All KOTOR 2 stuck hints switch too, for
   example "Steer left, then A, then B." Available in all seven languages.
+
+<h3>Controller Quick Menu (KOTOR 2):</h3>
+
+- **Every entry works now, including Quick Save.** The game performs an entry
+  only from its own menu handler, on its own selection. The mod used to take the
+  D-Pad and A for itself and click the entry's button, which has no action
+  attached, so nothing happened. The game now drives the menu and the mod reads
+  the selected entry aloud as it moves.
+- **No wrap-around.** Up on Menus and Down on Help repeat the current entry
+  instead of jumping to the other end, like every other list in the mod.
+- **No more "control -1".** Speech no longer follows the mouse cursor, which
+  could rest on one of the menu's unlabelled icons.
+- **The menu announces itself when it opens**, followed by the selected entry.
+
+<h3>Bug fixes:</h3>
+
+- **English-only mod items are named and described.** Some mods ship items
+  whose name and description exist only in English. On a game in another
+  language they read as "control 3" with no description, because the game
+  never falls back to another language. The mod now reads the English text
+  (or any language the item has) when your language has none. Applies to
+  store, inventory and container rows and to items lying in the world, in both
+  games.
 
 <h2>v0.8.2</h2>
 

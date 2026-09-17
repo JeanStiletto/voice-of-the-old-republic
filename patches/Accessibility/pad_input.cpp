@@ -23,7 +23,6 @@
 #include "key_inject.h"      // Send / Tap — the scancode route into the engine
 #include "log.h"
 #include "map_ui_cursor.h"   // IsActive — the map screen owns the left stick
-#include "menus_chain.h"     // g_chain* — which Quick Menu entry is focused
 #include "minigame_pazaak.h" // TryHandlePadAction — the board owns Y and X
 #include "minigame_swoop_race.h" // IsActive / TryShift / TryJump — the race owns A and B
 #include "narrated_target.h" // TryGet — is there a target to open the menu on?
@@ -395,38 +394,6 @@ bool InWorldSurface() {
 // the announcements that intentionally queue.
 void NoteNavPress() {
     prism::Silence();
-}
-
-// The Y Quick Menu's eighth entry is "Help", and what the engine opens for it
-// is CSWGuiHelpPanel — a bare picture of a controller, which tells a blind
-// player nothing at all. It is the one entry on that panel whose engine
-// behaviour is worthless to this mod's users, and the panel is pad-only, so
-// claiming it costs a keyboard player nothing. Redirect it to the mod's own
-// key list, which is what the entry already promises. That also gives the pad
-// a route into the help list without spending a binding on one.
-//
-// Identified by position: the decorative filter (menus_chain) leaves exactly
-// the eight captioned entries in gamepad.txt's own order — Menus, Party
-// Leader, Solo/Party, Stealth, Quick Save, Free Look, Switch Weapons, Help —
-// and Help is the last. The count check is the guard: if the filter ever lets
-// a decorative quad through, the indices shift, and declining is much better
-// than firing the wrong entry.
-constexpr int kQuickMenuEntryCount = 8;
-
-bool QuickMenuHelpFocused() {
-    void* panel = acc::menus::chain::g_chainPanel;
-    if (!panel) return false;
-    if (acc::engine::IdentifyPanel(panel) !=
-        acc::engine::PanelKind::GamepadQuickMenu) {
-        return false;
-    }
-    if (acc::menus::chain::g_chainCount != kQuickMenuEntryCount) {
-        acclog::Trace("Pad", "Quick Menu chain has %d entries, expected %d — "
-                             "leaving Help to the engine",
-                      acc::menus::chain::g_chainCount, kQuickMenuEntryCount);
-        return false;
-    }
-    return acc::menus::chain::g_chainIndex == kQuickMenuEntryCount - 1;
 }
 
 // Route a logical nav / activate / cancel code into whichever in-DLL overlay
@@ -1910,11 +1877,6 @@ Verdict TranslateManagerEvent(int& code, int& value) {
     if (code == kPadButtonA) {
         if (value == 0) return Verdict::NotPad;
         NoteNavPress();
-        if (QuickMenuHelpFocused()) {
-            acclog::Write("Pad", "A on Quick Menu Help -> mod key list");
-            acc::help::ToggleMenu();
-            return Verdict::Consumed;
-        }
         if (RouteToOverlay(kInputEnter1)) {
             acclog::Write("Pad", "A -> overlay activate");
             return Verdict::Consumed;

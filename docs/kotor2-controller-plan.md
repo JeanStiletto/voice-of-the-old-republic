@@ -505,8 +505,18 @@ Unfiltered the chain is 22 entries long and every other press speaks the
 As built: `PanelKind::GamepadQuickMenu`, identified by vtable `0x0099dd3c`
 (K2-only, so the constant poisons to 0 on KOTOR 1 and the detector declines
 there without a read), and one clause in `IsDecorativeControl` dropping any
-child the extractor cannot get text out of. Everything else — navigation,
-activation, close — is the chain the mod already had.
+child the extractor cannot get text out of.
+
+**Superseded 2026-09-17 (`patch-20260917-112203.log`): the chain must NOT drive
+this panel.** Its entries fire only from the panel's own input handler, which
+switches on its own selection field (+0x68); the entry buttons have no handler,
+so the chain's click did nothing (Quick Save reported dead) and the selection
+never moved. The chain's mouse warps also let the engine hover icon quads,
+spoken as "control -1". Now the manager hook hands the panel's nav / activate /
+cancel codes to the engine (`pad_quickmenu::FilterEngineMenuInput`), consuming
+only a wrap past either end (the menu clamps) and activate on Help (mod key
+list); `pad_quickmenu::Tick` speaks the caption of the selected entry on change,
+and hover-driven SetActive speech is suppressed on this panel. Tested working.
 
 The Party Leader sub-list is untested: entry 1 expands into three items, and
 whether those arrive as fresh captioned children (which the chain would pick up

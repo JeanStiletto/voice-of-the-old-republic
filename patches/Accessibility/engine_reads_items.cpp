@@ -23,6 +23,7 @@
 #include "engine_app.h"     // GetServerApp
 #include "engine_area.h"    // GetObjectDisplayNameByHandle
 #include "log.h"
+#include "strings.h"        // GetLanguage — the game-language substring id
 #include "engine_offsets_select.h"
 
 namespace acc::engine {
@@ -304,6 +305,82 @@ int ReadItemRowCharges(void* rowControl) {
     return ReadItemCharges(item);
 }
 
+namespace {
+
+// The dialog.tlk LanguageID the game runs in — the `language` half of a
+// CExoLocString substring id. Russian (Allard) declares the English slot.
+uint32_t GameLanguageId() {
+    using L = acc::strings::Lang;
+    switch (acc::strings::GetLanguage()) {
+        case L::Fr: return 1;
+        case L::De: return 2;
+        case L::It: return 3;
+        case L::Es: return 4;
+        case L::Pl: return 5;
+        case L::En:
+        case L::Ru:
+        default:    return 0;
+    }
+}
+
+}  // namespace
+
+bool ReadLocStringOtherLanguage(void* base, size_t locStringOffset,
+                                char* outBuf, size_t bufSize) {
+    if (!base || !outBuf || bufSize < 2) return false;
+    outBuf[0] = '\0';
+    const uint32_t gameLang = GameLanguageId();
+    const uint32_t kNoId = 0xFFFFFFFF;
+
+    // Entries, not text: the choice needs the whole list seen first (a
+    // game-language substring anywhere means the engine's own text stands).
+    void* english = nullptr;
+    void* first   = nullptr;
+    __try {
+        void* internal = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(base) + locStringOffset +
+            kExoLocStringInternalOffset);
+        if (!internal) return false;
+        void* list = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(internal) + kListInternalOffset);
+        if (!list) return false;
+        void* node = *reinterpret_cast<void**>(
+            reinterpret_cast<unsigned char*>(list) + kListInternalHeadOffset);
+        // A loc string holds at most one substring per language and gender
+        // (six languages x 2); the bound only stops a corrupt cycle.
+        for (int guard = 0; node && guard < 32; ++guard) {
+            void* entry = *reinterpret_cast<void**>(
+                reinterpret_cast<unsigned char*>(node) + kLinkedListNodeDataOff);
+            if (entry) {
+                const uint32_t id = *reinterpret_cast<uint32_t*>(
+                    reinterpret_cast<unsigned char*>(entry) +
+                    kExoLocStringEntryIdOffset);
+                if (id != kNoId && (id >> 1) == gameLang) return false;
+                if (!english && id != kNoId && (id >> 1) == 0) english = entry;
+                if (!first) first = entry;
+            }
+            node = *reinterpret_cast<void**>(
+                reinterpret_cast<unsigned char*>(node) + kLinkedListNodeNextOff);
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+
+    // ReadCExoString is SEH-guarded itself and false on empty text, so an
+    // empty English entry still falls back to the first one.
+    if (english && ReadCExoString(english, kExoLocStringEntryTextOffset,
+                                  outBuf, bufSize)) {
+        return true;
+    }
+    outBuf[0] = '\0';
+    if (first && first != english &&
+        ReadCExoString(first, kExoLocStringEntryTextOffset, outBuf, bufSize)) {
+        return true;
+    }
+    outBuf[0] = '\0';
+    return false;
+}
+
 bool ReadItemRowName(void* rowControl, char* outBuf, size_t bufSize) {
     if (!outBuf || bufSize < 2) return false;
     outBuf[0] = '\0';
@@ -315,6 +392,18 @@ bool ReadItemRowName(void* rowControl, char* outBuf, size_t bufSize) {
     // from a server object.
     if (!GetObjectDisplayNameByHandle(handle, outBuf, bufSize) ||
         outBuf[0] == '\0') {
+        // A mod item whose name exists only in another language resolves
+        // empty through the accessor above (the engine never crosses
+        // languages). Store rows showed "control 3" for the K2 mod robes
+        // a_robe_21 / a_robe_22, English-only (patch-20260917-112203.log).
+        void* item = ResolveItemFromClientHandle(handle);
+        if (item && ReadLocStringOtherLanguage(item, kItemLocNameOffset,
+                                               outBuf, bufSize)) {
+            acclog::Trace("Menus.ItemRow",
+                          "row=%p handle=0x%08x named from another-language "
+                          "substring: \"%s\"", rowControl, handle, outBuf);
+            return true;
+        }
         acclog::Write("Menus.ItemRow",
                       "row=%p handle=0x%08x name-resolve missed",
                       rowControl, handle);
@@ -576,7 +665,16 @@ bool BuildItemDescriptionBlocks(void* item, ItemDescriptionBlocks* out) {
     bool descViaTlk = ReadItemDescriptionViaTlk(item, out->description,
                                                 sizeof(out->description),
                                                 descStrref);
+    // No strref and no substring in the game's language: the engine's tail is
+    // only its "no description" placeholder, so take the text the item does
+    // carry in another language (English-only mod items).
+    bool descOtherLang = false;
     if (!descViaTlk) {
+        descOtherLang = ReadLocStringOtherLanguage(
+            item, kItemDescriptionLocStringOffset,
+            out->description, sizeof(out->description));
+    }
+    if (!descViaTlk && !descOtherLang) {
         CopySlice(out->description, sizeof(out->description), full, offProps,
                   fullLen);
     }
@@ -584,10 +682,11 @@ bool BuildItemDescriptionBlocks(void* item, ItemDescriptionBlocks* out) {
     acclog::Write("Engine.Reads",
                   "BuildItemDescriptionBlocks item=%p itemType=%u weaponType=%u "
                   "fullLen=%zu offsets(tags=%zu values=%zu props=%zu) "
-                  "descStrref=0x%x descViaTlk=%d "
+                  "descStrref=0x%x descViaTlk=%d descOtherLang=%d "
                   "lens(tags=%zu values=%zu props=%zu desc=%zu)",
                   item, (unsigned)itemType, (unsigned)weaponType, fullLen,
                   offTags, offValues, offProps, descStrref, descViaTlk ? 1 : 0,
+                  descOtherLang ? 1 : 0,
                   strlen(out->tags), strlen(out->values),
                   strlen(out->properties), strlen(out->description));
     return fullLen > 0 || out->description[0] != '\0';

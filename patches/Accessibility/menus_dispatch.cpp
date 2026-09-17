@@ -48,6 +48,7 @@
 #include "interact_dispatch.h"
 #include "minigame_pazaak.h"
 #include "pad_input.h"
+#include "pad_quickmenu.h"
 #include "peek_description.h"
 #include "engine_game.h"
 
@@ -442,6 +443,23 @@ extern "C" int __cdecl OnHandleInputEvent(void* thisPtr, int param_1, int param_
                                   "returning to strip");
                 }
             }
+        }
+    }
+
+    // KOTOR 2's gamepad Quick Menu runs itself: its entries fire only from its
+    // own input handler, on its own selection, so the chain must not take its
+    // keys. The filter passes them to the engine, except a wrap past either
+    // end and activate on Help, which it consumes (pad_quickmenu.h).
+    {
+        bool quickMenuConsume = false;
+        if (acc::pad::quickmenu::FilterEngineMenuInput(
+                activePanel, param_1, param_2, quickMenuConsume)) {
+            acclog::Write("Menus.Input",
+                          "#%d seq=%u this=%p key=%s(%d) val=%d QUICKMENU-%s",
+                          n, seq, thisPtr,
+                          acc::engine::InputIndexName(param_1), param_1,
+                          param_2, quickMenuConsume ? "CONSUMED" : "ENGINE");
+            return trackPress(quickMenuConsume ? 1 : 0);
         }
     }
 

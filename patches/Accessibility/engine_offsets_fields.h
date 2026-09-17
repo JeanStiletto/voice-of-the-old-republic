@@ -2008,6 +2008,15 @@ const size_t    kItemDescriptionLocStringOffset = acc::off::Pick(0x270, 0x2b0);
 // Same on K2: its CExoLocString::GetString twin 0x007356B0 reads the strref
 // at [this+4] before the TLK global, exactly like K1's 0x005ea130.
 const size_t    kExoLocStringStrRefOffset       = acc::off::Same(0x4);
+// CExoLocString.internal @0 -> CExoLocStringInternal, whose first member is the
+// substring list (CExoLinkedList, walked with the kListInternal* /
+// kLinkedListNode* offsets). Each node's data is { int id @0; CExoString text
+// @4 }, id = language * 2 + gender. Decompile-verified on K1 at
+// CExoLocStringInternal::GetString 005ec9c0 (compares [data], copies data+4)
+// and on K2 at its twin 0x0073B470 (same compare, copies local+1 == +4).
+const size_t    kExoLocStringInternalOffset     = acc::off::Same(0x0);
+const size_t    kExoLocStringEntryIdOffset      = acc::off::Same(0x0);
+const size_t    kExoLocStringEntryTextOffset    = acc::off::Same(0x4);
 
 // CSWBaseItem fields, read off the pointer CSWItem::GetBaseItem returns (see
 // engine_offsets_addresses.h, where the CMP-verified derivation is recorded).
@@ -2271,3 +2280,21 @@ const size_t    kPartySelectionPanelAcceptButtonOffset  = acc::off::Kotor1Only(0
 // button is invisible on screen yet still sits in panel.controls[] for the
 // chain to find.
 const size_t    kMainMenuWarpButtonOffset = acc::off::Pick(0x1248, 0x5c90);
+
+// CSWGamepadMenuIos — KOTOR 2's Y-button Quick Menu (vtable
+// kVtableCSWGamepadMenuIos). The panel owns its selection; the mod reads it and
+// lets the engine's own input handler drive it (pad_quickmenu.cpp).
+//
+// Input handler 0x00754950 (vtable slot 15): activate 0x27 switches on
+// [this+0x68] (0 Menus .. 4 Quick Save .. 7 Help); up/down add -1/+1 to it,
+// step once more past entry 3 while the byte [this+0x7c] is clear (Stealth
+// unavailable), then wrap mod 8. Open-time init 0x00753850 writes +0x68 = 0 and
+// +0x6c = 0; the refresh 0x00753780 writes +0x7c from the stealth test.
+// The eight caption buttons: panel children [4..11] in patch-20260917-112203.log
+// sit at this + 0x10d0 + i * 0x1d0, in gamepad.txt order, beside the icon array
+// at +0x250 and the two three-slot party arrays at +0x1f50 / +0x24c0 the init
+// writes (button stride 0x1d0, the K2 CSWGuiButton size).
+const size_t    kGamepadMenuSelectedEntryOffset    = acc::off::Kotor2Only(0x68);
+const size_t    kGamepadMenuStealthAvailableOffset = acc::off::Kotor2Only(0x7c);
+const size_t    kGamepadMenuCaptionButtonsOffset   = acc::off::Kotor2Only(0x10d0);
+const size_t    kGamepadMenuButtonStride           = acc::off::Kotor2Only(0x1d0);

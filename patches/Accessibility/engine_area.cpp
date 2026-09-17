@@ -762,6 +762,12 @@ bool GetObjectBaseName(void* gameObject, char* outBuf, size_t bufSize) {
                       GetObjectDisplayNameByHandle(handle, outBuf, bufSize) &&
                       outBuf[0] != '\0';
             }
+            if (!got) {
+                // A mod item named only in another language (the engine
+                // never crosses languages) — its real name beats the tag.
+                got = ReadLocStringOtherLanguage(gameObject, kItemLocNameOffset,
+                                                 outBuf, bufSize);
+            }
             break;
         case K::Waypoint:
             // For a landmark waypoint the curated map-note label (+0x230)

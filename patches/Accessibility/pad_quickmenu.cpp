@@ -2,9 +2,15 @@
 
 #include <cstdio>
 
+#include "engine_game.h"      // IsKotor2
 #include "engine_input.h"     // kInputNav* / kInputEnter1 / kInputEsc1
 #include "engine_keymap.h"    // GameActionScancode
+#include "engine_manager.h"   // GetGuiManager / GetForegroundPanel
+#include "engine_offsets_select.h"
+#include "engine_panels.h"    // IdentifyPanel — PanelKind::GamepadQuickMenu
 #include "engine_player.h"    // GetPlayerPosition
+#include "engine_reads.h"     // TryReadU32 / TryReadU16
+#include "menus_extract.h"    // FromControl — the entry captions
 #include "help.h"             // ToggleMenu — the Help entry
 #include "key_inject.h"
 #include "log.h"
@@ -87,7 +93,130 @@ void Activate() {
     acc::key_inject::Tap(scan);
 }
 
+// ---- KOTOR 2 engine quick menu ---------------------------------------------
+
+constexpr int kEngineEntryCount   = 8;
+constexpr int kEngineEntryStealth = 3;
+constexpr int kEngineEntryHelp    = 7;
+
+void* g_enginePanel = nullptr;   // the menu last seen in the foreground
+int   g_engineSel   = -1;        // its selection when last spoken
+
+bool IsEngineMenu(void* panel) {
+    return panel && acc::game::IsKotor2() &&
+           acc::engine::IdentifyPanel(panel) ==
+               acc::engine::PanelKind::GamepadQuickMenu;
+}
+
+// -1 when unreadable or outside the eight entries.
+int ReadEngineSelection(void* panel) {
+    uint32_t sel = 0;
+    if (!acc::engine::TryReadU32(panel, kGamepadMenuSelectedEntryOffset, &sel)) {
+        return -1;
+    }
+    const int s = static_cast<int>(sel);
+    return (s >= 0 && s < kEngineEntryCount) ? s : -1;
+}
+
+// The engine's step, minus the wrap: where Up/Down from `sel` lands, or -1
+// when it would run off an end. Mirrors the handler exactly — one step, one
+// more past Stealth while stealth is unavailable.
+int EngineStepTarget(void* panel, int sel, int delta) {
+    uint16_t gate = 0;
+    const bool stealthOk =
+        !acc::engine::TryReadU16(panel, kGamepadMenuStealthAvailableOffset,
+                                 &gate) ||
+        (gate & 0xff) != 0;
+    int next = sel + delta;
+    if (!stealthOk && next == kEngineEntryStealth) next += delta;
+    return (next >= 0 && next < kEngineEntryCount) ? next : -1;
+}
+
+void SpeakEngineEntry(void* panel, int sel, bool interrupt) {
+    if (sel < 0 || !acc::off::Ok(kGamepadMenuCaptionButtonsOffset)) return;
+    void* button = acc::off::Ptr(
+        panel, kGamepadMenuCaptionButtonsOffset +
+                   static_cast<size_t>(sel) * kGamepadMenuButtonStride);
+    char text[128];
+    if (!acc::menus::extract::FromControl(button, text, sizeof(text), panel)) {
+        acclog::Write("Pad.quick", "engine menu entry %d has no caption", sel);
+        return;
+    }
+    prism::Speak(text, interrupt);
+}
+
+void TickEngineMenu() {
+    if (!acc::game::IsKotor2()) return;
+    void* mgr = acc::engine::GetGuiManager();
+    void* fg  = mgr ? acc::engine::GetForegroundPanel(mgr) : nullptr;
+    if (!IsEngineMenu(fg)) {
+        if (g_enginePanel) acclog::Write("Pad.quick", "engine menu gone");
+        g_enginePanel = nullptr;
+        g_engineSel   = -1;
+        return;
+    }
+    const int sel = ReadEngineSelection(fg);
+    if (fg != g_enginePanel) {
+        g_enginePanel = fg;
+        g_engineSel   = sel;
+        acclog::Write("Pad.quick", "engine menu opened, entry %d", sel);
+        prism::Speak(acc::strings::Get(S::PadQuickMenuOpened), /*interrupt=*/true);
+        SpeakEngineEntry(fg, sel, /*interrupt=*/false);
+        return;
+    }
+    if (sel == g_engineSel) return;
+    acclog::Write("Pad.quick", "engine menu entry %d -> %d", g_engineSel, sel);
+    g_engineSel = sel;
+    SpeakEngineEntry(fg, sel, /*interrupt=*/true);
+}
+
 }  // namespace
+
+bool FilterEngineMenuInput(void* panel, int code, int value, bool& consume) {
+    consume = false;
+    switch (code) {
+        case kInputNavUp:   case kInputNavDown:
+        case kInputNavLeft: case kInputNavRight:
+        case kInputEnter1:  case kInputEnter2:
+        case kInputEsc1:    case kInputEsc2:
+        case kInputHome:    case kInputEnd:
+            break;
+        default:
+            return false;
+    }
+    if (!IsEngineMenu(panel)) return false;
+    // Releases carry no action; the engine gets them as it always did.
+    if (value == 0) return true;
+
+    const int sel = ReadEngineSelection(panel);
+    switch (code) {
+        case kInputHome:
+        case kInputEnd:
+            consume = true;
+            return true;
+        case kInputNavUp:
+        case kInputNavDown:
+            if (sel >= 0 &&
+                EngineStepTarget(panel, sel,
+                                 code == kInputNavUp ? -1 : +1) < 0) {
+                acclog::Write("Pad.quick", "engine menu clamp at entry %d", sel);
+                consume = true;
+                SpeakEngineEntry(panel, sel, /*interrupt=*/true);
+            }
+            return true;
+        case kInputEnter1:
+        case kInputEnter2:
+            if (sel == kEngineEntryHelp) {
+                acclog::Write("Pad.quick", "engine menu Help -> mod key list");
+                consume = true;
+                acc::help::ToggleMenu();
+            }
+            return true;
+        default:
+            // Left / Right switch the party leader inside the menu; Esc closes.
+            return true;
+    }
+}
 
 bool IsOpen() { return g_open; }
 
@@ -147,6 +276,7 @@ bool HandleNavCode(int code) {
 }
 
 void Tick() {
+    TickEngineMenu();
     if (!g_open) return;
     Vector p;
     if (!acc::engine::GetPlayerPosition(p)) {

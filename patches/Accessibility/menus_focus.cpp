@@ -494,7 +494,15 @@ void acc::menus::focus::AnnounceNewFocusedControl(int n, void* panel, void* newC
                       n, panel, newControl, id, vtbl);
     }
 
-    if (suppressForContainer || suppressForStore) return;
+    // KOTOR 2 gamepad Quick Menu: SetActive there follows the mouse, which is
+    // not the menu's selection — the stale cursor hovered a captionless icon
+    // quad on every step and spoke "control -1" (patch-20260917-112203.log).
+    // The selection is spoken from the engine's own field instead
+    // (pad_quickmenu.cpp), so nothing hover-driven is announced here.
+    bool suppressForQuickMenu =
+        IdentifyPanel(panel) == PanelKind::GamepadQuickMenu;
+
+    if (suppressForContainer || suppressForStore || suppressForQuickMenu) return;
 
     // Cross-panel overwrite guard. The slot-collapse model assumes the
     // intra-tick burst stays on one panel — engine fires NULL → first →
