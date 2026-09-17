@@ -67,6 +67,8 @@ and add the German in parentheses if it genuinely aids clarity.
   they are in the party, instead of "control 13".
 - Walking through a small crossing or corridor piece announces it reliably
   instead of only when you stop on it.
+- Exits whose door is named after its destination say that name once instead of
+  twice.
 
 <h3>Swoop racing:</h3>
 
@@ -142,6 +144,10 @@ and add the German in parentheses if it genuinely aids clarity.
   a second. The trade-off: when the next area follows quickly, its name can cut
   off the crossing's, but you know a crossing is there and can step back to
   hear the full label.
+- **Exit names are no longer repeated.** A door named after the place it leads
+  to read its name twice, as in "To Entertainment Module 081 North to To
+  Entertainment Module 081" on Citadel Station. The destination is now dropped
+  when it matches the door's name.
 
 <h2>v0.8.2</h2>
 

@@ -1213,7 +1213,7 @@ void AppendListEntry(std::string& list, const std::string& entry) {
 //      door. Reads cleaner than the area-transition string and lets the
 //      proximity-landmark path (transitions::TickProximityLandmarks)
 //      suppress a separate redundant announce.
-//   2. transitionDest non-empty → "%s %s nach %s" (FmtMapCursorDoorTransition)
+//   2. transitionDest non-empty and != noun → "%s %s nach %s" (FmtMapCursorDoorTransition)
 //      Engine-derived cross-area destination text (e.g. "Taris -
 //      Südliche Oberstadt"). Used when no landmark is attached.
 //   3. bare door form → "%s %s" (FmtMapCursorDoor)
@@ -1250,7 +1250,12 @@ std::string RenderDoorDirection(int doorIdx, const char* dirWord) {
         const char* fmt = acc::strings::Get(Id::FmtMapCursorDoorLandmark);
         if (fmt[0]) return acc::strfmt::Format(fmt, noun, dirWord, landmark);
     }
-    if (dest && dest[0]) {
+    // Same duplication on the transition path: a door whose loc_name IS
+    // its destination (K2 Wohnmodul 082 Ost: "Zum Unterhaltungsmodul 081",
+    // K1 Tatooine: "Enklave der Sandleute") read "X Nord nach X". The
+    // name already says where it leads, so drop the suffix.
+    bool destEqualsNoun = (dest && dest[0] && _stricmp(dest, noun) == 0);
+    if (dest && dest[0] && !destEqualsNoun) {
         const char* fmt = acc::strings::Get(Id::FmtMapCursorDoorTransition);
         if (fmt[0]) return acc::strfmt::Format(fmt, noun, dirWord, dest);
     }
