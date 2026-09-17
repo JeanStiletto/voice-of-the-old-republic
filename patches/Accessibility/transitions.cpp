@@ -109,8 +109,14 @@ int   g_pending_cluster_count = 0;
 // ~3m up announce reliably in stride; corner-clips and sub-stride
 // slivers stay silent. If outdoor fragment noise returns at this
 // setting, fix the clustering — don't re-lengthen the gate.
+// 500ms (2026-09-17, K2 Citadel Station): single-node Kreuzungen have
+// extent 0 and a ~2m snap footprint, so at 1000ms the TSF-Station
+// crossing spoke only when the player stalled on it — passing through
+// swallowed it and the player stutter-stepped back to find it. Hearing
+// the label at all, even cut off by the next one, is what lets the
+// player turn back; a missed crossing costs far more than a clipped one.
 constexpr float kMinorClusterExtentM = 12.0f;
-constexpr DWORD kMinorClusterDwellMs = 1000;
+constexpr DWORD kMinorClusterDwellMs = 500;
 DWORD g_pending_cluster_since_ms = 0;
 bool  g_pending_cluster_minor    = false;
 

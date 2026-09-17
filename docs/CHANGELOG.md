@@ -65,6 +65,8 @@ and add the German in parentheses if it genuinely aids clarity.
   buttons.
 - The KOTOR 2 party selection screen reads each companion's name and whether
   they are in the party, instead of "control 13".
+- Walking through a small crossing or corridor piece announces it reliably
+  instead of only when you stop on it.
 
 <h3>Swoop racing:</h3>
 
@@ -130,6 +132,16 @@ and add the German in parentheses if it genuinely aids clarity.
   slots are skipped. Names come from the game itself, so they match your game's
   language. The separate Add button is skipped too, because Enter on a
   companion does the same thing.
+
+<h3>World navigation:</h3>
+
+- **Crossings announce when you walk through them.** Small areas, which
+  includes every crossing, used to be named only after you had spent a full
+  second inside them, so walking through at normal pace often skipped the
+  crossing and you had to step back and forth to find it. The wait is now half
+  a second. The trade-off: when the next area follows quickly, its name can cut
+  off the crossing's, but you know a crossing is there and can step back to
+  hear the full label.
 
 <h2>v0.8.2</h2>
 
