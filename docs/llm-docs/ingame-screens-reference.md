@@ -468,7 +468,10 @@ engine_player.h.
   BTN_NPCn control starts at element+4, and the button's +0x5c points back
   to its element. Element fields: +0x468 flags, +0x46c partyId, +0x470
   roster slot (ctor writes the loop index). Relative to the control subtract
-  4. Button vtable `0x009A40FC` (ctor `0x0089CDA0`); selected at
+  4. Button vtable `0x009A6D9C` (RTTI `CSWGuiPartySelectionButton`; GOG
+  `0x00991E44`). Its ctor `0x0089CDA0` stores `0x009A40FC` first — that is
+  the `CSWGuiRadioButton` base, immediately overwritten; v0.8.3 shipped the
+  base and matched nothing (GitHub issue 9). Selected at
   control+0x1d0 (IsSelected `0x0089CF10`, SetSelected `0x0089CE20`).
 - OnPanelAdded `0x0089E000`: writes flags for ALL 12 slots (unlike K1) —
   unavailable: bit0 cleared, partyId -1; available: bit0 set, bit1 = creature

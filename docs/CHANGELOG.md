@@ -42,6 +42,21 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>Unreleased</h2>
+
+<h3>Overview:</h3>
+
+- The KOTOR 2 party selection screen reads each companion's name instead of
+  "control 13".
+
+<h3>Bug fixes:</h3>
+
+- **The KOTOR 2 party selection screen reads companions' names.** The v0.8.3
+  fix for this did not work: the screen kept saying "control 13", "control 14"
+  and so on, and one portrait was read as "2 Available Slots". The mod was
+  looking for the wrong kind of control and never recognised a portrait. Each
+  one now reads "<name>, in party" or "<name>, available".
+
 <h2>v0.8.3</h2>
 
 <h3>Overview:</h3>

@@ -170,7 +170,24 @@ Offer the community resolution / widescreen + HR-menus patches as an installer o
 
 ## Monitor
 
-### KOTOR 2 party selection read "control 13..24" — fix built 2026-09-17, awaiting test (GitHub issues 6 and 7)
+### KOTOR 2 party selection read "control 13..24" — v0.8.3 fix FAILED in the field, re-fixed 2026-10-24, awaiting test (GitHub issues 6, 7 and 9)
+
+**v0.8.3 did not fix it (issue 9, ricki35, 2026-09-23, mod 0.8.3, Steam).**
+The tester's `k2-patch-20260923-125859.log` still speaks "control 13" / "control
+15" on two visits, and its panel walk prints every BTN_NPC portrait as
+`vtable=009A6D9C`. The 2026-09-17 analysis below had it backwards: `0x009A6D9C`
+WAS correct. The button ctor `0x0089CDA0` stores `0x009A40FC` (the
+`CSWGuiRadioButton` base, shared by nine constructors) and then immediately
+overwrites it with `0x009A6D9C`; RTTI names the latter
+`CSWGuiPartySelectionButton` (`docs/llm-docs/re/k2/k2-vtables.csv`). The fix
+read the first store. Verified on the clean Steam reference and on GOG (base
+`0x00991EEC`, then `0x00991E44`). Constant restored, GOG rdata table
+regenerated, validator green, built; not yet tested in game. Side effect of the
+miss: the unrecognised top-middle portrait fell through to the sibling-label
+reader and spoke "2 Available Slots"; a recognised portrait stops the ladder
+before that step. The rest of the 2026-09-17 work (offsets, 12-slot roster,
+names) has therefore still never run live — the check list below is still the
+test.
 
 Reported by ricki35 (issue 6 on 2026-09-09, issue 7 on 2026-09-16, the same bug).
 Nobody on our side had reached the K2 party selection screen before. Root cause,
