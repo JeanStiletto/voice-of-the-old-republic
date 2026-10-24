@@ -510,6 +510,13 @@ bool ParseSchaden(const char* text, AttackBlock& b) {
         const char* comp_end = strstr(p, " + ");
         if (!comp_end) comp_end = p + strlen(p);
 
+        // The engine pads some separators to a double space
+        // ("universal 1  + strength mod 5"), leaving the component with a
+        // trailing space. Trim it, or the last-space split below finds an
+        // empty value and the number leaks into the type ("6 universal 1").
+        const char* text_end = comp_end;
+        while (text_end > p && text_end[-1] == ' ') --text_end;
+
         if (!first) { Emit("+", 1); EmitShort(" + ", 3); }
         first = false;
 
@@ -519,10 +526,10 @@ bool ParseSchaden(const char* text, AttackBlock& b) {
         const char* type_start = p;
         const char* type_end   = nullptr;
         const char* val_start  = nullptr;
-        const char* val_end    = comp_end;
+        const char* val_end    = text_end;
 
         const char* colon = nullptr;
-        for (const char* q = p; q + 1 < comp_end; ++q) {
+        for (const char* q = p; q + 1 < text_end; ++q) {
             if (q[0] == ':' && q[1] == ' ') { colon = q; break; }
         }
 
@@ -537,7 +544,7 @@ bool ParseSchaden(const char* text, AttackBlock& b) {
         } else {
             // No colon — Bonusschaden style. Number is whatever follows the
             // last space.
-            const char* space = comp_end;
+            const char* space = text_end;
             while (space > p && *(space - 1) != ' ') --space;
             type_end = (space > p) ? (space - 1) : p;
             val_start = space;

@@ -42,10 +42,12 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
-<h2>Unreleased</h2>
+<h2>v0.9.0</h2>
 
 <h3>Overview:</h3>
 
+- In English, hits in combat are announced with the damage type alone, without
+  a stray number after it.
 - The KOTOR 2 space turrets (Dxun and Onderon) have the KOTOR 1 turret
   support: auto-aim, Q and E target cycling and the aiming sounds.
 - The Peragus hangar turret in KOTOR 2 is playable by ear: Q and E cycle the
@@ -68,6 +70,11 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h3>Bug fixes:</h3>
 
+- **Combat announcements no longer add a number after the damage type.** In
+  English, a hit with a strength or weapon specialization bonus was read as
+  "6 universal 1" or "5 physical 3"; it now reads "6 universal". The game
+  puts an extra space before the bonus, and the mod read the number as part
+  of the damage type. Both games.
 - **The KOTOR 2 party selection screen reads companions' names.** The v0.8.3
   fix for this did not work: the screen kept saying "control 13", "control 14"
   and so on, and one portrait was read as "2 Available Slots". The mod was
