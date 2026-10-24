@@ -517,6 +517,14 @@ const char* Get(Id id) {
             return "Caccia %d distrutto.";
         case Id::TurretNoTargets:
             return "Nessun bersaglio.";
+        case Id::FmtTurretTargetNamed:
+            return "%s %d, %d metri";
+        case Id::FmtTurretDestroyedNamed:
+            return "Bersaglio distrutto: %s %d.";
+        case Id::FmtTurretEscapedNamed:
+            return "Fuga: %s %d.";
+        case Id::TurretUnitTarget:
+            return "Bersaglio";
 
         case Id::ModSettingsRootLabel:        return "Impostazioni mod";
         case Id::ModSettingsOpened:           return "Impostazioni mod aperte";

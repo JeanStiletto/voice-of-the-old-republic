@@ -62,6 +62,28 @@ int ReadObjectDamageLevel(void* serverObject) {
     return 5;
 }
 
+int ReadObjectCurrentHitPoints(void* serverObject) {
+    if (!serverObject) return -1;
+    __try {
+        return static_cast<int>(*reinterpret_cast<short*>(
+            reinterpret_cast<unsigned char*>(serverObject) +
+            kObjectHitPointsOffset));
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+}
+
+bool IsPlotObject(void* serverObject) {
+    if (!serverObject) return false;
+    __try {
+        return *reinterpret_cast<uint32_t*>(
+                   reinterpret_cast<unsigned char*>(serverObject) +
+                   kObjectPlotOffset) != 0;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 bool ReadControlNameFields(void* control, const char*& outTip,
                            uint32_t& outTipLen, int& outId) {
     // Always initialise the outs: callers (OnHandleFocusChange) log them

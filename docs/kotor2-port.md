@@ -225,12 +225,13 @@ obvious cross-check if gear numbers look wrong in the round.
 
 **A finding that contradicts a standing note: KOTOR 2 DOES have the turret
 minigame.** 107PER, 421DXN and 505OND each carry a Type==2 mini-game struct.
-`minigame_turret` stays K1-gated because its own constants and aim-assist tuning
-have not been ported or tested — not because the subsystem is absent. The
-engine surface it shares with the swoop race (the object array, the downcasts,
-CSWTrackFollower, CSWMiniPlayer.offset) is now resolved, so what remains is the
-turret-specific offsets plus one test round. The old "not present in KOTOR 2"
-note in the LLM docs and the agent memory is wrong and has been corrected.
+The old "not present in KOTOR 2" note in the LLM docs and the agent memory was
+wrong and has been corrected. **`minigame_turret` was PORTED 2026-10-24 — built,
+not tested in game.** Turret-specific offsets witnessed in both games, bolt
+ballistics and aim limits read per area, K1's distance constants turned into a
+K1-calibrated range model, and an area-target mode for the Peragus hangar
+(troopers and barrels, no lead). Details, the range formulas and the first test
+round: `docs/llm-docs/k2-turret-model.md`, "Port status".
 
 **Test items for the next K2 round.**
 Pazaak — **DONE, passed in-game 2026-09-16.** The checklist below is spent;

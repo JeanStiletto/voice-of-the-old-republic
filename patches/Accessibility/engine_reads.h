@@ -326,4 +326,13 @@ bool ReadCreatureForcePoints(void* clientCreature, int* outCur, int* outMax);
 // and the examine view's condition row.
 int ReadObjectDamageLevel(void* serverObject);
 
+// Current hit points of a server object (CSWSObject +0xe0, signed short),
+// -1 on null / fault. Any object kind — creatures, placeables, doors.
+int ReadObjectCurrentHitPoints(void* serverObject);
+
+// True when a server object carries the plot flag (indestructible). Static
+// placeables and doors also read true: both games' loaders set the flag for
+// them. False on null / fault.
+bool IsPlotObject(void* serverObject);
+
 }  // namespace acc::engine

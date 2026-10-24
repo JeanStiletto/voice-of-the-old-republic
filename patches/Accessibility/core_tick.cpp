@@ -783,19 +783,14 @@ void Dispatch() {
     // MIN_TIME_* start globals the race clock reads. See docs/kotor2-port.md.
     PHASE("swoop_race", acc::swoop_race::Tick());
 
-    if (k1) {
-        // Turret / space-combat gunner minigame — shares CSWMiniGame with the
-        // swoop race but reports type==2. Entry/exit announce + reticle diag.
-        //
-        // STILL KOTOR 1 ONLY, but NOT for the reason previously recorded: KOTOR
-        // 2 does have turret minigames (107PER, 421DXN, 505OND all carry a
-        // Type==2 mini-game struct). The module is gated because its own
-        // constants and its aim-assist tuning have not been ported or tested —
-        // not because the subsystem is absent. The engine surface it shares
-        // with the swoop race is now resolved, so the remaining work is the
-        // turret-specific offsets plus one test round.
-        PHASE("turret_game", acc::turret_game::Tick());
-    }
+    // Turret / space-combat gunner minigame — shares CSWMiniGame with the
+    // swoop race but reports type==2. Both games since 2026-10-24: KOTOR 2's
+    // three turret areas (107PER, 421DXN, 505OND) run on the same module, with
+    // the bolt ballistics and aim limits read per area and the turret-specific
+    // offsets Pick()ed (see minigame_turret.cpp and
+    // docs/llm-docs/k2-turret-model.md). Untested on KOTOR 2 at the time of
+    // writing.
+    PHASE("turret_game", acc::turret_game::Tick());
 
     // Area + room transition announces.
     PHASE("transitions", acc::transitions::Tick());

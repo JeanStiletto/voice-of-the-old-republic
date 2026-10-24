@@ -1638,12 +1638,29 @@ enum class Id : int {
     //                           no other fighter is in range; spoken once so the
     //                           silence is explained and the player knows to
     //                           relock with Q/E.
+    //
+    //      Area-target turret (KOTOR 2 Peragus hangar): the targets are area
+    //      creatures and placeables, spoken by the ENGINE's own localised
+    //      name (%s — "Sith trooper", "Explosive barrel") plus a per-name
+    //      number (%d). The name's grammatical gender is unknown to us, so
+    //      the destroyed / escaped lines put the agreeing word on a fixed
+    //      noun of our own ("Target destroyed: %s %d") or use a noun ("Escape:
+    //      %s %d") rather than an adjective after %s.
+    //      FmtTurretTargetNamed    — Q/E select: name, number, metres.
+    //      FmtTurretDestroyedNamed — target destroyed: name, number.
+    //      FmtTurretEscapedNamed   — a creature target left the area alive
+    //                                (reached the ship): name, number.
+    //      TurretUnitTarget        — fallback name when the engine has none.
     TurretGameStarted,
     TurretGameControls,
     TurretGameEnded,
     FmtTurretTarget,
     FmtTurretDestroyed,
     TurretNoTargets,
+    FmtTurretTargetNamed,
+    FmtTurretDestroyedNamed,
+    FmtTurretEscapedNamed,
+    TurretUnitTarget,
 
     // ---- Mod-settings virtual submenu (menus_modsettings).
     //      Root label: text spoken when the user lands on the virtual

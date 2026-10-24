@@ -9,7 +9,8 @@
 > 0x1d8/0x1dc -> 0x208/0x20c); and `Gob`'s world position moved 0x78 -> 0xa4.
 > Everything at or below `CSWTrackFollower +0x98` is unmoved. K2 also HAS the
 > turret game (107PER, 421DXN, 505OND are Type==2 areas) — an earlier note
-> claiming otherwise was wrong. Ledger: `docs/kotor2-port.md`.
+> claiming otherwise was wrong. Ledger: `docs/kotor2-port.md`. Per-area data
+> for those three (targets, ranges, end conditions): `k2-turret-model.md`.
 
 This is the **engine-confirmed** model of the KOTOR minigame subsystem, read
 directly from Lane's Ghidra DB (decompile, 2026-06-05). It supersedes every

@@ -1205,6 +1205,14 @@ const size_t kCreatureCombatRoundOffset           = acc::off::Pick(0x9c8, 0x10dc
 // Same on KOTOR 2 — its CSWSObject::GetCurrentHitPoints twin 0x005413C0
 // reads the word at [obj+0xe0] (plus a variant adding [obj+0xe8]).
 const size_t kObjectHitPointsOffset               = acc::off::Same(0xe0);
+// CSWSObject plot flag (dword, nonzero = plot / indestructible). Witnessed in
+// each game's NWScript GetPlotFlag handler, both `obj->AsSWSObject()` then a
+// bare dword test: K1 ExecuteCommandGetPlotFlag @0x0053CA60 reads [obj+0xf8];
+// the K2 handler @0x00687790 — the only function stored into command-table
+// slot 455 (0x71c), same shape — reads [obj+0xfc]. Corroborated on K2 by the
+// door loader @0x0061A210 and the placeable loader @0x005EF570, which both
+// force +0xfc to 1 for a Static object.
+const size_t kObjectPlotOffset                    = acc::off::Pick(0xf8, 0xfc);
 // K2: the object's EffectList saver 0x00540860 iterates data [obj+0x148]
 // with count [obj+0x14c] — the CExoArrayList moved 0x124→0x148.
 const size_t kObjectEffectsOffset                 = acc::off::Pick(0x124, 0x148);

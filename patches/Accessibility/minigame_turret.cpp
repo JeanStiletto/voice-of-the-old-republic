@@ -24,13 +24,23 @@
 //         range. (Loudness still swells toward dead-centre within the cone as a
 //         secondary cue; it is NOT the primary signal — the engine's distance→
 //         gain curve has too steep a knee to track the cone by loudness alone.)
-//     Aim point is the INTERCEPT (range-gated lead; see kBoltSpeed) so distance
+//     Aim point is the INTERCEPT (range-gated lead; see Arena) so distance
 //     shots lead the target. Earlier we ran a SECOND ambient engine-loop on the
 //     nearest fighters ("hum"); play-testing showed it was mostly ignored, so
 //     it was dropped in favour of this single, less-cluttered cue. The vanilla
 //     fighters carry no engine loop of their own (CSWTrackFollower+0x144 null);
 //     the engine still plays its own one-shot mgs_sith_hit / _expl on
 //     hit/kill, which covers "you connected" without us adding anything.
+//
+// Both games. KOTOR 1 has one turret area (M12ab); KOTOR 2 has three, and
+// they differ in bolt speed, fighter size, fighter paths and aim limits (see
+// docs/llm-docs/k2-turret-model.md). So the bolt speed / lifespan and the aim
+// limits are READ from the engine at entry (the "arena"), and every range the
+// cues use is derived from them through a model calibrated on KOTOR 1 — see
+// "Range model" below. KOTOR 2's Peragus hangar turret (107PER) has no
+// minigame fighters at all: its targets are ordinary area creatures and
+// barrels, and its bolts do not travel, so it runs the same cues on an area
+// census with the lead switched off ("area-target mode").
 
 #include "minigame_turret.h"
 
@@ -38,12 +48,16 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 
 #include "audio_bus.h"        // PlayCue3D — one-shot lock-confirmation ping
 #include "audio_loop.h"       // LoopSource — per-fighter 3D engine loop
+#include "examine_view.h"     // IsHostileCreature — area-target census
 #include "hotkeys.h"          // Q/E target-cycle bindings
 #include "menus_modsettings.h" // TurretAutoAim easy-mode toggle
-#include "engine_area.h"      // GetCurrentArea + GetClientArea chain
+#include "engine_area.h"      // GetCurrentArea + GetClientArea chain,
+                              //   AreaObjectIterator + object accessors
+#include "engine_reads.h"     // ReadObjectCurrentHitPoints, IsPlotObject
 #include "engine_offsets.h"   // Vector
 #include "engine_player.h"    // AppManager chain (kAddrAppManagerPtr ...) +
                               //   GetCameraPosition / GetPlayerPosition
@@ -73,13 +87,16 @@ using acc::minigame::ReadFollowerPosition;
 
 // ============================================================================
 // Engine struct offsets (shared with swoop_race.cpp — see that file and
-// docs/llm-docs/re/swkotor.exe.h for the full CSWMiniGame walk).
+// docs/llm-docs/re/swkotor.exe.h for the full CSWMiniGame walk). The KOTOR 2
+// witnesses for the CSWCArea / CSWMiniGame / CSWTrackFollower values are at
+// the matching declarations in minigame_swoop_race.cpp (same struct, same
+// fields, ported 2026-08-15); turret-only fields carry their own below.
 // ============================================================================
-constexpr size_t kClientAreaMiniGameOffset = 0x264;  // CSWCArea.mini_game
-constexpr size_t kMiniGameVtableOffset     = 0x00;
-constexpr size_t kMiniGamePlayerOffset     = 0x24;   // CSWMiniPlayer*
-constexpr size_t kMiniGameEnemyCountOffset = 0x30;
-constexpr size_t kMiniGameTypeOffset       = 0x80;   // 1=swoop, 2=turret
+const size_t kClientAreaMiniGameOffset = acc::off::Pick(0x264, 0x268);  // CSWCArea.mini_game
+const size_t kMiniGameVtableOffset     = acc::off::Same(0x00);
+const size_t kMiniGamePlayerOffset     = acc::off::Same(0x24);   // CSWMiniPlayer*
+const size_t kMiniGameEnemyCountOffset = acc::off::Same(0x30);
+const size_t kMiniGameTypeOffset       = acc::off::Same(0x80);   // 1=swoop, 2=turret
                                                      // (CSWMiniGame::Load sets
                                                      // type ONLY to 1 or 2)
 
@@ -109,7 +126,7 @@ constexpr int       kExitDebounceTicks     = 60;
 //   AppManager(*kAddrAppManagerPtr) +0x4 -> CClientExoApp +0x4 ->
 //   CClientExoAppInternal +0x0 -> CSWMiniGameObjectArray
 //   (+0x00 index, +0x04 objects[255]). vtable[0x1c] = AsEnemy.
-constexpr size_t kMgoArrayObjectsOffset        = 0x4;
+const size_t     kMgoArrayObjectsOffset        = acc::off::Same(0x4);
 constexpr int    kMgoArraySlotCount            = 255;
 constexpr size_t kVtableSlotAsEnemy            = 0x1c;
 // CSWTrackFollower model list (for world position via the model wrapper's
@@ -122,11 +139,20 @@ constexpr size_t kVtableSlotAsEnemy            = 0x1c;
 //   hp/max_hp     — per-fighter health; an hp drop is a real engine-scored
 //                   hit this tick, the ground truth for the actual hit cone.
 //   invulnerability — i-frame timer; nonzero means hits won't register.
-constexpr size_t kFollowerSphereRadiusOffset = 0x84;  // float
-const size_t kFollowerHpOffset           = acc::off::Kotor1Only(0x8c);  // int
-const size_t kFollowerMaxHpOffset        = acc::off::Kotor1Only(0x90);  // int
-constexpr size_t kFollowerSpeedOffset        = 0x98;  // float (engine speed)
-const size_t kFollowerInvulnOffset       = acc::off::Kotor1Only(0x9c);  // float
+//
+// KOTOR 2: all five sit BELOW the follower's script-CResRef array (K1 +0xa4,
+// the array that grew from ten to thirteen entries), so none of them moved.
+// sphere_radius / hp / max_hp / speed carry witnesses in
+// minigame_swoop_race.cpp. invulnerability (+0x9c, the live timer that K1's
+// GetIsInvulnerable @0x005CB440 tests) is bracketed by two witnessed
+// neighbours: speed +0x98 below it, and the invince PERIOD at +0xa0 above it,
+// which each game's setter writes at the same offset (K1 SetInvincibility
+// @0x0066C920, K2's "Invince_Period" setter @0x00835650). Log-only read.
+const size_t kFollowerSphereRadiusOffset = acc::off::Same(0x84);  // float
+const size_t kFollowerHpOffset           = acc::off::Same(0x8c);  // int
+const size_t kFollowerMaxHpOffset        = acc::off::Same(0x90);  // int
+const size_t kFollowerSpeedOffset        = acc::off::Same(0x98);  // float (engine speed)
+const size_t kFollowerInvulnOffset       = acc::off::Same(0x9c);  // float
 
 // NOTE (RE + measured 2026-06-04): sphere_radius is the value OUR cue subtends
 // against, but it is NOT the engine's hit primitive. The bullet-hit path is
@@ -149,16 +175,59 @@ const size_t kFollowerInvulnOffset       = acc::off::Kotor1Only(0x9c);  // float
 // vtable[0x14] returns the victim CSWTrackFollower (the object whose HP it then
 // adjusts). |impact - followerCentre| is therefore the distance from centre at
 // which the shot actually connected — the real hit radius.
+//
+// KOTOR 1 only, with the OnPlayerFire shot counter: both hook non-virtual
+// functions (CSWMiniGameObject::OnHitBullet, CSWMiniPlayer::Fire) that no
+// vtable pairs with a K2 twin — the only K1 callers are the hit check, a
+// script-command default handler and a ProcessInput switch case. They feed
+// telemetry (TurretHitGeom, the session accuracy line), nothing the player
+// hears, so on KOTOR 2 the module runs without them.
 const size_t kHitEventImpactXOffset      = acc::off::Kotor1Only(0x54);  // float (world)
 const size_t kHitEventImpactYOffset      = acc::off::Kotor1Only(0x58);  // float (world)
 const size_t kHitEventImpactZOffset      = acc::off::Kotor1Only(0x5c);  // float (world)
 constexpr size_t kVtableSlotGetVictimFollower = 0x14; // OnHitBullet's vtable[0x14]
 
-// Census / selection range. Live distance survey (enemy-sound diagnostic,
-// 802 samples): fighters span ~0 m to ~560 m, mean ~233 m, with real density
-// past 500 m. 600 m covers every fighter from the moment it appears, so Q/E
-// can lock anything on the field.
-constexpr float kFighterCueRangeM           = 600.0f;
+// ----- Range model (calibrated on KOTOR 1, scaled per area) -----
+// Every distance the cues use used to be a KOTOR 1 constant: a 600 m census,
+// a 130 m "killable" range cue, a 1.6 s bolt-flight limit (480 m at the K1
+// bolt speed of 300), and a 1/30 hum compression. They are now DERIVED from
+// what the engine says about the current area — bolt speed and lifespan off
+// the player's gun bank, each target's radius and speed — through formulas
+// whose constants are exactly those K1 values, so KOTOR 1 lands where it was
+// tuned and the K2 areas get the same model with their own numbers.
+//
+//   Make horizon   t_make = 1.6 s * sqrt((r / 20) / (v / 74))
+//       The lead extrapolates; how far ahead it can predict before the miss
+//       exceeds the hitbox grows with the radius r and shrinks with the
+//       target's speed v. Offline check (docs/llm-docs/k2-turret-model.md):
+//       on K1's paths the median lead miss at 1.6 s is ~1.65 radii; Onderon's
+//       wider, faster paths reach the same ratio at 1.2-1.6 s, which is what
+//       the formula gives for their 114-194 u/s fighters and 30 m radius.
+//       Clamped to [0.5 s, bolt lifespan].
+//   Makeable       bolt flight time <= t_make            (full-autoaim gate)
+//   Killable cue   min(6.5 * r, boltSpeed * t_make)      (K1: min(130, 480))
+//       6.5 radii = the by-ear aiming limit (an 8.75 degree hitbox), the
+//       second term = how far a bolt gets inside the prediction horizon.
+//   Census         min(boltSpeed * lifespan, 1.25 * boltSpeed * 1.6 s)
+//                                                        (K1: min(900, 600))
+//   Hum            census edge -> 20 m source distance   (K1: 1/30)
+//
+// Resulting starting values: K1 130 / 480 / 600; Dxun (bolt 600, same paths
+// as K1) 130 / 960 / 1200; Onderon (bolt 600, r 30) 195 / 720-960 / 1200.
+constexpr float kK1BoltSpeed        = 300.0f;  // M12ab Bullet.Speed — fallback when the gun bank can't be read
+constexpr float kK1BoltLife         = 3.0f;    // M12ab Bullet.Lifespan — same fallback
+constexpr float kRefRadius          = 20.0f;   // K1 fighter Sphere_Radius
+constexpr float kRefFighterSpeed    = 74.0f;   // K1 fighter path speed (median of M12ab's six tracks)
+constexpr float kRefMakeHorizonSec  = 1.6f;    // K1-tuned bolt-flight limit at the reference radius/speed
+constexpr float kMinMakeHorizonSec  = 0.5f;
+constexpr float kKillRangePerRadius = 6.5f;    // K1's 130 m range cue / 20 m radius
+constexpr float kCensusOverMake     = 1.25f;   // K1's 600 m census / 480 m makeable distance
+constexpr float kHumFarSourceM      = 20.0f;   // census edge maps to this source distance
+// A bolt whose whole reach (speed * lifespan) is below this is not a travelling
+// bolt at all: 107PER's gun fires at 0.2 u/s for 4 s. Its hits are not scored
+// by bolt flight, so the lead, the flight-time gate and the range limits are
+// switched off for that area ("hitscan").
+constexpr float kHitscanReach       = 10.0f;
 
 // ----- Hum (approach cue on the LOCKED fighter) -----
 // A continuous loop on the selected fighter at its REAL position (distance-
@@ -167,11 +236,22 @@ constexpr float kFighterCueRangeM           = 600.0f;
 // fighter really is. Distinct from the peg, which marks the lead/aim point and
 // swells with aim error; the gap between the two IS the lead. Restored from the
 // beatable build (which rode selected + nearest; now just the locked one).
+// The compression is kHumFarSourceM / census range (see the range model): K1's
 // 1/30 maps the ~560 m spawn distance to ~19 m (faint end of the 5-20 m band)
 // and reaches the 5 m floor by ~150 m, so the hum grows louder all the way in.
-constexpr float kFighterDistanceCompression = 1.0f / 30.0f;
+// A hitscan area has no census range; its targets are a hangar's width away.
 constexpr float kFighterMinSourceDistanceM  = 5.0f;
+constexpr float kHitscanHumCompression      = 0.4f;   // 107PER: troopers 10-50 u -> 5-20 m (starting value)
 constexpr const char* kFighterLoopResref    = "acc_turret_loop";
+
+// ----- Area-target mode (107PER) -----
+// Targets are server objects, not minigame followers: hostile creatures and
+// non-plot placeables (the explosive barrels). The plot flag also excludes
+// the hangar's static console and its indestructible target dummy, because
+// both games' loaders set plot on every Static placeable. They have no
+// sphere_radius, so the hitbox subtend uses a nominal radius — a starting
+// value to tune against the first test round.
+constexpr float kAreaTargetRadius = 1.0f;
 
 // ----- Targeting "peg" cue (the single unified cue; drives the selected fighter) -----
 // The aim (aziZ azimuth, elevX elevation, both degrees) forms a gun-ray
@@ -313,9 +393,9 @@ constexpr const char* kFireCueResref = "c_drdastro_hit2";
 // killable range, and again when it LEAVES (leaving matters most — it says
 // "window closed, stop firing / reacquire"). Positioned at the fighter so it
 // pans toward it. A short, loud, distinct sample so it never blurs into the
-// continuous crosshair tone. 130 m is the first knob to tune — derived from
-// the close-band 25%-hit boundary, nudged out a little for reaction time.
-constexpr float kKillableRangeM       = 130.0f;
+// continuous crosshair tone. K1's 130 m was derived from the close-band
+// 25%-hit boundary, nudged out a little for reaction time; the distance now
+// comes from KillableRangeM (range model above), which reproduces it on K1.
 constexpr const char* kRangeCueResref = "c_drdastro_atk1";
 // LEAVE fires the marker twice (a double-tap) so it's unambiguous against the
 // single-tap ENTER — leaving ("window closed, reacquire") is the event the
@@ -326,16 +406,16 @@ constexpr ULONGLONG kLeaveTapGapMs    = 180;
 // ----- Predictive lead (intercept aiming) -----
 // The cue aims at where the fighter WILL BE when a bolt arrives, not where it
 // is now — the audio analog of a sighted player pulling ahead of the target.
-// Our bolt speed is authoritative from the M12ab area GIT (MiniGame -> Player
-// -> Gun_Banks -> Bullet -> Speed = 300; Lifespan = 3 s -> ~900-unit range).
-// With this (slow-ish) bolt the measured critBoltSpeed (149 close / 753 mid /
-// 1366 far) means lead is unnecessary close but ESSENTIAL at mid/far, where
-// the ~13.5deg lead exceeds the hitbox window — so leading converts mid-range
+// The bolt speed and lifespan are read off the player's gun bank at entry
+// (Arena) — the area's own MiniGame -> Player -> Gun_Banks -> Bullet values:
+// 300 u/s for 3 s on K1's M12ab, 600 u/s on K2's Dxun and Onderon. With K1's
+// (slow-ish) bolt the measured critBoltSpeed (149 close / 753 mid / 1366 far)
+// means lead is unnecessary close but ESSENTIAL at mid/far, where the
+// ~13.5deg lead exceeds the hitbox window — so leading converts mid-range
 // from a systematic miss into a hittable shot. We solve the intercept in the
 // LISTENER frame (relative position + relative velocity) so the result is
 // directly "where to point the turret" and ship motion folds in automatically.
-constexpr float kBoltSpeed      = 300.0f;  // units/s (M12ab Bullet.Speed)
-constexpr float kMaxLeadSeconds = 3.0f;    // = Bullet.Lifespan; clamp intercept
+// The intercept is clamped to the bolt lifespan; a hitscan area gets no lead.
 constexpr float kVelEmaAlpha    = 0.25f;   // velocity smoothing (per-tick Δpos)
 // Range-gate the lead: it is UNNECESSARY when the fighter would stay inside its
 // own hitbox during the bolt's flight (the centre-aim margin already covers
@@ -406,7 +486,7 @@ constexpr float kMagnetMaxStepDeg = 6.0f;   // per-tick cap (deg) on the magnet 
 // reliable + fastest kill — instead of chasing a far target. The cooldown is the
 // anti-thrash lever: each switch resets the lead to cold, so we MUST commit long
 // enough for it to re-warm, or the gun thrashes between targets hitting nothing.
-constexpr float    kMakeMaxFlightSec    = 1.6f;   // makeable while bolt flight <= this (covers ~480 m)
+// The flight-time limit is MakeHorizonSec (range model above; 1.6 s on K1).
 constexpr ULONGLONG kRetargetDebounceMs = 400;    // unmakeable this long before switching
 constexpr ULONGLONG kManualGraceMs      = 2000;   // respect a manual Q/E pick this long
 constexpr ULONGLONG kRetargetCooldownMs = 1500;   // commit after a switch (let the lead re-warm)
@@ -434,12 +514,56 @@ constexpr ULONGLONG kInvulnWindowMs = 1200;  // a fighter hit within this is sti
 // Module state. Single-threaded under the engine OnUpdate tick.
 // ============================================================================
 
+// What the engine says about the current turret area: the player's bolt
+// ballistics and the aim limits. Read at entry (ReadArena) and retried each
+// tick until the gun bank resolves; until then the K1 values stand in.
+struct Arena {
+    bool  ballistics_read = false;
+    float bolt_speed      = kK1BoltSpeed;
+    float bolt_life       = kK1BoltLife;
+    bool  hitscan         = false;   // bolt reach < kHitscanReach (107PER)
+
+    // Aim limits from CSWMiniPlayer's tunnel, in offset units (degrees):
+    // azimuth = offset.z, elevation = offset.x. A free axis wraps 0..360
+    // (KeepInTunnel's TunnelInfinite); a bounded one is clamped by the engine
+    // to origin+neg .. origin+pos.
+    bool  limits_read = false;
+    bool  az_free = true;
+    float az_lo = 0.0f, az_hi = 360.0f;
+    bool  el_free = false;
+    float el_lo = -90.0f, el_hi = 90.0f;
+};
+
+// Per-target values the cues need, read during the census. Fighters fill
+// them from their CSWTrackFollower; area targets from their server object.
+struct TargetInfo {
+    int   hp          = -1;
+    int   max_hp      = -1;
+    float radius      = 0.0f;
+    float invuln      = 0.0f;
+    float engine_speed = 0.0f;   // 0 = not known (area targets)
+};
+
 struct State {
     bool      active           = false;
     void*     latched_mini_game = nullptr;
     void*     latched_vtable    = nullptr;
     ULONGLONG entered_at_ms     = 0;
     int       ticks_since_lost  = 0;
+
+    Arena     arena;
+
+    // Area-target mode (107PER): the minigame declared no enemies, so the
+    // census walks the area's hostile creatures and non-plot placeables.
+    // Those have object handles, not MGO slots, so each gets a pseudo-slot
+    // in the same 0..254 space the per-slot tables below use. area_noun is
+    // the engine's own (localised) name — "Sith trooper", "Explosive
+    // barrel" — spoken in place of "Fighter"; empty for minigame fighters.
+    bool      area_targets = false;
+    uint32_t  area_handle[kMgoArraySlotCount]      = {};
+    bool      area_is_creature[kMgoArraySlotCount] = {};
+    char      area_noun[kMgoArraySlotCount][48]    = {};
+    int       area_slot_count = 0;
 
     // Single continuous targeting "peg" tone: tracks the Q/E-SELECTED
     // fighter; its loudness rises as the aim ray closes on that fighter.
@@ -659,11 +783,41 @@ void StopAllLoops() {
 // ============================================================================
 
 // Gun-walk offsets (CSWTrackFollower is the base of CSWMiniPlayer at +0).
-const size_t kFollowerGunBanksOffset   = acc::off::Kotor1Only(0x74);  // CSWMGGunBank** array base
-const size_t kFollowerGunBankCountOff  = acc::off::Kotor1Only(0x78);  // int
-const size_t kGunBankGunsDataOffset    = acc::off::Kotor1Only(0x34);  // CExoArrayList data ptr (CAurObject*[])
-const size_t kGunBankGunCountOffset    = acc::off::Kotor1Only(0x38);  // int
+//
+// KOTOR 2 witnesses (2026-10-24), each the same as K1:
+//   gun_banks +0x74 / count +0x78 — CSWMiniPlayer::CreateGunBank's twin
+//     @0x00837700 reads [this+0x78] and appends through `this+0x74` (K1
+//     @0x0066F440 does the same at [EBP+0x74] / [EBP+0x78]).
+//   guns +0x34 / count +0x38 — CSWMGGunBank::AddGun's twin @0x008404A0
+//     (vtable slot 0, exact pair with K1 @0x006743B0) appends the new gun
+//     through `this+0x34`, a CExoArrayList (data, size, ...), so size = +0x38.
+//   bullet speed +0x44 / lifespan +0x4c — the bank embeds its CSWMGBullet at
+//     +0x40 (both constructors, K1 @0x006746D0 / K2 @0x0083FBF0), and the
+//     setters write the fields directly: K1 SetBulletSpeed @0x00673840 /
+//     SetBulletLifeSpan @0x00673860, K2 @0x00840250 / @0x00840280.
+//   GetPartPosition = Gob vtable slot 38 (+0x98) in both games (RTTI slot map;
+//     K1 @0x0043F430 / K2 @0x00462B90 decompile to the same body:
+//     FindPart(name) -> world position (3 floats) + orientation (4 floats)).
+const size_t kFollowerGunBanksOffset   = acc::off::Same(0x74);  // CSWMGGunBank** array base
+const size_t kFollowerGunBankCountOff  = acc::off::Same(0x78);  // int
+const size_t kGunBankGunsDataOffset    = acc::off::Same(0x34);  // CExoArrayList data ptr (CAurObject*[])
+const size_t kGunBankGunCountOffset    = acc::off::Same(0x38);  // int
+const size_t kGunBankBulletSpeedOffset = acc::off::Same(0x44);  // float, units/s
+const size_t kGunBankBulletLifeOffset  = acc::off::Same(0x4c);  // float, seconds
 constexpr size_t kGobVtableGetPartXform    = 0x98;  // gob.vtable slot: GetPartTransform
+
+// Aim limits: CSWMiniPlayer's tunnel, the bounds CSWMiniPlayer::KeepInTunnel
+// applies to `offset` each tick. K1's KeepInTunnel @0x0066CB40 reads, per
+// axis: tunnel_infinite (+0x1fc) nonzero -> wrap 0..360 on a turret; else
+// clamp to origin (+0x208) + tunnel_neg (+0x1f0) .. origin + tunnel_pos
+// (+0x1e4). K2's CSWMiniPlayer::Load twin @0x00836350 (vtable slot 11, exact
+// pair) stores the three tunnel vectors at +0x214 / +0x220 / +0x22c, and its
+// SetOrigin twin @0x00838300 writes +0x238 — each K1 + 0x30, the
+// CSWTrackFollower growth every CSWMiniPlayer field carries.
+const size_t kMiniPlayerTunnelPosOffset      = acc::off::Pick(0x1e4, 0x214);
+const size_t kMiniPlayerTunnelNegOffset      = acc::off::Pick(0x1f0, 0x220);
+const size_t kMiniPlayerTunnelInfiniteOffset = acc::off::Pick(0x1fc, 0x22c);
+const size_t kMiniPlayerOriginOffset         = acc::off::Pick(0x208, 0x238);
 
 // gob.vtable+0x98: int __thiscall(this, const char* partName, Vector* outPos,
 // Quaternion* outOrient). Returns nonzero when the part exists.
@@ -685,19 +839,119 @@ Vector QuatRotate(const Quat& q, const Vector& v) {
             v.z + 2.0f * (q.w * uxv.z + uxuxv.z)};
 }
 
-// Resolve the player's first gun model (CAurObject*) for the bullethook read.
-void* ResolveGunModel() {
-    void* player = SafeReadPtr(g_state.latched_mini_game, kMiniGamePlayerOffset);
+// Resolve the player's first gun bank (CSWMGGunBank*).
+void* ResolveGunBank0(void* miniGame) {
+    void* player = SafeReadPtr(miniGame, kMiniGamePlayerOffset);
     if (!player) return nullptr;
     if (SafeReadU32(player, kFollowerGunBankCountOff) == 0) return nullptr;
     void* banksBase = SafeReadPtr(player, kFollowerGunBanksOffset);  // CSWMGGunBank*[]
     if (!banksBase) return nullptr;
-    void* bank0 = SafeReadPtr(banksBase, 0);
+    return SafeReadPtr(banksBase, 0);
+}
+
+// Resolve the player's first gun model (CAurObject*) for the bullethook read.
+void* ResolveGunModel() {
+    void* bank0 = ResolveGunBank0(g_state.latched_mini_game);
     if (!bank0) return nullptr;
     if (SafeReadU32(bank0, kGunBankGunCountOffset) == 0) return nullptr;
     void* gunsData = SafeReadPtr(bank0, kGunBankGunsDataOffset);    // CAurObject*[]
     if (!gunsData) return nullptr;
     return SafeReadPtr(gunsData, 0);  // guns[0] = CAurObject*
+}
+
+// Read the area's ballistics and aim limits into g_state.arena. Each half is
+// read once; a half that fails (gun bank or player not built yet during the
+// entry transition) is retried on the next tick.
+void ReadArena(void* miniGame) {
+    Arena& a = g_state.arena;
+    if (!a.ballistics_read) {
+        void* bank0 = ResolveGunBank0(miniGame);
+        const float speed = bank0 ? SafeReadFloat(bank0, kGunBankBulletSpeedOffset) : 0.0f;
+        const float life  = bank0 ? SafeReadFloat(bank0, kGunBankBulletLifeOffset)  : 0.0f;
+        // Lifespan > 0 is the "read a real bullet" test: the engine's setter
+        // refuses non-positive lifespans, so a built bank always passes it.
+        if (life > 0.0f && life < 1000.0f && speed >= 0.0f && speed < 100000.0f) {
+            a.bolt_speed      = speed;
+            a.bolt_life       = life;
+            a.hitscan         = speed * life < kHitscanReach;
+            a.ballistics_read = true;
+            acclog::Write("Turret", "arena: bolt speed=%.2f life=%.2fs reach=%.0f%s",
+                          speed, life, speed * life,
+                          a.hitscan ? " -> HITSCAN (no lead, no range limits)" : "");
+        }
+    }
+    if (!a.limits_read) {
+        void* player = SafeReadPtr(miniGame, kMiniGamePlayerOffset);
+        Vector pos, neg, inf, org;
+        if (player &&
+            SafeReadVector(player, kMiniPlayerTunnelPosOffset, pos) &&
+            SafeReadVector(player, kMiniPlayerTunnelNegOffset, neg) &&
+            SafeReadVector(player, kMiniPlayerTunnelInfiniteOffset, inf) &&
+            SafeReadVector(player, kMiniPlayerOriginOffset, org)) {
+            const bool  azFree = inf.z != 0.0f;
+            const bool  elFree = inf.x != 0.0f;
+            const float azLo = org.z + neg.z, azHi = org.z + pos.z;
+            const float elLo = org.x + neg.x, elHi = org.x + pos.x;
+            // A bounded axis with an empty or inverted range would pin the
+            // aim — most likely a player not yet loaded. Leave the steering
+            // unclamped and read again next tick.
+            if ((!azFree && azHi <= azLo) || (!elFree && elHi <= elLo)) {
+                acclog::Trace("Turret", "arena: aim limits not plausible yet (az %.1f..%.1f "
+                              "el %.1f..%.1f) — retrying", azLo, azHi, elLo, elHi);
+            } else {
+                a.az_free = azFree; a.az_lo = azLo; a.az_hi = azHi;
+                a.el_free = elFree; a.el_lo = elLo; a.el_hi = elHi;
+                a.limits_read = true;
+                acclog::Write("Turret", "arena: azimuth %s %.1f..%.1f, elevation %s %.1f..%.1f",
+                              a.az_free ? "free" : "bounded", a.az_lo, a.az_hi,
+                              a.el_free ? "free" : "bounded", a.el_lo, a.el_hi);
+            }
+        }
+    }
+}
+
+// ---- Range model (see the constants block for the derivation). ----------
+
+// How far ahead (seconds of bolt flight) the lead can predict a target of
+// this radius and speed before its miss outgrows the hitbox.
+float MakeHorizonSec(float radius, float speed) {
+    if (radius <= 0.0f) radius = kRefRadius;
+    if (speed  <= 1.0f) speed  = kRefFighterSpeed;
+    float t = kRefMakeHorizonSec *
+              std::sqrt((radius / kRefRadius) / (speed / kRefFighterSpeed));
+    if (t < kMinMakeHorizonSec)       t = kMinMakeHorizonSec;
+    if (t > g_state.arena.bolt_life)  t = g_state.arena.bolt_life;
+    return t;
+}
+
+// Census / Q/E range. Unlimited in a hitscan area (the census there is the
+// area's own target list).
+float CensusRangeM() {
+    const Arena& a = g_state.arena;
+    if (a.hitscan) return 1.0e9f;
+    const float reach = a.bolt_speed * a.bolt_life;
+    const float make  = kCensusOverMake * a.bolt_speed * kRefMakeHorizonSec;
+    return reach < make ? reach : make;
+}
+
+// Distance inside which the range cue says "you can hit this".
+float KillableRangeM(float radius, float speed) {
+    if (g_state.arena.hitscan) return CensusRangeM();
+    if (radius <= 0.0f) radius = kRefRadius;
+    const float byEar  = kKillRangePerRadius * radius;
+    const float byBolt = g_state.arena.bolt_speed * MakeHorizonSec(radius, speed);
+    return byEar < byBolt ? byEar : byBolt;
+}
+
+float HumCompression() {
+    if (g_state.arena.hitscan) return kHitscanHumCompression;
+    return kHumFarSourceM / CensusRangeM();
+}
+
+// The speed the range model should use for a target: the engine's track speed
+// for a fighter, else the measured one.
+float TargetSpeed(const TargetInfo* info, float measured) {
+    return (info && info->engine_speed > 0.0f) ? info->engine_speed : measured;
 }
 
 // THE CROSSHAIR. Read the bullethook0 node's world position + orientation and
@@ -831,8 +1085,8 @@ Vector PlayRangeCueAt(const Vector& targetPos, float dist, const Vector& listene
 // only speech, and this just relocks + fires the directional locator ping so
 // the player can swing onto the next target without a second utterance.
 void AnnounceSelectedTarget(int idx, const int occSlot[], const float occDist[],
-                            const Vector occPos[], int occCount,
-                            const Vector& listener, bool speak = true) {
+                            const Vector occPos[], const TargetInfo occInfo[],
+                            int occCount, const Vector& listener, bool speak = true) {
     if (idx < 0 || idx >= occCount) return;
     g_state.selected_slot = occSlot[idx];
     g_state.last_selected_hp = -1;  // fresh lock — next tick re-baselines HP
@@ -846,10 +1100,17 @@ void AnnounceSelectedTarget(int idx, const int occSlot[], const float occDist[],
 
     const int meters = static_cast<int>(occDist[idx] + 0.5f);
     if (speak) {
-        char buf[96];
-        std::snprintf(buf, sizeof(buf),
-                      acc::strings::Get(acc::strings::Id::FmtTurretTarget),
-                      number, meters);
+        char buf[128];
+        const char* noun = g_state.area_noun[occSlot[idx]];
+        if (noun[0]) {
+            std::snprintf(buf, sizeof(buf),
+                          acc::strings::Get(acc::strings::Id::FmtTurretTargetNamed),
+                          noun, number, meters);
+        } else {
+            std::snprintf(buf, sizeof(buf),
+                          acc::strings::Get(acc::strings::Id::FmtTurretTarget),
+                          number, meters);
+        }
         prism::SpeakUrgent(buf);
     }
 
@@ -872,7 +1133,9 @@ void AnnounceSelectedTarget(int idx, const int occSlot[], const float occDist[],
     // already inside killable range, fire the in-range (ENTER) cue now — so a
     // Q/E onto a close target (and the opening cluster after the cutscene)
     // announces "you can hit this" immediately, not only on the next crossing.
-    const bool inRangeNow = (sd > 0.0f && sd <= kKillableRangeM);
+    const float killable = KillableRangeM(occInfo[idx].radius,
+                                          TargetSpeed(&occInfo[idx], 0.0f));
+    const bool inRangeNow = (sd > 0.0f && sd <= killable);
     g_state.selected_in_range = inRangeNow ? 1 : 0;
     if (inRangeNow) {
         PlayRangeCueAt(occPos[idx], sd, listener);
@@ -889,8 +1152,8 @@ void AnnounceSelectedTarget(int idx, const int occSlot[], const float occDist[],
 // EndTick window (core_tick calls turret Tick there), so Pressed() sees a
 // clean rising edge.
 void HandleTargetCycle(const int occSlot[], const float occDist[],
-                       const Vector occPos[], int occCount,
-                       const Vector& listener) {
+                       const Vector occPos[], const TargetInfo occInfo[],
+                       int occCount, const Vector& listener) {
     const bool next = acc::hotkeys::Pressed(acc::hotkeys::Action::TurretCycleNext);
     const bool prev = acc::hotkeys::Pressed(acc::hotkeys::Action::TurretCyclePrev);
     if (!next && !prev) return;
@@ -913,7 +1176,7 @@ void HandleTargetCycle(const int occSlot[], const float occDist[],
         if (idx < 0)          idx = occCount - 1;  // wrap
         if (idx >= occCount)  idx = 0;
     }
-    AnnounceSelectedTarget(idx, occSlot, occDist, occPos, occCount, listener);
+    AnnounceSelectedTarget(idx, occSlot, occDist, occPos, occInfo, occCount, listener);
 }
 
 // Drive the continuous peg tone on the selected fighter. Loudness (via source
@@ -922,14 +1185,13 @@ void HandleTargetCycle(const int occSlot[], const float occDist[],
 // range), AUTO-ADVANCE to the nearest remaining fighter and lock it; if none
 // remain, announce "target lost" and fall silent.
 void DriveSelectedPeg(const int occSlot[], const float occDist[],
-                      const Vector occPos[], int occCount,
-                      const Vector& aimDir, bool haveAim,
-                      const Vector& listener, bool selectedAliveInPool,
-                      void* selectedEnemy) {
+                      const Vector occPos[], const TargetInfo occInfo[],
+                      int occCount, const Vector& aimDir, bool haveAim,
+                      const Vector& listener, bool selectedAliveInPool) {
     int idx = CensusIndexOf(occSlot, occCount, g_state.selected_slot);
     // True only when the locked fighter was already in the census on entry
-    // (not a fresh re-pick this tick) — gates the HP/hit read so selectedEnemy
-    // matches the fighter we log.
+    // (not a fresh re-pick this tick) — gates the HP/hit read so the info we
+    // log belongs to the fighter we were tracking.
     const bool trackingExisting = (idx >= 0);
 
     if (idx < 0) {
@@ -973,7 +1235,7 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
             }
 
             if (occCount > 0) {
-                AnnounceSelectedTarget(0, occSlot, occDist, occPos, occCount,
+                AnnounceSelectedTarget(0, occSlot, occDist, occPos, occInfo, occCount,
                                        listener, /*speak=*/false);
                 idx = 0;
             } else {
@@ -987,7 +1249,7 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
             // begins the round already locked without pressing Q/E — same
             // nearest-first rule as the lose-target auto-advance above.
             if (occCount > 0) {
-                AnnounceSelectedTarget(0, occSlot, occDist, occPos, occCount,
+                AnnounceSelectedTarget(0, occSlot, occDist, occPos, occInfo, occCount,
                                        listener);
                 idx = 0;
             } else {
@@ -1018,8 +1280,13 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
     // current disambiguator. Played at a compressed, always-audible point in
     // the fighter's direction so it pans toward it (the lock-locator trick).
     {
+        const Vector& ve = g_state.vel_ema;
+        const float measured = g_state.have_vel
+            ? std::sqrt(ve.x * ve.x + ve.y * ve.y + ve.z * ve.z) : 0.0f;
+        const float killable = KillableRangeM(occInfo[idx].radius,
+                                              TargetSpeed(&occInfo[idx], measured));
         const int wasInRange = g_state.selected_in_range;          // -1/0/1
-        const int nowInRange = (sd > 0.0f && sd <= kKillableRangeM) ? 1 : 0;
+        const int nowInRange = (sd > 0.0f && sd <= killable) ? 1 : 0;
         if (wasInRange >= 0 && nowInRange != wasInRange) {
             const Vector pos = PlayRangeCueAt(sp, sd, listener);
             if (!nowInRange) {
@@ -1038,6 +1305,9 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
     // Fighter position relative to the listener (gun). We solve the whole lead
     // in this frame so the answer is "where to point the turret".
     const Vector P = {sp.x - listener.x, sp.y - listener.y, sp.z - listener.z};
+    // |P|. Equal to the census distance sd when `listener` is the camera; a
+    // hitscan area passes the barrel instead (see TickFighterCues).
+    const float  pLen = std::sqrt(P.x * P.x + P.y * P.y + P.z * P.z);
 
     // ---- Smoothed relative velocity (Δ relative-pos / Δt, EMA). ------------
     const ULONGLONG now = GetTickCount64();
@@ -1093,26 +1363,31 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
     const Vector v = g_state.vel_ema;
     const float  vmag = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
 
-    // ---- Combat fields off the selected CSWTrackFollower. ------------------
+    // ---- Combat fields of the selected target (census snapshot). ----------
     int   hp = -1, maxHp = -1;
     float radius = 0.0f, invuln = 0.0f, engineSpeed = 0.0f;
-    if (selectedEnemy && trackingExisting) {
-        hp     = static_cast<int>(SafeReadU32(selectedEnemy, kFollowerHpOffset));
-        maxHp  = static_cast<int>(SafeReadU32(selectedEnemy, kFollowerMaxHpOffset));
-        radius = SafeReadFloat(selectedEnemy, kFollowerSphereRadiusOffset);
-        invuln = SafeReadFloat(selectedEnemy, kFollowerInvulnOffset);
-        engineSpeed = SafeReadFloat(selectedEnemy, kFollowerSpeedOffset);
+    if (trackingExisting) {
+        const TargetInfo& ti = occInfo[idx];
+        hp          = ti.hp;
+        maxHp       = ti.max_hp;
+        radius      = ti.radius;
+        invuln      = ti.invuln;
+        engineSpeed = ti.engine_speed;
     }
 
-    // ---- Lead: aim at the intercept point. Solve |P + v·t| = kBoltSpeed·t for
+    // ---- Lead: aim at the intercept point. Solve |P + v·t| = boltSpeed·t for
     // the smallest positive t (a·t² + b·t + c = 0), then I = P + v·t. Falls
     // back to the current position when velocity isn't established yet or no
-    // valid intercept exists. Clamped to the bolt lifespan. ------------------
+    // valid intercept exists. Clamped to the bolt lifespan. A hitscan area's
+    // hits don't fly, so it aims at the target itself. ----------------------
+    const Arena& arena      = g_state.arena;
+    const float  boltSpeed  = arena.bolt_speed;
+    const float  boltLife   = arena.bolt_life;
     Vector aimRel = P;           // listener-relative point the cue aims at
     Vector aimRelLin = P;        // linear-only baseline (LeadCheck diagnostic)
     float  leadT = 0.0f, leadDist = 0.0f, leadFrac = 0.0f;
-    if (g_state.have_vel) {
-        const float a  = (v.x * v.x + v.y * v.y + v.z * v.z) - kBoltSpeed * kBoltSpeed;
+    if (g_state.have_vel && !arena.hitscan) {
+        const float a  = (v.x * v.x + v.y * v.y + v.z * v.z) - boltSpeed * boltSpeed;
         const float bq = 2.0f * (P.x * v.x + P.y * v.y + P.z * v.z);
         const float cq = (P.x * P.x + P.y * P.y + P.z * P.z);
         float t = -1.0f;
@@ -1128,7 +1403,7 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
                 if (t2 > 0.0f && (t < 0.0f || t2 < t)) t = t2;
             }
         }
-        if (t > 0.0f && t <= kMaxLeadSeconds) {
+        if (t > 0.0f && t <= boltLife) {
             leadT = t;
             const float fullLead = vmag * t;  // drift during flight
             // Range-gate: ramp lead in by drift relative to the hitbox radius,
@@ -1174,8 +1449,8 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
                     pred = {P.x + corr.x, P.y + corr.y, P.z + corr.z};
                     corrMag = std::sqrt(corr.x * corr.x + corr.y * corr.y + corr.z * corr.z);
                     const float pd = std::sqrt(pred.x * pred.x + pred.y * pred.y + pred.z * pred.z);
-                    tc = pd / kBoltSpeed;
-                    if (tc > kMaxLeadSeconds) tc = kMaxLeadSeconds;
+                    tc = pd / boltSpeed;
+                    if (tc > boltLife) tc = boltLife;
                     else if (tc < 0.0f)       tc = 0.0f;
                 }
                 aimRel   = pred;
@@ -1198,8 +1473,8 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
         angle = AngleBetweenDeg(aimDir, tdir);
     }
     float angleNow = 0.0f;
-    if (sd > 0.0f) {
-        const Vector nd = {P.x / sd, P.y / sd, P.z / sd};
+    if (pLen > 0.0f) {
+        const Vector nd = {P.x / pLen, P.y / pLen, P.z / pLen};
         angleNow = AngleBetweenDeg(aimDir, nd);
     }
 
@@ -1218,13 +1493,17 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
     const bool fullAuto = acc::menus::modsettings::GetToggle(
                               acc::menus::modsettings::Option::TurretAutoAim);
     float crossingSpeed = 0.0f;
-    if (sd > 1e-3f) {
-        const Vector rhat = {P.x / sd, P.y / sd, P.z / sd};
+    if (pLen > 1e-3f) {
+        const Vector rhat = {P.x / pLen, P.y / pLen, P.z / pLen};
         const float  vrad = v.x * rhat.x + v.y * rhat.y + v.z * rhat.z;
         const Vector vtan = {v.x - vrad * rhat.x, v.y - vrad * rhat.y, v.z - vrad * rhat.z};
         crossingSpeed = std::sqrt(vtan.x * vtan.x + vtan.y * vtan.y + vtan.z * vtan.z);
     }
-    const bool  makeable = g_state.have_vel && leadT > 0.0f && leadT <= kMakeMaxFlightSec;
+    // A hitscan area has no flight to extrapolate, so every target is makeable.
+    const float makeHorizon = MakeHorizonSec(radius, TargetSpeed(
+        trackingExisting ? &occInfo[idx] : nullptr, vmag));
+    const bool  makeable = arena.hitscan ||
+                           (g_state.have_vel && leadT > 0.0f && leadT <= makeHorizon);
     // In full-autoaim the cue must stay honest: the solid "fire" tone fires only
     // when the shot actually connects, so it can't lie while the gun tracks a
     // target that's crossing too fast to hit. Assisted mode is untouched — there
@@ -1399,12 +1678,29 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
     if (steer) {
         const int sAz = g_state.calib_sign_az ? g_state.calib_sign_az : 1;
         const int sEl = g_state.calib_sign_el ? g_state.calib_sign_el : 1;
+        // The error in offset units: the full correction would set the
+        // offset to (current - error). errAz is the SHORTER way round in the
+        // world, which on a bounded azimuth (107PER: -135..+70) can run
+        // through the arc the gun cannot enter — the pull would then press
+        // against the engine's clamp forever. When the shorter way leaves the
+        // arc and the longer way stays inside it, take the longer way.
+        float errAzOff = sAz * errAz;
+        const float errElOff = sEl * errEl;
+        const bool azBounded = arena.limits_read && !arena.az_free;
+        const bool elBounded = arena.limits_read && !arena.el_free;
+        if (azBounded) {
+            const float want = offAz - errAzOff;
+            if (want < arena.az_lo || want > arena.az_hi) {
+                const float alt = want + (want < arena.az_lo ? 360.0f : -360.0f);
+                if (alt >= arena.az_lo && alt <= arena.az_hi) errAzOff = offAz - alt;
+            }
+        }
         float newAz, newEl;
         if (fullAuto) {
             // Full lock-on (turret-only autoplay): snap hard, uncapped.
             gain  = kAssistGainAuto;
-            newAz = offAz - sAz * errAz * gain;
-            newEl = offEl - sEl * errEl * gain;
+            newAz = offAz - errAzOff * gain;
+            newEl = offEl - errElOff * gain;
         } else {
             // Magnetism (shared facility, minigame_aim.h): proximity-ramped
             // (t=0 at the engage edge, 1 dead-on), per-tick-capped pull blended
@@ -1412,11 +1708,24 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
             const acc::minigame::MagnetParams mp{
                 kMagnetGainFar, kMagnetGainNear, kMagnetMaxStepDeg};
             gain  = acc::minigame::MagnetGain(1.0f - angle / kMagnetEngageDeg, mp);
-            newAz = acc::minigame::MagnetStep(offAz, sAz * errAz, gain, mp);
-            newEl = acc::minigame::MagnetStep(offEl, sEl * errEl, gain, mp);
+            newAz = acc::minigame::MagnetStep(offAz, errAzOff, gain, mp);
+            newEl = acc::minigame::MagnetStep(offEl, errElOff, gain, mp);
         }
-        while (newAz >= 360.0f) newAz -= 360.0f;  // KeepInTunnel wraps too, but
-        while (newAz <   0.0f)  newAz += 360.0f;  // avoid a one-frame out-of-range
+        // Keep the write inside what KeepInTunnel will allow, so the value
+        // we write is the value the gun takes. A free azimuth wraps 0..360;
+        // a bounded axis clamps to the tunnel. Before the limits are read
+        // the azimuth wraps as it always has and elevation is left alone.
+        if (azBounded) {
+            if (newAz < arena.az_lo) newAz = arena.az_lo;
+            if (newAz > arena.az_hi) newAz = arena.az_hi;
+        } else {
+            while (newAz >= 360.0f) newAz -= 360.0f;
+            while (newAz <   0.0f)  newAz += 360.0f;
+        }
+        if (elBounded) {
+            if (newEl < arena.el_lo) newEl = arena.el_lo;
+            if (newEl > arena.el_hi) newEl = arena.el_hi;
+        }
         WriteOffset(newAz, newEl);
     }
 
@@ -1455,7 +1764,7 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
     // this is diagnostic only. errAngle here is to the intercept; lead-correct
     // shots should now show small errAngle at the hit frame (validates lead).
     bool justLandedHit = false;
-    if (selectedEnemy && trackingExisting) {
+    if (trackingExisting && hp >= 0) {
         if (g_state.last_selected_hp >= 0 && hp < g_state.last_selected_hp) {
             acclog::Write("TurretHit",
                           "slot=%d number=%d hp=%d->%d errAngle=%.1f errNow=%.1f "
@@ -1496,7 +1805,11 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
 
     // QC accumulation (aim quality at the intercept — the operative on-target).
     {
-        const int band = (sd < 100.0f) ? 0 : (sd < 250.0f ? 1 : 2);
+        // Bands scale with the killable range (K1: 130 m -> 100 / 250 m).
+        const float kr = KillableRangeM(radius, TargetSpeed(
+            trackingExisting ? &occInfo[idx] : nullptr, vmag));
+        const int band = (sd < kr * (100.0f / 130.0f)) ? 0
+                       : (sd < kr * (250.0f / 130.0f) ? 1 : 2);
         ++g_state.qc_frames;
         ++g_state.qc_n[band];
         if (onTarget) { ++g_state.qc_on_total; ++g_state.qc_on[band]; }
@@ -1545,7 +1858,7 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
                 acclog::Write("TurretAssist",
                               "spread (on hit) slot=%d->%d vulnerable=%d",
                               g_state.selected_slot, occSlot[pick], (pick != fallback) ? 1 : 0);
-                AnnounceSelectedTarget(pick, occSlot, occDist, occPos, occCount,
+                AnnounceSelectedTarget(pick, occSlot, occDist, occPos, occInfo, occCount,
                                        listener, /*speak=*/false);
                 g_state.unmakeable_since_ms = 0;
                 g_state.last_retarget_ms    = nowMs;
@@ -1566,7 +1879,7 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
                     acclog::Write("TurretAssist",
                                   "retarget (unmakeable) slot=%d->%d leadT=%.2f crossing=%.0f range=%.0f",
                                   g_state.selected_slot, occSlot[0], leadT, crossingSpeed, sd);
-                    AnnounceSelectedTarget(0, occSlot, occDist, occPos, occCount,
+                    AnnounceSelectedTarget(0, occSlot, occDist, occPos, occInfo, occCount,
                                            listener, /*speak=*/false);
                     g_state.unmakeable_since_ms = 0;
                     g_state.last_retarget_ms    = nowMs;
@@ -1576,10 +1889,180 @@ void DriveSelectedPeg(const int occSlot[], const float occDist[],
     }
 }
 
-void TickFighterCues() {
+// The per-tick target list (Q/E cycle, auto-pick, cues), nearest first, plus
+// which slots are alive this tick so kills and escapes can be announced.
+struct Census {
+    int        count = 0;
+    int        slot[kMgoArraySlotCount];
+    float      dist[kMgoArraySlotCount];
+    Vector     pos[kMgoArraySlotCount];
+    TargetInfo info[kMgoArraySlotCount];
+    bool       alive[kMgoArraySlotCount] = {};   // in the pool / area, any range
+    bool       dead[kMgoArraySlotCount]  = {};   // area target seen at hp <= 0
+    bool       selected_alive = false;           // the locked target is still alive
+
+    // In place: the entry arrays are only read up to `count`.
+    void Reset() {
+        count = 0;
+        selected_alive = false;
+        for (int i = 0; i < kMgoArraySlotCount; ++i) { alive[i] = false; dead[i] = false; }
+    }
+};
+
+void AddToCensus(Census& c, int slot, const Vector& pos, float distSq,
+                 const TargetInfo& info) {
+    c.slot[c.count] = slot;
+    c.dist[c.count] = std::sqrt(distSq);
+    c.pos[c.count]  = pos;
+    c.info[c.count] = info;
+    ++c.count;
+}
+
+// Per-slot HP bookkeeping shared by both census sources: a drop is a hit on
+// that target (logged even when it isn't the locked one), and "ever damaged"
+// lets the down-detector tell a kill from a despawn.
+void TrackSlotHp(int slot, int hp, int maxHp) {
+    if (g_state.slot_hp_last[slot] >= 0 && hp < g_state.slot_hp_last[slot]) {
+        acclog::Write("TurretHit", "ANY slot=%d number=%d hp=%d->%d%s",
+                      slot, g_state.slot_number[slot], g_state.slot_hp_last[slot], hp,
+                      (slot == g_state.selected_slot) ? " (locked)" : "");
+    }
+    if (maxHp > 0 && hp < maxHp) g_state.slot_damaged[slot] = true;
+    g_state.slot_hp_last[slot] = hp;
+}
+
+// Minigame fighters: every MGO slot that resolves AsEnemy. Fighters beyond
+// the census range stay alive (no kill announce) but out of the Q/E list.
+void CensusFighters(Census& c, const Vector& listener) {
     void* mgoArray = ResolveMgoArray();
     if (!mgoArray) return;
+    const float range   = CensusRangeM();
+    const float rangeSq = range * range;
+    for (int i = 0; i < kMgoArraySlotCount; ++i) {
+        void* slot = SafeReadPtr(mgoArray,
+                                 kMgoArrayObjectsOffset +
+                                 static_cast<size_t>(i) * sizeof(void*));
+        void* enemy = slot ? CallAsCast(slot, kVtableSlotAsEnemy) : nullptr;
+        if (!enemy) continue;
 
+        // Alive in the pool — assign its stable number (idempotent) and note
+        // if it's the locked fighter, BEFORE the range cull below.
+        c.alive[i] = true;
+        NumberForSlot(i);
+
+        TargetInfo info;
+        info.hp           = static_cast<int>(SafeReadU32(enemy, kFollowerHpOffset));
+        info.max_hp       = static_cast<int>(SafeReadU32(enemy, kFollowerMaxHpOffset));
+        info.radius       = SafeReadFloat(enemy, kFollowerSphereRadiusOffset);
+        info.invuln       = SafeReadFloat(enemy, kFollowerInvulnOffset);
+        info.engine_speed = SafeReadFloat(enemy, kFollowerSpeedOffset);
+        TrackSlotHp(i, info.hp, info.max_hp);
+        if (i == g_state.selected_slot) c.selected_alive = true;
+
+        Vector pos;
+        if (!ReadFollowerPosition(enemy, pos)) continue;
+        const float dx = pos.x - listener.x;
+        const float dy = pos.y - listener.y;
+        const float dz = pos.z - listener.z;
+        const float distSq = dx * dx + dy * dy + dz * dz;
+        if (distSq > rangeSq) continue;
+        AddToCensus(c, i, pos, distSq, info);
+    }
+}
+
+// The pseudo-slot of an area target, assigned on first sight with the engine's
+// name as its noun and a number counted per noun ("Explosive barrel 3",
+// "Sith trooper 7"). -1 when all 255 slots are taken.
+int AreaSlotFor(void* obj, uint32_t handle, bool isCreature) {
+    for (int i = 0; i < g_state.area_slot_count; ++i) {
+        if (g_state.area_handle[i] == handle) return i;
+    }
+    if (g_state.area_slot_count >= kMgoArraySlotCount) return -1;
+    const int slot = g_state.area_slot_count++;
+    g_state.area_handle[slot]      = handle;
+    g_state.area_is_creature[slot] = isCreature;
+    char* noun = g_state.area_noun[slot];
+    if (!acc::engine::GetObjectBaseName(obj, noun, sizeof(g_state.area_noun[0])) || !noun[0]) {
+        std::snprintf(noun, sizeof(g_state.area_noun[0]), "%s",
+                      acc::strings::Get(acc::strings::Id::TurretUnitTarget));
+    }
+    int sameNoun = 0;
+    for (int i = 0; i < slot; ++i) {
+        if (std::strcmp(g_state.area_noun[i], noun) == 0) ++sameNoun;
+    }
+    g_state.slot_number[slot] = sameNoun + 1;
+    acclog::Write("Turret", "area target: slot=%d handle=0x%08x %s [%s] number=%d",
+                  slot, handle, isCreature ? "creature" : "placeable", noun,
+                  g_state.slot_number[slot]);
+    return slot;
+}
+
+// Area-target mode (107PER): hostile creatures and non-plot placeables in the
+// player's area. A creature at hp <= 0 is a corpse — dead, not a target.
+void CensusAreaTargets(Census& c, const Vector& listener) {
+    void* area = acc::engine::GetCurrentArea();
+    if (!area) return;
+    acc::engine::AreaObjectIterator iter(area);
+    void* obj = nullptr;
+    while ((obj = iter.Next()) != nullptr) {
+        const int kind = acc::engine::GetObjectKind(obj);
+        const bool isCreature =
+            kind == static_cast<int>(acc::engine::GameObjectKind::Creature);
+        const bool isPlaceable =
+            kind == static_cast<int>(acc::engine::GameObjectKind::Placeable);
+        if (!isCreature && !isPlaceable) continue;
+        if (acc::engine::IsPlotObject(obj)) continue;
+        if (isCreature && !acc::examine_view::IsHostileCreature(obj)) continue;
+
+        const int slot = AreaSlotFor(obj, acc::engine::GetObjectHandle(obj), isCreature);
+        if (slot < 0) continue;
+
+        TargetInfo info;
+        info.hp     = acc::engine::ReadObjectCurrentHitPoints(obj);
+        info.radius = kAreaTargetRadius;
+        if (info.hp <= 0) {
+            c.dead[slot] = true;
+            continue;
+        }
+        c.alive[slot] = true;
+        TrackSlotHp(slot, info.hp, -1);
+        if (slot == g_state.selected_slot) c.selected_alive = true;
+
+        Vector pos;
+        if (!acc::engine::GetObjectPosition(obj, pos)) continue;
+        const float dx = pos.x - listener.x;
+        const float dy = pos.y - listener.y;
+        const float dz = pos.z - listener.z;
+        AddToCensus(c, slot, pos, dx * dx + dy * dy + dz * dz, info);
+    }
+}
+
+// Speak a target that left the field: destroyed, or — an area creature that
+// vanished while alive (107PER's troopers are removed when they reach the
+// ship) — got away.
+void AnnounceTargetGone(int slot, bool diedOnScreen) {
+    const int num = g_state.slot_number[slot];
+    if (num <= 0) return;
+    char buf[128];
+    const char* noun = g_state.area_noun[slot];
+    const bool escaped = noun[0] && g_state.area_is_creature[slot] && !diedOnScreen;
+    if (!noun[0]) {
+        std::snprintf(buf, sizeof(buf),
+                      acc::strings::Get(acc::strings::Id::FmtTurretDestroyed), num);
+    } else {
+        std::snprintf(buf, sizeof(buf),
+                      acc::strings::Get(escaped ? acc::strings::Id::FmtTurretEscapedNamed
+                                                : acc::strings::Id::FmtTurretDestroyedNamed),
+                      noun, num);
+    }
+    prism::SpeakUrgent(buf);
+    const char* why = escaped ? "(vanished alive -> escaped)"
+                    : (g_state.slot_damaged[slot] || diedOnScreen) ? "(damaged -> kill)"
+                    : "(no damage seen -> despawn?)";
+    acclog::Write("Turret", "down: slot=%d number=%d %s", slot, num, why);
+}
+
+void TickFighterCues() {
     Vector listener;
     if (!acc::engine::GetCameraPosition(listener) &&
         !acc::engine::GetPlayerPosition(listener)) {
@@ -1594,94 +2077,36 @@ void TickFighterCues() {
     Vector       aimOrigin = listener;
     const bool   haveAim = ReadAimLine(aimDir, aimOrigin);
 
-    const float rangeSq = kFighterCueRangeM * kFighterCueRangeM;
-
-    // ---- Pass 1: census every in-range fighter (for the Q/E cycle). The
-    // engine-loop set is chosen AFTER the census (selected fighter's real ship
-    // + nearest other), so it isn't built here.
-
-    int    occSlot[kMgoArraySlotCount];
-    float  occDist[kMgoArraySlotCount];
-    Vector occPos[kMgoArraySlotCount];
-    int    occCount = 0;
-
-    // Whether the currently-locked fighter still exists in the MGO pool at
-    // all (alive but possibly out of cue range). Lets DriveSelectedPeg tell a
-    // kill (pool entry gone) from a mere range-exit (entry still there).
-    bool  selectedAliveInPool = false;
-    // The locked fighter's CSWTrackFollower* (for the HP/hitbox diagnostic).
-    void* selectedEnemy        = nullptr;
-
-    // Which slots resolve AsEnemy this tick. Compared against slot_alive_last
-    // after the walk to announce every fighter that left the field.
-    bool aliveNow[kMgoArraySlotCount] = {false};
-
-    for (int i = 0; i < kMgoArraySlotCount; ++i) {
-        void* slot = SafeReadPtr(mgoArray,
-                                 kMgoArrayObjectsOffset +
-                                 static_cast<size_t>(i) * sizeof(void*));
-        void* enemy = slot ? CallAsCast(slot, kVtableSlotAsEnemy) : nullptr;
-        if (!enemy) continue;
-
-        // Alive in the pool — assign its stable number (idempotent) and note
-        // if it's the locked fighter, BEFORE the range cull below.
-        aliveNow[i] = true;
-        NumberForSlot(i);
-
-        // HP tracking for EVERY fighter (not just the locked one): a drop is a
-        // hit on that fighter, and "ever damaged" lets the down-detector below
-        // tell a kill from a despawn. Logged so we can see hits on fighters the
-        // player isn't locked onto.
-        const int hp    = static_cast<int>(SafeReadU32(enemy, kFollowerHpOffset));
-        const int maxHp = static_cast<int>(SafeReadU32(enemy, kFollowerMaxHpOffset));
-        if (g_state.slot_hp_last[i] >= 0 && hp < g_state.slot_hp_last[i]) {
-            acclog::Write("TurretHit", "ANY slot=%d number=%d hp=%d->%d%s",
-                          i, g_state.slot_number[i], g_state.slot_hp_last[i], hp,
-                          (i == g_state.selected_slot) ? " (locked)" : "");
-        }
-        if (maxHp > 0 && hp < maxHp) g_state.slot_damaged[i] = true;
-        g_state.slot_hp_last[i] = hp;
-
-        if (i == g_state.selected_slot) {
-            selectedAliveInPool = true;
-            selectedEnemy       = enemy;
-        }
-
-        Vector pos;
-        if (!ReadFollowerPosition(enemy, pos)) continue;
-        const float dx = pos.x - listener.x;
-        const float dy = pos.y - listener.y;
-        const float dz = pos.z - listener.z;
-        const float distSq = dx * dx + dy * dy + dz * dz;
-        if (distSq > rangeSq) continue;
-
-        // Census entry for Q/E cycling.
-        occSlot[occCount] = i;
-        occDist[occCount] = std::sqrt(distSq);
-        occPos[occCount]  = pos;
-        ++occCount;
-    }
+    // ---- Census (for the Q/E cycle and every cue). Static: four 255-entry
+    // arrays are more than the engine tick's stack should carry.
+    static Census c;
+    c.Reset();
+    if (g_state.area_targets) CensusAreaTargets(c, listener);
+    else                      CensusFighters(c, listener);
 
     // Sort the census nearest-first so Q/E cycles near->far and the auto-pick
-    // lands on the nearest (insertion sort; occCount is small). The spoken
-    // "Fighter N" is the slot's stable number, independent of this order.
-    for (int a = 1; a < occCount; ++a) {
-        const int    s = occSlot[a];
-        const float  d = occDist[a];
-        const Vector p = occPos[a];
+    // lands on the nearest (insertion sort; the count is small). The spoken
+    // number is the slot's stable number, independent of this order.
+    for (int a = 1; a < c.count; ++a) {
+        const int        s = c.slot[a];
+        const float      d = c.dist[a];
+        const Vector     p = c.pos[a];
+        const TargetInfo t = c.info[a];
         int b = a - 1;
-        while (b >= 0 && occDist[b] > d) {
-            occSlot[b + 1] = occSlot[b];
-            occDist[b + 1] = occDist[b];
-            occPos[b + 1]  = occPos[b];
+        while (b >= 0 && c.dist[b] > d) {
+            c.slot[b + 1] = c.slot[b];
+            c.dist[b + 1] = c.dist[b];
+            c.pos[b + 1]  = c.pos[b];
+            c.info[b + 1] = c.info[b];
             --b;
         }
-        occSlot[b + 1] = s;
-        occDist[b + 1] = d;
-        occPos[b + 1]  = p;
+        c.slot[b + 1] = s;
+        c.dist[b + 1] = d;
+        c.pos[b + 1]  = p;
+        c.info[b + 1] = t;
     }
 
-    // Announce EVERY fighter that left the field this tick, by its stable
+    // Announce EVERY target that left the field this tick, by its stable
     // number — not just the locked one (the old logic only saw the selected
     // slot, so kills you weren't locked onto were silent). MUST go via
     // SpeakUrgent (SAPI), NOT the normal NVDA backend: the player holds the
@@ -1690,26 +2115,15 @@ void TickFighterCues() {
     // reason entry/exit use SpeakUrgent). Trade-off: SpeakUrgent interrupts, so
     // two kills within ~1 s clobber — but hearing the last beats hearing none.
     // If clusters prove lossy, serialize via a small FIFO drained one-per-cue.
-    // slot_damaged tells a real kill from a possible despawn; for now we
-    // announce both as destroyed and log the distinction.
+    // slot_damaged tells a real kill from a possible despawn; fighters announce
+    // both as destroyed and log the distinction.
     for (int i = 0; i < kMgoArraySlotCount; ++i) {
-        if (g_state.slot_alive_last[i] && !aliveNow[i]) {
-            const int num = g_state.slot_number[i];
-            if (num > 0) {
-                char buf[64];
-                std::snprintf(buf, sizeof(buf),
-                              acc::strings::Get(acc::strings::Id::FmtTurretDestroyed),
-                              num);
-                prism::SpeakUrgent(buf);
-                acclog::Write("Turret", "down: slot=%d number=%d %s",
-                              i, num,
-                              g_state.slot_damaged[i] ? "(damaged -> kill)"
-                                                      : "(no damage seen -> despawn?)");
-            }
+        if (g_state.slot_alive_last[i] && !c.alive[i]) {
+            AnnounceTargetGone(i, c.dead[i]);
             g_state.slot_damaged[i] = false;
             g_state.slot_hp_last[i] = -1;
         }
-        g_state.slot_alive_last[i] = aliveNow[i];
+        g_state.slot_alive_last[i] = c.alive[i];
     }
 
     // Fire the delayed second tap of a LEAVE cue (the double-tap that marks
@@ -1725,9 +2139,14 @@ void TickFighterCues() {
     // off-aim, swelling on-target) and auto-advances to the nearest fighter
     // when the locked one is destroyed. This is the only continuous cue now —
     // the ambient per-fighter hum was dropped (mostly ignored in play-testing).
-    HandleTargetCycle(occSlot, occDist, occPos, occCount, listener);
-    DriveSelectedPeg(occSlot, occDist, occPos, occCount, aimDir, haveAim,
-                     listener, selectedAliveInPool, selectedEnemy);
+    HandleTargetCycle(c.slot, c.dist, c.pos, c.info, c.count, listener);
+    // The aim geometry is measured from the camera, which sits a unit or two
+    // off the gun's barrel. Irrelevant against fighters hundreds of units out,
+    // but 107PER's troopers are 10-40 units away with a 1-unit radius, where
+    // that offset is a whole hitbox — so a hitscan area aims from the barrel.
+    const Vector& aimFrom = (g_state.arena.hitscan && haveAim) ? aimOrigin : listener;
+    DriveSelectedPeg(c.slot, c.dist, c.pos, c.info, c.count, aimDir, haveAim,
+                     aimFrom, c.selected_alive);
 
     // Hum: continuous loop on the LOCKED fighter at its real (compressed)
     // position — loudness = how close that fighter is, pan = where it really
@@ -1737,18 +2156,18 @@ void TickFighterCues() {
     // front-only as the crosshair). Stops when the locked fighter isn't in the
     // census (out of range / none selected).
     {
-        const int hidx = CensusIndexOf(occSlot, occCount, g_state.selected_slot);
+        const int hidx = CensusIndexOf(c.slot, c.count, g_state.selected_slot);
         if (hidx >= 0) {
-            const float realDist = occDist[hidx];
-            Vector humPos = occPos[hidx];
+            const float realDist = c.dist[hidx];
+            Vector humPos = c.pos[hidx];
             if (realDist > 0.0f) {
-                float srcDist = realDist * kFighterDistanceCompression;
+                float srcDist = realDist * HumCompression();
                 if (srcDist < kFighterMinSourceDistanceM)
                     srcDist = kFighterMinSourceDistanceM;
                 const float kk = srcDist / realDist;
-                humPos.x = listener.x + (occPos[hidx].x - listener.x) * kk;
-                humPos.y = listener.y + (occPos[hidx].y - listener.y) * kk;
-                humPos.z = listener.z + (occPos[hidx].z - listener.z) * kk;
+                humPos.x = listener.x + (c.pos[hidx].x - listener.x) * kk;
+                humPos.y = listener.y + (c.pos[hidx].y - listener.y) * kk;
+                humPos.z = listener.z + (c.pos[hidx].z - listener.z) * kk;
             }
             if (g_state.hum_cue.IsActive()) {
                 g_state.hum_cue.UpdatePosition(humPos);
@@ -1762,8 +2181,9 @@ void TickFighterCues() {
         }
     }
 
-    acclog::Trace("Turret", "fighter census: %d in range (range %.0fm)",
-                  occCount, kFighterCueRangeM);
+    acclog::Trace("Turret", "%s census: %d in range (range %.0fm)",
+                  g_state.area_targets ? "area-target" : "fighter",
+                  c.count, CensusRangeM());
 }
 
 // ============================================================================
@@ -1835,11 +2255,23 @@ void HandleEnter(void* mg) {
     // Defensive: no loop from a prior turret session must survive.
     StopAllLoops();
 
+    // Fresh arena (ballistics + aim limits) and area-target tables. A turret
+    // whose .are declares no enemies (107PER) shoots at the area instead.
+    g_state.arena = Arena{};
+    g_state.area_slot_count = 0;
+    for (int i = 0; i < kMgoArraySlotCount; ++i) {
+        g_state.area_handle[i]      = 0;
+        g_state.area_is_creature[i] = false;
+        g_state.area_noun[i][0]     = '\0';
+    }
     uint32_t enemies = SafeReadU32(mg, kMiniGameEnemyCountOffset);
+    g_state.area_targets = (enemies == 0);
     acclog::Write("Turret",
-                  "ENTER mini_game=%p vtable=%p type=%u enemies=%u",
+                  "ENTER mini_game=%p vtable=%p type=%u enemies=%u%s",
                   mg, g_state.latched_vtable,
-                  SafeReadU32(mg, kMiniGameTypeOffset), enemies);
+                  SafeReadU32(mg, kMiniGameTypeOffset), enemies,
+                  g_state.area_targets ? " -> area-target mode" : "");
+    ReadArena(mg);
 
     AnnounceEntry();
 }
@@ -1867,8 +2299,12 @@ void HandleExit() {
                       g_state.qc_min_err, meanErr);
     }
 
-    // Session accuracy telemetry: fighter hits per player shot.
-    {
+    // Session accuracy telemetry: fighter hits per player shot. Both counters
+    // come from the KOTOR-1-only OnTurretBulletHit / OnPlayerFire hooks.
+    if (acc::game::IsKotor2()) {
+        acclog::Write("TurretAssist", "session accuracy: n/a (fire / hit hooks "
+                      "are KOTOR 1 only; see TurretHit lines for hits)");
+    } else {
         const float pct = g_state.shots_fired > 0
                               ? 100.0f * g_state.fighter_hits / g_state.shots_fired : 0.0f;
         acclog::Write("TurretAssist", "session accuracy: hits=%d shots=%d (%.1f%%)",
@@ -1896,7 +2332,7 @@ void HandleExit() {
 // ECX = the hit-event object (see the constants block above for its layout).
 // ============================================================================
 extern "C" void __cdecl OnTurretBulletHit(void* hitEvent) {
-    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
+    if (!acc::game::HandlerEnabled()) return;  // KOTOR 1 only — no K2 hook (see the hit-event constants)
     if (!hitEvent || !g_state.active) return;
 
     Vector impact;
@@ -1940,7 +2376,7 @@ extern "C" void __cdecl OnTurretBulletHit(void* hitEvent) {
 // player fire event; counts PLAYER shots only (enemy fire shares AddBullet, not
 // this). Drives the session hits/shots accuracy line. ECX = CSWMiniPlayer (unused).
 extern "C" void __cdecl OnPlayerFire(void* /*player*/) {
-    if (!acc::game::HandlerEnabled()) return;  // KOTOR 2: not ported yet
+    if (!acc::game::HandlerEnabled()) return;  // KOTOR 1 only — no K2 hook (see the hit-event constants)
     if (!g_state.active) return;
     ++g_state.shots_fired;
 }
@@ -1997,6 +2433,20 @@ void Tick() {
         acclog::Write("Turret", "enemy_count %d -> %d",
                       g_state.last_enemy_count, enemyCount);
         g_state.last_enemy_count = enemyCount;
+    }
+    // Area-target mode was chosen from the count at entry. Should a space
+    // turret have entered before its fighters were loaded, hand back to the
+    // fighter census the moment they appear.
+    if (g_state.area_targets && enemyCount > 0) {
+        g_state.area_targets = false;
+        acclog::Write("Turret", "enemies appeared (%d) -> leaving area-target mode",
+                      enemyCount);
+    }
+
+    // The gun bank / tunnel can still be under construction on the first
+    // ticks; keep reading until both halves of the arena are in.
+    if (!g_state.arena.ballistics_read || !g_state.arena.limits_read) {
+        ReadArena(g_state.latched_mini_game);
     }
 
     // Aiming (WASD) and firing (Space/Enter) are native keyboard actions.

@@ -532,6 +532,14 @@ const char* Get(Id id) {
             return "J\xE4ger %d zerst\xF6rt.";  // J?ger %d zerst?rt.
         case Id::TurretNoTargets:
             return "Keine Ziele.";
+        case Id::FmtTurretTargetNamed:
+            return "%s %d, %d Meter";
+        case Id::FmtTurretDestroyedNamed:
+            return "Ziel zerst\xF6rt: %s %d.";
+        case Id::FmtTurretEscapedNamed:
+            return "Entkommen: %s %d.";
+        case Id::TurretUnitTarget:
+            return "Ziel";
 
         // "Mod Einstellungen" / "Erweitertes Wechseln" / "Raumformen" /
         // "Wandger\xe4usche" ? \xe4 = ?, \xfc = ?. Encoding matches the

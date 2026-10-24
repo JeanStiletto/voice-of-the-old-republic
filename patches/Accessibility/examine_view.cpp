@@ -68,17 +68,6 @@ void* ReadCreatureStats(void* serverCreature) {
     }
 }
 
-int ReadHpCurrent(void* obj) {
-    if (!obj) return -1;
-    __try {
-        return static_cast<int>(*reinterpret_cast<short*>(
-            reinterpret_cast<unsigned char*>(obj) +
-            kObjectHitPointsOffset));
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return -1;
-    }
-}
-
 // Manual-fire engine accessors. Each is deterministic, no-side-effect.
 typedef int (__thiscall* PFN_GetIntThis)(void* this_);
 typedef int (__thiscall* PFN_GetIntThisInt)(void* this_, int arg);
@@ -421,7 +410,7 @@ int BuildRows() {
         // Row: HP — full "cur of max" when GetMaxHitPoints resolves,
         // otherwise the older single-value form.
         if (idx < kMaxRows) {
-            int hpCur = ReadHpCurrent(obj);
+            int hpCur = acc::engine::ReadObjectCurrentHitPoints(obj);
             int hpMax = ReadHpMax(obj);
             if (hpCur >= 0 && hpMax > 0) {
                 std::snprintf(g_state.rows[idx], sizeof(g_state.rows[0]),

@@ -517,6 +517,14 @@ const char* Get(Id id) {
             return "My\x9Cliwiec %d zniszczony.";
         case Id::TurretNoTargets:
             return "Brak cel\xF3w.";
+        case Id::FmtTurretTargetNamed:
+            return "%s %d, %d metr\xF3w";
+        case Id::FmtTurretDestroyedNamed:
+            return "Cel zniszczony: %s %d.";
+        case Id::FmtTurretEscapedNamed:
+            return "Ucieczka: %s %d.";
+        case Id::TurretUnitTarget:
+            return "Cel";
 
         case Id::ModSettingsRootLabel:        return "Ustawienia moda";
         case Id::ModSettingsOpened:           return "Otwarto ustawienia moda";

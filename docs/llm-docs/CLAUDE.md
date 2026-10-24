@@ -8,6 +8,7 @@ Reference material curated for LLM consumption. Progressive-disclosure index —
 - **`accessibility-map.md`** — pillar map of hook candidates by accessibility goal (dialog, combat, world, UI). Less linear than game-flow.md; complementary.
 - **`sarif-cookbook.md`** — jq recipes for querying Lane's local SARIF export (`re/k1_win_gog_swkotor.exe.sarif`). Use when `re/swkotor.exe.h` shows undefined fields or when you need cross-references for an address.
 - **`turret-minigame-model.md`** — engine-confirmed model of the swoop/turret minigame subsystem (decompiled). The reference shape for an RE-model doc: input→state→action→effect chain, function addresses, struct offsets, and a "what we got wrong" section. Produced by `kdev re` then curated here. When reconstructing another subsystem, `kdev re "<ClassRegex>" --decompile` and curate the skeleton to a sibling of this file.
+- **`k2-turret-model.md`** — data-side model of KOTOR 2's three turret minigames (Peragus hangar, Dxun blockade, Onderon), read from the `.are` MiniGame structs, module scripts and track-model keyframes, compared with K1's single turret. Peragus is a different game (ground troopers + barrels, bounded aim, outcome picks the next area); Dxun reuses K1's fighter paths; Onderon's paths are far wider and faster; none of the three can end the game. Its "Port status" section records the 2026-10-24 port (witnessed offsets, range model, area-target mode) and the first test round. Read before touching `minigame_turret` on K2.
 - **`swoop-accelpad-hit-model.md`** — engine-confirmed model of **how the swoop bike hits an accelerator pad** (decompiled). The hit is a swept (CCD) sphere-vs-sphere test, combined radius 6.0 (Taris) / 5.0 (Tatooine, Manaan); speed-independent, no timing window — difficulty is purely lateral lane alignment. Includes the boost script (`accelpad.ncs`: +5% speed / +10% accel) and live pad-position spread. Read when tuning the accelpad spatial-audio cue.
 - **`k2-controller-support.md`** — KOTOR 2 (Steam/Aspyr) gamepad support: DirectInput 8 enumeration and per-device `DIJOYSTATE2` state, the hard-coded pad-button → engine-InputIndex table, the K2-only gamepad preamble in `CSWGuiManager::HandleInputEvent`, and the three iOS-derived overlays (`CSWGuiActionMenuIos`, `CSWGamepadMenuIos`, `CSWGuiHelpPanel`). Also records which pad inputs the engine leaves free. Read before any controller work on K2.
 - **`code-index/`** — per-file LLM-readable summary for each source file under `patches/Accessibility/` (one `.md` per `.cpp`/`.h` plus `_files.txt` inventory), plus subfolders `kdev/` (tools/kdev C# sources) and `installer/` (KotorAccessibilityInstaller C# sources). Useful as fast context before reading a file in full. Fully regenerated 2026-07-27 (pre-K2 refactoring Phase 0); may drift if not refreshed on major restructuring.
@@ -90,11 +91,11 @@ three extra script slots; CPazaakCard 8 -> 12 bytes). Full ledger in
   games. K2 adds five side-deck cards at indices 18..22 and pushes its
   main deck to 23..32; K1's `index >= 18` main-deck test does NOT
   transfer.
-- `minigame_turret` — still K1-gated, but **KOTOR 2 does have the turret
-  minigame** (107PER / 421DXN / 505OND each carry a Type==2 mini-game
-  struct). The "not present in KOTOR 2" claim recorded here on 2026-07-29
-  was wrong. The gate is now about unported turret-specific constants and
-  untested aim-assist tuning; the shared engine surface is resolved.
+- `minigame_turret` — **ported 2026-10-24**, both games, untested on K2.
+  KOTOR 2 has three turret areas (107PER / 421DXN / 505OND; the "not present
+  in KOTOR 2" claim recorded here on 2026-07-29 was wrong). Ballistics and
+  aim limits are read per area, K1's distances became a K1-calibrated range
+  model, and 107PER runs an area-target mode. See `k2-turret-model.md`.
 - `minigame_aim` — the shared primitives, fully ported. Its one Pick is
   CSWMiniPlayer.offset (0x1c4 -> 0x1f4).
 

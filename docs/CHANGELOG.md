@@ -46,8 +46,25 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h3>Overview:</h3>
 
+- The KOTOR 2 space turrets (Dxun and Onderon) have the KOTOR 1 turret
+  support: auto-aim, Q and E target cycling and the aiming sounds.
+- The Peragus hangar turret in KOTOR 2 is playable by ear: Q and E cycle the
+  Sith troopers and explosive barrels by name.
 - The KOTOR 2 party selection screen reads each companion's name instead of
   "control 13".
+
+<h3>KOTOR 2 turrets:</h3>
+
+- **Turret support on Dxun and Onderon.** Auto-aim, Q and E target cycling,
+  the crosshair and range sounds, and kill announcements now work in KOTOR 2's
+  two space battles. The mod reads each turret's bolt speed and aiming limits
+  from the game, so ranges match each battle: Dxun's and Onderon's faster bolts
+  reach about twice as far as KOTOR 1's.
+- **The Peragus hangar turret.** Here you shoot Sith troopers running for the
+  Ebon Hawk, and the barrels along their path. Q and E cycle them by the
+  game's own name ("Sith trooper 3, 18 meters"), kills are announced as
+  "Target destroyed", and a trooper that reaches the ship as "Escaped". The
+  aim assist stays inside the turret's limited swing.
 
 <h3>Bug fixes:</h3>
 

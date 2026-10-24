@@ -6,7 +6,7 @@
 // reference build of KOTOR 1, or the 2004 relink?" purely to decide how to map
 // an address. With KOTOR 2 in scope there is a second, broader question —
 // "which GAME is this?" — whose answers are consumed far outside address
-// handling: feature gating for K1-only content (floor_puzzle, minigame_turret,
+// handling: feature gating for K1-only content (floor_puzzle,
 // endar_softlock, tutorial_hints, ...), per-game struct offsets, and the
 // input layer, where K2 has a native controller path K1 has no counterpart for.
 //
