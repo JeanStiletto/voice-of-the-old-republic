@@ -1,13 +1,12 @@
 #include "eloquence_render.h"
 
 #include <windows.h>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
+#include <deque>
 #include <string>
 #include <vector>
 
 #include "log.h"
+#include "nvda_config.h"
 
 namespace acc::eloquence {
 
@@ -15,28 +14,28 @@ namespace {
 
 // ---- ECI ABI (32-bit, __stdcall, undecorated exports) ----------------------
 // Constants as the IBMTTS driver declares them (_ibmeci.py).
-constexpr int kParamSynthMode  = 0;
-constexpr int kParamInputType  = 1;
-constexpr int kParamSampleRate = 5;
-constexpr int kVoiceHeadSize   = 1;
-constexpr int kVoicePitch      = 2;   // eciPitchBaseline
-constexpr int kVoiceInflection = 3;   // eciPitchFluctuation
-constexpr int kVoiceRoughness  = 4;
+constexpr int kParamSynthMode   = 0;
+constexpr int kParamInputType   = 1;
+constexpr int kParamSampleRate  = 5;
+constexpr int kVoiceHeadSize    = 1;
+constexpr int kVoicePitch       = 2;   // eciPitchBaseline
+constexpr int kVoiceInflection  = 3;   // eciPitchFluctuation
+constexpr int kVoiceRoughness   = 4;
 constexpr int kVoiceBreathiness = 5;
-constexpr int kVoiceSpeed      = 6;
-constexpr int kVoiceVolume     = 7;
-constexpr int kMsgWaveform     = 0;   // eciWaveformBuffer: lParam = samples ready
-constexpr int kMsgIndexReply   = 2;   // eciIndexReply:     lParam = index value
-constexpr int kDataProcessed   = 1;
-constexpr int kFullVolume      = 100;  // eciVolume range is 0..100
-constexpr int kEndMark         = 0xffff;  // index inserted after the text
+constexpr int kVoiceSpeed       = 6;
+constexpr int kVoiceVolume      = 7;
+constexpr int kMsgWaveform      = 0;   // eciWaveformBuffer: lParam = samples ready
+constexpr int kMsgIndexReply    = 2;   // eciIndexReply:     lParam = index value
+constexpr int kDataProcessed    = 1;
+constexpr int kFullVolume       = 100; // eciVolume range is 0..100
+constexpr int kEndMark          = 0xffff;  // index inserted after the text
 
 // NVDA rate percent → ECI speed, as the driver's _percentToParam(40..156).
 constexpr int    kMinRate         = 40;
 constexpr int    kMaxRate         = 156;
 constexpr double kRateBoostFactor = 1.6;
 
-constexpr int   kBufferSamples = 3300;   // the driver's output-buffer size
+constexpr int   kBufferSamples   = 3300;   // the driver's output-buffer size
 constexpr DWORD kRenderTimeoutMs = 5000;
 
 typedef int   (__stdcall* PFN_EciCallback)(void* eci, int msg, long lParam, void* data);
@@ -70,84 +69,53 @@ EciApi g_api       = {};
 bool   g_loadTried = false;
 bool   g_loaded    = false;
 
-// ---- NVDA config --------------------------------------------------------
+// ---- Settings (from NVDA's saved config) ----------------------------------
 // -1 = not set in nvda.ini: leave ECI's own (or the variant's) default.
 struct Settings {
-    int  voice      = -1;  // eciLanguageDialect, e.g. 262144 = German
-    int  variant    = -1;  // preset copied onto voice 0
-    int  rate       = -1;  // NVDA percent
-    bool rateBoost  = false;
-    int  pitch      = -1;
-    int  inflection = -1;
-    int  volume     = -1;
-    int  headSize   = -1;
-    int  roughness  = -1;
+    int  voice       = -1;  // eciLanguageDialect, e.g. 262144 = German
+    int  variant     = -1;  // preset copied onto voice 0
+    int  rate        = -1;  // NVDA percent
+    bool rateBoost   = false;
+    int  pitch       = -1;
+    int  inflection  = -1;
+    int  volume      = -1;
+    int  headSize    = -1;
+    int  roughness   = -1;
     int  breathiness = -1;
-    int  sampleRate = 1;   // driver default '1' = 11025 Hz
-    std::string ttsPath = "ibmtts";
-    std::string dllName = "eci.dll";
+    int  sampleRate  = 1;   // driver default '1' = 11025 Hz
 };
 
-std::string NvdaConfigDir() {
-    char appData[MAX_PATH] = {};
-    DWORD n = GetEnvironmentVariableA("APPDATA", appData, sizeof(appData));
-    if (n == 0 || n >= sizeof(appData)) return std::string();
-    return std::string(appData) + "\\nvda";
+Settings ReadSettings(const nvda_config::Config& c) {
+    Settings s;
+    const char* sec = "speech";
+    const char* sub = "ibmeci";
+    s.voice       = c.FindInt(sec, sub, "voice", -1);
+    s.variant     = c.FindInt(sec, sub, "variant", -1);
+    s.rate        = c.FindInt(sec, sub, "rate", -1);
+    const char* boost = c.Find(sec, sub, "rateBoost");
+    s.rateBoost   = boost && std::string(boost) == "True";
+    s.pitch       = c.FindInt(sec, sub, "pitch", -1);
+    s.inflection  = c.FindInt(sec, sub, "inflection", -1);
+    s.volume      = c.FindInt(sec, sub, "volume", -1);
+    s.headSize    = c.FindInt(sec, sub, "hsz", -1);
+    s.roughness   = c.FindInt(sec, sub, "rgh", -1);
+    s.breathiness = c.FindInt(sec, sub, "bth", -1);
+    s.sampleRate  = c.FindInt(sec, sub, "sampleRate", 1);
+    return s;
 }
 
-std::string Trim(const std::string& s) {
-    size_t a = s.find_first_not_of(" \t\r\n");
-    if (a == std::string::npos) return std::string();
-    size_t b = s.find_last_not_of(" \t\r\n");
-    return s.substr(a, b - a + 1);
+// Engine folder: [ibmeci] TTSPath, relative to the add-on's synthDrivers
+// folder unless absolute (the driver's setPathsFromConfig).
+std::string EngineDir(const nvda_config::Config& c) {
+    const char* p = c.Find("ibmeci", "", "TTSPath");
+    std::string path = p ? p : "ibmtts";
+    if (path.size() > 1 && (path[1] == ':' || (path[0] == '\\' && path[1] == '\\'))) return path;
+    return nvda_config::ConfigDir() + "\\addons\\IBMTTS\\synthDrivers\\" + path;
 }
 
-// nvda.ini is ConfigObj: "[section]", "[[subsection]]", "key = value".
-bool ReadSettings(Settings& s) {
-    const std::string path = NvdaConfigDir() + "\\nvda.ini";
-    FILE* f = std::fopen(path.c_str(), "r");
-    if (!f) {
-        acclog::Write("Eloquence", "no NVDA config at %s", path.c_str());
-        return false;
-    }
-    std::string section, subsection;
-    char line[512];
-    while (std::fgets(line, sizeof(line), f)) {
-        const std::string t = Trim(line);
-        if (t.empty() || t[0] == '#') continue;
-        if (t.compare(0, 2, "[[") == 0) { subsection = t; continue; }
-        if (t[0] == '[') { section = t; subsection.clear(); continue; }
-        const size_t eq = t.find('=');
-        if (eq == std::string::npos) continue;
-        const std::string key = Trim(t.substr(0, eq));
-        const std::string val = Trim(t.substr(eq + 1));
-        const int num = std::atoi(val.c_str());
-        if (section == "[ibmeci]" && subsection.empty()) {
-            if (key == "TTSPath") s.ttsPath = val;
-            else if (key == "dllName") s.dllName = val;
-        } else if (section == "[speech]" && subsection == "[[ibmeci]]") {
-            if      (key == "voice")      s.voice = num;
-            else if (key == "variant")    s.variant = num;
-            else if (key == "rate")       s.rate = num;
-            else if (key == "rateBoost")  s.rateBoost = (val == "True");
-            else if (key == "pitch")      s.pitch = num;
-            else if (key == "inflection") s.inflection = num;
-            else if (key == "volume")     s.volume = num;
-            else if (key == "hsz")        s.headSize = num;
-            else if (key == "rgh")        s.roughness = num;
-            else if (key == "bth")        s.breathiness = num;
-            else if (key == "sampleRate") s.sampleRate = num;
-        }
-    }
-    std::fclose(f);
-    return true;
-}
-
-// TTSPath is relative to the add-on's synthDrivers folder unless absolute.
-std::string EngineDir(const Settings& s) {
-    const std::string& p = s.ttsPath;
-    if (p.size() > 1 && (p[1] == ':' || (p[0] == '\\' && p[1] == '\\'))) return p;
-    return NvdaConfigDir() + "\\addons\\IBMTTS\\synthDrivers\\" + p;
+std::string EngineFile(const nvda_config::Config& c) {
+    const char* dll = c.Find("ibmeci", "", "dllName");
+    return EngineDir(c) + "\\" + (dll ? dll : "eci.dll");
 }
 
 template <typename T>
@@ -157,11 +125,11 @@ bool Resolve(HMODULE lib, T& fn, const char* name) {
     return fn != nullptr;
 }
 
-bool EnsureLoaded(const Settings& s) {
+bool EnsureLoaded(const nvda_config::Config& c) {
     if (g_loadTried) return g_loaded;
     g_loadTried = true;
-    const std::string dir = EngineDir(s);
-    const std::string dll = dir + "\\" + s.dllName;
+    const std::string dir = EngineDir(c);
+    const std::string dll = EngineFile(c);
     if (GetFileAttributesA(dll.c_str()) == INVALID_FILE_ATTRIBUTES) {
         acclog::Write("Eloquence", "no installed engine at %s", dll.c_str());
         return false;
@@ -194,24 +162,39 @@ bool EnsureLoaded(const Settings& s) {
     return g_loaded;
 }
 
-// ---- Render job ---------------------------------------------------------
-// Heap-allocated and handed to the worker thread. Self-contained (its own
-// copies of settings, text and samples) so that on a timeout the caller can
-// abandon it to a thread that may still write to it — it is leaked then.
-struct RenderJob {
+// ---- Jobs and the worker --------------------------------------------------
+// A job is owned by whoever holds it: the queue, the worker, the finished
+// list, then the main thread that takes it. A blocking caller that times out
+// abandons its job to the worker (leaked), never frees it under the worker.
+struct Job {
+    uint32_t           ticket = 0;
     Settings           settings;
-    std::string        text;      // cp1252, backquotes removed
+    std::string        text;          // cp1252, backquotes removed
     std::vector<float> samples;
-    short              buffer[kBufferSamples] = {};
     bool               ended   = false;    // the end-mark index came back
     const char*        failure = nullptr;  // null on success
+    DWORD              elapsedMs = 0;
+    HANDLE             done    = nullptr;  // blocking callers only
 };
 
-int __stdcall OnEciMessage(void* /*eci*/, int msg, long lParam, void* data) {
-    auto* job = static_cast<RenderJob*>(data);
+CRITICAL_SECTION   g_lock;
+HANDLE             g_wake      = nullptr;  // auto-reset: a job was queued
+bool               g_started   = false;
+std::deque<Job*>   g_queue;
+std::deque<Job*>   g_finished;
+
+// Worker-owned engine state.
+short g_buffer[kBufferSamples];
+void* g_eci       = nullptr;
+int   g_eciVoice  = -2;   // dialect g_eci was created with
+Job*  g_current   = nullptr;  // the line being synthesised; the callback's target
+
+int __stdcall OnEciMessage(void* /*eci*/, int msg, long lParam, void* /*data*/) {
+    Job* job = g_current;
+    if (!job) return kDataProcessed;
     if (msg == kMsgWaveform) {
         for (long i = 0; i < lParam && i < kBufferSamples; ++i) {
-            job->samples.push_back(job->buffer[i] / 32768.0f);
+            job->samples.push_back(g_buffer[i] / 32768.0f);
         }
     } else if (msg == kMsgIndexReply && lParam == kEndMark) {
         job->ended = true;
@@ -219,44 +202,65 @@ int __stdcall OnEciMessage(void* /*eci*/, int msg, long lParam, void* data) {
     return kDataProcessed;
 }
 
-void SetVoiceParamIfSet(void* eci, int param, int value) {
-    if (value >= 0) g_api.setVoiceParam(eci, 0, param, value);
+void SetVoiceParamIfSet(int param, int value) {
+    if (value >= 0) g_api.setVoiceParam(g_eci, 0, param, value);
 }
 
-// SEH-guarded ECI session. No destructible locals (C2712).
-void RunEci(RenderJob* job) {
+// One line on the worker's persistent handle. SEH-guarded; no destructible
+// locals (C2712). A fault or timeout drops the handle so the next job
+// starts from a fresh one.
+void RunJob(Job* job) {
     const Settings& s = job->settings;
-    void* eci = nullptr;
     __try {
-        eci = g_api.newEx(s.voice >= 0 ? s.voice : 0);
-        if (!eci) { job->failure = "eciNewEx returned no engine"; return; }
-        g_api.registerCallback(eci, OnEciMessage, job);
-        g_api.setOutputBuffer(eci, kBufferSamples, job->buffer);
-        // The driver's "required to process audio properly" pair.
-        g_api.setParam(eci, kParamSynthMode, 1);
-        g_api.setParam(eci, kParamInputType, 1);
-        g_api.setParam(eci, kParamSampleRate, s.sampleRate);
-        if (s.variant > 0) g_api.copyVoice(eci, s.variant, 0);
+        if (g_eci && g_eciVoice != s.voice) {
+            g_api.del(g_eci);
+            g_eci = nullptr;
+        }
+        if (!g_eci) {
+            g_eci = g_api.newEx(s.voice >= 0 ? s.voice : 0);
+            if (!g_eci) { job->failure = "eciNewEx returned no engine"; return; }
+            g_eciVoice = s.voice;
+            // ORDER MATTERS, as in the driver: callback first, then the
+            // output buffer. Registering the callback after the buffer (once
+            // per line) dropped the buffer, and ECI then played every line
+            // ALOUD through the sound card — loud, centred, in real time —
+            // while handing back no samples (test round 2026-10-27). So the
+            // callback is registered once, here, and finds the current line
+            // through g_current.
+            g_api.registerCallback(g_eci, OnEciMessage, nullptr);
+            if (!g_api.setOutputBuffer(g_eci, kBufferSamples, g_buffer)) {
+                g_api.del(g_eci);
+                g_eci = nullptr;
+                job->failure = "eciSetOutputBuffer refused";
+                return;
+            }
+            // The driver's "required to process audio properly" pair.
+            g_api.setParam(g_eci, kParamSynthMode, 1);
+            g_api.setParam(g_eci, kParamInputType, 1);
+        }
+        g_current = job;
+        g_api.setParam(g_eci, kParamSampleRate, s.sampleRate);
+        if (s.variant > 0) g_api.copyVoice(g_eci, s.variant, 0);
         if (s.rate >= 0) {
             int speed = static_cast<int>(s.rate / 100.0 * (kMaxRate - kMinRate) + kMinRate + 0.5);
             if (s.rateBoost) speed = static_cast<int>(speed * kRateBoostFactor + 0.5);
-            g_api.setVoiceParam(eci, 0, kVoiceSpeed, speed);
+            g_api.setVoiceParam(g_eci, 0, kVoiceSpeed, speed);
         }
-        SetVoiceParamIfSet(eci, kVoicePitch,       s.pitch);
-        SetVoiceParamIfSet(eci, kVoiceInflection,  s.inflection);
+        SetVoiceParamIfSet(kVoicePitch,       s.pitch);
+        SetVoiceParamIfSet(kVoiceInflection,  s.inflection);
+        SetVoiceParamIfSet(kVoiceHeadSize,    s.headSize);
+        SetVoiceParamIfSet(kVoiceRoughness,   s.roughness);
+        SetVoiceParamIfSet(kVoiceBreathiness, s.breathiness);
         // Always full: NVDA's volume is NOT baked in. NVDA plays at full
         // system level, the game through its own mixer (SFX slider, group,
         // 3D falloff), so ECI volume 55 came out far quieter in game than the
         // same 55 in NVDA (tested 2026-10-27). The setting is handed back as
         // RenderedSpeech::volume and applied as the per-source game volume.
-        g_api.setVoiceParam(eci, 0, kVoiceVolume, kFullVolume);
-        SetVoiceParamIfSet(eci, kVoiceHeadSize,    s.headSize);
-        SetVoiceParamIfSet(eci, kVoiceRoughness,   s.roughness);
-        SetVoiceParamIfSet(eci, kVoiceBreathiness, s.breathiness);
+        g_api.setVoiceParam(g_eci, 0, kVoiceVolume, kFullVolume);
 
-        g_api.addText(eci, job->text.c_str());
-        g_api.insertIndex(eci, kEndMark);
-        g_api.synthesize(eci);
+        g_api.addText(g_eci, job->text.c_str());
+        g_api.insertIndex(g_eci, kEndMark);
+        g_api.synthesize(g_eci);
 
         // ECI posts its callbacks to this thread; pump until the end mark.
         const DWORD start = GetTickCount();
@@ -266,79 +270,158 @@ void RunEci(RenderJob* job) {
                 TranslateMessage(&msg);
                 DispatchMessageA(&msg);
             }
-            g_api.speaking(eci);  // also lets ECI deliver pending callbacks
+            g_api.speaking(g_eci);  // also lets ECI deliver pending callbacks
             if (!job->ended) Sleep(1);
         }
-        if (!job->ended) job->failure = "synthesis did not finish in time";
-        g_api.del(eci);
+        g_current = nullptr;
+        if (!job->ended) {
+            job->failure = "synthesis did not finish in time";
+            g_api.del(g_eci);
+            g_eci = nullptr;
+        } else if (job->samples.empty()) {
+            // Finished but delivered nothing: the handle is in a bad state
+            // (the buffer-loss symptom above). Start the next line fresh.
+            job->failure = "synthesis delivered no audio";
+            g_api.del(g_eci);
+            g_eci = nullptr;
+        }
     } __except (EXCEPTION_EXECUTE_HANDLER) {
+        g_current = nullptr;
         job->failure = "ECI faulted";
+        g_eci = nullptr;  // state unknown; leak it rather than touch it again
     }
 }
 
-DWORD WINAPI RenderThread(void* param) {
+DWORD WINAPI WorkerThread(void*) {
     MSG msg;
     PeekMessageA(&msg, nullptr, WM_USER, WM_USER, PM_NOREMOVE);  // create the queue
-    RunEci(static_cast<RenderJob*>(param));
-    return 0;
+    for (;;) {
+        WaitForSingleObject(g_wake, INFINITE);
+        for (;;) {
+            Job* job = nullptr;
+            EnterCriticalSection(&g_lock);
+            if (!g_queue.empty()) { job = g_queue.front(); g_queue.pop_front(); }
+            LeaveCriticalSection(&g_lock);
+            if (!job) break;
+
+            const DWORD start = GetTickCount();
+            RunJob(job);
+            job->elapsedMs = GetTickCount() - start;
+            if (job->done) {
+                SetEvent(job->done);  // the blocking caller owns it now
+            } else {
+                EnterCriticalSection(&g_lock);
+                g_finished.push_back(job);
+                LeaveCriticalSection(&g_lock);
+            }
+        }
+    }
 }
 
-}  // namespace
-
-bool RenderToMemory(const char* text, prism::RenderedSpeech& out) {
-    out = prism::RenderedSpeech{};
-    if (!text || !*text) return false;
-
-    // Settings are re-read every call: the user may change NVDA's voice.
-    auto* job = new RenderJob{};
-    if (!ReadSettings(job->settings) || !EnsureLoaded(job->settings)) {
-        delete job;
+bool EnsureWorker() {
+    if (g_started) return true;
+    InitializeCriticalSection(&g_lock);
+    g_wake = CreateEventA(nullptr, FALSE, FALSE, nullptr);
+    HANDLE t = g_wake ? CreateThread(nullptr, 0, WorkerThread, nullptr, 0, nullptr) : nullptr;
+    if (!t) {
+        acclog::Write("Eloquence", "worker start failed err=%lu", GetLastError());
         return false;
     }
+    CloseHandle(t);
+    g_started = true;
+    return true;
+}
+
+// Builds a job from NVDA's current saved settings and queues it. Null when
+// the engine is unavailable.
+Job* Enqueue(const char* text, uint32_t ticket, HANDLE done) {
+    if (!text || !*text) return nullptr;
+    nvda_config::Config cfg;
+    nvda_config::Load(cfg);
+    if (!EnsureLoaded(cfg) || !EnsureWorker()) return nullptr;
+    auto* job = new Job{};
+    job->ticket   = ticket;
+    job->settings = ReadSettings(cfg);
+    job->text     = text;
     // ECI reads backquotes as embedded commands; the driver strips them too.
-    job->text = text;
     for (char& c : job->text) if (c == '`') c = ' ';
+    job->done = done;
+    EnterCriticalSection(&g_lock);
+    g_queue.push_back(job);
+    LeaveCriticalSection(&g_lock);
+    SetEvent(g_wake);
+    return job;
+}
 
-    const DWORD start = GetTickCount();
-    HANDLE thread = CreateThread(nullptr, 0, RenderThread, job, 0, nullptr);
-    if (!thread) {
-        delete job;
-        acclog::Write("Eloquence", "CreateThread failed err=%lu", GetLastError());
-        return false;
-    }
-    if (WaitForSingleObject(thread, kRenderTimeoutMs + 1000) != WAIT_OBJECT_0) {
-        // The thread still owns `job`; leak it rather than free memory a hung
-        // ECI call may yet write to.
-        CloseHandle(thread);
-        acclog::Write("Eloquence", "render thread hung; abandoned [%s]", text);
-        return false;
-    }
-    CloseHandle(thread);
-    const DWORD elapsed = GetTickCount() - start;
-
+// Moves a finished job's audio into `out`. False (logged) on failure.
+bool Collect(Job* job, prism::RenderedSpeech& out) {
     static const size_t kRates[] = {8000, 11025, 22050};
     const Settings& s = job->settings;
-    const char* failure = job->failure;
+    out = prism::RenderedSpeech{};
     out.samples.swap(job->samples);
-    out.volume     = s.volume >= 0 ? s.volume / 100.0f : 1.0f;
     out.channels   = 1;
     out.sampleRate = (s.sampleRate >= 0 && s.sampleRate <= 2) ? kRates[s.sampleRate] : 11025;
-    if (failure || out.samples.empty()) {
-        acclog::Write("Eloquence", "render failed: %s (%zu samples, %lu ms)",
-                      failure ? failure : "no audio", out.samples.size(), elapsed);
+    out.volume     = s.volume >= 0 ? s.volume / 100.0f : 1.0f;
+    if (job->failure || out.samples.empty()) {
+        acclog::Write("Eloquence", "render failed: %s (%lu ms) [%s]",
+                      job->failure ? job->failure : "no audio", job->elapsedMs,
+                      job->text.c_str());
         out = prism::RenderedSpeech{};
-        delete job;
         return false;
     }
     acclog::Write("Eloquence",
                   "render ok: %zu samples @ %zu Hz, %.2f s audio in %lu ms "
                   "(voice=%d variant=%d rate=%d%s pitch=%d inflection=%d volume=%d) [%s]",
                   out.samples.size(), out.sampleRate,
-                  static_cast<double>(out.samples.size()) / out.sampleRate, elapsed,
+                  static_cast<double>(out.samples.size()) / out.sampleRate, job->elapsedMs,
                   s.voice, s.variant, s.rate, s.rateBoost ? "+boost" : "", s.pitch,
-                  s.inflection, s.volume, text);
+                  s.inflection, s.volume, job->text.c_str());
+    return true;
+}
+
+}  // namespace
+
+bool IsNvdaSynth() {
+    nvda_config::Config cfg;
+    if (!nvda_config::Load(cfg)) return false;
+    const char* synth = cfg.Find("speech", "", "synth");
+    if (!synth || std::string(synth) != "ibmeci") return false;
+    return GetFileAttributesA(EngineFile(cfg).c_str()) != INVALID_FILE_ATTRIBUTES;
+}
+
+bool Submit(const char* text, uint32_t ticket) {
+    return Enqueue(text, ticket, nullptr) != nullptr;
+}
+
+bool TakeFinished(uint32_t& ticket, prism::RenderedSpeech& out, bool& ok) {
+    if (!g_started) return false;
+    Job* job = nullptr;
+    EnterCriticalSection(&g_lock);
+    if (!g_finished.empty()) { job = g_finished.front(); g_finished.pop_front(); }
+    LeaveCriticalSection(&g_lock);
+    if (!job) return false;
+    ticket = job->ticket;
+    ok     = Collect(job, out);
     delete job;
     return true;
+}
+
+bool RenderToMemory(const char* text, prism::RenderedSpeech& out) {
+    out = prism::RenderedSpeech{};
+    HANDLE done = CreateEventA(nullptr, TRUE, FALSE, nullptr);
+    if (!done) return false;
+    Job* job = Enqueue(text, 0, done);
+    if (!job) { CloseHandle(done); return false; }
+    if (WaitForSingleObject(done, kRenderTimeoutMs + 1000) != WAIT_OBJECT_0) {
+        // The worker still owns the job and will SetEvent on `done` later;
+        // leak both rather than free them under it. Only if ECI hangs.
+        acclog::Write("Eloquence", "blocking render timed out; abandoned [%s]", text);
+        return false;
+    }
+    CloseHandle(done);
+    const bool ok = Collect(job, out);
+    delete job;
+    return ok;
 }
 
 }  // namespace acc::eloquence

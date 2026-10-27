@@ -53,6 +53,8 @@ and add the German in parentheses if it genuinely aids clarity.
 - The Peragus hangar turret in KOTOR 2 is playable by ear: Q and E cycle the
   Sith troopers and explosive barrels by name.
 - Your party's attacks name the target they hit.
+- Combat announcements are spoken from where they happen on the battlefield,
+  in 3D (new Mod settings submenu "Combat announcements", on by default).
 - The KOTOR 2 party selection screen reads each companion's name instead of
   "control 13".
 
@@ -76,6 +78,29 @@ and add the German in parentheses if it genuinely aids clarity.
   special attack names whom it was aimed at. Companions pick their own
   targets and fights often have several enemies, so the attacker alone did
   not tell you who took the hit.
+- **Positional combat announcements.** Each combat line is spoken from the
+  spot where its effect lands, through the game's own 3D sound: your attack
+  from the enemy (or door, container) it hit, a hit on your party from the companion who took it,
+  a status, saving throw, kill or shield absorb from the creature it happened
+  to, and a Force power or grenade being used from whoever uses it. The game
+  already plays the swing and hit sounds at the attacker, so the line adds
+  where the blow landed. Distance and direction work like any game sound;
+  turning the camera turns the voices with it.
+- **The voice imitates your screen reader where it can.** The screen reader
+  itself cannot speak in 3D (it plays its own audio), so the mod renders the
+  lines itself. With NVDA it uses the same synthesizer, voice, rate and volume
+  as your NVDA speech: Eloquence through the IBMTTS add-on (if installed; the
+  mod never ships it), or a Windows SAPI or OneCore voice. NVDA's settings are
+  read as last saved, so after changing one, save NVDA's configuration
+  (NVDA+Control+C) and the next line uses it. For other screen readers and
+  NVDA's built-in eSpeak, the lines use your announcement voice. Urgent lines
+  (kills, a companion stunned) keep using the announcement voice, so urgency
+  stays audible.
+- **Nothing is ever lost.** When a line cannot be placed (the creature is too
+  far away or has already gone), it is spoken the usual way. Turn the feature
+  off in Mod settings, Combat announcements, to get the previous behaviour
+  back. Positional lines also reach Control+R and a braille display, like any
+  other announcement.
 
 <h3>Bug fixes:</h3>
 

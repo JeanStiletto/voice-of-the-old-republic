@@ -256,6 +256,7 @@ Nahezu jedes System, das die Mod hinzufügt, lässt sich im laufenden Spiel anpa
 - Startvideos überspringen — wirkt beim nächsten Start
 - Lautstärke der Hinweistöne — ein Regler für die Klänge der Mod
 - Einstellungen der Ansagestimme — ein Untermenü für die Stimme, mit der die Mod ihre eigenen Ansagen spricht: ihre Lautstärke, ihre Geschwindigkeit, welche der auf dem PC installierten SAPI-Stimmen sie benutzt, und ob Dialoguntertitel von ihr statt vom Screenreader vorgelesen werden
+- Kampfansagen — ein Untermenü mit „Kampfansagen 3D-positioniert“ (standardmäßig an): jede Kampfzeile wird dort gesprochen, wo sie passiert, über den eigenen 3D-Sound des Spiels — dein Angriff vom getroffenen Gegner oder der getroffenen Tür, ein Treffer auf deine Gruppe vom getroffenen Begleiter. Mit NVDA benutzen die Zeilen deine NVDA-Stimme mit ihrer gespeicherten Geschwindigkeit und Lautstärke (Eloquence über das IBMTTS-Add-on, oder eine SAPI- oder OneCore-Stimme; nach einer Änderung an der NVDA-Stimme die Konfiguration mit NVDA+Strg+C speichern); sonst, und für dringende Zeilen wie Kills, die Ansagestimme. Eine Zeile, die sich nicht verorten lässt, wird wie gewohnt gesprochen
 - Tastenbelegung — die Tasten neu belegen, die die Mod hinzufügt
 - Audio-Glossar — spielt jedes Klangsignal der Mod einzeln mit seinem Namen ab, damit du lernst, was jeder Klang bedeutet
 

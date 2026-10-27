@@ -50,27 +50,33 @@ const uintptr_t kIatAilSet3DPlaybackRate    = acc::addr::Pick(0x0073D4E8, 0x0098
 typedef void (__stdcall* PFN_AIL_set_3D_sample_playback_rate)(void* handle, int rate);
 
 // ---- In-memory resource injection (StartFromMemory) -----------------------
-// Decompile-verified 2026-10-27, KOTOR 1 only (K2 not yet researched): see
-// docs/llm-docs/in-memory-sound-resource.md, "Injection candidates" route A.
-// CResHelper<CResWave,4> is the head of CExoSoundSourceInternal, so the
-// source's CRes* sits at +0x08. CRes layout from its ctor @0x00406460 and
-// CExoResMan::Malloc / Demand.
-const size_t   kInternalResourceOffset = acc::off::Todo(0x08);  // CResHelper.resource (CRes*)
-const size_t   kInternalDemandedOffset = acc::off::Todo(0x30);  // resource_demands (0/1)
-const size_t   kResDemandsOffset       = acc::off::Todo(0x04);  // u16 active demands
-const size_t   kResIdOffset            = acc::off::Todo(0x08);  // key id; -1 = no key
-const size_t   kResFlagsOffset         = acc::off::Todo(0x0c);  // 0x4 = loaded
-const size_t   kResDataOffset          = acc::off::Todo(0x10);
-const size_t   kResSizeOffset          = acc::off::Todo(0x18);
-const size_t   kResServiceVtableSlot   = 0x10 / 4;  // CResWave::OnResourceService
+// Decompile-verified 2026-10-27 on both games: see
+// docs/llm-docs/in-memory-sound-resource.md, "Injection candidates" route A
+// (K1, tested in game) and the "KOTOR 2" section (each K2 value witnessed in
+// K2's own code). CResHelper<CResWave,4> is the head of
+// CExoSoundSourceInternal, so the source's CRes* sits at +0x08. CRes layout
+// from its ctor (K1 @0x00406460, K2 @0x007110D0) and CExoResMan::Malloc /
+// Demand (K2 @0x00712F30 / @0x00711C20).
+const size_t   kInternalResourceOffset = acc::off::Same(0x08);  // CResHelper.resource (CRes*)
+const size_t   kInternalDemandedOffset = acc::off::Same(0x30);  // resource_demands (0/1)
+const size_t   kResDemandsOffset       = acc::off::Same(0x04);  // u16 active demands
+const size_t   kResIdOffset            = acc::off::Same(0x08);  // key id; -1 = no key
+const size_t   kResFlagsOffset         = acc::off::Same(0x0c);  // 0x4 = loaded
+const size_t   kResDataOffset          = acc::off::Same(0x10);
+const size_t   kResSizeOffset          = acc::off::Same(0x18);
+// CResWave::OnResourceService — vtable +0x10 on both (K2 vftable 0x0099C570
+// slot +0x10 = 0x00722A30).
+const size_t   kResServiceVtableSlot   = 0x10 / 4;
 const uint32_t kResFlagLoaded          = 0x4;
 // Any id but -1 passes Demand's "has a key" test. Directory class (bits
 // 30-31 = 3) keeps Release off the packed-file path that 0x40000000 takes.
 const uint32_t kInjectedResId          = 0xC0000000u;
 // CExoResMan* global (.data) and CExoResMan::Malloc(CRes*) — __thiscall,
-// operator new(size) + budget debit, returns 1 on success.
-const uintptr_t kAddrExoResManPtr      = acc::addr::TodoGlobal(0x007A39E8);
-const uintptr_t kAddrCExoResManMalloc  = acc::addr::R(0x004077B0);
+// operator new(size) + budget debit, returns 1 on success. K2: the address
+// database's EXO_RESOURCE_MANAGER_PTR, which K2's own SetResRef helper loads
+// ECX from (it sits 4 bytes before the CExoSound global on BOTH games).
+const uintptr_t kAddrExoResManPtr      = acc::addr::PickGlobal(0x007A39E8, 0x00A1B490);
+const uintptr_t kAddrCExoResManMalloc  = acc::addr::Pick(0x004077B0, 0x00712F30);
 typedef int (__thiscall* PFN_ResManMalloc)(void* resman, void* res);
 typedef int (__thiscall* PFN_ResOnService)(void* res);
 
@@ -297,6 +303,16 @@ bool LoopSource::StartImpl(const char* resref, const unsigned char* wav,
     // still returns a duration but gets no voice).
     if (wav) LogPlayState("after-play");
     return true;
+}
+
+bool LoopSource::IsVoiceAttached() const {
+    if (!source_) return false;
+    __try {
+        void* internal = *reinterpret_cast<void**>(At(source_, kSoundSourceInternalOffset));
+        return internal && *reinterpret_cast<void**>(At(internal, kInternalVoice3DOffset));
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
 }
 
 void LoopSource::LogPlayState(const char* tag) const {

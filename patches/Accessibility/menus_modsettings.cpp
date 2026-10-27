@@ -92,6 +92,11 @@ bool s_toggles[static_cast<int>(Option::Count)] = {
     /* UrgentVoice     */ false,  // unused — RowKind::Choice; value lives in
                                   // prism (Get/SetUrgentVoiceId), persisted
                                   // there by voice name.
+    /* CombatSettings  */ false,  // unused — RowKind::Submenu (combat-row pivot)
+    /* PositionalCombatSpeech */ true,  // default on (user 2026-10-27): combat
+                                  // lines sound from the creature they are
+                                  // about; off = the centred screen-reader /
+                                  // SAPI speech they had before.
     /* Keybindings     */ false,  // unused — RowKind::Submenu (configurator pivot)
     /* AudioGlossary   */ false,  // unused — RowKind::Submenu
     /* SupportModder   */ false,  // unused — RowKind::Link
@@ -116,18 +121,20 @@ bool s_toggles[static_cast<int>(Option::Count)] = {
 // focus index (independent of the root focus so the user returns to
 // the AudioGlossary row when they Esc out).
 //
-// s_voiceOpen is the same pivot for the announcement-voice submenu, with one
-// difference from the glossary: that view is a second window onto the SAME
-// row model (Option / OptionSpec), so it shares the root's input handler and
-// only needs its own focus index.
+// s_nested is the same pivot for the nested LIST views (announcement voice,
+// combat announcements), with one difference from the glossary: those views
+// are further windows onto the SAME row model (Option / OptionSpec), so they
+// share the root's input handler and only need their own focus index. Null on
+// the root list; see k_nestedViews.
 bool   s_open            = false;
 int    s_focused         = 0;
 void*  s_parentPanel     = nullptr;
 void*  s_fgAtOpen        = nullptr;
 bool   s_glossaryOpen    = false;
 int    s_glossaryFocused = 0;
-bool   s_voiceOpen       = false;
-int    s_voiceFocused    = 0;
+struct NestedView;
+const NestedView* s_nested = nullptr;
+int    s_nestedFocused   = 0;
 // True while the nested keybind configurator (menus_keybinds) owns input.
 // Unlike the glossary it keeps its own state in that TU; we only track that we
 // routed into it so HandleInput / Tick / Close can defer to it.
@@ -268,6 +275,8 @@ constexpr OptionSpec k_options[] = {
     { Option::UrgentVolume,    acc::strings::Id::ModSettingUrgentVolume,    RowKind::Slider  },
     { Option::UrgentRate,      acc::strings::Id::ModSettingUrgentRate,      RowKind::Slider  },
     { Option::UrgentVoice,     acc::strings::Id::ModSettingUrgentVoice,     RowKind::Choice  },
+    { Option::CombatSettings,  acc::strings::Id::ModSettingCombatSettings,  RowKind::Submenu },
+    { Option::PositionalCombatSpeech, acc::strings::Id::ModSettingPositionalCombatSpeech, RowKind::Toggle },
     { Option::Keybindings,     acc::strings::Id::KeybindsRootLabel,         RowKind::Submenu },
     { Option::AudioGlossary,   acc::strings::Id::ModSettingAudioGlossary,   RowKind::Submenu },
     { Option::SupportModder,   acc::strings::Id::ModSettingSupportModder,   RowKind::Link    },
@@ -300,6 +309,7 @@ constexpr Option k_rootRows[] = {
     Option::SkipIntros,
     Option::CueVolume,
     Option::VoiceSettings,
+    Option::CombatSettings,
     Option::Keybindings,
     Option::AudioGlossary,
     Option::SupportModder,
@@ -321,10 +331,42 @@ constexpr Option k_voiceRows[] = {
 constexpr int k_voiceRowCount = static_cast<int>(
     sizeof(k_voiceRows) / sizeof(k_voiceRows[0]));
 
+// The combat-announcements submenu.
+constexpr Option k_combatRows[] = {
+    Option::PositionalCombatSpeech,
+};
+constexpr int k_combatRowCount = static_cast<int>(
+    sizeof(k_combatRows) / sizeof(k_combatRows[0]));
+
 // Every option is reachable from exactly one view — a row added to the enum
 // and to neither table would be invisible with nothing else to catch it.
-static_assert(k_rootRowCount + k_voiceRowCount == k_optionCount,
+static_assert(k_rootRowCount + k_voiceRowCount + k_combatRowCount == k_optionCount,
               "every Option must appear in exactly one display table");
+
+// A nested list view: the root row that opens it, its rows, and its opener
+// cue. Both nested views share the root's row model and input handler; only
+// the rows, the focus index and where Esc goes differ.
+struct NestedView {
+    Option           pivot;
+    const Option*    rows;
+    int              count;
+    acc::strings::Id opened;
+    const char*      logName;
+};
+constexpr NestedView k_nestedViews[] = {
+    { Option::VoiceSettings,  k_voiceRows,  k_voiceRowCount,
+      acc::strings::Id::ModSettingsVoiceSettingsOpened,  "voice"  },
+    { Option::CombatSettings, k_combatRows, k_combatRowCount,
+      acc::strings::Id::ModSettingsCombatSettingsOpened, "combat" },
+};
+
+// The nested view in front, or nullptr on the root list.
+const NestedView* NestedViewFor(Option pivot) {
+    for (const NestedView& v : k_nestedViews) {
+        if (v.pivot == pivot) return &v;
+    }
+    return nullptr;
+}
 
 // A view is a row list plus the focus index that walks it.
 struct RowView {
@@ -333,12 +375,12 @@ struct RowView {
 };
 
 RowView CurrentView() {
-    return s_voiceOpen ? RowView{ k_voiceRows, k_voiceRowCount }
-                       : RowView{ k_rootRows,  k_rootRowCount  };
+    return s_nested ? RowView{ s_nested->rows, s_nested->count }
+                    : RowView{ k_rootRows,     k_rootRowCount  };
 }
 
 int& CurrentFocus() {
-    return s_voiceOpen ? s_voiceFocused : s_focused;
+    return s_nested ? s_nestedFocused : s_focused;
 }
 
 // Option under the cursor in the active view, or Option::Count when the view
@@ -362,6 +404,7 @@ const char* PersistKey(Option opt) {
         case Option::HumanSubtitles:  return "HumanSubtitles";
         case Option::SubtitleSapi:    return "SubtitleSapi";
         case Option::TurretAutoAim:   return "TurretAutoAim";
+        case Option::PositionalCombatSpeech: return "PositionalCombatSpeech";
         default:                      return nullptr;  // not persisted here
     }
 }
@@ -484,7 +527,7 @@ void SpeakFocusedOption(bool interrupt = true) {
     }
     prism::Speak(line, interrupt);
     acclog::Write("ModSettings", "speak focused %s idx=%d \"%s\"",
-                  s_voiceOpen ? "voice" : "root", CurrentFocus(), line);
+                  s_nested ? s_nested->logName : "root", CurrentFocus(), line);
 }
 
 // Speak the current focused glossary entry — just the localised name.
@@ -589,10 +632,10 @@ bool IsOpen() {
 void OpenSubMenu(void* parentPanel) {
     EnsureTogglesLoaded();
     s_open         = true;
-    s_focused      = 0;
-    s_voiceOpen    = false;
-    s_voiceFocused = 0;
-    s_parentPanel  = parentPanel;
+    s_focused       = 0;
+    s_nested        = nullptr;
+    s_nestedFocused = 0;
+    s_parentPanel   = parentPanel;
     // Snapshot the engine-foreground panel right now. Subsequent
     // HandleInput calls compare against this baseline so we only
     // auto-close on a real foreground push (modal popup, parent
@@ -622,8 +665,8 @@ void Close() {
     s_focused         = 0;
     s_glossaryOpen    = false;
     s_glossaryFocused = 0;
-    s_voiceOpen       = false;
-    s_voiceFocused    = 0;
+    s_nested          = nullptr;
+    s_nestedFocused   = 0;
     if (s_keybindsOpen) { acc::menus::keybinds::Reset(); s_keybindsOpen = false; }
     CancelPendingGlossaryCue();
     void* parent = s_parentPanel;
@@ -657,8 +700,8 @@ void AutoCloseSilent() {
     s_focused         = 0;
     s_glossaryOpen    = false;
     s_glossaryFocused = 0;
-    s_voiceOpen       = false;
-    s_voiceFocused    = 0;
+    s_nested          = nullptr;
+    s_nestedFocused   = 0;
     if (s_keybindsOpen) { acc::menus::keybinds::Reset(); s_keybindsOpen = false; }
     CancelPendingGlossaryCue();
     s_parentPanel = nullptr;
@@ -702,27 +745,25 @@ void CloseGlossarySubMenu() {
     SpeakFocusedOption();
 }
 
-// Open the announcement-voice submenu and announce its title + first row.
-// Nothing else to set up: the view shares the root's row model, so switching
-// s_voiceOpen is the whole state change.
-void OpenVoiceSubMenu() {
-    s_voiceOpen    = true;
-    s_voiceFocused = 0;
-    acclog::Write("ModSettings", "voice submenu opened");
-    prism::Speak(
-        acc::strings::Get(acc::strings::Id::ModSettingsVoiceSettingsOpened),
-        /*interrupt=*/true);
+// Open a nested list view (announcement voice, combat announcements) and
+// announce its title + first row. Nothing else to set up: the view shares the
+// root's row model, so pointing s_nested at it is the whole state change.
+void OpenNestedView(const NestedView& view) {
+    s_nested        = &view;
+    s_nestedFocused = 0;
+    acclog::Write("ModSettings", "%s submenu opened", view.logName);
+    prism::Speak(acc::strings::Get(view.opened), /*interrupt=*/true);
     SpeakFocusedOption(/*interrupt=*/false);
 }
 
 // Close it, returning the user to the root list. Speaks the root row they
-// came from (VoiceSettings) as the audible anchor — same rhythm as the
-// glossary's Esc.
-void CloseVoiceSubMenu() {
-    if (!s_voiceOpen) return;
-    acclog::Write("ModSettings", "voice submenu closed");
-    s_voiceOpen    = false;
-    s_voiceFocused = 0;
+// came from (the pivot) as the audible anchor — same rhythm as the glossary's
+// Esc.
+void CloseNestedView() {
+    if (!s_nested) return;
+    acclog::Write("ModSettings", "%s submenu closed", s_nested->logName);
+    s_nested        = nullptr;
+    s_nestedFocused = 0;
     SpeakFocusedOption();
 }
 
@@ -894,8 +935,8 @@ bool HandleInputList(int keyCode) {
         if (row.kind == RowKind::Submenu) {
             if (row.option == Option::AudioGlossary) {
                 OpenGlossarySubMenu();
-            } else if (row.option == Option::VoiceSettings) {
-                OpenVoiceSubMenu();
+            } else if (const NestedView* nested = NestedViewFor(row.option)) {
+                OpenNestedView(*nested);
             } else if (row.option == Option::Keybindings) {
                 s_keybindsOpen = true;
                 acc::menus::keybinds::Open();
@@ -949,11 +990,11 @@ bool HandleInputList(int keyCode) {
         SpeakFocusedOption();
         return true;
     }
-    // Esc: one level up — out of the voice submenu back to the root list, or
+    // Esc: one level up — out of a nested list view back to the root list, or
     // out of the root list back to the parent panel.
     if (keyCode == kInputEsc1 || keyCode == kInputEsc2) {
-        if (s_voiceOpen) CloseVoiceSubMenu();
-        else             Close();
+        if (s_nested) CloseNestedView();
+        else          Close();
         return true;
     }
     return false;

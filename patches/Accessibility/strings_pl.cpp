@@ -551,6 +551,9 @@ const char* Get(Id id) {
         case Id::ModSettingUrgentVolumePreview: return "Przyk\xB3""adowy komunikat";
         case Id::ModSettingVoiceSettings:           return "Ustawienia g\xB3osu komunikat\xF3w";
         case Id::ModSettingsVoiceSettingsOpened:    return "Otwarto ustawienia g\xB3osu komunikat\xF3w";
+        case Id::ModSettingCombatSettings: return "Komunikaty walki";
+        case Id::ModSettingsCombatSettingsOpened: return "Otwarto komunikaty walki";
+        case Id::ModSettingPositionalCombatSpeech: return "Komunikaty walki w przestrzeni 3D";
         case Id::ModSettingSupportModder:           return "Wesprzyj tw\xF3rc\xEA moda";
         case Id::ModSettingLatestChanges:           return "Najnowsze zmiany";
         case Id::ModSettingOpenReadme:              return "Otw\xF3rz poradnik";

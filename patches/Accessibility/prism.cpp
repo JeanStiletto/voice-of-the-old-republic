@@ -108,6 +108,8 @@ typedef size_t         (__cdecl* PFN_prism_registry_count)(PrismContext*);
 typedef PrismBackendId (__cdecl* PFN_prism_registry_id_at)(PrismContext*, size_t);
 typedef PrismBackend*  (__cdecl* PFN_prism_registry_acquire)(PrismContext*, PrismBackendId);
 typedef PrismBackend*  (__cdecl* PFN_prism_registry_acquire_best)(PrismContext*);
+// A FRESH backend instance, never the cached one acquire hands out.
+typedef PrismBackend*  (__cdecl* PFN_prism_registry_create)(PrismContext*, PrismBackendId);
 typedef uint64_t       (__cdecl* PFN_prism_backend_get_features)(PrismBackend*);
 typedef PrismError     (__cdecl* PFN_prism_backend_initialize)(PrismBackend*);
 typedef PrismError     (__cdecl* PFN_prism_backend_speak)(PrismBackend*, const char*, bool);
@@ -133,8 +135,6 @@ HMODULE       g_prismLib       = nullptr;
 PrismContext* g_prismCtx       = nullptr;
 PrismBackend* g_prismNormal    = nullptr;   // NVDA / JAWS / OneCore / ... — chosen by acquire_best
 PrismBackend* g_prismSapi      = nullptr;   // urgent channel; SAPI bypass
-PrismBackend* g_prismOneCore   = nullptr;   // render-only; acquired on first RenderOneCoreToMemory
-bool          g_oneCoreTried   = false;
 bool          g_initTried      = false;
 bool          g_normalReady    = false;
 bool          g_sapiReady      = false;
@@ -222,6 +222,7 @@ PFN_prism_registry_count        pPrism_registry_count         = nullptr;
 PFN_prism_registry_id_at        pPrism_registry_id_at         = nullptr;
 PFN_prism_registry_acquire      pPrism_registry_acquire       = nullptr;
 PFN_prism_registry_acquire_best pPrism_registry_acquire_best  = nullptr;
+PFN_prism_registry_create       pPrism_registry_create        = nullptr;
 PFN_prism_backend_get_features  pPrism_backend_get_features   = nullptr;
 PFN_prism_backend_initialize    pPrism_backend_initialize     = nullptr;
 PFN_prism_backend_speak         pPrism_backend_speak          = nullptr;
@@ -518,6 +519,17 @@ PrismBackend* SehAcquire(PrismContext* ctx, PrismBackendId id, DWORD* outCode) {
     *outCode = 0;
     __try {
         return pPrism_registry_acquire(ctx, id);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        *outCode = GetExceptionCode();
+        return nullptr;
+    }
+}
+
+// Create a fresh backend instance by id, SEH-guarded.
+PrismBackend* SehCreate(PrismContext* ctx, PrismBackendId id, DWORD* outCode) {
+    *outCode = 0;
+    __try {
+        return pPrism_registry_create(ctx, id);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         *outCode = GetExceptionCode();
         return nullptr;
@@ -883,6 +895,9 @@ bool Init() {
     // without it.
     (void)Resolve(g_prismLib, pPrism_backend_speak_to_memory, "prism_backend_speak_to_memory",
                   /*required=*/false);
+    // Render-only backend instances (EnsureRenderBackend); no renders without.
+    (void)Resolve(g_prismLib, pPrism_registry_create,      "prism_registry_create",
+                  /*required=*/false);
     (void)Resolve(g_prismLib, pPrism_registry_count,       "prism_registry_count",
                   /*required=*/false);
     (void)Resolve(g_prismLib, pPrism_registry_id_at,       "prism_registry_id_at",
@@ -1072,6 +1087,15 @@ void SpeakUrgent(const char* text) {
     SpeakUrgentImpl(text, /*interrupt=*/true);
 }
 
+void NoteSpokenElsewhere(const char* text) {
+    if (!text || !*text) return;
+    acclog::Trace("Speech.spoke", "[positional] %s", text);
+    CaptureSpoken(text);
+    if (!g_normalReady) return;
+    std::vector<char> utf8(strlen(text) * 4 + 1);
+    if (ReencodeAcpToUtf8(text, utf8.data(), utf8.size())) BrailleNormal(utf8.data());
+}
+
 void SpeakOnUrgentChannel(const char* text, bool interrupt) {
     SpeakUrgentImpl(text, interrupt);
 }
@@ -1104,58 +1128,117 @@ static bool RenderWith(PrismBackend* be, const char* tag, const char* text,
     return true;
 }
 
-bool RenderUrgentToMemory(const char* text, RenderedSpeech& out) {
-    if (!g_sapiReady || !pPrism_backend_speak_to_memory || !text || !*text) {
-        out = RenderedSpeech{};
-        acclog::Write("Speech", "render[SAPI]: unavailable (sapi=%d export=%d)",
-                      g_sapiReady ? 1 : 0, pPrism_backend_speak_to_memory ? 1 : 0);
-        return false;
+// Render-only backends: separate instances that never speak aloud. A render on
+// the urgent channel's own SAPI voice would queue behind (and block the game
+// on) whatever that voice is still saying — SAPI's speak-to-memory is a
+// synchronous Speak on the same SpVoice. prism_registry_create builds a fresh
+// instance; prism_registry_acquire would hand back the cached urgent one.
+// Created on first use, on the game thread, and only ever used there.
+struct RenderBackend {
+    const char*   tag;
+    uint64_t      id;
+    PrismBackend* be;
+    bool          tried;
+    char          voice[160];   // last voice selected, to log only changes
+};
+static RenderBackend g_renderSapi    = {"SAPI",    kPrismBackendIdSapi,    nullptr, false, {}};
+static RenderBackend g_renderOneCore = {"OneCore", kPrismBackendIdOneCore, nullptr, false, {}};
+
+static PrismBackend* EnsureRenderBackend(RenderBackend& r) {
+    if (r.tried) return r.be;
+    r.tried = true;
+    if (!g_prismCtx || !pPrism_registry_create || !pPrism_registry_exists(g_prismCtx, r.id)) {
+        acclog::Write("Speech", "render[%s] backend: unavailable", r.tag);
+        return nullptr;
     }
-    return RenderWith(g_prismSapi, "SAPI", text, out);
+    DWORD seh = 0;
+    PrismBackend* be = SehCreate(g_prismCtx, r.id, &seh);
+    PrismError rc = be ? SehInitialize(be, &seh) : kPrismErrUnknown;
+    if (be && (rc == kPrismOk || rc == kPrismErrAlreadyInitialized)) r.be = be;
+    acclog::Write("Speech", "render[%s] backend: %s (rc=%d seh=0x%08lX)", r.tag,
+                  r.be ? "ready" : "failed", rc, seh);
+    return r.be;
 }
 
-// Acquire + initialise the OneCore backend once, then point it at the first
-// voice whose name contains `voiceName`. The voice is backend state, so it is
-// re-selected on every call (cheap: a handful of names).
-static bool EnsureOneCoreVoice(const char* voiceName) {
-    if (!g_oneCoreTried) {
-        g_oneCoreTried = true;
-        if (pPrism_registry_exists(g_prismCtx, kPrismBackendIdOneCore)) {
-            DWORD seh = 0;
-            PrismBackend* be = SehAcquire(g_prismCtx, kPrismBackendIdOneCore, &seh);
-            PrismError rc = be ? SehInitialize(be, &seh) : kPrismErrUnknown;
-            if (be && (rc == kPrismOk || rc == kPrismErrAlreadyInitialized)) g_prismOneCore = be;
-            acclog::Write("Speech", "OneCore render backend: %s (rc=%d seh=0x%08lX)",
-                          g_prismOneCore ? "ready" : "unavailable", rc, seh);
-        } else {
-            acclog::Write("Speech", "OneCore render backend: not in Prism's registry");
-        }
-    }
-    if (!g_prismOneCore) return false;
-    if (!pPrism_backend_count_voices || !pPrism_backend_get_voice_name || !pPrism_backend_set_voice) {
+// Does Prism's voice name `name` denote the voice described as `wanted`?
+// Equal, or `wanted` begins with `name` + " ": OneCore lists "Microsoft
+// Stefan" for the registry token whose display string is "Microsoft Stefan -
+// German (Germany)", while SAPI names match the token string exactly.
+static bool VoiceNameMatches(const char* name, const char* wanted) {
+    const size_t n = strlen(name);
+    if (n == 0 || strncmp(name, wanted, n) != 0) return false;
+    return wanted[n] == '\0' || wanted[n] == ' ';
+}
+
+// Point `r` at the first voice matching `wanted` (UTF-8). Voices are backend
+// state, so this runs every render; a handful of names, cheap.
+static bool SelectVoice(RenderBackend& r, const char* wanted) {
+    if (!pPrism_backend_count_voices || !pPrism_backend_get_voice_name ||
+        !pPrism_backend_set_voice) {
         return false;
     }
     size_t count = 0;
-    if (pPrism_backend_count_voices(g_prismOneCore, &count) != kPrismOk) return false;
+    if (pPrism_backend_count_voices(r.be, &count) != kPrismOk) return false;
     for (size_t i = 0; i < count; ++i) {
         const char* name = nullptr;
-        if (pPrism_backend_get_voice_name(g_prismOneCore, i, &name) != kPrismOk || !name) continue;
-        if (!strstr(name, voiceName)) continue;
-        PrismError rc = pPrism_backend_set_voice(g_prismOneCore, i);
-        acclog::Write("Speech", "OneCore render voice [%s] (id %zu) rc=%d", name, i, rc);
-        return rc == kPrismOk;
+        if (pPrism_backend_get_voice_name(r.be, i, &name) != kPrismOk || !name) continue;
+        if (!VoiceNameMatches(name, wanted)) continue;
+        if (pPrism_backend_set_voice(r.be, i) != kPrismOk) return false;
+        if (strcmp(r.voice, name) != 0) {
+            snprintf(r.voice, sizeof(r.voice), "%s", name);
+            acclog::Write("Speech", "render[%s] voice [%s] (id %zu)", r.tag, name, i);
+        }
+        return true;
     }
-    acclog::Write("Speech", "OneCore render voice: none of %zu matches [%s]", count, voiceName);
+    acclog::Write("Speech", "render[%s]: none of %zu voices matches [%s]", r.tag, count, wanted);
     return false;
 }
 
-bool RenderOneCoreToMemory(const char* text, const char* voiceName, RenderedSpeech& out) {
-    if (!g_prismCtx || !pPrism_backend_speak_to_memory || !text || !*text ||
-        !voiceName || !EnsureOneCoreVoice(voiceName)) {
-        out = RenderedSpeech{};
-        return false;
-    }
-    return RenderWith(g_prismOneCore, "OneCore", text, out);
+// Prism rate (0..1, 0.5 = the voice's default) from a percent.
+static float RateFromPercent(int percent) {
+    if (percent < 0)   percent = 0;
+    if (percent > 100) percent = 100;
+    return static_cast<float>(percent) / 100.0f;
+}
+
+// One render on a render-only backend. `voice` null = the backend's default.
+static bool RenderOn(RenderBackend& r, const char* voice, float rate, float volume,
+                     const char* text, RenderedSpeech& out) {
+    out = RenderedSpeech{};
+    if (!pPrism_backend_speak_to_memory || !text || !*text) return false;
+    if (!EnsureRenderBackend(r)) return false;
+    if (voice && !SelectVoice(r, voice)) return false;
+    if (pPrism_backend_set_rate)   pPrism_backend_set_rate(r.be, rate);
+    if (pPrism_backend_set_volume) pPrism_backend_set_volume(r.be, volume);
+    return RenderWith(r.be, r.tag, text, out);
+}
+
+bool RenderUrgentToMemory(const char* text, RenderedSpeech& out) {
+    // The urgent channel's voice, rate and volume, applied to the render-only
+    // instance. The volume is baked in on purpose: the urgent-volume slider
+    // governs positional urgent lines too, exactly as it does the spoken ones.
+    char voice[sizeof(g_sapiVoiceName)] = {};
+    const bool haveVoice = g_sapiVoiceCurrent != static_cast<size_t>(-1) &&
+                           FetchSapiVoiceNameUtf8(g_sapiVoiceCurrent, voice, sizeof(voice));
+    EnsureSapiRateLoaded();
+    EnsureSapiVolumeLoaded();
+    return RenderOn(g_renderSapi, haveVoice ? voice : nullptr,
+                    static_cast<float>(g_sapiRatePercent) / 100.0f,
+                    static_cast<float>(g_sapiVolumePercent) / 100.0f, text, out);
+}
+
+bool RenderSapiVoiceToMemory(const char* voiceName, int ratePercent, const char* text,
+                             RenderedSpeech& out) {
+    if (!voiceName) { out = RenderedSpeech{}; return false; }
+    return RenderOn(g_renderSapi, voiceName, ratePercent >= 0 ? RateFromPercent(ratePercent) : 0.5f,
+                    1.0f, text, out);
+}
+
+bool RenderOneCoreToMemory(const char* voiceName, int ratePercent, const char* text,
+                           RenderedSpeech& out) {
+    if (!voiceName) { out = RenderedSpeech{}; return false; }
+    return RenderOn(g_renderOneCore, voiceName,
+                    ratePercent >= 0 ? RateFromPercent(ratePercent) : 0.5f, 1.0f, text, out);
 }
 
 void SetUrgentVolumePercent(int percent) {

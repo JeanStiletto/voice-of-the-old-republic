@@ -256,6 +256,7 @@ Presque tous les systèmes ajoutés par le mod peuvent être ajustés, activés 
 - Ignorer les vidéos d'introduction — prend effet au prochain lancement
 - Volume des indices sonores — un curseur pour les sons du mod
 - Réglages de la voix des annonces — un sous-menu pour la voix avec laquelle le mod prononce ses propres annonces : son volume, sa vitesse, laquelle des voix SAPI installées sur votre PC elle utilise, et si les sous-titres des dialogues sont lus par elle plutôt que par votre lecteur d'écran
+- Annonces de combat — un sous-menu avec « Annonces de combat positionnées en 3D » (activé par défaut) : chaque ligne de combat est prononcée depuis l'endroit où elle se produit, avec le son 3D du jeu — votre attaque depuis l'ennemi ou la porte touché, un coup sur votre groupe depuis le compagnon qui l'a reçu. Avec NVDA, les lignes utilisent votre voix NVDA avec son débit et son volume enregistrés (Eloquence via le module IBMTTS, ou une voix SAPI ou OneCore ; après un changement de voix NVDA, enregistrez sa configuration avec NVDA+Contrôle+C) ; sinon, et pour les lignes urgentes comme les morts, la voix des annonces. Une ligne impossible à situer est prononcée comme d'habitude
 - Raccourcis clavier — réassigner les touches ajoutées par le mod
 - Glossaire audio — joue chaque repère sonore du mod, un par un avec son nom, pour que vous appreniez ce que chaque son signifie
 

@@ -256,6 +256,7 @@ Nearly every system the mod adds can be adjusted or turned on and off while you 
 - Skip launch intro movies — takes effect on the next launch
 - Hint sound volume — a slider for the mod's own sound cues
 - Announcement voice settings — a submenu for the voice the mod speaks its own announcements with: its volume, its speed, which of the SAPI voices installed on your PC it uses, and whether dialogue subtitles are read by it instead of your screen reader
+- Combat announcements — a submenu with "3D positioned combat announcements" (on by default): each combat line is spoken from where it happens, through the game's own 3D sound — your attack from the enemy or door it hit, a hit on your party from the companion who took it. With NVDA the lines use your NVDA voice with its saved rate and volume (Eloquence through the IBMTTS add-on, or a SAPI or OneCore voice; after changing NVDA's voice, save its configuration with NVDA+Control+C); otherwise, and for urgent lines such as kills, the announcement voice. A line that cannot be placed is spoken the usual way
 - Key bindings — re-bind the keys the mod adds
 - Audio glossary — plays every sound cue the mod uses, one at a time with its name, so you can learn what each sound means
 

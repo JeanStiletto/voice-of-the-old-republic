@@ -569,6 +569,9 @@ const char* Get(Id id) {
         case Id::ModSettingUrgentVolumePreview: return "Beispielansage";
         case Id::ModSettingVoiceSettings:           return "Einstellungen der Ansagestimme";
         case Id::ModSettingsVoiceSettingsOpened:    return "Einstellungen der Ansagestimme ge\xF6" "ffnet";
+        case Id::ModSettingCombatSettings: return "Kampfansagen";
+        case Id::ModSettingsCombatSettingsOpened: return "Kampfansagen ge\xF6" "ffnet";
+        case Id::ModSettingPositionalCombatSpeech: return "Kampfansagen 3D-positioniert";
         case Id::ModSettingSupportModder:           return "Modder unterst\xFCtzen";
         case Id::ModSettingLatestChanges:           return "Neueste \xC4nderungen";
         case Id::ModSettingOpenReadme:              return "Anleitung \xF6" "ffnen";

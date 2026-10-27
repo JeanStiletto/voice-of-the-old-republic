@@ -553,6 +553,9 @@ const char* Get(Id id) {
         case Id::ModSettingUrgentVolumePreview: return "Sample announcement";
         case Id::ModSettingVoiceSettings:           return "Announcement voice settings";
         case Id::ModSettingsVoiceSettingsOpened:    return "Announcement voice settings opened";
+        case Id::ModSettingCombatSettings: return "Combat announcements";
+        case Id::ModSettingsCombatSettingsOpened: return "Combat announcements opened";
+        case Id::ModSettingPositionalCombatSpeech: return "3D positioned combat announcements";
         case Id::ModSettingSupportModder:           return "Support the modder";
         case Id::ModSettingLatestChanges:           return "Latest changes";
         case Id::ModSettingOpenReadme:              return "Open the guide";

@@ -256,6 +256,7 @@ Prawie każdy system dodany przez mod można dostosować albo włączyć i wył�
 - Pomijaj filmy wstępne — działa od następnego uruchomienia
 - Głośność dźwięków podpowiedzi — suwak dla dźwięków moda
 - Ustawienia głosu komunikatów — podmenu dla głosu, którym mod wypowiada własne komunikaty: jego głośność, jego szybkość, którego z głosów SAPI zainstalowanych na komputerze używa i czy to on czyta napisy dialogów zamiast czytnika ekranu
+- Komunikaty walki — podmenu z opcją „Komunikaty walki w przestrzeni 3D” (domyślnie włączona): każdy komunikat walki jest wypowiadany z miejsca, w którym coś się dzieje, przez własny dźwięk 3D gry — twój atak od trafionego wroga lub drzwi, trafienie w twoją drużynę od trafionego towarzysza. Z NVDA komunikaty używają twojego głosu NVDA z jego zapisaną szybkością i głośnością (Eloquence przez dodatek IBMTTS albo głos SAPI lub OneCore; po zmianie głosu NVDA zapisz konfigurację skrótem NVDA+Control+C); w przeciwnym razie, a także dla pilnych komunikatów, takich jak zabójstwa — głosu komunikatów. Komunikat, którego nie da się umiejscowić, jest wypowiadany jak zwykle
 - Przypisania klawiszy — zmiana przypisań klawiszy dodanych przez mod
 - Słownik dźwięków — odtwarza każdy sygnał dźwiękowy moda, jeden po drugim wraz z nazwą, żebyś nauczył się, co oznacza każdy dźwięk
 

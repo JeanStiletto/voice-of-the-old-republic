@@ -1718,6 +1718,14 @@ enum class Id : int {
     ModSettingVoiceSettings,
     ModSettingsVoiceSettingsOpened,
 
+    // Combat-announcements submenu. CombatSettings is the root row and the
+    // submenu's name, CombatSettingsOpened its opener cue (same shape as the
+    // voice submenu's). PositionalCombatSpeech is its toggle: combat lines
+    // spoken from the creature they are about (positional_speech).
+    ModSettingCombatSettings,
+    ModSettingsCombatSettingsOpened,
+    ModSettingPositionalCombatSpeech,
+
     // Side-effect cues for the SkipIntros toggle — spoken after the
     // .bik rename to tell the user the change applies on next launch.
     ModSettingSkipIntrosOnNextLaunch,     // intros are now disabled

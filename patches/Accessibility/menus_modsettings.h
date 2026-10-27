@@ -74,6 +74,9 @@ enum class Option {
                        // (prism owns the value + persistence)
     UrgentVoice,       // choice — which installed SAPI voice speaks the
                        // announcements (prism owns the value + persistence)
+    CombatSettings,    // submenu pivot — the combat-announcements submenu
+    PositionalCombatSpeech,  // combat lines spoken from the creature they are
+                             // about, in 3D (positional_speech; on by default)
     Keybindings,       // submenu pivot — the mod keybind configurator (menus_keybinds)
     AudioGlossary,
     SupportModder,     // link row — opens the Ko-fi page in the default browser

@@ -131,12 +131,28 @@ struct RenderedSpeech {
 };
 bool RenderUrgentToMemory(const char* text, RenderedSpeech& out);
 
-// Same, with a Windows OneCore voice: the first installed OneCore voice whose
-// name contains `voiceName` (UTF-8 substring, e.g. "Stefan"). The OneCore
-// backend is acquired on the first call and used for rendering only — it never
-// speaks aloud. Default rate and volume. False when OneCore or the voice is
-// unavailable.
-bool RenderOneCoreToMemory(const char* text, const char* voiceName, RenderedSpeech& out);
+// Render with a NAMED voice and rate — used to imitate the screen reader when
+// it speaks through a SAPI or OneCore voice. `voiceName` is the voice's
+// display string (UTF-8), e.g. a registry token's default value "Microsoft
+// Stefan - German (Germany)"; a Prism voice matches when its name equals it or
+// is its leading part ("Microsoft Stefan"). `ratePercent` 0..100 (50 = the
+// voice's default; -1 = the default) — exact for SAPI's -10..+10, an
+// approximation of NVDA's own OneCore curve. Rendered at full volume (the
+// caller applies RenderedSpeech::volume). False when the voice is missing.
+//
+// SAPI borrows the urgent channel's backend for the one render and restores
+// its voice, rate and volume afterwards. OneCore uses a separate render-only
+// backend, acquired on first use — it never speaks aloud.
+bool RenderSapiVoiceToMemory(const char* voiceName, int ratePercent, const char* text,
+                             RenderedSpeech& out);
+bool RenderOneCoreToMemory(const char* voiceName, int ratePercent, const char* text,
+                           RenderedSpeech& out);
+
+// A line the mod speaks itself, outside both channels (positional speech
+// renders and plays its own audio). Gives it what Speak / SpeakUrgent give
+// every line besides the sound: the "Speech.spoke" audit log entry, the
+// LastSpoken() capture for Ctrl+R, and the braille display.
+void NoteSpokenElsewhere(const char* text);
 
 // Cancel in-progress speech on both channels.
 void Silence();

@@ -553,6 +553,9 @@ const char* Get(Id id) {
         case Id::ModSettingUrgentVolumePreview: return "Anuncio de ejemplo";
         case Id::ModSettingVoiceSettings:           return "Ajustes de la voz de los anuncios";
         case Id::ModSettingsVoiceSettingsOpened:    return "Ajustes de la voz de los anuncios abiertos";
+        case Id::ModSettingCombatSettings: return "Anuncios de combate";
+        case Id::ModSettingsCombatSettingsOpened: return "Anuncios de combate abiertos";
+        case Id::ModSettingPositionalCombatSpeech: return "Anuncios de combate posicionados en 3D";
         case Id::ModSettingSupportModder:           return "Apoyar al modder";
         case Id::ModSettingLatestChanges:           return "\xDAltimos cambios";
         case Id::ModSettingOpenReadme:              return "Abrir la gu\xED" "a";

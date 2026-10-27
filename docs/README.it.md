@@ -257,6 +257,7 @@ Quasi ogni sistema aggiunto dalla mod può essere regolato o attivato e disattiv
 - Salta i video introduttivi — ha effetto al prossimo avvio
 - Volume dei segnali sonori — un cursore per i suoni della mod
 - Impostazioni della voce degli annunci — un sottomenu per la voce con cui la mod pronuncia i propri annunci: il suo volume, la sua velocità, quale delle voci SAPI installate sul PC usa, e se i sottotitoli dei dialoghi vengono letti da lei invece che dallo screen reader
+- Annunci di combattimento — un sottomenu con «Annunci di combattimento posizionati in 3D» (attivo di default): ogni riga di combattimento viene pronunciata da dove accade, con il suono 3D del gioco — il tuo attacco dal nemico o dalla porta colpiti, un colpo al tuo gruppo dal compagno che l'ha subito. Con NVDA le righe usano la tua voce NVDA con la velocità e il volume salvati (Eloquence tramite il componente aggiuntivo IBMTTS, oppure una voce SAPI o OneCore; dopo aver cambiato la voce di NVDA, salvane la configurazione con NVDA+Control+C); altrimenti, e per le righe urgenti come le uccisioni, la voce degli annunci. Una riga che non si può collocare viene pronunciata come al solito
 - Combinazioni di tasti — riassegnare i tasti aggiunti dalla mod
 - Glossario audio — riproduce ogni segnale sonoro della mod, uno alla volta con il suo nome, così impari che cosa significa ciascun suono
 

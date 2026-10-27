@@ -54,7 +54,8 @@ public:
                float minVolDist = -1.0f);
 
     // 3D one-shot of a WAV image held in memory — no file behind it (rendered
-    // speech, a synthesised tone). KOTOR 1 only; false on KOTOR 2.
+    // speech, a synthesised tone). Both games (K2 values decompile-witnessed;
+    // false on a build where the resource-manager addresses don't resolve).
     //
     // `resref` must name NO real resource: SetResRef then hands this source
     // a fresh keyless CResWave that only it owns, which is filled in place
@@ -76,6 +77,13 @@ public:
     // Diagnostic: logs whether the engine attached a 3D voice and the state
     // of the source's resource (demands, flags, size). Safe no-op if inactive.
     void LogPlayState(const char* tag) const;
+
+    // True while the engine has a 3D voice on this source. Play attaches it
+    // synchronously, so checking right after a Start tells whether the sound
+    // is really audible: Play returns a duration even when it refused the
+    // source (non-mono, out of the listener's range, no free voice in the
+    // priority group). False when inactive.
+    bool IsVoiceAttached() const;
 
     void UpdatePosition(const Vector& worldPosition);  // safe no-op if inactive
 

@@ -54,6 +54,7 @@
 #include "probe_camera_distance.h"
 #include "probe_camera_state.h"
 #include "probe_memory_sound.h"
+#include "positional_speech.h"
 #include "engine_input.h"
 #include "spatial_change_detector.h"
 #include "speech_clipboard.h"
@@ -863,6 +864,10 @@ void Dispatch() {
     PHASE("combat.absorb", acc::combat::TickCombatAbsorb());
     PHASE("combat.deflect", acc::combat::TickCombatDeflect());
     PHASE("combat.effects", acc::combat::TickCombatEffects());
+    // Positional combat speech: starts queued lines, collects background
+    // (Eloquence) renders, falls back on failures. After the combat flushers
+    // above so a line they queue this tick can start at once.
+    PHASE("positional_speech", acc::positional_speech::Tick());
     PHASE("combat.leaderChange",
           acc::combat::query::TickLeaderChangeAutoAnnounce());
     PHASE("combat.queue", acc::combat::queue::Tick());
