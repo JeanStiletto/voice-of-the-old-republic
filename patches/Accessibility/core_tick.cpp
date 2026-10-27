@@ -53,6 +53,7 @@
 #include "probe_audio_frame.h"
 #include "probe_camera_distance.h"
 #include "probe_camera_state.h"
+#include "probe_memory_sound.h"
 #include "engine_input.h"
 #include "spatial_change_detector.h"
 #include "speech_clipboard.h"
@@ -685,6 +686,10 @@ void Dispatch() {
         // investigation actually needs them, not before.
         PHASE("probe_camera_state", acc::probe_camera_state::PollWin32());
         PHASE("probe_camera_distance", acc::probe_camera_distance::Tick());
+        // In-memory sound probe (F11 tone, Shift+F11 rendered speech) —
+        // positional-speech groundwork. KOTOR 1 until the K2 resource
+        // manager is researched (in-memory-sound-resource.md, "Open").
+        PHASE("probe_memory_sound", acc::probe_memory_sound::PollWin32());
     }
 
     // Audio-frame probe (F10) — engine-constant-free (player position +

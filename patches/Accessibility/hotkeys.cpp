@@ -128,6 +128,8 @@ const char* const kActionNames[static_cast<int>(Action::COUNT)] = {
     "ProbeCameraDump",
     "ProbeCameraDistDump",
     "ProbeCameraDistClampToggle",
+    "ProbeMemSoundTone",
+    "ProbeMemSoundSpeech",
     "PazaakStand",
     "PazaakEndTurn",
     "PazaakReviewHand",
@@ -391,6 +393,12 @@ void InitDefaults() {
     // engine surfaces and intent.
     bind(Action::ProbeCameraDistDump,        VK_F12, 0, kModCtrl, 0);
     bind(Action::ProbeCameraDistClampToggle, VK_F11, 0, kModCtrl, 0);
+
+    // In-memory sound probes (probe_memory_sound.h). Bare F11 is free since
+    // the fixed-North audio probe above was unbound; both forbid Ctrl so the
+    // clamp toggle keeps Ctrl+F11.
+    bind(Action::ProbeMemSoundTone,          VK_F11, 0, 0, kModCtrl | kModShift);
+    bind(Action::ProbeMemSoundSpeech,        VK_F11, 0, kModShift, kModCtrl);
 
     // ----- Pazaak minigame -----
     // Letter keys forbid every modifier so they stay distinct from Shift/
@@ -724,6 +732,8 @@ bool IsUserRebindable(Action a) {
     case Action::ProbeCameraDump:
     case Action::ProbeCameraDistDump:
     case Action::ProbeCameraDistClampToggle:
+    case Action::ProbeMemSoundTone:
+    case Action::ProbeMemSoundSpeech:
     // Shift+B camera-state probe — a developer diagnostic, not a player
     // hotkey; keep it out of the configurator alongside the F-key probes.
     case Action::CameraStateProbe:

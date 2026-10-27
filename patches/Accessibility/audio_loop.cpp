@@ -49,6 +49,80 @@ const size_t   kVoiceHandleOffset           = acc::off::Same(0x04);  // Miles ha
 const uintptr_t kIatAilSet3DPlaybackRate    = acc::addr::Pick(0x0073D4E8, 0x00986508);
 typedef void (__stdcall* PFN_AIL_set_3D_sample_playback_rate)(void* handle, int rate);
 
+// ---- In-memory resource injection (StartFromMemory) -----------------------
+// Decompile-verified 2026-10-27, KOTOR 1 only (K2 not yet researched): see
+// docs/llm-docs/in-memory-sound-resource.md, "Injection candidates" route A.
+// CResHelper<CResWave,4> is the head of CExoSoundSourceInternal, so the
+// source's CRes* sits at +0x08. CRes layout from its ctor @0x00406460 and
+// CExoResMan::Malloc / Demand.
+const size_t   kInternalResourceOffset = acc::off::Todo(0x08);  // CResHelper.resource (CRes*)
+const size_t   kInternalDemandedOffset = acc::off::Todo(0x30);  // resource_demands (0/1)
+const size_t   kResDemandsOffset       = acc::off::Todo(0x04);  // u16 active demands
+const size_t   kResIdOffset            = acc::off::Todo(0x08);  // key id; -1 = no key
+const size_t   kResFlagsOffset         = acc::off::Todo(0x0c);  // 0x4 = loaded
+const size_t   kResDataOffset          = acc::off::Todo(0x10);
+const size_t   kResSizeOffset          = acc::off::Todo(0x18);
+const size_t   kResServiceVtableSlot   = 0x10 / 4;  // CResWave::OnResourceService
+const uint32_t kResFlagLoaded          = 0x4;
+// Any id but -1 passes Demand's "has a key" test. Directory class (bits
+// 30-31 = 3) keeps Release off the packed-file path that 0x40000000 takes.
+const uint32_t kInjectedResId          = 0xC0000000u;
+// CExoResMan* global (.data) and CExoResMan::Malloc(CRes*) — __thiscall,
+// operator new(size) + budget debit, returns 1 on success.
+const uintptr_t kAddrExoResManPtr      = acc::addr::TodoGlobal(0x007A39E8);
+const uintptr_t kAddrCExoResManMalloc  = acc::addr::R(0x004077B0);
+typedef int (__thiscall* PFN_ResManMalloc)(void* resman, void* res);
+typedef int (__thiscall* PFN_ResOnService)(void* res);
+
+enum class InjectResult { Ok, NoInternal, NoResource, NotPrivate, NoResMan, MallocFailed, Rejected };
+
+const char* InjectResultName(InjectResult r) {
+    switch (r) {
+    case InjectResult::Ok:           return "ok";
+    case InjectResult::NoInternal:   return "no source internal (sound disabled?)";
+    case InjectResult::NoResource:   return "SetResRef left no CRes";
+    case InjectResult::NotPrivate:   return "resref names a real resource";
+    case InjectResult::NoResMan:     return "no CExoResMan";
+    case InjectResult::MallocFailed: return "CExoResMan::Malloc failed";
+    case InjectResult::Rejected:     return "OnResourceService rejected the WAV";
+    }
+    return "?";
+}
+
+unsigned char* At(void* base, size_t off) {
+    return reinterpret_cast<unsigned char*>(base) + off;
+}
+
+// Fills the keyless CResWave that SetResRef just gave `src` with a copy of
+// `wav`. Caller holds the SEH guard. On Rejected the copy stays attached
+// unloaded and is freed (or leaked once, if never demanded) with the CRes.
+InjectResult InjectWave(void* src, const unsigned char* wav, size_t wavBytes) {
+    void* internal = *reinterpret_cast<void**>(At(src, kSoundSourceInternalOffset));
+    if (!internal) return InjectResult::NoInternal;
+    void* res = *reinterpret_cast<void**>(At(internal, kInternalResourceOffset));
+    if (!res) return InjectResult::NoResource;
+    if (*reinterpret_cast<int32_t*>(At(res, kResIdOffset)) != -1 ||
+        *reinterpret_cast<void**>(At(res, kResDataOffset)) != nullptr) {
+        return InjectResult::NotPrivate;
+    }
+    void* resman = *reinterpret_cast<void**>(kAddrExoResManPtr);
+    if (!resman) return InjectResult::NoResMan;
+
+    *reinterpret_cast<uint32_t*>(At(res, kResSizeOffset)) = static_cast<uint32_t>(wavBytes);
+    if (!reinterpret_cast<PFN_ResManMalloc>(kAddrCExoResManMalloc)(resman, res)) {
+        return InjectResult::MallocFailed;
+    }
+    std::memcpy(*reinterpret_cast<void**>(At(res, kResDataOffset)), wav, wavBytes);
+
+    void** vtable = *reinterpret_cast<void***>(res);
+    if (!reinterpret_cast<PFN_ResOnService>(vtable[kResServiceVtableSlot])(res)) {
+        return InjectResult::Rejected;
+    }
+    *reinterpret_cast<uint32_t*>(At(res, kResFlagsOffset)) |= kResFlagLoaded;
+    *reinterpret_cast<uint32_t*>(At(res, kResIdOffset)) = kInjectedResId;
+    return InjectResult::Ok;
+}
+
 typedef void* (__thiscall* PFN_SourceCtor)(void* this_);
 // MSVC scalar-deleting dtor: bit 0 = "engine _free(this) after destruct".
 // We always pass 0 — engine's CRT may not match our DLL's; we free outer
@@ -102,6 +176,30 @@ LoopSource::~LoopSource() {
 bool LoopSource::Start(const char* resref, const Vector& worldPosition,
                        bool looping, bool spatial, int priorityGroup,
                        int volumeByte, float maxVolDist, float minVolDist) {
+    return StartImpl(resref, nullptr, 0, worldPosition, looping, spatial,
+                     priorityGroup, volumeByte, maxVolDist, minVolDist);
+}
+
+bool LoopSource::StartFromMemory(const char* resref, const unsigned char* wav,
+                                 size_t wavBytes, const Vector& worldPosition,
+                                 int priorityGroup, int volumeByte,
+                                 float maxVolDist, float minVolDist) {
+    if (!wav || wavBytes == 0) return false;
+    if (!acc::addr::Ok(kAddrCExoResManMalloc) || !acc::addr::Ok(kAddrExoResManPtr)) {
+        Stop();
+        acclog::Write("LoopSource", "memory start refused: no resource-manager "
+                      "addresses on this build");
+        return false;
+    }
+    return StartImpl(resref, wav, wavBytes, worldPosition, /*looping=*/false,
+                     /*spatial=*/true, priorityGroup, volumeByte, maxVolDist,
+                     minVolDist);
+}
+
+bool LoopSource::StartImpl(const char* resref, const unsigned char* wav,
+                           size_t wavBytes, const Vector& worldPosition,
+                           bool looping, bool spatial, int priorityGroup,
+                           int volumeByte, float maxVolDist, float minVolDist) {
     Stop();  // Drop any prior loop on this handle.
     if (!resref || !*resref) return false;
 
@@ -114,6 +212,7 @@ bool LoopSource::Start(const char* resref, const Vector& worldPosition,
     // 2D (spatial=false) skips the listener bias and 3D position entirely
     // and plays centred — position is irrelevant for the glossary audition.
     Vector biased = spatial ? BiasForListener(worldPosition) : worldPosition;
+    int playMs = 0;  // Play's return: cached duration, not proof of a voice
 
     __try {
         // Construct (vtable + engine-side internal alloc).
@@ -125,6 +224,15 @@ bool LoopSource::Start(const char* resref, const Vector& worldPosition,
         CResRef res;
         FillResRef(res, resref);
         reinterpret_cast<PFN_SetResRef>(kAddrCExoSoundSourceSetResRef)(mem, &res, 0);
+        if (wav) {
+            InjectResult inj = InjectWave(mem, wav, wavBytes);
+            if (inj != InjectResult::Ok) {
+                acclog::Write("LoopSource", "memory inject failed resref=%s bytes=%zu: %s",
+                              resref, wavBytes, InjectResultName(inj));
+                TeardownEngineSource(mem, "inject-error");
+                return false;
+            }
+        }
         reinterpret_cast<PFN_Set3D>(kAddrCExoSoundSourceSet3D)(mem, spatial ? 1 : 0);
         if (spatial) {
             reinterpret_cast<PFN_SetPosition>(kAddrCExoSoundSourceSetPosition)(mem, &biased, 0.0f);
@@ -156,7 +264,7 @@ bool LoopSource::Start(const char* resref, const Vector& worldPosition,
             reinterpret_cast<PFN_SetVolume>(kAddrCExoSoundSourceSetVolume)(mem, v);
         }
 
-        reinterpret_cast<PFN_Play>(kAddrCExoSoundSourcePlay)(mem);
+        playMs = reinterpret_cast<PFN_Play>(kAddrCExoSoundSourcePlay)(mem);
 
         // Cache the sample's natural playback rate for SetPitchMultiplier.
         // base_frequency is filled by SetResRef; read it here (3D only —
@@ -180,11 +288,48 @@ bool LoopSource::Start(const char* resref, const Vector& worldPosition,
     source_ = mem;
     acclog::Write("LoopSource",
                   "started resref=%s pos=(%.1f,%.1f,%.1f) loop=%d 3d=%d pg=%d vol=%d "
-                  "dist=[%.1f,%.1f] base_hz=%d src=%p",
+                  "dist=[%.1f,%.1f] base_hz=%d play_ms=%d mem_bytes=%zu src=%p",
                   resref, biased.x, biased.y, biased.z,
                   looping ? 1 : 0, spatial ? 1 : 0, priorityGroup, volumeByte,
-                  maxVolDist, minVolDist, base_hz_, mem);
+                  maxVolDist, minVolDist, base_hz_, playMs, wav ? wavBytes : 0, mem);
+    // Play attaches the 3D voice synchronously, so this already tells whether
+    // the engine accepted the in-memory WAV (a non-mono or out-of-range source
+    // still returns a duration but gets no voice).
+    if (wav) LogPlayState("after-play");
     return true;
+}
+
+void LoopSource::LogPlayState(const char* tag) const {
+    if (!source_) {
+        acclog::Write("LoopSource", "state[%s]: inactive", tag);
+        return;
+    }
+    __try {
+        void* internal = *reinterpret_cast<void**>(At(source_, kSoundSourceInternalOffset));
+        if (!internal) {
+            acclog::Write("LoopSource", "state[%s]: src=%p no internal", tag, source_);
+            return;
+        }
+        void* voice    = *reinterpret_cast<void**>(At(internal, kInternalVoice3DOffset));
+        int   demanded = *reinterpret_cast<int*>(At(internal, kInternalDemandedOffset));
+        void* res      = *reinterpret_cast<void**>(At(internal, kInternalResourceOffset));
+        if (!res) {
+            acclog::Write("LoopSource", "state[%s]: src=%p voice3d=%p demanded=%d res=null",
+                          tag, source_, voice, demanded);
+            return;
+        }
+        acclog::Write("LoopSource",
+                      "state[%s]: src=%p voice3d=%p demanded=%d res=%p id=0x%08X "
+                      "flags=0x%X demands=%u size=%u data=%p",
+                      tag, source_, voice, demanded, res,
+                      *reinterpret_cast<uint32_t*>(At(res, kResIdOffset)),
+                      *reinterpret_cast<uint32_t*>(At(res, kResFlagsOffset)),
+                      static_cast<unsigned>(*reinterpret_cast<uint16_t*>(At(res, kResDemandsOffset))),
+                      *reinterpret_cast<uint32_t*>(At(res, kResSizeOffset)),
+                      *reinterpret_cast<void**>(At(res, kResDataOffset)));
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("LoopSource", "state[%s]: read faulted src=%p", tag, source_);
+    }
 }
 
 void LoopSource::UpdatePosition(const Vector& worldPosition) {

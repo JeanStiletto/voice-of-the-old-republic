@@ -116,6 +116,8 @@ enum class Action : int {
     ProbeCameraDump,           // F12    (Ctrl forbidden)
     ProbeCameraDistDump,       // Ctrl+F12 — Option-B camera-distance snapshot
     ProbeCameraDistClampToggle,// Ctrl+F11 — cycle distance clamp modes
+    ProbeMemSoundTone,         // F11 — in-memory WAV test tone (probe_memory_sound)
+    ProbeMemSoundSpeech,       // Shift+F11 — in-memory rendered-speech test
 
     // ----- Pazaak minigame (polled only while the board is foreground) -----
     PazaakStand,           // S

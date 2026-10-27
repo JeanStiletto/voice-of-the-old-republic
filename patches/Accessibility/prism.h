@@ -7,6 +7,7 @@
 #pragma once
 
 #include <cstddef>
+#include <vector>
 
 namespace prism {
 
@@ -104,6 +105,38 @@ size_t GetUrgentVoiceId();
 // Switch the urgent channel to `voiceId` and persist it by name. Out-of-range
 // ids are ignored. Takes effect on the next urgent utterance.
 void SetUrgentVoiceId(size_t voiceId);
+
+// ---- Render to memory (positional-speech groundwork) ---------------------
+//
+// Renders `text` (game codepage) to PCM with the urgent channel's SAPI voice,
+// rate and volume instead of speaking it — prism_backend_speak_to_memory.
+// The screen-reader backends cannot do this (they own their audio), and a
+// SAPI voice that merely forwards to the screen reader (SAPI2SR) renders
+// nothing; both come back false.
+//
+// Synchronous: SAPI renders faster than real time, but the call still blocks
+// for the render, and queues behind urgent speech the same voice is still
+// speaking. Samples are interleaved float in [-1, 1], leading and trailing
+// silence trimmed by Prism.
+struct RenderedSpeech {
+    std::vector<float> samples;
+    size_t channels   = 0;
+    size_t sampleRate = 0;
+    // The voice's own volume setting that the renderer did NOT bake into the
+    // samples, as a fraction (1 = full). A renderer that bakes it in leaves
+    // 1. The player applies it on top of a peak-normalised line, so a voice
+    // keeps its user-set loudness relative to the game's full source volume
+    // (see eloquence_render.cpp for why baking it in is too quiet).
+    float volume = 1.0f;
+};
+bool RenderUrgentToMemory(const char* text, RenderedSpeech& out);
+
+// Same, with a Windows OneCore voice: the first installed OneCore voice whose
+// name contains `voiceName` (UTF-8 substring, e.g. "Stefan"). The OneCore
+// backend is acquired on the first call and used for rendering only — it never
+// speaks aloud. Default rate and volume. False when OneCore or the voice is
+// unavailable.
+bool RenderOneCoreToMemory(const char* text, const char* voiceName, RenderedSpeech& out);
 
 // Cancel in-progress speech on both channels.
 void Silence();

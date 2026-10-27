@@ -9,6 +9,8 @@
 
 #pragma once
 
+#include <cstddef>
+
 #include "engine_offsets.h"
 
 namespace acc::audio {
@@ -51,6 +53,30 @@ public:
                int volumeByte = -1, float maxVolDist = -1.0f,
                float minVolDist = -1.0f);
 
+    // 3D one-shot of a WAV image held in memory — no file behind it (rendered
+    // speech, a synthesised tone). KOTOR 1 only; false on KOTOR 2.
+    //
+    // `resref` must name NO real resource: SetResRef then hands this source
+    // a fresh keyless CResWave that only it owns, which is filled in place
+    // through the engine's own allocator (CExoResMan::Malloc) and service
+    // hook and marked loaded, so Demand returns our bytes without a key or
+    // file lookup. The engine frees the copy when the source is re-pointed or
+    // destroyed; `wav` itself is copied and stays the caller's. A resref that
+    // resolves to a real file is refused (the CRes is shared, not ours).
+    //
+    // `wav` must be a mono RIFF image (BuildMonoPcm16Wav): the engine's Play
+    // releases a non-mono 3D source silently. Same priority-group / volume /
+    // distance semantics as Start. Mechanism and evidence:
+    // docs/llm-docs/in-memory-sound-resource.md.
+    bool StartFromMemory(const char* resref, const unsigned char* wav, size_t wavBytes,
+                         const Vector& worldPosition, int priorityGroup = -1,
+                         int volumeByte = -1, float maxVolDist = -1.0f,
+                         float minVolDist = -1.0f);
+
+    // Diagnostic: logs whether the engine attached a 3D voice and the state
+    // of the source's resource (demands, flags, size). Safe no-op if inactive.
+    void LogPlayState(const char* tag) const;
+
     void UpdatePosition(const Vector& worldPosition);  // safe no-op if inactive
 
     // Live per-source volume for a playing loop. volumeByte 0..127 (clamped;
@@ -78,6 +104,12 @@ public:
     bool IsActive() const { return source_ != nullptr; }
 
 private:
+    // Shared body of Start and StartFromMemory; wav == nullptr is Start.
+    bool StartImpl(const char* resref, const unsigned char* wav, size_t wavBytes,
+                   const Vector& worldPosition, bool looping, bool spatial,
+                   int priorityGroup, int volumeByte, float maxVolDist,
+                   float minVolDist);
+
     void* source_  = nullptr;  // CExoSoundSource* (opaque)
     int   base_hz_ = 0;        // sample's natural playback rate, cached at Start
 };
