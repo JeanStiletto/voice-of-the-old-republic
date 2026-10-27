@@ -684,27 +684,31 @@ void BuildResultTail(const AttackBlock& b, char* tail, size_t cap) {
 
 // The party's own attack. Feats name the move; plain auto-attacks omit it
 // (a feat replaces the auto-attack for that swing, so the two never collide):
-//   feat hit    → "<actor>, <feat>, <dmg> <type>[, kritisch][, status]"
-//   feat miss   → "<actor>, fehlgeschlagen, <feat>"
-//   plain hit   → "<actor>, <dmg> <type>[, kritisch][, status]"
+//   feat hit    → "<actor>, <feat>, <target>, <dmg> <type>[, kritisch][, status]"
+//   feat miss   → "<actor>, fehlgeschlagen, <feat>, <target>"
+//   plain hit   → "<actor>, <target>, <dmg> <type>[, kritisch][, status]"
 //   plain miss  → (not emitted — caller suppresses)
+// The target is named: companions pick their own targets and a fight often
+// has several enemies, so "who took it" is not implied by the actor. (The
+// June 2026 results-only redesign had dropped it with no recorded reason.)
 void BuildOutgoingLine(const AttackBlock& b, char* out, size_t cap) {
     const auto& L = acc::combat::loc::Get();
-    const bool has_feat = (b.feat[0] != 0);
+    char target_part[110] = "";
+    if (b.target[0]) snprintf(target_part, sizeof(target_part), ", %s", b.target);
     if (!b.hit) {
         // Only feats reach a spoken miss; plain misses are suppressed upstream.
-        snprintf(out, cap, "%s, %s, %s", b.actor, L.word_failed, b.feat);
+        snprintf(out, cap, "%s, %s, %s%s", b.actor, L.word_failed, b.feat, target_part);
         return;
     }
     char tail[140]; BuildResultTail(b, tail, sizeof(tail));
     char feat_part[110] = "";
-    if (has_feat) snprintf(feat_part, sizeof(feat_part), ", %s", b.feat);
+    if (b.feat[0]) snprintf(feat_part, sizeof(feat_part), ", %s", b.feat);
     if (b.dmg_type[0]) {
-        snprintf(out, cap, "%s%s, %d %s%s",
-                 b.actor, feat_part, b.sum_damage, b.dmg_type, tail);
+        snprintf(out, cap, "%s%s%s, %d %s%s",
+                 b.actor, feat_part, target_part, b.sum_damage, b.dmg_type, tail);
     } else {
-        snprintf(out, cap, "%s%s, %d%s",
-                 b.actor, feat_part, b.sum_damage, tail);
+        snprintf(out, cap, "%s%s%s, %d%s",
+                 b.actor, feat_part, target_part, b.sum_damage, tail);
     }
 }
 

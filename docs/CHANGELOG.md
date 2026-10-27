@@ -52,6 +52,7 @@ and add the German in parentheses if it genuinely aids clarity.
   support: auto-aim, Q and E target cycling and the aiming sounds.
 - The Peragus hangar turret in KOTOR 2 is playable by ear: Q and E cycle the
   Sith troopers and explosive barrels by name.
+- Your party's attacks name the target they hit.
 - The KOTOR 2 party selection screen reads each companion's name instead of
   "control 13".
 
@@ -67,6 +68,14 @@ and add the German in parentheses if it genuinely aids clarity.
   game's own name ("Sith trooper 3, 18 meters"), kills are announced as
   "Target destroyed", and a trooper that reaches the ship as "Escaped". The
   aim assist stays inside the turret's limited swing.
+
+<h3>Combat:</h3>
+
+- **Your party's attacks name their target.** A hit now reads "Bastila,
+  Sith Soldier, 12 energy" instead of "Bastila, 12 energy", and a failed
+  special attack names whom it was aimed at. Companions pick their own
+  targets and fights often have several enemies, so the attacker alone did
+  not tell you who took the hit.
 
 <h3>Bug fixes:</h3>
 
