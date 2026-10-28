@@ -9,11 +9,13 @@
 //            Turn the camera while it plays: the pulses should swing across.
 //            Alternates two resrefs per press; mash it to stress the
 //            create / free cycle (each press frees the previous sound).
-// Shift+F11: the next test phrase, rendered by the user's NVDA Eloquence
-//            voice and settings (eloquence_render.h) and played 3 m away in
-//            the direction the phrase names — left, right, ahead, behind, in
-//            turn. (SAPI and OneCore passed on 2026-10-27 and were retired
-//            from the cycle; SAPI2SR renders nothing, as expected.)
+// Shift+F11: the behind-you cue A/B. "Eins .. Vier. Ausgang Nord-West" in
+//            the exit lines' voice, 5 m straight behind the listener, one
+//            after another, each with a different rear shelf (the table in
+//            probe_memory_sound.cpp: shipped 3 kHz -10 dB, then 1.5 kHz
+//            -10 dB, 1.5 kHz -14 dB, 1 kHz -18 dB).
+//            (The Eloquence / SAPI / OneCore phrase cycle passed on
+//            2026-10-27 and was retired.)
 //
 // Every press logs under "ProbeMemSound" and "LoopSource" (3D voice attached,
 // resource state), and logs the state again once the sound should have

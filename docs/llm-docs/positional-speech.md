@@ -206,13 +206,18 @@ re-reads them, so a save takes effect on the next line — tested.
   order — the screen reader queued the same way).
 - Kill-line victim slicing per language (Polish / Russian word order).
 - Portable NVDA (config outside %APPDATA%) is not found → urgent voice.
-- Behind-you cue BUILT 2026-10-28, always on (user decision), untested: a
-  high-shelf CUT above 3 kHz (RBJ, slope 1, audio_wav ApplyHighShelf) ramping
-  from 0 at the side to -10 dB straight behind, applied after the peak
+- Behind-you cue BUILT 2026-10-28, always on (user decision): a
+  high-shelf CUT above 1.5 kHz (RBJ, slope 1, audio_wav ApplyHighShelf) ramping
+  from 0 at the side to -14 dB straight behind, applied after the peak
   normaliser so a line behind is also a little quieter. Taken from Dark Vision
   (the WotR blind mod, github.com/bradjrenshaw/darkvision-wotr,
   src/Audio/Spatializer.cs — also where the positional-TTS idea came from;
-  both credited in the v0.9.0 changelog). Not a low-pass: that erases bright
+  both credited in the v0.9.0 changelog). Dark Vision's own values (3 kHz,
+  -10 dB) were shipped first and were too subtle on speech: they were tuned
+  for bright tone cues with little energy below 1 kHz, where the cut drops
+  the whole sound ~10 dB; speech sits lower and passes nearly untouched.
+  1.5 kHz / -14 dB was picked by ear from a four-way A/B (probe_memory_sound
+  Shift+F11, 2026-10-28; 1 kHz / -18 dB sounded "very deep"). Not a low-pass: that erases bright
   cues, and a dry/wet blend comb-filters. Needed even with dsoal: generic
   HRTFs confuse front and back without head tracking. Log: `rear=` dB on
   every `PosSpeech: play` line.

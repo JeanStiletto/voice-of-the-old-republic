@@ -7,7 +7,6 @@
 #include "audio_bus.h"
 #include "audio_loop.h"
 #include "audio_wav.h"
-#include "eloquence_render.h"
 #include "engine_player.h"
 #include "hotkeys.h"
 #include "log.h"
@@ -43,24 +42,32 @@ constexpr float kFullSourceVolume = 127.0f;
 // fresh CResWave" against "same name as two presses ago".
 const char* const kResrefs[2] = {"acc_memtest_a", "acc_memtest_b"};
 
-// The SAPI (urgent voice) and OneCore (Stefan) blocks that used to lead this
-// table passed in game on 2026-10-27 and were retired; the renderers stay in
-// prism.cpp. What remains under test is Eloquence.
-struct Phrase {
-    float       yawOffsetDeg;  // from the view direction, CCW positive
-    const char* text;          // ASCII only: rendered by a German voice
+// Behind-you cue A/B (2026-10-28). An exit-style line once per variant,
+// straight behind at positional speech's placement (kPlaceRadiusM from the
+// listener), in the voice exit lines use, differing only in the rear
+// high-shelf cut. Round 1 (none / 3 kHz -10 / 1 kHz -18): the shipped cut too
+// subtle, 1 kHz -18 "really strongly muffled ... very deep". Round 2 moves
+// one knob at a time between them. The Eloquence phrase cycle that used to
+// live here passed on 2026-10-27 and was retired.
+constexpr float kRearProbeRadiusM = 5.0f;
+constexpr DWORD kRearProbeGapMs   = 700;
+struct RearVariant {
+    const char* text;      // ASCII only: rendered by a German voice
+    float       cornerHz;  // high-shelf corner
+    float       cutDb;     // 0 = untouched
 };
-const Phrase kPhrases[] = {
-    { 90.0f, "Eloquence links. Diese Stimme sollte von links kommen."},
-    {-90.0f, "Eloquence rechts. Diese Stimme sollte von rechts kommen."},
-    {  0.0f, "Eloquence vorne. Diese Stimme sollte von vorne kommen."},
-    {180.0f, "Eloquence hinten. Diese Stimme sollte von hinten kommen."},
+const RearVariant kRearVariants[] = {
+    {"Eins. Ausgang Nord-West.", 3000.0f, -10.0f},  // shipped (Dark Vision)
+    {"Zwei. Ausgang Nord-West.", 1500.0f, -10.0f},  // lower corner, same depth
+    {"Drei. Ausgang Nord-West.", 1500.0f, -14.0f},  // lower corner, deeper
+    {"Vier. Ausgang Nord-West.", 1000.0f, -18.0f},  // round 1's planned
 };
-constexpr int kPhraseCount = sizeof(kPhrases) / sizeof(kPhrases[0]);
+constexpr int kRearVariantCount = sizeof(kRearVariants) / sizeof(kRearVariants[0]);
 
 acc::audio::LoopSource g_source;
 int   g_presses     = 0;
-int   g_nextPhrase  = 0;
+int   g_rearNext    = kRearVariantCount;  // next variant to play; count = idle
+DWORD g_rearAt      = 0;                  // GetTickCount when it starts
 DWORD g_checkAt     = 0;   // GetTickCount deadline for the after-play log
 bool  g_checkArmed  = false;
 
@@ -96,14 +103,24 @@ bool PositionAround(float yawOffsetDeg, Vector& out) {
     return true;
 }
 
+// Straight behind the engine's listener (the camera, or the view-mode
+// cursor), where positional speech puts a line about something behind.
+bool PositionBehindListener(Vector& out) {
+    Vector origin;
+    float  yawDeg = 0.0f;
+    if (!acc::view_mode::GetEffectiveViewpoint(origin, yawDeg)) return false;
+    if (!acc::view_mode::IsActive()) acc::engine::GetCameraPosition(origin);
+    const float rad = (yawDeg + 180.0f) * (kPi / 180.0f);
+    out = Vector{origin.x + kRearProbeRadiusM * std::cos(rad),
+                 origin.y + kRearProbeRadiusM * std::sin(rad),
+                 origin.z};
+    return true;
+}
+
 // volumeByte: per-source game volume 0..127; < 0 leaves the engine's full 127.
-void Play(const char* what, const std::vector<unsigned char>& wav, float durationSec,
-          float yawOffsetDeg, int volumeByte = -1) {
-    Vector pos;
-    if (!PositionAround(yawOffsetDeg, pos)) {
-        acclog::Write("ProbeMemSound", "%s ignored — no viewpoint", what);
-        return;
-    }
+// False when nothing started.
+bool PlayAt(const char* what, const std::vector<unsigned char>& wav, float durationSec,
+            const Vector& pos, float yawOffsetDeg, int volumeByte = -1) {
     const char* resref = kResrefs[g_presses % 2];
     ++g_presses;
     const bool ok = !wav.empty() &&
@@ -116,10 +133,21 @@ void Play(const char* what, const std::vector<unsigned char>& wav, float duratio
     if (!ok) {
         prism::Speak("memory probe failed", /*interrupt=*/true);
         g_checkArmed = false;
-        return;
+        return false;
     }
     g_checkAt    = GetTickCount() + static_cast<DWORD>(durationSec * 1000.0f) + kAfterPlayMarginMs;
     g_checkArmed = true;
+    return true;
+}
+
+void Play(const char* what, const std::vector<unsigned char>& wav, float durationSec,
+          float yawOffsetDeg) {
+    Vector pos;
+    if (!PositionAround(yawOffsetDeg, pos)) {
+        acclog::Write("ProbeMemSound", "%s ignored — no viewpoint", what);
+        return;
+    }
+    PlayAt(what, wav, durationSec, pos, yawOffsetDeg);
 }
 
 void PlayTone() {
@@ -127,32 +155,46 @@ void PlayTone() {
     Play("tone", wav, kToneSeconds, 90.0f);
 }
 
-void PlayPhrase() {
-    const Phrase& p = kPhrases[g_nextPhrase];
-    g_nextPhrase = (g_nextPhrase + 1) % kPhraseCount;
-
+// Plays the next variant: rendered, normalised, then shelved, in the order
+// positional_speech's Play uses.
+void PlayRearVariant() {
+    const RearVariant& v = kRearVariants[g_rearNext++];
     prism::RenderedSpeech speech;
-    if (!acc::eloquence::RenderToMemory(p.text, speech)) {
-        acclog::Write("ProbeMemSound", "render failed for [%s]", p.text);
+    if (!prism::RenderUrgentToMemory(v.text, prism::GetUrgentRatePercent(), speech) ||
+        speech.samples.empty() || speech.channels == 0) {
+        acclog::Write("ProbeMemSound", "rear probe: render failed for [%s]", v.text);
         prism::Speak("memory probe failed", /*interrupt=*/true);
+        g_rearNext = kRearVariantCount;
         return;
     }
-    // Same headroom for every line and voice, played at the game's full
-    // source volume.
+    acc::audio::NormalizePeak(speech.samples, kSpeechPeakDb);
     const acc::audio::Levels before = acc::audio::MeasureLevels(speech.samples);
-    const float gain = acc::audio::NormalizePeak(speech.samples, kSpeechPeakDb);
-    const int volumeByte = static_cast<int>(kFullSourceVolume);
+    acc::audio::ApplyHighShelf(speech.samples, speech.channels, speech.sampleRate, v.cornerHz,
+                               v.cutDb);
+    const acc::audio::Levels after = acc::audio::MeasureLevels(speech.samples);
     acclog::Write("ProbeMemSound",
-                  "levels: peak %.1f dBFS, rms %.1f dBFS -> gain x%.2f to %.1f dBFS peak; "
-                  "source volume %d/127",
-                  before.peakDb, before.rmsDb, gain, kSpeechPeakDb, volumeByte);
+                  "rear probe %d/%d: shelf %.0f Hz %.1f dB at %u Hz -> rms %.1f -> %.1f dBFS "
+                  "(%.1f dB), peak %.1f -> %.1f dBFS: [%s]",
+                  g_rearNext, kRearVariantCount, v.cornerHz, v.cutDb,
+                  static_cast<unsigned>(speech.sampleRate), before.rmsDb, after.rmsDb,
+                  after.rmsDb - before.rmsDb, before.peakDb, after.peakDb, v.text);
 
     const size_t frames = speech.samples.size() / speech.channels;
     std::vector<unsigned char> wav;
     acc::audio::BuildMonoPcm16Wav(speech.samples.data(), frames, speech.channels,
                                   speech.sampleRate, wav);
-    Play("speech", wav, static_cast<float>(frames) / speech.sampleRate, p.yawOffsetDeg,
-         volumeByte);
+    Vector pos;
+    if (!PositionBehindListener(pos)) {
+        acclog::Write("ProbeMemSound", "rear probe ignored — no viewpoint");
+        g_rearNext = kRearVariantCount;
+        return;
+    }
+    const float seconds = static_cast<float>(frames) / speech.sampleRate;
+    if (!PlayAt("rear", wav, seconds, pos, 180.0f, static_cast<int>(kFullSourceVolume))) {
+        g_rearNext = kRearVariantCount;
+        return;
+    }
+    g_rearAt = GetTickCount() + static_cast<DWORD>(seconds * 1000.0f) + kRearProbeGapMs;
 }
 
 }  // namespace
@@ -165,6 +207,10 @@ void PollWin32() {
         g_source.LogPlayState("after-finish");
     }
 
+    if (g_rearNext < kRearVariantCount && static_cast<int>(GetTickCount() - g_rearAt) >= 0) {
+        PlayRearVariant();
+    }
+
     const bool tone   = hk::Pressed(hk::Action::ProbeMemSoundTone);
     const bool speech = hk::Pressed(hk::Action::ProbeMemSoundSpeech);
     if (!tone && !speech) return;
@@ -175,7 +221,10 @@ void PollWin32() {
         return;
     }
     if (tone)   PlayTone();
-    if (speech) PlayPhrase();
+    if (speech) {
+        g_rearNext = 0;  // a press restarts the sequence
+        g_rearAt   = GetTickCount();
+    }
 }
 
 }  // namespace acc::probe_memory_sound

@@ -181,6 +181,9 @@ DWORD  g_pending_centre_best_ms = 0;
 // motion). Updated every tick by TrackMotion, read by the centre rule.
 constexpr DWORD kMotionSampleMs = 100;
 constexpr DWORD kMotionStaleMs  = 500;
+// Faster than any walk or run (KOTOR 1 running: ~5.7 m/s): a jump of the
+// position, e.g. the spawn after an area load (26.9 m/s logged), not motion.
+constexpr float kMotionMaxMps   = 15.0f;
 Vector g_motion_prev_pos   = {0.0f, 0.0f, 0.0f};
 DWORD  g_motion_prev_ms    = 0;
 float  g_motion_vx         = 0.0f;
@@ -199,7 +202,9 @@ void TrackMotion(const Vector& pos) {
     if (dt <= kMotionStaleMs) {
         g_motion_vx    = (pos.x - g_motion_prev_pos.x) * 1000.0f / dt;
         g_motion_vy    = (pos.y - g_motion_prev_pos.y) * 1000.0f / dt;
-        g_motion_valid = true;
+        g_motion_valid = (g_motion_vx * g_motion_vx +
+                          g_motion_vy * g_motion_vy) <=
+                         kMotionMaxMps * kMotionMaxMps;
     } else {
         g_motion_valid = false;
     }

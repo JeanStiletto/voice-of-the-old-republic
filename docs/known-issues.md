@@ -182,7 +182,8 @@ the player passes a cluster's node at a distance; not yet checked there.
   there is a single node (extent 0, so "near" never fired) and the stall
   test fires only after the closest point: 300 ms + the noun + reaction at
   ~4.5 m/s = 4-5 m past, out into the next corridor (clusters 14, 29, 30).
-- Second build, same day, untested:
+- Second build, same day, tested in K1 the same evening ("that felt now very
+  good"; committed 0de0928):
   - "Near" uses the floor footprint: the larger of node spread and the
     narrowest wall-to-wall axis of the clearance probe (those halls: ~11 m,
     radius 2.8 m).
@@ -190,6 +191,10 @@ the player passes a cluster's node at a distance; not yet checked there.
     current path is less than (measured noun length + 500 ms reaction)
     ahead, or already behind. The stall test stays for standing still.
   - Log: `centre rule met: lead (... closest in Xs at Ym ...)`.
+- Follow-ups from that test's log (patch-20261028-182126.log): the spawn
+  after an area load read as 26.9 m/s (speeds above 15 m/s now ignored), and
+  the noun length was once taken from a corridor list's first exit word
+  ("Nord"; now only an unplaced first piece followed by exits counts).
 
 ## Unreproduced
 

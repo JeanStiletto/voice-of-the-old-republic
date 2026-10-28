@@ -83,8 +83,12 @@ constexpr float kNoDirectionM  = 1.0f;
 // CUT above kRearCornerHz, ramping linearly from 0 at the side to
 // kRearMaxCutDb straight behind: darker = behind. A shelf, not a low-pass,
 // so speech only darkens, never disappears. Always on (user, 2026-10-28).
-constexpr float kRearCornerHz  = 3000.0f;
-constexpr float kRearMaxCutDb  = 10.0f;
+// Dark Vision's 3 kHz / -10 dB was tuned for bright tone cues (where it is a
+// ~10 dB drop of the whole sound); on speech, whose energy sits lower, it was
+// too subtle. Picked by ear from a four-way A/B (Shift+F11 probe,
+// 2026-10-28): 1.5 kHz / -14 dB. 1 kHz / -18 dB was "very deep".
+constexpr float kRearCornerHz  = 1500.0f;
+constexpr float kRearMaxCutDb  = 14.0f;
 // Priority group for the sliders' preview: one of the groups that stay
 // audible while the in-game menu pauses the world (as the cue-volume
 // preview in menus_modsettings.cpp).
@@ -669,7 +673,10 @@ bool SpeakExitList(const char* text,
         line.lastPos = p.pos;
         line.ahead   = !p.placed;
         line.noted   = true;
-        line.lead    = (&p == &pieces.front());
+        // The noun: an unplaced first piece with exits after it. A list
+        // that opens on an exit word ("Nord, Süd-Ost") has no noun.
+        line.lead    = (&p == &pieces.front()) && !p.placed &&
+                       pieces.size() > 1;
         line.state   = LineState::Unrendered;
         ch.queue.push_back(std::move(line));
     }

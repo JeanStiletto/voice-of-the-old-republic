@@ -67,8 +67,8 @@ and add the German in parentheses if it genuinely aids clarity.
   have finished.
 - When the beacon (Ctrl+-) finds no route, it says whether the target may be
   reachable from another side or the mod could not read the area map.
-- 3D speech behind you sounds darker than speech ahead, so you can tell the
-  two apart (a technique from the Dark Vision mod).
+- 3D speech behind you sounds muffled, so you can tell it from speech ahead
+  (a technique from the Dark Vision mod, retuned for speech).
 - The compass directions spoken while you turn have a voice of their own,
   with its own volume, speed and voice settings (new submenu "Compass voice
   settings" in the announcement voice settings).
@@ -133,16 +133,23 @@ and add the German in parentheses if it genuinely aids clarity.
   announcements" off in Mod settings, Positional announcements, to get the
   previous behaviour back. Positional lines also reach Control+R and a braille display, like any
   other announcement.
-- **Behind you sounds darker.** The game's 3D sound only pans left and
+- **Behind you sounds muffled.** The game's 3D sound only pans left and
   right, so a line straight behind you sounded exactly like one straight
   ahead; even with the optional spatial audio's HRTF the two are easy to
-  confuse. Now the treble of a line drops the further behind you it is, down
-  to 10 dB straight behind, while lines ahead and to the side stay bright.
-  This applies to combat announcements and exit descriptions alike. The
-  technique is taken from
+  confuse. Now a line sounds more muffled the further behind you it is: the
+  voice above 1,500 Hz drops by up to 14 dB straight behind, while lines
+  ahead and to the side stay bright. This applies to combat announcements
+  and exit descriptions alike. The technique is taken from
   [Dark Vision](https://github.com/bradjrenshaw/darkvision-wotr), the
   blind-accessibility mod for Pathfinder: Wrath of the Righteous by
   bradjrenshaw.
+- **The muffling is tuned for speech.** Dark Vision's own setting (a cut
+  above 3,000 Hz of up to 10 dB) was made for its bright sound cues, which
+  have almost nothing in the low range, so the cut makes the whole cue
+  quieter. Most of a voice sits below 3,000 Hz, so with that setting speech
+  behind you hardly changed. The cut now starts at 1,500 Hz and goes deeper,
+  which reaches the part of the voice you actually hear without making it
+  sound deep and dull.
 - **Credit.** The idea of speaking combat lines from where they happen comes
   from [Dark Vision](https://github.com/bradjrenshaw/darkvision-wotr), the
   blind-accessibility mod for Pathfinder: Wrath of the Righteous by
