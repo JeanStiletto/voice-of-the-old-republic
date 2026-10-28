@@ -54,7 +54,8 @@ and add the German in parentheses if it genuinely aids clarity.
   Sith troopers and explosive barrels by name.
 - Your party's attacks name the target they hit.
 - Combat announcements are spoken from where they happen on the battlefield,
-  in 3D (new Mod settings submenu "Combat announcements", on by default).
+  in 3D (new Mod settings submenu "Combat announcements", on by default), with
+  their own volume and speed settings.
 - The KOTOR 2 party selection screen reads each companion's name instead of
   "control 13".
 
@@ -84,20 +85,27 @@ and add the German in parentheses if it genuinely aids clarity.
   a status, saving throw, kill or shield absorb from the creature it happened
   to, and a Force power or grenade being used from whoever uses it. The game
   already plays the swing and hit sounds at the attacker, so the line adds
-  where the blow landed. Distance and direction work like any game sound;
-  turning the camera turns the voices with it.
+  where the blow landed. Turning the camera turns the voices with it. Nearby
+  lines are loudest; farther ones get quieter but stay clearly audible, and
+  toward the edge of a fight they drift to the centre, so nothing fades out.
 - **The voice imitates your screen reader where it can.** The screen reader
   itself cannot speak in 3D (it plays its own audio), so the mod renders the
-  lines itself. With NVDA it uses the same synthesizer, voice, rate and volume
-  as your NVDA speech: Eloquence through the IBMTTS add-on (if installed; the
+  lines itself. With NVDA it uses the same synthesizer, voice and rate as
+  your NVDA speech: Eloquence through the IBMTTS add-on (if installed; the
   mod never ships it), or a Windows SAPI or OneCore voice. NVDA's settings are
   read as last saved, so after changing one, save NVDA's configuration
   (NVDA+Control+C) and the next line uses it. For other screen readers and
   NVDA's built-in eSpeak, the lines use your announcement voice. Urgent lines
   (kills, a companion stunned) keep using the announcement voice, so urgency
   stays audible.
-- **Nothing is ever lost.** When a line cannot be placed (the creature is too
-  far away or has already gone), it is spoken the usual way. Turn the feature
+- **Volume and speed of their own.** Combat announcements has four sliders:
+  volume and speed of the normal lines, then of the urgent ones. Volume does
+  not follow your screen reader, whose level is set for menus and would be
+  too quiet in a fight. Speed starts at "same as screen reader" (or "same as
+  announcement voice") and goes faster or slower from there in steps of 5, so
+  it still follows a rate change in NVDA. Each step plays a sample line.
+- **Nothing is ever lost.** When a line cannot be placed (the creature has
+  already gone), it is spoken the usual way. Turn the feature
   off in Mod settings, Combat announcements, to get the previous behaviour
   back. Positional lines also reach Control+R and a braille display, like any
   other announcement.

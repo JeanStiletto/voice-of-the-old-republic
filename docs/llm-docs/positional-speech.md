@@ -14,11 +14,21 @@ does, how the pieces fit, the decisions behind it, and the traps already hit.
 
 - Mod settings → "Combat announcements" (`Kampfansagen`) submenu → toggle
   "3D positioned combat announcements" (`PositionalCombatSpeech`, persisted in
-  `acc_settings.ini`, default ON).
-- Each spoken combat line sounds from where its effect lands, with the
-  engine's panning, distance falloff, SFX slider and EAX/dsoal reverb.
+  `acc_settings.ini`, default ON), then four sliders (2026-10-28): volume and
+  speed of the normal lines, volume and speed of the urgent lines.
+- Each spoken combat line sounds from the direction its effect lands, with
+  the engine's panning, SFX slider and EAX/dsoal reverb, and the mod's own
+  loudness-over-distance curve (see Placement).
 - Normal lines imitate the screen reader's voice where possible; urgent lines
   use the announcement (SAPI) voice the user picked.
+- Volume is the mod's own per channel (10..100 %, default 100), never the
+  screen reader's or the urgent-volume slider's. Speed is an offset from the
+  voice's own rate (-50..+50 rate points, step 5, default 0 = "same as screen
+  reader" / "same as announcement voice"), so it keeps following NVDA.
+  Keys: `PositionalVolumePercent`, `PositionalRateOffset`,
+  `PositionalUrgentVolumePercent`, `PositionalUrgentRateOffset`. Each slider
+  press plays a sample straight ahead through the same path (`Preview`, on
+  priority group 0x0b so it survives the in-game menu pause).
 - Off, or whenever a line cannot be placed, the line is spoken exactly as
   before (screen reader / SAPI urgent, centred). Nothing is dropped.
 
@@ -68,10 +78,9 @@ does, how the pieces fit, the decisions behind it, and the traps already hit.
     `IsVoiceAttached()` right after: Play returns a duration even when it
     refused the source (out of range, no free voice), so the voice pointer is
     the only proof.
-  - Level chain: peak-normalise to -1 dBFS, then the voice's own volume
-    setting (`RenderedSpeech::volume`) as the per-source game volume
-    (127 = full). Distance band: full within 4 m, silent by 30 m
-    (`kFullVolumeM` / `kSilentM`) — first guesses, tunable.
+  - Level chain: peak-normalise to -1 dBFS, then channel volume × distance
+    gain as the per-source game volume (127 = full).
+  - Placement (`Place`), see the section below.
   - Calls `prism::NoteSpokenElsewhere` when a line starts: the
     `Speech.spoke` log entry, `LastSpoken()` for Ctrl+R, and braille.
 - **`combat_log.cpp`** — `SpeakCombatLine(line, subject, nearName)` /
@@ -97,6 +106,29 @@ does, how the pieces fit, the decisions behind it, and the traps already hit.
 - **`probe_memory_sound.cpp`** — dev probe, KOTOR 1 only: F11 a 3 s pulsed tone
   3 m left, Shift+F11 four Eloquence phrases around the listener.
 
+## Placement (2026-10-28, the swoop beacons' method)
+
+The first build played each line AT its subject inside a 4 / 30 m engine
+band. Two problems surfaced in the first test: lines far off faded to near
+silence, and past 30 m the engine refused the source, so the line jumped to
+loud centred screen-reader speech — a cliff right at the edge of most fights.
+Now, as `minigame_swoop_audio.cpp` "Decoupled cue" does for the pads:
+
+- The source sits `kPlaceRadiusM` (5 m) from the engine's listener (camera;
+  the cursor in view mode) in the subject's direction, inside a flat engine
+  band (full to 20 m), so the engine supplies only the pan.
+- Direction and distance are measured from the player (view-mode cursor)
+  against the camera yaw (`view_mode::GetEffectiveViewpoint`), like every
+  spoken bearing. A subject within 1 m (a hit on the player) is straight
+  ahead.
+- Loudness is ours, over the real horizontal distance: full within 4 m,
+  linear down to 0.4 at 30 m (swoop's far-pad floor, 50/127), 0.4 beyond.
+- From 20 m to 30 m the bearing eases to straight ahead, so a far line ends
+  centred with no step in level or direction. Nothing is refused for range
+  any more; the centred fallback is left for real failures.
+
+All constants are first guesses at the top of `positional_speech.cpp`.
+
 ## Voice choice (normal channel)
 
 `positional_speech.cpp` `ChooseNormalVoice`, cached 2 s:
@@ -106,7 +138,7 @@ does, how the pieces fit, the decisions behind it, and the traps already hit.
 2. NVDA `[speech] synth`:
    - `ibmeci` and the engine file exists → Eloquence, settings from
      `[speech] [[ibmeci]]` (voice = ECI dialect id, variant, rate, rateBoost,
-     pitch, inflection, volume, hsz, rgh, bth, sampleRate) and paths from
+     pitch, inflection, hsz, rgh, bth, sampleRate) and paths from
      `[ibmeci] TTSPath / dllName` (relative to the add-on's synthDrivers).
      Mapped like the add-on driver (`synthDrivers/ibmeci.py`, `_ibmeci.py`):
      rate % → ECI speed 40..156, ×1.6 with rateBoost.
@@ -125,12 +157,13 @@ re-reads them, so a save takes effect on the next line — tested.
 
 ## Traps already hit (do not repeat)
 
-- **Volume baked into the render is far too quiet.** ECI volume 55 sounded
-  "super quiet" in game next to NVDA's 55: NVDA plays at full system level,
-  the game through its own mixer. Fix: render at FULL volume, hand the
-  setting back (`RenderedSpeech::volume`) and apply it as source volume after
-  peak normalisation. (The urgent channel's SAPI volume IS baked in on
-  purpose — the urgent-volume slider governs those lines.)
+- **The screen reader's volume does not belong here at all.** ECI volume 55
+  baked into the render sounded "super quiet" next to NVDA's 55: NVDA plays
+  at full system level, the game through its own mixer. Applying NVDA's
+  volume as source volume instead was still too quiet once distance came on
+  top (user, 2026-10-28). Every voice now renders at FULL volume (urgent too)
+  and only the mod's own combat-volume sliders set the level. Don't
+  reintroduce mirroring: the two volumes live in different reference frames.
 - **ECI call order: callback BEFORE output buffer.** Re-registering the
   callback per line after `eciSetOutputBuffer` dropped the buffer: ECI then
   played every line ALOUD through the sound card (loud, centred, real time,
@@ -166,7 +199,8 @@ re-reads them, so a save takes effect on the next line — tested.
 
 - KOTOR 2 in game (values built in from decompiles; see the K2 section of
   `in-memory-sound-resource.md`).
-- Distance band tuning (4 m / 30 m), and whether lines should be dropped or
+- Placement tuning (4 m full, 0.4 floor at 30 m, centring 20..30 m), and
+  whether lines should be dropped or
   shortened when the normal queue backs up in long fights (today: kept, in
   order — the screen reader queued the same way).
 - Kill-line victim slicing per language (Polish / Russian word order).

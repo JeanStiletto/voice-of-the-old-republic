@@ -23,6 +23,7 @@
 #include "menus_keybinds.h"  // nested keybind configurator submenu
 #include "menus_nav.h"       // ClampedCursorStep — shared Up/Down/Home/End ladder
 #include "mod_settings_store.h"  // persist toggles across launches
+#include "positional_speech.h"  // combat speech volume / speed sliders + preview
 #include "prism.h"
 #include "strings.h"
 
@@ -97,6 +98,10 @@ bool s_toggles[static_cast<int>(Option::Count)] = {
                                   // lines sound from the creature they are
                                   // about; off = the centred screen-reader /
                                   // SAPI speech they had before.
+    /* CombatVolume    */ false,  // unused — RowKind::Slider; the four combat
+    /* CombatRate      */ false,  // sliders' values live in positional_speech
+    /* CombatUrgentVolume */ false,  // (Get/SetVolumePercent,
+    /* CombatUrgentRate   */ false,  // Get/SetRateOffset), persisted there.
     /* Keybindings     */ false,  // unused — RowKind::Submenu (configurator pivot)
     /* AudioGlossary   */ false,  // unused — RowKind::Submenu
     /* SupportModder   */ false,  // unused — RowKind::Link
@@ -226,31 +231,75 @@ constexpr int kSliderStepRate           = 5;
 constexpr int kCueVolumePreviewGroup    = 0x0b;
 constexpr acc::audio::NavCue kCueVolumePreviewCue = acc::audio::NavCue::BeaconActive;
 
-// Slider value plumbing. Each Slider row owns its percent in a different
-// subsystem (cue volume → audio_bus, spoken-announcement volume → prism);
-// these two helpers route by Option so the focus/announce/adjust code paths
-// stay generic. Non-slider options return 0 / no-op.
-int GetSliderPercent(Option opt) {
+// Slider value plumbing. Each Slider row owns its value in a different
+// subsystem (cue volume → audio_bus, spoken-announcement volume → prism,
+// combat speech → positional_speech); these helpers route by Option so the
+// focus/announce/adjust code paths stay generic. Most values are percents;
+// the combat speed rows hold a signed offset from the voice's own rate.
+// Non-slider options return 0 / no-op.
+using acc::positional_speech::Channel;
+
+int GetSliderValue(Option opt) {
+    namespace ps = acc::positional_speech;
     switch (opt) {
-        case Option::CueVolume:    return acc::audio::GetGlobalCueVolumePercent();
-        case Option::UrgentVolume: return prism::GetUrgentVolumePercent();
-        case Option::UrgentRate:   return prism::GetUrgentRatePercent();
-        default:                   return 0;
+        case Option::CueVolume:          return acc::audio::GetGlobalCueVolumePercent();
+        case Option::UrgentVolume:       return prism::GetUrgentVolumePercent();
+        case Option::UrgentRate:         return prism::GetUrgentRatePercent();
+        case Option::CombatVolume:       return ps::GetVolumePercent(Channel::Normal);
+        case Option::CombatRate:         return ps::GetRateOffset(Channel::Normal);
+        case Option::CombatUrgentVolume: return ps::GetVolumePercent(Channel::Urgent);
+        case Option::CombatUrgentRate:   return ps::GetRateOffset(Channel::Urgent);
+        default:                         return 0;
     }
 }
 
-void SetSliderPercent(Option opt, int percent) {
+void SetSliderValue(Option opt, int value) {
+    namespace ps = acc::positional_speech;
     switch (opt) {
-        case Option::CueVolume:    acc::audio::SetGlobalCueVolumePercent(percent); break;
-        case Option::UrgentVolume: prism::SetUrgentVolumePercent(percent);         break;
-        case Option::UrgentRate:   prism::SetUrgentRatePercent(percent);           break;
-        default:                   break;
+        case Option::CueVolume:          acc::audio::SetGlobalCueVolumePercent(value); break;
+        case Option::UrgentVolume:       prism::SetUrgentVolumePercent(value);         break;
+        case Option::UrgentRate:         prism::SetUrgentRatePercent(value);           break;
+        case Option::CombatVolume:       ps::SetVolumePercent(Channel::Normal, value); break;
+        case Option::CombatRate:         ps::SetRateOffset(Channel::Normal, value);    break;
+        case Option::CombatUrgentVolume: ps::SetVolumePercent(Channel::Urgent, value); break;
+        case Option::CombatUrgentRate:   ps::SetRateOffset(Channel::Urgent, value);    break;
+        default:                         break;
     }
 }
 
-// Percent a single Left/Right press moves the given Slider row by.
+// True for the combat speed rows, whose value is an offset, not a percent.
+bool IsRateOffsetSlider(Option opt) {
+    return opt == Option::CombatRate || opt == Option::CombatUrgentRate;
+}
+
+// The positional channel a combat slider tunes (for its preview), or false.
+bool CombatSliderChannel(Option opt, Channel& out) {
+    switch (opt) {
+        case Option::CombatVolume:
+        case Option::CombatRate:         out = Channel::Normal; return true;
+        case Option::CombatUrgentVolume:
+        case Option::CombatUrgentRate:   out = Channel::Urgent; return true;
+        default:                         return false;
+    }
+}
+
+// The range a Slider row clamps to.
+void SliderRange(Option opt, int& lo, int& hi) {
+    namespace ps = acc::positional_speech;
+    lo = 0;
+    hi = 100;
+    if (IsRateOffsetSlider(opt)) {
+        lo = -ps::kMaxRateOffset;
+        hi =  ps::kMaxRateOffset;
+    } else if (opt == Option::CombatVolume || opt == Option::CombatUrgentVolume) {
+        lo = ps::kMinVolumePercent;
+    }
+}
+
+// Amount a single Left/Right press moves the given Slider row by.
 int SliderStep(Option opt) {
-    return opt == Option::UrgentRate ? kSliderStepRate : kSliderStepDefault;
+    return (opt == Option::UrgentRate || IsRateOffsetSlider(opt)) ? kSliderStepRate
+                                                                  : kSliderStepDefault;
 }
 
 struct OptionSpec {
@@ -277,6 +326,10 @@ constexpr OptionSpec k_options[] = {
     { Option::UrgentVoice,     acc::strings::Id::ModSettingUrgentVoice,     RowKind::Choice  },
     { Option::CombatSettings,  acc::strings::Id::ModSettingCombatSettings,  RowKind::Submenu },
     { Option::PositionalCombatSpeech, acc::strings::Id::ModSettingPositionalCombatSpeech, RowKind::Toggle },
+    { Option::CombatVolume,       acc::strings::Id::ModSettingCombatVolume,       RowKind::Slider },
+    { Option::CombatRate,         acc::strings::Id::ModSettingCombatRate,         RowKind::Slider },
+    { Option::CombatUrgentVolume, acc::strings::Id::ModSettingCombatUrgentVolume, RowKind::Slider },
+    { Option::CombatUrgentRate,   acc::strings::Id::ModSettingCombatUrgentRate,   RowKind::Slider },
     { Option::Keybindings,     acc::strings::Id::KeybindsRootLabel,         RowKind::Submenu },
     { Option::AudioGlossary,   acc::strings::Id::ModSettingAudioGlossary,   RowKind::Submenu },
     { Option::SupportModder,   acc::strings::Id::ModSettingSupportModder,   RowKind::Link    },
@@ -331,9 +384,14 @@ constexpr Option k_voiceRows[] = {
 constexpr int k_voiceRowCount = static_cast<int>(
     sizeof(k_voiceRows) / sizeof(k_voiceRows[0]));
 
-// The combat-announcements submenu.
+// The combat-announcements submenu: the 3D toggle, then volume and speed of
+// the normal lines, then of the urgent ones.
 constexpr Option k_combatRows[] = {
     Option::PositionalCombatSpeech,
+    Option::CombatVolume,
+    Option::CombatRate,
+    Option::CombatUrgentVolume,
+    Option::CombatUrgentRate,
 };
 constexpr int k_combatRowCount = static_cast<int>(
     sizeof(k_combatRows) / sizeof(k_combatRows[0]));
@@ -518,10 +576,25 @@ void SpeakFocusedOption(bool interrupt = true) {
         snprintf(line, sizeof(line),
                  acc::strings::Get(acc::strings::Id::FmtModSettingOption),
                  name, StateText(opt));
+    } else if (row.kind == RowKind::Slider && IsRateOffsetSlider(opt)) {
+        // "Name: same as screen reader" / "Name: plus 10" / "Name: minus 10".
+        const int v = GetSliderValue(opt);
+        if (v == 0) {
+            snprintf(line, sizeof(line),
+                     acc::strings::Get(acc::strings::Id::FmtModSettingOption), name,
+                     acc::strings::Get(opt == Option::CombatRate
+                                           ? acc::strings::Id::ModSettingRateSameAsReader
+                                           : acc::strings::Id::ModSettingRateSameAsAnnouncements));
+        } else {
+            snprintf(line, sizeof(line),
+                     acc::strings::Get(v > 0 ? acc::strings::Id::FmtModSettingRatePlus
+                                             : acc::strings::Id::FmtModSettingRateMinus),
+                     name, v > 0 ? v : -v);
+        }
     } else if (row.kind == RowKind::Slider) {
         snprintf(line, sizeof(line),
                  acc::strings::Get(acc::strings::Id::FmtModSettingSlider),
-                 name, GetSliderPercent(opt));
+                 name, GetSliderValue(opt));
     } else {
         snprintf(line, sizeof(line), "%s", name);
     }
@@ -808,34 +881,43 @@ void ActivateLinkRow(Option opt) {
         /*interrupt=*/true);
 }
 
-// Adjust the focused Slider row by delta percent (clamped 0..100),
-// re-announce "Name: N Prozent", and play an audible preview at the new
-// setting so the user hears what they just dialled in. The preview is
-// per-slider:
+// Adjust the focused Slider row by delta (clamped to its range), re-announce
+// it, and play an audible preview at the new setting so the user hears what
+// they just dialled in. The preview is per-slider:
 //   CueVolume                — a hint-sound cue on priority group 0xb
 //                              (survives the in-game Optionen pause), scaled
 //                              to the new per-source level. Reuses the
 //                              glossary preview handle.
 //   UrgentVolume/UrgentRate  — a short SAPI urgent utterance, which already
-//                              carries the new setting (SetSliderPercent
+//                              carries the new setting (SetSliderValue
 //                              pushed it to the SAPI backend), letting the
 //                              user gauge announcement loudness or pace
 //                              directly.
+//   Combat volume/speed      — a sample line through positional speech on
+//                              the row's channel, straight ahead at full
+//                              distance gain: the lines' own loudness and
+//                              pace, not the screen reader's.
 // No-op on a non-slider focus.
 void AdjustSlider(int delta) {
     const Option opt = FocusedOption();
     if (opt == Option::Count) return;
     if (Spec(opt).kind != RowKind::Slider) return;
 
-    int next = GetSliderPercent(opt) + delta;
-    if (next < 0)   next = 0;
-    if (next > 100) next = 100;
-    SetSliderPercent(opt, next);
-    acclog::Write("ModSettings", "slider %d adjust delta=%+d -> %d%%",
+    int lo = 0, hi = 100;
+    SliderRange(opt, lo, hi);
+    int next = GetSliderValue(opt) + delta;
+    if (next < lo) next = lo;
+    if (next > hi) next = hi;
+    SetSliderValue(opt, next);
+    acclog::Write("ModSettings", "slider %d adjust delta=%+d -> %d",
                   static_cast<int>(opt), delta, next);
     SpeakFocusedOption();
 
-    if (opt == Option::CueVolume) {
+    Channel channel;
+    if (CombatSliderChannel(opt, channel)) {
+        acc::positional_speech::Preview(
+            channel, acc::strings::Get(acc::strings::Id::ModSettingUrgentVolumePreview));
+    } else if (opt == Option::CueVolume) {
         if (next > 0) {
             int previewByte = 127 * next / 100;
             const Vector kCentre = { 0.0f, 0.0f, 0.0f };

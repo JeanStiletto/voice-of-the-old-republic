@@ -6,9 +6,10 @@
 // own folder, and only in-process: the add-on's ECI.DLL is 32-bit, like the
 // game. Paths and voice settings come from NVDA's saved config (nvda_config:
 // [ibmeci] TTSPath / dllName, and [speech] [[ibmeci]] voice / variant / rate /
-// rateBoost / pitch / inflection / volume / hsz / rgh / bth / sampleRate),
+// rateBoost / pitch / inflection / hsz / rgh / bth / sampleRate),
 // mapped the way the add-on's driver maps them (synthDrivers/ibmeci.py +
-// _ibmeci.py) — except volume, see RenderedSpeech::volume.
+// _ibmeci.py) — except volume: rendered at full, the player sets the
+// loudness.
 //
 // Rendering runs on one persistent worker thread that keeps its engine handle
 // between lines (a fresh handle per line cost ~110 ms). ECI delivers its audio
@@ -30,9 +31,11 @@ bool IsNvdaSynth();
 
 // Queues `text` (game codepage; cp1252-compatible for the Western ECI
 // languages) for background rendering with NVDA's current saved Eloquence
-// settings. `ticket` comes back with the result. False when the engine is not
-// installed or failed to load — the caller should fall back immediately.
-bool Submit(const char* text, uint32_t ticket);
+// settings, the rate moved by `rateOffset` NVDA percent points
+// (prism::OffsetRatePercent). `ticket` comes back with the result. False when
+// the engine is not installed or failed to load — the caller should fall back
+// immediately.
+bool Submit(const char* text, uint32_t ticket, int rateOffset);
 
 // Main-thread poll: hands back one finished render, if any. `ok` false means
 // that line failed (logged); the caller falls back for that ticket.

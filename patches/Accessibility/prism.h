@@ -108,8 +108,11 @@ void SetUrgentVoiceId(size_t voiceId);
 
 // ---- Render to memory (positional-speech groundwork) ---------------------
 //
-// Renders `text` (game codepage) to PCM with the urgent channel's SAPI voice,
-// rate and volume instead of speaking it — prism_backend_speak_to_memory.
+// Renders `text` (game codepage) to PCM with the urgent channel's SAPI voice
+// instead of speaking it — prism_backend_speak_to_memory. `ratePercent`
+// 0..100 as SetUrgentRatePercent; -1 = the channel's own rate. Rendered at
+// full volume: the player sets the loudness (positional speech has its own
+// volume settings, apart from the urgent-volume slider).
 // The screen-reader backends cannot do this (they own their audio), and a
 // SAPI voice that merely forwards to the screen reader (SAPI2SR) renders
 // nothing; both come back false.
@@ -122,14 +125,18 @@ struct RenderedSpeech {
     std::vector<float> samples;
     size_t channels   = 0;
     size_t sampleRate = 0;
-    // The voice's own volume setting that the renderer did NOT bake into the
-    // samples, as a fraction (1 = full). A renderer that bakes it in leaves
-    // 1. The player applies it on top of a peak-normalised line, so a voice
-    // keeps its user-set loudness relative to the game's full source volume
-    // (see eloquence_render.cpp for why baking it in is too quiet).
-    float volume = 1.0f;
 };
-bool RenderUrgentToMemory(const char* text, RenderedSpeech& out);
+bool RenderUrgentToMemory(const char* text, int ratePercent, RenderedSpeech& out);
+
+// `ratePercent` (0..100, -1 = the voice's default) moved by `offset` points,
+// clamped to 0..100. The default counts as 50, which it is for NVDA's
+// percent and Prism's rate alike. Offset 0 returns the input untouched, so a
+// default stays a default.
+inline int OffsetRatePercent(int ratePercent, int offset) {
+    if (offset == 0) return ratePercent;
+    int r = (ratePercent < 0 ? 50 : ratePercent) + offset;
+    return r < 0 ? 0 : (r > 100 ? 100 : r);
+}
 
 // Render with a NAMED voice and rate — used to imitate the screen reader when
 // it speaks through a SAPI or OneCore voice. `voiceName` is the voice's
@@ -138,7 +145,7 @@ bool RenderUrgentToMemory(const char* text, RenderedSpeech& out);
 // is its leading part ("Microsoft Stefan"). `ratePercent` 0..100 (50 = the
 // voice's default; -1 = the default) — exact for SAPI's -10..+10, an
 // approximation of NVDA's own OneCore curve. Rendered at full volume (the
-// caller applies RenderedSpeech::volume). False when the voice is missing.
+// player sets the loudness). False when the voice is missing.
 //
 // SAPI borrows the urgent channel's backend for the one render and restores
 // its voice, rate and volume afterwards. OneCore uses a separate render-only

@@ -1213,18 +1213,17 @@ static bool RenderOn(RenderBackend& r, const char* voice, float rate, float volu
     return RenderWith(r.be, r.tag, text, out);
 }
 
-bool RenderUrgentToMemory(const char* text, RenderedSpeech& out) {
-    // The urgent channel's voice, rate and volume, applied to the render-only
-    // instance. The volume is baked in on purpose: the urgent-volume slider
-    // governs positional urgent lines too, exactly as it does the spoken ones.
+bool RenderUrgentToMemory(const char* text, int ratePercent, RenderedSpeech& out) {
+    // The urgent channel's voice on the render-only instance, at full volume:
+    // the urgent-volume slider is tuned for centred speech at system level,
+    // not for a line inside the game's mix — positional speech sets its own.
     char voice[sizeof(g_sapiVoiceName)] = {};
     const bool haveVoice = g_sapiVoiceCurrent != static_cast<size_t>(-1) &&
                            FetchSapiVoiceNameUtf8(g_sapiVoiceCurrent, voice, sizeof(voice));
     EnsureSapiRateLoaded();
-    EnsureSapiVolumeLoaded();
     return RenderOn(g_renderSapi, haveVoice ? voice : nullptr,
-                    static_cast<float>(g_sapiRatePercent) / 100.0f,
-                    static_cast<float>(g_sapiVolumePercent) / 100.0f, text, out);
+                    RateFromPercent(ratePercent >= 0 ? ratePercent : g_sapiRatePercent),
+                    1.0f, text, out);
 }
 
 bool RenderSapiVoiceToMemory(const char* voiceName, int ratePercent, const char* text,

@@ -572,6 +572,14 @@ const char* Get(Id id) {
         case Id::ModSettingCombatSettings: return "Kampfansagen";
         case Id::ModSettingsCombatSettingsOpened: return "Kampfansagen ge\xF6" "ffnet";
         case Id::ModSettingPositionalCombatSpeech: return "Kampfansagen 3D-positioniert";
+        case Id::ModSettingCombatVolume: return "Lautst\xE4rke der Kampfansagen";
+        case Id::ModSettingCombatRate: return "Geschwindigkeit der Kampfansagen";
+        case Id::ModSettingCombatUrgentVolume: return "Lautst\xE4rke der dringenden Kampfansagen";
+        case Id::ModSettingCombatUrgentRate: return "Geschwindigkeit der dringenden Kampfansagen";
+        case Id::ModSettingRateSameAsReader: return "wie Screenreader";
+        case Id::ModSettingRateSameAsAnnouncements: return "wie Ansagestimme";
+        case Id::FmtModSettingRatePlus: return "%s: plus %d";
+        case Id::FmtModSettingRateMinus: return "%s: minus %d";
         case Id::ModSettingSupportModder:           return "Modder unterst\xFCtzen";
         case Id::ModSettingLatestChanges:           return "Neueste \xC4nderungen";
         case Id::ModSettingOpenReadme:              return "Anleitung \xF6" "ffnen";

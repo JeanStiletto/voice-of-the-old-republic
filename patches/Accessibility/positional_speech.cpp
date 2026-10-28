@@ -20,29 +20,80 @@
 #include "engine_player.h"
 #include "log.h"
 #include "menus_modsettings.h"
+#include "mod_settings_store.h"
 #include "nvda_config.h"
 #include "prism.h"
+#include "view_mode.h"
 
 namespace acc::positional_speech {
 
 namespace {
 
 // ---- Tuning ----------------------------------------------------------------
-// Every line is peak-normalised to this, then the voice's own volume setting
-// is applied as the per-source game volume (127 = engine full). Same chain the
-// probe settled on (2026-10-27): levels matched NVDA's.
+// Every line is peak-normalised to this, then played at the channel's volume
+// setting × the distance gain as the per-source game volume (127 = engine
+// full).
 constexpr float kPeakDb           = -1.0f;
 constexpr float kFullSourceVolume = 127.0f;
-// 3D attenuation band (CExoSoundSource::SetDistance): full volume within
-// kFullVolumeM, fading out by kSilentM. Wider than the cue default (10 / 20 m)
-// so a blaster exchange across a room stays audible; beyond kSilentM the
-// engine refuses the source and the line falls back to centred speech.
-constexpr float kFullVolumeM = 4.0f;
-constexpr float kSilentM     = 30.0f;
+// Placement, the swoop beacons' method (minigame_swoop_audio.cpp "Decoupled
+// cue"). The first build played each line AT its subject with a 4 / 30 m
+// engine band: lines faded to near silence by 30 m and past it the engine
+// refused the source, so the line jumped to loud centred speech — and NVDA's
+// own volume on top made it all too quiet (user, 2026-10-28). Now:
+//   - the source sits kPlaceRadiusM from the listener, in the subject's
+//     direction, inside a flat engine band (full volume to kFlatBandFullM),
+//     so the engine supplies the pan and nothing else;
+//   - loudness is ours, over the REAL distance from the player: full within
+//     kFullVolumeM, falling linearly to kFloorGain at kFloorAtM, and staying
+//     there beyond;
+//   - from kCentreFromM to kCentredAtM the direction eases to straight ahead,
+//     so a far line ends centred with no step in level or direction.
+// Fights rarely reach past 30 m and the game's own sounds stop there too.
+constexpr float kPlaceRadiusM  = 5.0f;
+constexpr float kFlatBandFullM = 20.0f;
+constexpr float kFlatBandEndM  = 25.0f;
+constexpr float kFullVolumeM   = 4.0f;
+constexpr float kFloorAtM      = 30.0f;
+constexpr float kFloorGain     = 0.4f;   // swoop's far pads: 50 / 127
+constexpr float kCentreFromM   = 20.0f;
+constexpr float kCentredAtM    = 30.0f;
+// A subject this close to the player (a hit on the player) has no usable
+// direction: straight ahead.
+constexpr float kNoDirectionM  = 1.0f;
+// Priority group for the sliders' preview: one of the groups that stay
+// audible while the in-game menu pauses the world (as the cue-volume
+// preview in menus_modsettings.cpp).
+constexpr int kPreviewPriorityGroup = 0x0b;
 // Pause between two lines of the same channel.
 constexpr DWORD kLineGapMs = 120;
 // How long the screen-reader voice choice (nvda.ini + registry) is reused.
 constexpr DWORD kVoiceChoiceCacheMs = 2000;
+
+// ---- Settings ----------------------------------------------------------------
+// One record per channel, persisted in acc_settings.ini, loaded on first use.
+struct ChannelSettings {
+    const char* volumeKey;
+    const char* rateKey;
+    int         volume = 100;
+    int         rate   = 0;
+    bool        loaded = false;
+};
+ChannelSettings g_settings[2] = {
+    { "PositionalVolumePercent",       "PositionalRateOffset" },
+    { "PositionalUrgentVolumePercent", "PositionalUrgentRateOffset" },
+};
+
+int Clamp(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
+
+ChannelSettings& SettingsOf(Channel c) {
+    ChannelSettings& s = g_settings[c == Channel::Urgent ? 1 : 0];
+    if (!s.loaded) {
+        s.loaded = true;
+        s.volume = Clamp(acc::settings::GetInt(s.volumeKey, 100), kMinVolumePercent, 100);
+        s.rate   = Clamp(acc::settings::GetInt(s.rateKey, 0), -kMaxRateOffset, kMaxRateOffset);
+    }
+    return s;
+}
 
 // ---- Voice choice --------------------------------------------------------
 enum class VoiceKind { Eloquence, Sapi, OneCore, Urgent };
@@ -51,7 +102,6 @@ struct VoiceChoice {
     VoiceKind   kind = VoiceKind::Urgent;
     std::string name;          // display name for Sapi / OneCore
     int         rate   = -1;   // NVDA percent, -1 = voice default
-    int         volume = -1;   // NVDA percent, -1 = full
 };
 
 const char* KindName(VoiceKind k) {
@@ -109,7 +159,6 @@ VoiceChoice ChooseNormalVoice() {
     v.kind   = sapi ? VoiceKind::Sapi : VoiceKind::OneCore;
     v.name   = name;
     v.rate   = cfg.FindInt("speech", synth, "rate", -1);
-    v.volume = cfg.FindInt("speech", synth, "volume", -1);
     return v;
 }
 
@@ -205,6 +254,7 @@ struct Line {
     uint32_t              subject = 0;    // server handle; position read at play time
     Vector                lastPos = {};   // position at enqueue, the fallback
     LineState             state = LineState::Rendering;
+    bool                  preview = false;  // straight ahead, no distance loss
     prism::RenderedSpeech speech;
 };
 
@@ -230,30 +280,78 @@ void SpeakCentred(const Line& line, const char* why) {
 }
 
 // Synchronous render for every voice but Eloquence (SAPI / OneCore take
-// ~16 ms). A named voice that fails falls back to the urgent voice.
+// ~16 ms). A named voice that fails falls back to the urgent voice. The
+// channel's speed offset moves whichever voice's own rate is used.
 bool RenderNow(Channel channel, const VoiceChoice& voice, const char* text,
                prism::RenderedSpeech& out) {
+    const int offset = SettingsOf(channel).rate;
+    const int rate   = prism::OffsetRatePercent(voice.rate, offset);
     if (channel == Channel::Normal && voice.kind == VoiceKind::Sapi &&
-        prism::RenderSapiVoiceToMemory(voice.name.c_str(), voice.rate, text, out)) {
-        out.volume = voice.volume >= 0 ? voice.volume / 100.0f : 1.0f;
+        prism::RenderSapiVoiceToMemory(voice.name.c_str(), rate, text, out)) {
         return true;
     }
     if (channel == Channel::Normal && voice.kind == VoiceKind::OneCore &&
-        prism::RenderOneCoreToMemory(voice.name.c_str(), voice.rate, text, out)) {
-        out.volume = voice.volume >= 0 ? voice.volume / 100.0f : 1.0f;
+        prism::RenderOneCoreToMemory(voice.name.c_str(), rate, text, out)) {
         return true;
     }
-    return prism::RenderUrgentToMemory(text, out);
+    return prism::RenderUrgentToMemory(
+        text, prism::OffsetRatePercent(prism::GetUrgentRatePercent(), offset), out);
+}
+
+// Our loudness curve over the real distance (see Tuning).
+float DistanceGain(float d) {
+    if (d <= kFullVolumeM) return 1.0f;
+    if (d >= kFloorAtM)    return kFloorGain;
+    return 1.0f + (d - kFullVolumeM) / (kFloorAtM - kFullVolumeM) * (kFloorGain - 1.0f);
+}
+
+// Where a line about `subject` (null = straight ahead, the preview) is played
+// from, and its distance gain. Direction and distance are measured from the
+// player (the view-mode cursor while it is active) against the camera's yaw,
+// as every spoken bearing is; the source goes next to the engine's listener
+// — the camera, or the cursor in view mode, which the listener detour
+// substitutes. False when there is no viewpoint (no area loaded).
+bool Place(const Vector* subject, Vector& outPos, float& outGain, float& outDist) {
+    Vector ref;
+    float  yawDeg = 0.0f;
+    if (!acc::view_mode::GetEffectiveViewpoint(ref, yawDeg)) return false;
+    Vector listener = ref;
+    if (!acc::view_mode::IsActive()) acc::engine::GetCameraPosition(listener);
+
+    const float yaw = yawDeg * 3.14159265f / 180.0f;
+    float rel = 0.0f;  // bearing relative to the view, radians
+    outDist = 0.0f;
+    if (subject) {
+        const float dx = subject->x - ref.x, dy = subject->y - ref.y;
+        outDist = std::sqrt(dx * dx + dy * dy);
+        if (outDist >= kNoDirectionM) {
+            rel = std::atan2(dy, dx) - yaw;
+            while (rel >  3.14159265f) rel -= 6.2831853f;
+            while (rel < -3.14159265f) rel += 6.2831853f;
+            float t = (outDist - kCentreFromM) / (kCentredAtM - kCentreFromM);
+            t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+            rel *= 1.0f - t;
+        }
+    }
+    const float a = yaw + rel;
+    outPos   = listener;
+    outPos.x += std::cos(a) * kPlaceRadiusM;
+    outPos.y += std::sin(a) * kPlaceRadiusM;
+    outGain  = subject ? DistanceGain(outDist) : 1.0f;
+    return true;
 }
 
 // Starts `line` on the channel's source. False when the engine did not take
 // it (the caller falls back).
 bool Play(ChannelState& ch, Line& line) {
-    Vector pos = line.lastPos;
+    Vector subject = line.lastPos;
     if (void* obj = acc::engine::ResolveServerObjectHandle(line.subject)) {
         Vector live;
-        if (acc::engine::GetObjectPosition(obj, live)) pos = live;
+        if (acc::engine::GetObjectPosition(obj, live)) subject = live;
     }
+    Vector pos;
+    float  gain = 1.0f, dist = 0.0f;
+    if (!Place(line.preview ? nullptr : &subject, pos, gain, dist)) return false;
     prism::RenderedSpeech& sp = line.speech;
     acc::audio::NormalizePeak(sp.samples, kPeakDb);
     const size_t frames = sp.samples.size() / sp.channels;
@@ -262,14 +360,16 @@ bool Play(ChannelState& ch, Line& line) {
                                        sp.sampleRate, wav)) {
         return false;
     }
-    const int volumeByte = static_cast<int>(kFullSourceVolume * sp.volume + 0.5f);
+    const float volume = SettingsOf(line.channel).volume / 100.0f;
+    int volumeByte = static_cast<int>(kFullSourceVolume * volume * gain + 0.5f);
+    if (volumeByte < 1) volumeByte = 1;
     char resref[17];
     snprintf(resref, sizeof(resref), "acc_tts_%c%d",
              line.channel == Channel::Urgent ? 'u' : 'n', ch.flip);
     ch.flip ^= 1;
-    if (!ch.source.StartFromMemory(resref, wav.data(), wav.size(), pos,
-                                   acc::audio::GetCuePriorityGroup(), volumeByte,
-                                   kFullVolumeM, kSilentM) ||
+    const int group = line.preview ? kPreviewPriorityGroup : acc::audio::GetCuePriorityGroup();
+    if (!ch.source.StartFromMemory(resref, wav.data(), wav.size(), pos, group, volumeByte,
+                                   kFlatBandFullM, kFlatBandEndM) ||
         !ch.source.IsVoiceAttached()) {
         ch.source.Stop();
         return false;
@@ -277,9 +377,10 @@ bool Play(ChannelState& ch, Line& line) {
     const DWORD durationMs = static_cast<DWORD>(1000.0 * frames / sp.sampleRate);
     ch.busy      = true;
     ch.busyUntil = GetTickCount() + durationMs + kLineGapMs;
-    acclog::Write("PosSpeech", "play %s at (%.1f,%.1f,%.1f) vol=%d %lu ms: [%s]",
+    acclog::Write("PosSpeech", "play %s%s at (%.1f,%.1f,%.1f) dist=%.1f m gain=%.2f vol=%d %lu ms: [%s]",
                   line.channel == Channel::Urgent ? "urgent" : "normal",
-                  pos.x, pos.y, pos.z, volumeByte, durationMs, line.text.c_str());
+                  line.preview ? " preview" : "", pos.x, pos.y, pos.z, dist, gain,
+                  volumeByte, durationMs, line.text.c_str());
     prism::NoteSpokenElsewhere(line.text.c_str());  // log, Ctrl+R, braille
     return true;
 }
@@ -324,6 +425,27 @@ void CollectEloquence() {
     }
 }
 
+// Renders `line` in its channel's voice (Eloquence in the background), queues
+// it and starts it at once when the channel is idle.
+void Enqueue(Line&& line, const char* subjectName) {
+    const Channel channel = line.channel;
+    const char*   text    = line.text.c_str();
+    const VoiceChoice& voice = channel == Channel::Normal ? CachedNormalVoice() : VoiceChoice{};
+    if (voice.kind == VoiceKind::Eloquence &&
+        acc::eloquence::Submit(text, line.ticket, SettingsOf(channel).rate)) {
+        line.state = LineState::Rendering;
+    } else {
+        line.state = RenderNow(channel, voice, text, line.speech) ? LineState::Ready
+                                                                  : LineState::Failed;
+    }
+    acclog::Write("PosSpeech", "queue %s subject=[%s] handle=0x%08X voice=%s state=%d: [%s]",
+                  channel == Channel::Urgent ? "urgent" : "normal", subjectName, line.subject,
+                  channel == Channel::Urgent ? "urgent" : KindName(voice.kind),
+                  static_cast<int>(line.state), text);
+    StateOf(channel).queue.push_back(std::move(line));
+    TickChannel(StateOf(channel));
+}
+
 }  // namespace
 
 bool IsEnabled() {
@@ -355,20 +477,38 @@ bool Speak(Channel channel, const char* text, const char* subjectIn, const char*
         return false;
     }
 
-    const VoiceChoice& voice = channel == Channel::Normal ? CachedNormalVoice() : VoiceChoice{};
-    if (voice.kind == VoiceKind::Eloquence && acc::eloquence::Submit(text, line.ticket)) {
-        line.state = LineState::Rendering;
-    } else {
-        line.state = RenderNow(channel, voice, text, line.speech) ? LineState::Ready
-                                                                  : LineState::Failed;
-    }
-    acclog::Write("PosSpeech", "queue %s subject=[%s] handle=0x%08X voice=%s state=%d: [%s]",
-                  channel == Channel::Urgent ? "urgent" : "normal", subject, line.subject,
-                  channel == Channel::Urgent ? "urgent" : KindName(voice.kind),
-                  static_cast<int>(line.state), text);
-    StateOf(channel).queue.push_back(std::move(line));
-    TickChannel(StateOf(channel));  // start at once when the channel is idle
+    Enqueue(std::move(line), subject);
     return true;
+}
+
+void Preview(Channel channel, const char* text) {
+    if (!text || !*text) return;
+    ChannelState& ch = StateOf(channel);
+    ch.queue.clear();  // each slider press restarts the sample
+    ch.source.Stop();
+    ch.busy = false;
+    Line line;
+    line.ticket  = g_nextTicket++;
+    line.channel = channel;
+    line.text    = text;
+    line.preview = true;
+    Enqueue(std::move(line), "(preview)");
+}
+
+int GetVolumePercent(Channel channel) { return SettingsOf(channel).volume; }
+
+void SetVolumePercent(Channel channel, int percent) {
+    ChannelSettings& s = SettingsOf(channel);
+    s.volume = Clamp(percent, kMinVolumePercent, 100);
+    acc::settings::SetInt(s.volumeKey, s.volume);
+}
+
+int GetRateOffset(Channel channel) { return SettingsOf(channel).rate; }
+
+void SetRateOffset(Channel channel, int offset) {
+    ChannelSettings& s = SettingsOf(channel);
+    s.rate = Clamp(offset, -kMaxRateOffset, kMaxRateOffset);
+    acc::settings::SetInt(s.rateKey, s.rate);
 }
 
 void Tick() {

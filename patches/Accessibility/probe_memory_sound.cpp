@@ -137,17 +137,15 @@ void PlayPhrase() {
         prism::Speak("memory probe failed", /*interrupt=*/true);
         return;
     }
-    // Same headroom for every line and voice, then the voice's own volume
-    // setting (NVDA's, for Eloquence) as a share of the game's full source
-    // volume — see RenderedSpeech::volume.
+    // Same headroom for every line and voice, played at the game's full
+    // source volume.
     const acc::audio::Levels before = acc::audio::MeasureLevels(speech.samples);
     const float gain = acc::audio::NormalizePeak(speech.samples, kSpeechPeakDb);
-    const int volumeByte = static_cast<int>(kFullSourceVolume * speech.volume + 0.5f);
+    const int volumeByte = static_cast<int>(kFullSourceVolume);
     acclog::Write("ProbeMemSound",
                   "levels: peak %.1f dBFS, rms %.1f dBFS -> gain x%.2f to %.1f dBFS peak; "
-                  "voice volume %.0f%% -> source volume %d/127",
-                  before.peakDb, before.rmsDb, gain, kSpeechPeakDb,
-                  speech.volume * 100.0f, volumeByte);
+                  "source volume %d/127",
+                  before.peakDb, before.rmsDb, gain, kSpeechPeakDb, volumeByte);
 
     const size_t frames = speech.samples.size() / speech.channels;
     std::vector<unsigned char> wav;

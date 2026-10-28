@@ -78,7 +78,6 @@ struct Settings {
     bool rateBoost   = false;
     int  pitch       = -1;
     int  inflection  = -1;
-    int  volume      = -1;
     int  headSize    = -1;
     int  roughness   = -1;
     int  breathiness = -1;
@@ -96,7 +95,6 @@ Settings ReadSettings(const nvda_config::Config& c) {
     s.rateBoost   = boost && std::string(boost) == "True";
     s.pitch       = c.FindInt(sec, sub, "pitch", -1);
     s.inflection  = c.FindInt(sec, sub, "inflection", -1);
-    s.volume      = c.FindInt(sec, sub, "volume", -1);
     s.headSize    = c.FindInt(sec, sub, "hsz", -1);
     s.roughness   = c.FindInt(sec, sub, "rgh", -1);
     s.breathiness = c.FindInt(sec, sub, "bth", -1);
@@ -251,11 +249,11 @@ void RunJob(Job* job) {
         SetVoiceParamIfSet(kVoiceHeadSize,    s.headSize);
         SetVoiceParamIfSet(kVoiceRoughness,   s.roughness);
         SetVoiceParamIfSet(kVoiceBreathiness, s.breathiness);
-        // Always full: NVDA's volume is NOT baked in. NVDA plays at full
-        // system level, the game through its own mixer (SFX slider, group,
-        // 3D falloff), so ECI volume 55 came out far quieter in game than the
-        // same 55 in NVDA (tested 2026-10-27). The setting is handed back as
-        // RenderedSpeech::volume and applied as the per-source game volume.
+        // Always full: NVDA's volume is NOT used. NVDA plays at full system
+        // level, the game through its own mixer (SFX slider, group, 3D
+        // falloff), so ECI volume 55 came out far quieter in game than the
+        // same 55 in NVDA (tested 2026-10-27). The player sets the loudness
+        // from the mod's own combat-speech volume.
         g_api.setVoiceParam(g_eci, 0, kVoiceVolume, kFullVolume);
 
         g_api.addText(g_eci, job->text.c_str());
@@ -334,7 +332,7 @@ bool EnsureWorker() {
 
 // Builds a job from NVDA's current saved settings and queues it. Null when
 // the engine is unavailable.
-Job* Enqueue(const char* text, uint32_t ticket, HANDLE done) {
+Job* Enqueue(const char* text, uint32_t ticket, HANDLE done, int rateOffset) {
     if (!text || !*text) return nullptr;
     nvda_config::Config cfg;
     nvda_config::Load(cfg);
@@ -342,6 +340,7 @@ Job* Enqueue(const char* text, uint32_t ticket, HANDLE done) {
     auto* job = new Job{};
     job->ticket   = ticket;
     job->settings = ReadSettings(cfg);
+    job->settings.rate = prism::OffsetRatePercent(job->settings.rate, rateOffset);
     job->text     = text;
     // ECI reads backquotes as embedded commands; the driver strips them too.
     for (char& c : job->text) if (c == '`') c = ' ';
@@ -361,7 +360,6 @@ bool Collect(Job* job, prism::RenderedSpeech& out) {
     out.samples.swap(job->samples);
     out.channels   = 1;
     out.sampleRate = (s.sampleRate >= 0 && s.sampleRate <= 2) ? kRates[s.sampleRate] : 11025;
-    out.volume     = s.volume >= 0 ? s.volume / 100.0f : 1.0f;
     if (job->failure || out.samples.empty()) {
         acclog::Write("Eloquence", "render failed: %s (%lu ms) [%s]",
                       job->failure ? job->failure : "no audio", job->elapsedMs,
@@ -371,11 +369,11 @@ bool Collect(Job* job, prism::RenderedSpeech& out) {
     }
     acclog::Write("Eloquence",
                   "render ok: %zu samples @ %zu Hz, %.2f s audio in %lu ms "
-                  "(voice=%d variant=%d rate=%d%s pitch=%d inflection=%d volume=%d) [%s]",
+                  "(voice=%d variant=%d rate=%d%s pitch=%d inflection=%d) [%s]",
                   out.samples.size(), out.sampleRate,
                   static_cast<double>(out.samples.size()) / out.sampleRate, job->elapsedMs,
                   s.voice, s.variant, s.rate, s.rateBoost ? "+boost" : "", s.pitch,
-                  s.inflection, s.volume, job->text.c_str());
+                  s.inflection, job->text.c_str());
     return true;
 }
 
@@ -389,8 +387,8 @@ bool IsNvdaSynth() {
     return GetFileAttributesA(EngineFile(cfg).c_str()) != INVALID_FILE_ATTRIBUTES;
 }
 
-bool Submit(const char* text, uint32_t ticket) {
-    return Enqueue(text, ticket, nullptr) != nullptr;
+bool Submit(const char* text, uint32_t ticket, int rateOffset) {
+    return Enqueue(text, ticket, nullptr, rateOffset) != nullptr;
 }
 
 bool TakeFinished(uint32_t& ticket, prism::RenderedSpeech& out, bool& ok) {
@@ -410,7 +408,7 @@ bool RenderToMemory(const char* text, prism::RenderedSpeech& out) {
     out = prism::RenderedSpeech{};
     HANDLE done = CreateEventA(nullptr, TRUE, FALSE, nullptr);
     if (!done) return false;
-    Job* job = Enqueue(text, 0, done);
+    Job* job = Enqueue(text, 0, done, 0);
     if (!job) { CloseHandle(done); return false; }
     if (WaitForSingleObject(done, kRenderTimeoutMs + 1000) != WAIT_OBJECT_0) {
         // The worker still owns the job and will SetEvent on `done` later;

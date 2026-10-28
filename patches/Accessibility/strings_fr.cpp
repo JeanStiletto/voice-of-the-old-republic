@@ -555,6 +555,14 @@ const char* Get(Id id) {
         case Id::ModSettingCombatSettings: return "Annonces de combat";
         case Id::ModSettingsCombatSettingsOpened: return "Annonces de combat ouvertes";
         case Id::ModSettingPositionalCombatSpeech: return "Annonces de combat positionn\xE9" "es en 3D";
+        case Id::ModSettingCombatVolume: return "Volume des annonces de combat";
+        case Id::ModSettingCombatRate: return "Vitesse des annonces de combat";
+        case Id::ModSettingCombatUrgentVolume: return "Volume des annonces de combat urgentes";
+        case Id::ModSettingCombatUrgentRate: return "Vitesse des annonces de combat urgentes";
+        case Id::ModSettingRateSameAsReader: return "comme le lecteur d'\xE9" "cran";
+        case Id::ModSettingRateSameAsAnnouncements: return "comme la voix des annonces";
+        case Id::FmtModSettingRatePlus: return "%s : plus %d";
+        case Id::FmtModSettingRateMinus: return "%s : moins %d";
         case Id::ModSettingSupportModder:           return "Soutenir le moddeur";
         case Id::ModSettingLatestChanges:           return "Derniers changements";
         case Id::ModSettingOpenReadme:              return "Ouvrir le guide";

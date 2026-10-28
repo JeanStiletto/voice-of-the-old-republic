@@ -1725,6 +1725,20 @@ enum class Id : int {
     ModSettingCombatSettings,
     ModSettingsCombatSettingsOpened,
     ModSettingPositionalCombatSpeech,
+    // Its four sliders: volume and speed of the normal lines, then of the
+    // urgent ones. Volumes read through FmtModSettingSlider. Speeds are an
+    // offset from the voice's own rate: 0 reads "Name: <RateSameAs...>"
+    // through FmtModSettingOption (screen reader for the normal lines,
+    // announcement voice for the urgent ones), else "Name: plus N" /
+    // "Name: minus N" (one %s name + one %d, always positive).
+    ModSettingCombatVolume,
+    ModSettingCombatRate,
+    ModSettingCombatUrgentVolume,
+    ModSettingCombatUrgentRate,
+    ModSettingRateSameAsReader,
+    ModSettingRateSameAsAnnouncements,
+    FmtModSettingRatePlus,
+    FmtModSettingRateMinus,
 
     // Side-effect cues for the SkipIntros toggle — spoken after the
     // .bik rename to tell the user the change applies on next launch.
