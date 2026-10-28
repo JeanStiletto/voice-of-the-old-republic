@@ -23,7 +23,12 @@ namespace {
 // as [this+0x1c7c + slot*4], column index stored at +0x1c98, personal lists at
 // [this+0x78 + slot*0xc] (data +0 / size +4). NOTE: K2 iterates SEVEN columns
 // (param < 7) where KOTOR 1 has six — kColumnCount stays 6 for our surface,
-// the seventh is additive at the end and unread by us.
+// because the seventh is never filled: K2's GetPersonalActions (0x0077E650)
+// switches on slots 0..5 only, so list 6 is cleared every PopulateMenus and
+// stays empty. Slot 5 is the forms column (0x0077AEB0: the spell appender
+// restricted to spells 0x102..0x10C, the seven lightsaber forms and four
+// Force forms; handler 0x0077D120 stores the pick as the creature's active
+// form at +0x1110).
 const size_t kSelectedActionIdArrayOffset = acc::off::Pick(0x1bac, 0x1c7c);
 
 // CSWGuiMainInterface.field5_0x74[6] — six CExoArrayList<CSWGuiInterfaceAction>.

@@ -30,7 +30,7 @@ namespace acc::unified_menu {
 namespace {
 
 constexpr int kRowCount    = acc::engine_radial::kRowCount;     // 3 target rows
-constexpr int kColumnCount = acc::engine_actionbar::kColumnCount; // 6 (0..3 used)
+constexpr int kColumnCount = acc::engine_actionbar::kColumnCount; // 6 (K1 0..3, K2 0..5)
 constexpr int kMaxCats     = kRowCount + kColumnCount;
 
 enum class CatKind { Target, Personal };
@@ -227,6 +227,11 @@ const char* CategoryName(const Cat& c) {
             // [4]=4 with "Aggressiv" at index 0). KOTOR 1 never populates it,
             // so BuildCategoryList drops it there and this name is unreachable.
             case 4: return acc::strings::Get(S::MenuCatCombatBehaviour);
+            // KOTOR 2 only, and only once the character has learned a form:
+            // the lightsaber and Force forms (decompile-confirmed — K2's
+            // GetPersonalActions fills slot 5 from the spell rows 258..268
+            // alone). Empty for everyone else, so BuildCategoryList drops it.
+            case 5: return acc::strings::Get(S::MenuCatForms);
             default: return nullptr;
         }
     }
@@ -259,11 +264,9 @@ void BuildCategoryList(void* tam, void* mi) {
             }
         }
         // Column census, deduped. KOTOR 1 populates four personal columns and
-        // binds them to keys 4..7; KOTOR 2's pad action menu is documented as
-        // SIX, and whether its PC action bar really fills columns 4 and 5 has
-        // never been observed. This walk already reads all six, so the answer
-        // is free — and it decides whether those two need number keys of their
-        // own. Trace collapses it to one line per distinct shape.
+        // binds them to keys 4..7; KOTOR 2 adds column 4 (combat behaviour,
+        // key 8) and column 5 (forms, key 9 — empty until a form is learned).
+        // Trace collapses it to one line per distinct shape.
         acclog::Trace("UnifiedMenu.cols", "personal variant counts "
                       "[0]=%d [1]=%d [2]=%d [3]=%d [4]=%d [5]=%d",
                       n[0], n[1], n[2], n[3], n[4], n[5]);
@@ -1347,11 +1350,11 @@ bool HandleEnter(void* tam, void* mi, const Cat& cur, int sel,
 
 // Fire a personal column's selected entry outright, with no menu.
 //
-// This is what bare 8 does for KOTOR 2's combat-behaviour column, and it is
-// deliberately NOT what bare 4..7 do: those keys are the ENGINE's, and the mod
-// only announces what the engine fired. Key 8 has no engine action-bar
-// binding in either game (both bind 1..9 solely as dialogue-reply keys), so
-// nothing fires unless we do it.
+// This is what bare 8 and 9 do for KOTOR 2's combat-behaviour and forms
+// columns, and it is deliberately NOT what bare 4..7 do: those keys are the
+// ENGINE's, and the mod only announces what the engine fired. Keys 8 and 9
+// have no engine action-bar binding in either game (both bind 1..9 solely as
+// dialogue-reply keys), so nothing fires unless we do it.
 //
 // On the announcement: speak the label BEFORE dispatching. If the entry turns
 // out to be a real combat-round action, the CSWSCombatRound::AddAction detour
@@ -1392,7 +1395,7 @@ bool FirePersonal(int col) {
 
     // The shadow is the entry the menu last left the user on, kept in lock-step
     // with the engine's own per-column selection — so this fires what Shift+8
-    // would have shown as current.
+    // / Shift+9 would have shown as current.
     int& sel = ShadowFor(c);
     sel = ClampInt(sel, 0, count - 1);
     ApplySelection(/*tam=*/nullptr, mi, c, sel);

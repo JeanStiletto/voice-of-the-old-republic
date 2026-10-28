@@ -69,11 +69,13 @@ void PollHotkey() {
     bool risingK6    = hk::Pressed(hk::Action::PersonalKey3);
     bool risingK7    = hk::Pressed(hk::Action::PersonalKey4);
     bool risingK8    = hk::Pressed(hk::Action::PersonalKey5);
+    bool risingK9    = hk::Pressed(hk::Action::PersonalKey6);
     bool risingOpen1 = hk::Pressed(hk::Action::ActionBarOpen1);
     bool risingOpen2 = hk::Pressed(hk::Action::ActionBarOpen2);
     bool risingOpen3 = hk::Pressed(hk::Action::ActionBarOpen3);
     bool risingOpen4 = hk::Pressed(hk::Action::ActionBarOpen4);
     bool risingOpen5 = hk::Pressed(hk::Action::ActionBarOpen5);
+    bool risingOpen6 = hk::Pressed(hk::Action::ActionBarOpen6);
     bool risingOpenT1 = hk::Pressed(hk::Action::TargetActionOpen1);
     bool risingOpenT2 = hk::Pressed(hk::Action::TargetActionOpen2);
     bool risingOpenT3 = hk::Pressed(hk::Action::TargetActionOpen3);
@@ -100,6 +102,7 @@ void PollHotkey() {
     const bool openerPressed =
         risingEnterForce ||
         risingOpen1 || risingOpen2 || risingOpen3 || risingOpen4 ||
+        risingOpen5 || risingOpen6 ||
         risingOpenT1 || risingOpenT2 || risingOpenT3;
     if (openerPressed && ShouldSwitchFromInGameMenu()) {
         acclog::Write("Interact",
@@ -154,7 +157,7 @@ void PollHotkey() {
         // to defer to, so this precedence is purely ours to set.
         const bool numberOpener =
             risingOpen1 || risingOpen2 || risingOpen3 || risingOpen4 ||
-            risingOpen5 ||
+            risingOpen5 || risingOpen6 ||
             risingOpenT1 || risingOpenT2 || risingOpenT3;
         if (numberOpener && acc::combat::queue::IsActive()) {
             acclog::Write("Interact",
@@ -185,6 +188,11 @@ void PollHotkey() {
         // this opener is purely the mod's. On KOTOR 1 the column is never
         // populated, so the open simply declines.
         if (risingOpen5) acc::unified_menu::OpenPersonal(4);
+        // Shift+9 — KOTOR 2's sixth personal column (lightsaber and Force
+        // forms), the mod's own opener for the same reason as Shift+8. Empty
+        // until a form is learned, and always on KOTOR 1: the open then says
+        // so by name and lands on the first populated category.
+        if (risingOpen6) acc::unified_menu::OpenPersonal(5);
 
         // Shift+1..3 — open the unified menu on a target-action row. Direct
         // row mapping (1→row 0, 2→row 1, 3→row 2); the engine routes target
@@ -293,6 +301,7 @@ void PollHotkey() {
         // just dispatched; nothing dispatches on 8, so the mod has to do it
         // (see unified_menu::FirePersonal).
         if (risingK8) acc::unified_menu::FirePersonal(4);
+        if (risingK9) acc::unified_menu::FirePersonal(5);
     }
 
     // Combat system, Phase 2C — Ö opens the navigable examine view

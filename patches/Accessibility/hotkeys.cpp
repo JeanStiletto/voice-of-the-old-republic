@@ -77,11 +77,13 @@ const char* const kActionNames[static_cast<int>(Action::COUNT)] = {
     "PersonalKey3",
     "PersonalKey4",
     "PersonalKey5",
+    "PersonalKey6",
     "ActionBarOpen1",
     "ActionBarOpen2",
     "ActionBarOpen3",
     "ActionBarOpen4",
     "ActionBarOpen5",
+    "ActionBarOpen6",
     "TargetActionOpen1",
     "TargetActionOpen2",
     "TargetActionOpen3",
@@ -229,11 +231,13 @@ void InitDefaults() {
     bind(Action::PersonalKey3,         '6',       0, 0,         kModShift);
     bind(Action::PersonalKey4,         '7',       0, 0,         kModShift);
     bind(Action::PersonalKey5,         '8',       0, 0,         kModShift);
+    bind(Action::PersonalKey6,         '9',       0, 0,         kModShift);
     bind(Action::ActionBarOpen1,       '4',       0, kModShift, 0);
     bind(Action::ActionBarOpen2,       '5',       0, kModShift, 0);
     bind(Action::ActionBarOpen3,       '6',       0, kModShift, 0);
     bind(Action::ActionBarOpen4,       '7',       0, kModShift, 0);
     bind(Action::ActionBarOpen5,       '8',       0, kModShift, 0);
+    bind(Action::ActionBarOpen6,       '9',       0, kModShift, 0);
     bind(Action::TargetActionOpen1,    '1',       0, kModShift, 0);
     bind(Action::TargetActionOpen2,    '2',       0, kModShift, 0);
     bind(Action::TargetActionOpen3,    '3',       0, kModShift, 0);

@@ -2527,8 +2527,9 @@ rounds, two kotor1 rounds, plus capstone byte scans):
   the six-strref "can't do that" switch, disambiguated by layout reads);
   SelectNext/PrevAction 0x00744260/0x00744410 (via the TAM target-type-byte
   displacement scan, disambiguated by wrap direction). MainInterface:
-  personal lists 0x74→0x78 (SEVEN columns on K2 — kColumnCount stays 6,
-  the extra column is additive), selected-id array 0x1bac→0x1c7c, TAM
+  personal lists 0x74→0x78 (SEVEN columns on K2 — kColumnCount stays 6:
+  GetPersonalActions 0x0077E650 fills slots 0..5 only, slot 5 = forms,
+  slot 6 never filled), selected-id array 0x1bac→0x1c7c, TAM
   embed 0xBC→0xCC, column UI array 0x771c→0x733c stride 0x71C→0x750 (the
   GetColumnActionButton constexpr base now goes through Pick too). TAM:
   lists Same(0/4/0xc), selected 2-D Same(0x24), target-type 0x1AEA→0x1BAA,

@@ -56,6 +56,9 @@ and add the German in parentheses if it genuinely aids clarity.
 - Combat announcements are spoken from where they happen on the battlefield,
   in 3D (new Mod settings submenu "Positional announcements", on by default),
   with their own volume and speed settings.
+- In KOTOR 2 the lightsaber and Force forms are in the action menu as
+  "Forms", with 9 to activate the current form and Shift+9 to pick another.
+- Shift+8 opens the action menu from the in-game menu, like Shift+4 to 7.
 - Each exit in a corridor, junction or area description is spoken from where
   it is, in 3D, so you hear which way to turn (on by default, same submenu).
 - After a fight, the area description waits until the combat announcements
@@ -134,6 +137,18 @@ and add the German in parentheses if it genuinely aids clarity.
   from [Dark Vision](https://github.com/bradjrenshaw/darkvision-wotr), the
   blind-accessibility mod for Pathfinder: Wrath of the Righteous by
   bradjrenshaw. Our version is built differently, but the idea is theirs.
+
+<h3>KOTOR 2 — action menu:</h3>
+
+- **Lightsaber and Force forms have a name and a key.** Once a character has
+  learned a form, KOTOR 2 adds a sixth column to the action bar holding the
+  lightsaber forms and Force forms. The action menu already listed it, but
+  without a category name and without a key. It is now called Forms, 9
+  activates the current form and Shift+9 opens the column to pick another,
+  both rebindable. Like 8 for Combat Behaviour, the key is the mod's: the
+  game binds nothing to 9.
+- **Shift+8 and Shift+9 work from the in-game menu.** Like Shift+4 to Shift+7,
+  they now close the in-game menu and open the action menu in one press.
 
 <h3>Exploration:</h3>
 

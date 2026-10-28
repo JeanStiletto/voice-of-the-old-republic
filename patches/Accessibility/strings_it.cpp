@@ -107,6 +107,7 @@ const char* Get(Id id) {
         case Id::MenuCatMisc:          return "Varie";
         case Id::MenuCatExplosives:    return "Esplosivi";
         case Id::MenuCatCombatBehaviour: return "Comportamento in combattimento";
+        case Id::MenuCatForms:           return "Forme";
         case Id::FmtMenuCatMulti:      return "%s: %s, %d opzioni";
         case Id::FmtMenuCatSingle:     return "%s: %s";
         case Id::FmtMenuPlainMulti:    return "%s, %d opzioni";
@@ -654,6 +655,7 @@ const char* Get(Id id) {
         case Id::FmtHelpNumberActions:   return "Da 1 a 7: usare l'ultima azione di una categoria. 1 %s, 2 %s, 3 %s, 4 %s, 5 %s, 6 %s, 7 %s";
         case Id::HelpKeyOpenCategory:    return "Maiusc pi\xF9 1 a 7: aprire quella categoria per scegliere un'azione";
         case Id::FmtHelpNumberActions8:  return "8: applicare il %s corrente. Maiusc pi\xF9 8 apre la categoria per sceglierne un altro";
+        case Id::FmtHelpNumberActions9:  return "9: attivare la forma corrente. Maiusc pi\xF9 9 apre %s per sceglierne un'altra";
         case Id::HelpKeyActionQueue:     return "Maiusc pi\xF9 H: aprire la coda delle azioni";
         case Id::HelpKeyLevelUp:         return "Maiusc pi\xF9 L: aprire la schermata di avanzamento di livello";
         case Id::HelpKeyCancelCombat:    return "F: annullare il combattimento";
@@ -802,11 +804,13 @@ const char* Get(Id id) {
         case Id::KbNamePersonalKey3:        return "Azione personale 3";
         case Id::KbNamePersonalKey4:        return "Azione personale 4";
         case Id::KbNamePersonalKey5:        return "Azione personale 5";
+        case Id::KbNamePersonalKey6:        return "Azione personale 6";
         case Id::KbNameActionBarOpen1:      return "Apri barra azioni 1";
         case Id::KbNameActionBarOpen2:      return "Apri barra azioni 2";
         case Id::KbNameActionBarOpen3:      return "Apri barra azioni 3";
         case Id::KbNameActionBarOpen4:      return "Apri barra azioni 4";
         case Id::KbNameActionBarOpen5:      return "Apri barra azioni 5";
+        case Id::KbNameActionBarOpen6:      return "Apri barra azioni 6";
         case Id::KbNameTargetActionOpen1:   return "Apri azione bersaglio 1";
         case Id::KbNameTargetActionOpen2:   return "Apri azione bersaglio 2";
         case Id::KbNameTargetActionOpen3:   return "Apri azione bersaglio 3";

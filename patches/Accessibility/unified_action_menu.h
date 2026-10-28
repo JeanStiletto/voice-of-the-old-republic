@@ -60,10 +60,10 @@ bool OpenPersonal(int col);
 bool OpenAnyPersonal();
 
 // Fire a personal column's currently-selected entry outright, no menu — what
-// bare 8 does for KOTOR 2's combat-behaviour column. Bare 4..7 do NOT come
-// here: those are the engine's own keys and the mod only announces what the
-// engine fired. Key 8 has no engine action-bar binding in either game, so
-// nothing happens unless the mod fires it.
+// bare 8 and 9 do for KOTOR 2's combat-behaviour and forms columns. Bare 4..7
+// do NOT come here: those are the engine's own keys and the mod only announces
+// what the engine fired. Keys 8 and 9 have no engine action-bar binding in
+// either game, so nothing happens unless the mod fires them.
 bool FirePersonal(int col);
 
 // Arm from the Shift+Enter radial path. The picker (engine_picker::Drive

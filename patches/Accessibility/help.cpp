@@ -217,6 +217,9 @@ constexpr Entry kEntries[] = {
     // category KOTOR 1 never populates.
     { S::FmtHelpNumberActions8,  Grp::Combat, 0, /*composed=*/true,
       /*dev=*/Dev::Keyboard, /*k2Only=*/true },
+    // Key 9 likewise: KOTOR 2's forms column.
+    { S::FmtHelpNumberActions9,  Grp::Combat, 0, /*composed=*/true,
+      /*dev=*/Dev::Keyboard, /*k2Only=*/true },
     { S::HelpKeyActionQueue,     Grp::Combat, 0 },
     { S::HelpKeyLevelUp,         Grp::Combat, 0 },
     { S::HelpKeyCancelCombat,    Grp::Combat, 0 },
@@ -399,6 +402,11 @@ void BuildComposedText(S formatId, char* out, size_t cap) {
     if (formatId == S::FmtHelpNumberActions8) {
         std::snprintf(out, cap, acc::strings::Get(formatId),
                       acc::strings::Get(S::MenuCatCombatBehaviour));
+        return;
+    }
+    if (formatId == S::FmtHelpNumberActions9) {
+        std::snprintf(out, cap, acc::strings::Get(formatId),
+                      acc::strings::Get(S::MenuCatForms));
         return;
     }
     std::snprintf(out, cap, "%s", acc::strings::Get(formatId));

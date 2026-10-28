@@ -121,6 +121,7 @@ const char* Get(Id id) {
         case Id::MenuCatMisc:          return "R\xF3\xBFne";
         case Id::MenuCatExplosives:    return "Materia\xB3y wybuchowe";
         case Id::MenuCatCombatBehaviour: return "Zachowanie w walce";
+        case Id::MenuCatForms:           return "Formy";
         case Id::FmtMenuCatMulti:      return "%s: %s, %d opcji";
         case Id::FmtMenuCatSingle:     return "%s: %s";
         case Id::FmtMenuPlainMulti:    return "%s, %d opcji";
@@ -654,6 +655,7 @@ const char* Get(Id id) {
         case Id::FmtHelpNumberActions:   return "1 do 7: u\xBFycie ostatniej akcji z kategorii. 1 %s, 2 %s, 3 %s, 4 %s, 5 %s, 6 %s, 7 %s";
         case Id::HelpKeyOpenCategory:    return "Shift i 1 do 7: otwiera kategori\xEA, aby wybra\xE6 akcj\xEA";
         case Id::FmtHelpNumberActions8:  return "8: zastosuj bie\xBF\xB9""ce %s. Shift i 8 otwiera kategori\xEA, aby wybra\xE6 inne";
+        case Id::FmtHelpNumberActions9:  return "9: aktywuj bie\xBF\xB9""c\xB9 form\xEA. Shift i 9 otwiera %s, aby wybra\xE6 inn\xB9";
         case Id::HelpKeyActionQueue:     return "Shift i H: otwiera kolejk\xEA akcji";
         case Id::HelpKeyLevelUp:         return "Shift i L: otwiera ekran awansu";
         case Id::HelpKeyCancelCombat:    return "F: przerywa walk\xEA";
@@ -802,11 +804,13 @@ const char* Get(Id id) {
         case Id::KbNamePersonalKey3:        return "Akcja osobista 3";
         case Id::KbNamePersonalKey4:        return "Akcja osobista 4";
         case Id::KbNamePersonalKey5:        return "Akcja osobista 5";
+        case Id::KbNamePersonalKey6:        return "Akcja osobista 6";
         case Id::KbNameActionBarOpen1:      return "Otw\xF3rz pasek akcji 1";
         case Id::KbNameActionBarOpen2:      return "Otw\xF3rz pasek akcji 2";
         case Id::KbNameActionBarOpen3:      return "Otw\xF3rz pasek akcji 3";
         case Id::KbNameActionBarOpen4:      return "Otw\xF3rz pasek akcji 4";
         case Id::KbNameActionBarOpen5:      return "Otw\xF3rz pasek akcji 5";
+        case Id::KbNameActionBarOpen6:      return "Otw\xF3rz pasek akcji 6";
         case Id::KbNameTargetActionOpen1:   return "Otw\xF3rz akcj\xEA celu 1";
         case Id::KbNameTargetActionOpen2:   return "Otw\xF3rz akcj\xEA celu 2";
         case Id::KbNameTargetActionOpen3:   return "Otw\xF3rz akcj\xEA celu 3";

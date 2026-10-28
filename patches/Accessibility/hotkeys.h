@@ -42,11 +42,16 @@ enum class Action : int {
     // press has to fire the column itself rather than announce an engine
     // dispatch. Harmless on KOTOR 1, where the column is never populated.
     PersonalKey5,          // 8
+    // 9 / Shift+9 — KOTOR 2's sixth personal column, the lightsaber and Force
+    // forms. Same arrangement as 8: no engine binding, so bare 9 fires it.
+    // Empty until the character learns a form, and always on KOTOR 1.
+    PersonalKey6,          // 9
     ActionBarOpen1,        // Shift+4
     ActionBarOpen2,        // Shift+5
     ActionBarOpen3,        // Shift+6
     ActionBarOpen4,        // Shift+7
     ActionBarOpen5,        // Shift+8
+    ActionBarOpen6,        // Shift+9
     TargetActionOpen1,     // Shift+1 — opens target-row submenu (row 0)
     TargetActionOpen2,     // Shift+2
     TargetActionOpen3,     // Shift+3

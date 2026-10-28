@@ -194,6 +194,7 @@ Both surfaces share one tagged catalog in `help.cpp` (`kEntries`): `grp` chooses
 - 4 / 5 / 6 / 7 — Bare announce of the player action bar column (engine fires; we add the speech). Not consumed.
 - Shift+4 / Shift+5 / Shift+6 / Shift+7 — Open the action-bar submenu for column N (cycle column variants).
 - 8 / Shift+8 — **KOTOR 2 only**, and the one action-bar key the engine does not own. KOTOR 2's main interface fills a fifth personal column, the party-AI combat stance ("Aggressive" and three siblings; confirmed live, `UnifiedMenu.cols` read `[4]=4`). Neither game binds an action-bar action to key 8 — in both, 1–9 are solely the dialogue-reply keys — so bare 8 *fires* the column's selected entry itself rather than announcing an engine dispatch, and Shift+8 opens it. On KOTOR 1 the column is never populated, so both decline and the help list omits the line.
+- 9 / Shift+9 — **KOTOR 2 only**, same arrangement as 8 for the sixth personal column, the lightsaber and Force forms ("Forms"). Decompile-confirmed rather than observed: K2's GetPersonalActions fills slot 5 from spell rows 258..268 alone (seven lightsaber forms, four Force forms), so the column is empty until the character learns a form. The engine's seventh list (slot 6) is never filled by anything.
 - Shift+L — Open the engine's level-up panel directly (bypass chargen-tab chain — escape hatch for the tutorial level).
 - Examine panel (dev feature) — **unbound by default** since the physical Ö key
   went to KOTOR 2's SwitchWeaps remap (see the keymap note at the top). Rebind

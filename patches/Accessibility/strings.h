@@ -352,6 +352,9 @@ enum class Id : int {
     // three siblings). KOTOR 1 has no such column and never populates it, so
     // this name is only ever spoken on KOTOR 2.
     MenuCatCombatBehaviour,
+    // col 5 — KOTOR 2 only: the lightsaber and Force forms. Populated only
+    // once the character has learned a form; never on KOTOR 1.
+    MenuCatForms,
     //      Announce formats:
     //      `FmtMenuCatMulti`  — named category, >1 entry. Args: category
     //                           name (`%s`), selected entry label (`%s`),
@@ -1944,6 +1947,10 @@ enum class Id : int {
     // KOTOR 2 only — key 8 / Shift+8 on the fifth action-bar column. One
     // format arg: the category name (MenuCatCombatBehaviour).
     FmtHelpNumberActions8,
+    // KOTOR 2 only — key 9 / Shift+9 on the sixth action-bar column. One
+    // format arg: the category name (MenuCatForms). Its own string rather than
+    // a shared "key N" one: the sentence's grammar follows the category noun.
+    FmtHelpNumberActions9,
     HelpKeyCancelCombat,
     // Quick screens (in-world hotkeys that open menus).
     HelpKeyScreenMap,
@@ -2144,11 +2151,13 @@ enum class Id : int {
     KbNamePersonalKey3,
     KbNamePersonalKey4,
     KbNamePersonalKey5,
+    KbNamePersonalKey6,
     KbNameActionBarOpen1,
     KbNameActionBarOpen2,
     KbNameActionBarOpen3,
     KbNameActionBarOpen4,
     KbNameActionBarOpen5,
+    KbNameActionBarOpen6,
     KbNameTargetActionOpen1,
     KbNameTargetActionOpen2,
     KbNameTargetActionOpen3,
