@@ -357,7 +357,7 @@ Wiele osób pomogło mi testować grę, znalazło wszystkie błędy, których sa
 - ABlindFellow
 - zargontheevilgod
 - zersiax
-- ricki35
+- Michael
 
 **Fundamenty i zależności:**
 

@@ -46,42 +46,30 @@ and add the German in parentheses if it genuinely aids clarity.
 
 <h3>Overview:</h3>
 
-- In English, hits in combat are announced with the damage type alone, without
-  a stray number after it.
-- The KOTOR 2 space turrets (Dxun and Onderon) have the KOTOR 1 turret
-  support: auto-aim, Q and E target cycling and the aiming sounds.
-- The Peragus hangar turret in KOTOR 2 is playable by ear: Q and E cycle the
-  Sith troopers and explosive barrels by name.
+- KOTOR 2's Dxun and Onderon turrets get auto-aim, Q / E target cycling and
+  the aiming sounds.
+- KOTOR 2's Peragus hangar turret is playable: Q / E cycle the troopers and
+  barrels by name.
 - Your party's attacks name the target they hit.
-- Combat announcements are spoken from where they happen on the battlefield,
-  in 3D (new Mod settings submenu "Positional announcements", on by default),
-  with their own volume and speed settings.
-- In KOTOR 2 the lightsaber and Force forms are in the action menu as
-  "Forms", with 9 to activate the current form and Shift+9 to pick another.
-- Shift+8 opens the action menu from the in-game menu, like Shift+4 to 7.
-- Each exit in a corridor, junction or area description is spoken from where
-  it is, in 3D, so you hear which way to turn (on by default, same submenu).
-- Junctions, rooms and areas are announced as you reach their middle, so
-  the exit directions are right from where you stop.
-- After a fight, the area description waits until the combat announcements
-  have finished.
-- When the beacon (Ctrl+-) finds no route, it says whether the target may be
-  reachable from another side or the mod could not read the area map.
-- 3D speech behind you sounds muffled, so you can tell it from speech ahead
-  (a technique from the Dark Vision mod, retuned for speech).
-- The compass directions spoken while you turn have a voice of their own,
-  with its own volume, speed and voice settings (new submenu "Compass voice
-  settings" in the announcement voice settings).
-- The facing key (Right Alt) says your direction in the compass voice, then
-  the area you are in with your screen reader, one after the other.
-- The installer can make all Windows voices available to the mod, so the
-  newer Windows voices can be chosen as announcement or compass voice (on by
-  default).
-- The KOTOR 2 party selection screen reads each companion's name instead of
+- Combat announcements are spoken in 3D from where they happen, with their
+  own volume and speed (new submenu "Positional announcements").
+- With NVDA, these 3D lines use your NVDA voice and rate.
+- 3D speech behind you sounds muffled.
+- KOTOR 2: lightsaber and Force forms are in the action menu; 9 activates,
+  Shift+9 picks another.
+- Shift+8 and Shift+9 open the action menu from the in-game menu.
+- Exits in room descriptions are spoken in 3D from where they are.
+- Junctions, rooms and areas are announced when you reach their middle.
+- After a fight, the area description waits for the combat announcements.
+- The beacon's "no path" message says why there is no route.
+- The compass directions have their own voice and settings.
+- The facing key (Right Alt) speaks your direction, then the area.
+- The installer can make all Windows voices available to the mod.
+- English combat lines no longer add a stray number after the damage type.
+- KOTOR 2's party selection screen reads companion names instead of
   "control 13".
-- Log only: support logs show whether the game's 3D sound reaches the
-  optional spatial audio (dsoal) and its HRTF settings, and no longer report
-  its settings file as missing.
+- Log only: the 3D audio path and the spatial-audio settings file are
+  logged correctly.
 
 <h3>KOTOR 2 turrets:</h3>
 

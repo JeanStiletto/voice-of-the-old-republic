@@ -61,7 +61,7 @@ Danach erwachst du auf der **Endar Spire**, einem Schiff der Republik, das angeg
 
 Ein paar Gewohnheiten, die den Spielanfang deutlich leichter machen:
 
-- **Finde Dinge mit Q / E** und komm mit dem Zyklus `,` / `.` zu bereits gefundenen Dingen zurück (siehe die Tastenkürzel weiter unten).
+- **Finde Dinge mit Q / E** und komm mit der Liste entdeckter Objekte (`,` / `.`) zu bereits gefundenen Dingen zurück (siehe die Tastenkürzel weiter unten).
 - **Drücke H**, um jederzeit Gesundheit und Status zu hören, und **F1** für die vollständige Tastenliste.
 - **Hör auf den Raum.** Beim Betreten eines Raumes werden Name, Form und Ausgänge angesagt, und eine leise Audioschicht hält dich beim Gehen über die nächstgelegenen Wände auf dem Laufenden.
 - **Sieh dir früh die Einstellungen an.** Drücke O für die Optionen des Spiels. Unter Gameplay findest du die Auto-Pause-Optionen, die bestimmen, wann der Kampf von selbst stoppt — es lohnt sich, sie vor dem ersten echten Kampf einzurichten — und die Tastenbelegung.
@@ -104,9 +104,9 @@ Die Mod lässt das Standard-Tastaturlayout des Spiels unverändert, mit einer er
 - F1 — Die vollständige Tastenliste öffnen oder schließen; Ctrl+F1 — die Tasten für den aktuellen Bildschirm vorlesen
 - Strg+R — Den zuletzt gesprochenen Text in die Zwischenablage kopieren (eine Dialogzeile, einen Journaleintrag, einen NPC-Namen — was zuletzt vorgelesen wurde)
 
-<h3>Mod-Tasten — Zyklus entdeckter Objekte</h3>
+<h3>Mod-Tasten — Liste entdeckter Objekte</h3>
 
-Ein zweiter Zyklus, zusätzlich zu Q / E, der die Objekte durchschreitet, die du im aktuellen Bereich bereits entdeckt hast — Türen, Behälter, Charaktere, Bereichsübergänge, Landmarken und deine eigenen Kartenmarker — nach Kategorie gruppiert. (Aktiviere „Kartenweite Objektauswahl" in den Mod-Einstellungen, um auch noch nicht gefundene Dinge einzuschließen.)
+Eine zweite Liste, zusätzlich zu Q / E, mit den Objekten, die du im aktuellen Bereich bereits entdeckt hast — Türen, Behälter, Charaktere, Bereichsübergänge, Landmarken und deine eigenen Kartenmarker — nach Kategorie gruppiert. (Aktiviere „Kartenweite Objektauswahl" in den Mod-Einstellungen, um auch noch nicht gefundene Dinge einzuschließen.)
 
 - `,` / `.` — Vorheriges / nächstes Objekt in der aktuellen Kategorie
 - Shift+`,` / Shift+`.` — Vorherige / nächste Kategorie (Kreaturen, Türen, Behälter, Übergänge, Kartenmarker, …)
@@ -134,9 +134,9 @@ Drücke B, um den Sichtmodus zu aktivieren. Solange der Sichtmodus aktiv ist:
 
 Bei geöffneter Spielkarte:
 
-- Pfeiltasten / Hoch / Runter — Durch die Notizen und Landmarken der Karte zyklen
-- `,` / `.` — Kartenmarker zyklen (gleiches Vokabular wie der Zyklus entdeckter Objekte)
-- Shift+N — Persönlichen Kartenmarker an der aktuellen Cursor-Weltposition setzen (automatisch nach dem nächstgelegenen Raum oder Landmark benannt). Der neue Marker reiht sich sofort in den Zyklus ein und Ctrl+`-` setzt eine Bake darauf
+- Pfeiltasten / Hoch / Runter — Die Notizen und Landmarken der Karte durchgehen
+- `,` / `.` — Kartenmarker durchgehen (gleiches Vokabular wie die Liste entdeckter Objekte)
+- Shift+N — Persönlichen Kartenmarker an der aktuellen Cursor-Weltposition setzen (automatisch nach dem nächstgelegenen Raum oder Landmark benannt). Der neue Marker reiht sich sofort in die Liste ein und Ctrl+`-` setzt eine Bake darauf
 
 <h3>Mod-Tasten — Submenüs</h3>
 
@@ -190,7 +190,7 @@ Die Tastennamen unten folgen dem Xbox-Layout: A, B, X, Y, die linke und rechte S
 
 <h3>Objekte und Aktionen</h3>
 
-- Steuerkreuz links / rechts — Vorheriges / nächstes entdecktes Objekt (der `,` / `.`-Zyklus der Tastatur)
+- Steuerkreuz links / rechts — Vorheriges / nächstes entdecktes Objekt (die Liste entdeckter Objekte, auf der Tastatur `,` / `.`)
 - Steuerkreuz hoch / runter — Vorherige / nächste Objektkategorie
 - A — Standardaktion auf dem fokussierten Ziel (angreifen, öffnen, sprechen, aufheben)
 - B — Das Aktionsmenü schließen, wenn es offen ist; sonst das normale Abbrechen der Engine
@@ -228,9 +228,9 @@ KOTOR ist ein 3D-Rollenspiel, du verbringst also die meiste Zeit damit, dich dur
 
 Dein wichtigster Weg, Dinge zu finden und mit ihnen zu interagieren. Q / E schreiten durch die Kreaturen, Türen und benutzbaren Objekte, die die Kamera sehen kann; was anvisiert ist, ist das, worauf Enter und die Aktionstasten 1–7 wirken. Die Mod sagt jedes neue Ziel an.
 
-<h3>Zyklus entdeckter Objekte — `,` / `.`</h3>
+<h3>Liste entdeckter Objekte — `,` / `.`</h3>
 
-Um zu Dingen zurückzufinden, die du bereits entdeckt hast. `,` / `.` schreiten durch jedes Objekt, das du im aktuellen Bereich entdeckt hast — Türen, Behälter, Charaktere, Übergänge, Landmarken, deine eigenen Marker — nach Kategorie gruppiert. Sag eines an, lauf automatisch hin oder aktiviere eine Audio-Bake. (Mod-Einstellungen → „Kartenweite Objektauswahl" erweitert ihn um Dinge, die du noch nicht gefunden hast.)
+Um zu Dingen zurückzufinden, die du bereits entdeckt hast. `,` / `.` gehen jedes Objekt durch, das du im aktuellen Bereich entdeckt hast — Türen, Behälter, Charaktere, Übergänge, Landmarken, deine eigenen Marker — nach Kategorie gruppiert. Sag eines an, lauf automatisch hin oder aktiviere eine Audio-Bake. (Mod-Einstellungen → „Kartenweite Objektauswahl" erweitert sie um Dinge, die du noch nicht gefunden hast.)
 
 <h3>Vereinheitlichtes Aktionsmenü — Shift+Enter</h3>
 
@@ -238,9 +238,9 @@ Ein Menü mit jeder Aktion für das aktuelle Ziel — angreifen, sprechen, Macht
 
 <h3>Karte — M</h3>
 
-KOTORs spieleigene Karte, navigierbar gemacht. Bewege den Cursor mit den Pfeiltasten, um Gelände und Marker zu lesen, oder zykle die Kartenmarker mit `,` / `.` im selben Vokabular wie in der Welt. Der Kriegsnebel wird respektiert, und Shift+N setzt einen persönlichen Marker am Cursor.
+KOTORs spieleigene Karte, navigierbar gemacht. Bewege den Cursor mit den Pfeiltasten, um Gelände und Marker zu lesen, oder gehe die Kartenmarker mit `,` / `.` durch im selben Vokabular wie in der Welt. Der Kriegsnebel wird respektiert, und Shift+N setzt einen persönlichen Marker am Cursor.
 
-<h3>Wandcues und Raumform-Beschreibungen</h3>
+<h3>Kollisionssounds und Raumform-Beschreibungen</h3>
 
 Während du dich bewegst, spielt eine kontinuierliche 3D-Audioschicht leise positionelle Klicks von den nächstgelegenen Wänden — nähere Wände klingen lauter — sodass du ein ständiges Gefühl für den Raum um dich herum behältst. Und beim Betreten eines Raumes werden sein Name, seine Form (Korridor, Kreuzung, Sackgasse, offener Raum) und die sichtbaren Ausgänge angesagt, alles live aus dem Walkmesh des Spiels berechnet.
 
@@ -248,9 +248,9 @@ Während du dich bewegst, spielt eine kontinuierliche 3D-Audioschicht leise posi
 
 Nahezu jedes System, das die Mod hinzufügt, lässt sich im laufenden Spiel anpassen oder ein- und ausschalten. Öffne den Optionsbildschirm des Spiels (O) und wähle ganz unten in der Liste **Mod-Einstellungen**. Hoch / Runter bewegen sich durch die Zeilen, Enter schaltet eine Einstellung um oder öffnet ein Submenü, Links / Rechts bewegen einen Regler, und Esc geht zurück.
 
-- Kartenweite Objektauswahl — erweitert den Zyklus `,` / `.` um Objekte, die du noch nicht entdeckt hast
+- Kartenweite Objektauswahl — erweitert die Liste entdeckter Objekte (`,` / `.`) um Objekte, die du noch nicht entdeckt hast
 - Raumform-Beschreibungen — die Ansage von Raumname, Form und Ausgängen beim Betreten eines Raumes
-- Wandgeräusche — die kontinuierliche positionelle Wandcue-Schicht
+- Wandgeräusche — die kontinuierlichen positionellen Kollisionssounds der Wände
 - Untertitel vertonter Sprecher vorlesen — die Untertitel vertonter Zeilen ansagen
 - Automatisches Zielen — die Zielhilfe im Geschützturm-Minispiel
 - Startvideos überspringen — wirkt beim nächsten Start
@@ -357,7 +357,7 @@ Viele Menschen haben mir beim Testen des Spiels geholfen, alle Fehler gefunden, 
 - ABlindFellow
 - zargontheevilgod
 - zersiax
-- ricki35
+- Michael
 
 **Grundlagen und Abhängigkeiten:**
 

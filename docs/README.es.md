@@ -357,7 +357,7 @@ Mucha gente me ayudó a probar el juego, encontró todos los errores que yo no p
 - ABlindFellow
 - zargontheevilgod
 - zersiax
-- ricki35
+- Michael
 
 **Cimientos y dependencias:**
 
