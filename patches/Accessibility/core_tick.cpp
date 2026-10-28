@@ -5,7 +5,7 @@
 
 #include "core_tick.h"
 
-#include "announce_degrees.h"
+#include "announce_facing.h"
 #include "audio_footstep_suppress.h"
 #include "bringup_announce.h"
 #include "camera_announce.h"
@@ -56,6 +56,7 @@
 #include "probe_camera_state.h"
 #include "probe_memory_sound.h"
 #include "positional_speech.h"
+#include "prism.h"
 #include "engine_input.h"
 #include "spatial_change_detector.h"
 #include "speech_clipboard.h"
@@ -714,7 +715,9 @@ void Dispatch() {
 
     // Cycle keys (`,`/`.`/`-`) and AltGr — engine drops unbound scancodes.
     PHASE("cycle_input", acc::cycle_input::PollWin32());
-    PHASE("announce_degrees", acc::announce_degrees::PollWin32());
+    PHASE("announce_facing", acc::announce_facing::PollWin32());
+    // Releases the facing readout's area half once the compass voice is done.
+    PHASE("prism", prism::Tick());
 
     // Beacon driver.
     PHASE("guidance.beacon", acc::guidance::beacon::Tick());

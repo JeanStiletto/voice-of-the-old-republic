@@ -159,7 +159,7 @@ bool IsDownVk(int vk) {
 // shift), VK_CONTROL (either ctrl), VK_MENU (either alt), and VK_RMENU
 // (right Alt = AltGr on QWERTZ) independently so `kModAltGr` can be set
 // alongside `kModAlt` when AltGr is held (engine treats them as one Alt;
-// we keep them split because announce_degrees needs to distinguish).
+// we keep them split because announce_facing needs to distinguish).
 uint32_t ReadModifiers() {
     uint32_t m = 0;
     if (IsDownVk(VK_SHIFT) || IsDownVk(VK_LSHIFT) || IsDownVk(VK_RSHIFT)) {

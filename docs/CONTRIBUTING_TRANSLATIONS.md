@@ -239,7 +239,7 @@ A few conventions that apply throughout:
 - **Per-item announce templates** (`FmtAnnounceWithClock`, `FmtAnnounceNoClock`,
   `FmtCategoryItem`) — how an object is read out: name, clock direction, metres.
 - **Compass / heading** (the octagonal direction names, stuck-direction probe,
-  exact-heading announce) — spoken for the AltGr facing cue and the N turn key.
+  facing readout) — spoken for the AltGr facing cue and the N turn key.
 - **Transitions** (`Pillar 2 transitions` group) — room and area change
   announcements; single `%s` for the destination name.
 

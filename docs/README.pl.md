@@ -117,7 +117,7 @@ Drugi cykl, obok Q / E, który przechodzi po obiektach już odkrytych w bieżąc
 
 <h3>Klawisze moda — orientacja i drużyna</h3>
 
-- AltGr (prawy Alt, samodzielnie) — Zapowiedź bieżącego kierunku patrzenia jako strony świata
+- AltGr (prawy Alt, samodzielnie) — Zapowiedź bieżącego kierunku patrzenia jako strony świata, głosem kompasu, a potem obszaru, w którym jesteś
 - N — Obrót kamery o 90° zgodnie z ruchem wskazówek zegara do następnej strony świata; jeśli radiolatarnia jest włączona, zamiast tego wycelowanie w jej następny punkt trasy
 - Tab — Zapowiada nowego przywódcę drużyny po tym, jak silnik przełączy sterowanie
 
@@ -186,7 +186,7 @@ Nazwy przycisków poniżej odpowiadają układowi Xbox: A, B, X, Y, lewy i prawy
 - Lewa gałka — Ruch (wszystkie osiem kierunków: do przodu, do tyłu i krok w bok)
 - Prawa gałka — Obrót kamery
 - R3 (wciśnięcie prawej gałki) — Obrót kamery do następnego punktu trasy radiolatarni, a bez niej do następnej strony świata (klawiaturowe N)
-- Sam prawy spust — Zapowiedź kierunku patrzenia w stopniach
+- Sam prawy spust — Zapowiedź kierunku patrzenia i obszaru, w którym jesteś
 
 <h3>Obiekty i akcje</h3>
 

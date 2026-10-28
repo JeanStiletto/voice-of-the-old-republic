@@ -602,60 +602,23 @@ enum class Id : int {
     StuckFreeDirsPrefix,
     StuckAllBlocked,
 
-    // ---- On-demand exact-heading announce (Pillar 2 sub-feature D —
-    //      `announce_degrees`). Single `%d` argument: compass-frame
-    //      degrees in [0, 359]. German speaks "47 Grad", English speaks
-    //      "47 degrees" — using "Grad"/"degrees" rather than the "°"
-    //      glyph so screen readers pronounce it consistently.
-
-    // ---- Phase 6 lay-off 2 — map-state announcement (AltGr while the
-    //      InGameMap panel is foreground). Builds a multi-segment line
-    //      describing where the player is + how they're oriented in the
-    //      *map* frame (which may be rotated 0/90/180/270° from world
-    //      space, per CSWSAreaMap::GetMapRotateCCWFromWorldOrientation
-    //      @0x00578ed0). The room name uses the same three-tier
-    //      resolution the in-world Pillar 2 transition path uses —
-    //      Bioware landmark waypoint → friendly room_name → Raum-N
-    //      synthetic fallback.
+    // ---- Facing readout (AltGr / right trigger; announce_facing). Only the
+    //      facing half: it speaks on the compass voice, and the place half
+    //      (area or room name) follows on the screen reader as its own
+    //      utterance (prism::SpeakCompassThen).
     //
-    //      `FmtMapStateOriented`   — full line. Args: room/landmark
-    //                                name (`%s`), compass-frame degrees
-    //                                in [0,359] (`%d`), sector word
-    //                                (`%s` — DirNorth.. via strings.Get).
-    //      `FmtMapStateUnknownRoom` — same line but without the room
-    //                                portion (player is outside any
-    //                                room walk-zone — rare; happens on
-    //                                transition strips). Args: degrees
-    //                                (`%d`), sector word (`%s`).
-    FmtMapStateOriented,
-    FmtMapStateUnknownRoom,
-
-    // ---- World-frame AltGr companion to FmtMapState*. Fires when the
-    //      InGameMap panel is NOT foreground (player is just standing in
-    //      the world). Reads the camera heading as a sector word + exact
-    //      degrees and adds the current perceptual cluster label
-    //      (room_topology::LookupAt) so the user can re-orient without
-    //      walking. Cluster vs .lyt-room: the map variant uses .lyt rooms
-    //      because that matches what the map UI labels; in the world we
-    //      want the perceptual region (corridor / junction / Platz) the
-    //      player is *in*, which is the wall-topology cluster.
-    //
-    //      `FmtWorldStateOriented`        — direction word then cluster.
-    //                                       Args in this order: sector
-    //                                       word (`%s` — DirNorth.. via
-    //                                       strings.Get) then cluster
-    //                                       label (`%s`). Degrees are
-    //                                       deliberately dropped — the
-    //                                       user prefers a clean two-
-    //                                       segment cue, exact heading
-    //                                       belongs on a dedicated probe.
-    //      `FmtWorldStateUnknownCluster`  — same line minus the cluster
-    //                                       segment, used when LookupAt
-    //                                       returns no graph / off-snap /
-    //                                       all-blocked. Single arg:
-    //                                       sector word (`%s`).
-    FmtWorldStateOriented,
-    FmtWorldStateUnknownCluster,
+    //      `FmtFacingWorld` — in the world. Single arg: the camera's sector
+    //                         word (`%s` — DirNorth.. via strings.Get). No
+    //                         degrees: the user wants the direction word.
+    //      `FmtFacingMap`   — on the InGameMap panel, in the *map* frame
+    //                         (rotated 0/90/180/270 degrees from world space
+    //                         per CSWSAreaMap::GetMapRotateCCWFromWorld-
+    //                         Orientation @0x00578ed0). Args: degrees in
+    //                         [0,359] (`%d`), sector word (`%s`). "Grad" /
+    //                         "degrees" rather than the glyph so screen
+    //                         readers pronounce it consistently.
+    FmtFacingWorld,
+    FmtFacingMap,
 
     // ---- Phase 4 lay-off 2 — view-mode Mouse Look probe (Shift+AltGr).
     //      Diagnostic-only; spoken on toggle so the user knows the
@@ -1725,6 +1688,19 @@ enum class Id : int {
     //      audio glossary's.
     ModSettingVoiceSettings,
     ModSettingsVoiceSettingsOpened,
+
+    // ---- Mod-settings -> Announcement-voice -> Compass-voice submenu
+    //      (menus_modsettings). The facing direction — the compass readout
+    //      while turning and the facing key — has its own SAPI voice
+    //      (prism::SpeakCompass); this submenu, nested in the
+    //      announcement-voice one, holds its volume and speed (through
+    //      FmtModSettingSlider) and the voice picker (FmtModSettingOption,
+    //      ModSettingUrgentVoiceUnavailable when there is none).
+    ModSettingCompassSettings,
+    ModSettingsCompassSettingsOpened,
+    ModSettingCompassVolume,
+    ModSettingCompassRate,
+    ModSettingCompassVoice,
 
     // Positional-announcements submenu ("Combat announcements" until
     // 2026-10-28; the ids kept their names). CombatSettings is the root row

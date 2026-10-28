@@ -129,7 +129,7 @@ The main gameplay loop. The per-tick hook is the spine of the entire mod.
 - Dispatch order (load-bearing — see `core_tick.cpp`):
   1. `hotkeys::BeginTick` — snapshot rising-edge state.
   2. `menus::ValidatePanels` / `TickMonitors` / `PollHomeEndKeys`.
-  3. `cycle_input::PollWin32` / `announce_degrees::PollWin32` — engine
+  3. `cycle_input::PollWin32` / `announce_facing::PollWin32` — engine
      drops unbound scancodes; we poll Win32 directly.
   4. Probe subsystems (mouselook, pathfind, audio frame, camera state,
      view mode, etc.).

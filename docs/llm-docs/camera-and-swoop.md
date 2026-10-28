@@ -77,7 +77,7 @@ _Stock-engine behaviour — A/D pans camera without rotating character; the char
 
 KOTOR's camera-on-a-stick behaves like a "soft" decoupled rig in stock play:
 
-- **A/D rotates the camera only.** The character does NOT turn while you hold A or D. AltGr's `announce_degrees` (server-side player yaw) confirms heading is unchanged after arbitrary A/D presses.
+- **A/D rotates the camera only.** The character does NOT turn while you hold A or D. Verified 2026-05-06 with the AltGr readout, which then read the player creature's yaw: the heading stayed put across arbitrary A/D presses. (`announce_facing` now reads the camera yaw on purpose.)
 - **The character "snaps" to camera yaw at the instant W or S is pressed** to commit forward motion. Character then walks in the camera-facing direction.
 - This is true regardless of Caps Lock state and regardless of the `CClientOptions.mouse_look` bit (verified 2026-05-06 with Shift+B probe).
 

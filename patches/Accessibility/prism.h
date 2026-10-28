@@ -106,6 +106,43 @@ size_t GetUrgentVoiceId();
 // ids are ignored. Takes effect on the next urgent utterance.
 void SetUrgentVoiceId(size_t voiceId);
 
+// ---- Compass channel -----------------------------------------------------
+//
+// A third voice, for the facing direction — the compass readout while the
+// camera turns and the facing key: a second SAPI instance beside the urgent
+// one, with the same NVDA bypass but its own voice, volume and rate, so a
+// heading never sounds like an announcement and the two never cut each other
+// off. Always interrupts its own previous line. Falls back to SpeakUrgent
+// when the instance could not be created.
+void SpeakCompass(const char* text);
+
+// `text` on the compass voice, then `followUp` on the screen reader once the
+// compass voice has said its words (measured by a silent render, so the
+// voice's trailing silence is not waited out) — the two take turns. Clears
+// the screen reader first. A later interrupting Speak, SpeakCompass or
+// Silence drops a follow-up still waiting. Without the compass instance both
+// go to the screen reader as one line. LastSpoken() holds the whole line.
+void SpeakCompassThen(const char* text, const char* followUp);
+
+// Releases SpeakCompassThen's follow-up when its turn comes. Once per frame.
+void Tick();
+
+// Volume and rate, percent [0,100], same contract and defaults as the urgent
+// pair (100% volume, rate 80); persisted under their own keys.
+void SetCompassVolumePercent(int percent);
+int  GetCompassVolumePercent();
+void SetCompassRatePercent(int percent);
+int  GetCompassRatePercent();
+
+// The voice. Picks from the urgent channel's list — same ids, same names, so
+// GetUrgentVoiceName reads them. Persisted by name; until the player picks
+// one it defaults to id 2, or the first voice that is not the urgent one when
+// id 2 is missing or is the urgent voice. Count is 0 when the compass channel
+// is unavailable (it then speaks on the urgent voice).
+size_t CompassVoiceCount();
+size_t GetCompassVoiceId();
+void   SetCompassVoiceId(size_t voiceId);
+
 // ---- Render to memory (positional-speech groundwork) ---------------------
 //
 // Renders `text` (game codepage) to PCM with the urgent channel's SAPI voice
@@ -161,7 +198,7 @@ bool RenderOneCoreToMemory(const char* voiceName, int ratePercent, const char* t
 // LastSpoken() capture for Ctrl+R, and the braille display.
 void NoteSpokenElsewhere(const char* text);
 
-// Cancel in-progress speech on both channels.
+// Cancel in-progress speech on every channel.
 void Silence();
 
 // ---- Last-utterance capture --------------------------------------------

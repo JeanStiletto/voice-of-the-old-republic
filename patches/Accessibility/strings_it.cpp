@@ -175,11 +175,9 @@ const char* Get(Id id) {
         case Id::StuckAllBlocked:      return "Tutto bloccato";
 
 
-        case Id::FmtMapStateOriented:    return "%s. Orientato a %d gradi sulla mappa, %s.";
-        case Id::FmtMapStateUnknownRoom: return "Orientato a %d gradi sulla mappa, %s.";
+        case Id::FmtFacingMap:           return "Orientato a %d gradi sulla mappa, %s.";
 
-        case Id::FmtWorldStateOriented:       return "Direzione %s.\n%s.";
-        case Id::FmtWorldStateUnknownCluster: return "Direzione %s.";
+        case Id::FmtFacingWorld:              return "Direzione %s.";
 
         case Id::MouseLookOn:          return "Vista mouse attiva";
         case Id::MouseLookOff:         return "Vista mouse disattiva";
@@ -553,6 +551,11 @@ const char* Get(Id id) {
         case Id::ModSettingUrgentVolumePreview: return "Annuncio di esempio";
         case Id::ModSettingVoiceSettings:           return "Impostazioni della voce degli annunci";
         case Id::ModSettingsVoiceSettingsOpened:    return "Impostazioni della voce degli annunci aperte";
+        case Id::ModSettingCompassSettings: return "Impostazioni della voce della bussola";
+        case Id::ModSettingsCompassSettingsOpened: return "Impostazioni della voce della bussola aperte";
+        case Id::ModSettingCompassVolume: return "Volume della voce della bussola";
+        case Id::ModSettingCompassRate: return "Velocit\xE0 della voce della bussola";
+        case Id::ModSettingCompassVoice: return "Voce della bussola";
         case Id::ModSettingCombatSettings: return "Annunci posizionali";
         case Id::ModSettingsCombatSettingsOpened: return "Annunci posizionali aperti";
         case Id::ModSettingPositionalCombatSpeech: return "Annunci di combattimento in 3D";
@@ -648,7 +651,7 @@ const char* Get(Id id) {
         case Id::HelpKeyCycleObjects:   return "Virgola e punto: scorrere gli oggetti gi\xE0 scoperti della categoria attuale";
         case Id::HelpKeyCycleCategory:  return "Maiusc pi\xF9 virgola o punto: categoria precedente o successiva";
         case Id::HelpKeyCycleEnds:      return "Ctrl pi\xF9 virgola o punto: andare all'oggetto pi\xF9 vicino o pi\xF9 lontano";
-        case Id::HelpKeyHeading:        return "Alt destro: annunciare la direzione esatta in gradi";
+        case Id::HelpKeyHeading:        return "Alt destro: annunciare la direzione in cui guardi e la zona in cui ti trovi";
         case Id::HelpKeyCameraOrient:   return "N: girare la telecamera verso la direzione successiva, o orientarsi al prossimo punto di passaggio";
         case Id::HelpKeyDropMarker:     return "Maiusc pi\xF9 N: posizionare un indicatore sulla mappa nella tua posizione";
 
@@ -691,7 +694,7 @@ const char* Get(Id id) {
         case Id::HelpKeyPadActionQueue:      return "Grilletto sinistro con B: la coda delle azioni. La croce su e gi\xF9 scorre le voci, A rimuove l'ultima in coda, Y svuota tutta la coda, B chiude";
         case Id::HelpKeyPadWalkToFocus:      return "Grilletto destro con dorsale destro: cammina verso l'oggetto selezionato";
         case Id::HelpKeyPadBeacon:           return "Grilletto sinistro con dorsale sinistro: radiofaro sonoro verso l'oggetto selezionato";
-        case Id::HelpKeyPadDegrees:          return "Grilletto destro: annuncia l'orientamento in gradi";
+        case Id::HelpKeyPadDegrees:          return "Grilletto destro: annuncia la direzione in cui guardi e la zona in cui ti trovi";
         case Id::HelpKeyPadCameraOrient:     return "Premi la levetta destra: ruota la telecamera verso il prossimo punto del radiofaro, altrimenti verso il punto cardinale successivo";
         case Id::HelpKeyPadHelp:             return "Entrambi i grilletti: tasti di questa schermata. La voce Aiuto del menu rapido apre questo elenco";
         case Id::HelpKeyPadQuickMenu:        return "Y: menu rapido";
@@ -829,7 +832,7 @@ const char* Get(Id id) {
         case Id::KbNamePathfindFocus:       return "Vai al bersaglio";
         case Id::KbNamePathfindFocusForce:  return "Vai al bersaglio, forza";
         case Id::KbNameBeaconFocus:         return "Segnale al bersaglio";
-        case Id::KbNameAnnounceDegrees:     return "Direzione in gradi";
+        case Id::KbNameAnnounceDegrees:     return "Direzione dello sguardo";
         case Id::KbNamePartyLeaderAnnounce: return "Annuncia capogruppo";
         case Id::KbNameCameraOrient:        return "Orienta telecamera";
         case Id::KbNameSaveMarkerAtCursor:  return "Posiziona segnaposto";

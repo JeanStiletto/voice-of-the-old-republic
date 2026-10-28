@@ -36,7 +36,7 @@ void LatchPreLoadDestinationK2(void* exoStringPtr);
 // by .lyt-room — K1's .lyt-rooms over-segment into slivers (94-98%
 // per-step flip rate); proximity scan over the flat list avoids that.
 //
-// Shared by cursors (map, view-mode, marker auto-name) and AltGr degrees.
+// Shared by cursors (map, view-mode, marker auto-name) and the AltGr facing readout.
 bool FindLandmarkNear(const Vector& pos, float rangeM,
                       char* nameOut, size_t nameBufSize,
                       Vector& posOut,

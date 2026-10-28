@@ -1,6 +1,6 @@
 relink2004.hooks.toml
-announce_degrees.cpp
-announce_degrees.h
+announce_facing.cpp
+announce_facing.h
 audio_bus.cpp
 audio_bus.h
 audio_cue_player.cpp

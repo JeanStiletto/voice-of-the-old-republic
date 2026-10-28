@@ -67,6 +67,14 @@ and add the German in parentheses if it genuinely aids clarity.
   reachable from another side or the mod could not read the area map.
 - 3D speech behind you sounds darker than speech ahead, so you can tell the
   two apart (a technique from the Dark Vision mod).
+- The compass directions spoken while you turn have a voice of their own,
+  with its own volume, speed and voice settings (new submenu "Compass voice
+  settings" in the announcement voice settings).
+- The facing key (Right Alt) says your direction in the compass voice, then
+  the area you are in with your screen reader, one after the other.
+- The installer can make all Windows voices available to the mod, so the
+  newer Windows voices can be chosen as announcement or compass voice (on by
+  default).
 - The KOTOR 2 party selection screen reads each companion's name instead of
   "control 13".
 - Log only: support logs show whether the game's 3D sound reaches the
@@ -171,6 +179,32 @@ and add the German in parentheses if it genuinely aids clarity.
   hangar. "No path to X: the area map could not be read." is a mod fault worth
   reporting. Routes still ignore locked doors, because on Peragus a door's
   state changes with the story phase and the character you play.
+
+<h3>Compass voice:</h3>
+
+- **The compass speaks with a third voice.** The directions spoken while the
+  camera turns, and the direction you face after opening a door, now come
+  from a voice of their own instead of the announcement voice, so a heading
+  never sounds like an announcement and the two no longer cut each other off.
+  Settings: Mod settings, Announcement voice settings, Compass voice settings,
+  with volume, speed and voice. Until you pick one, the compass uses the third
+  voice in the list, or another voice when that one is the announcement
+  voice.
+- **The facing key speaks in two voices.** Right Alt (right trigger on a
+  controller) says the direction you face in the compass voice; the area you
+  are standing in follows on your screen reader as soon as the compass voice
+  has finished, so the heading no longer runs into the area's own direction
+  words. On the map screen the room follows the same way. Its help and
+  key-binding names now say what it does: it reads a direction, not degrees.
+
+<h3>Installer:</h3>
+
+- **New option "Make all Windows voices available to the mod"** (on by
+  default). Windows keeps its newer voices, such as the Narrator voices, in a
+  list the game cannot see; the installer copies them into the game's voice
+  list after saving a backup of it, so they show up in the mod's voice
+  pickers. The list changes for every program on the PC, and uninstalling
+  the mod leaves the voices in place.
 
 <h3>Bug fixes:</h3>
 

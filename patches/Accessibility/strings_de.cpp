@@ -179,11 +179,9 @@ const char* Get(Id id) {
         case Id::StuckAllBlocked:      return "Alles blockiert";
 
 
-        case Id::FmtMapStateOriented:    return "%s. Blick auf der Karte nach %d Grad, %s.";
-        case Id::FmtMapStateUnknownRoom: return "Blick auf der Karte nach %d Grad, %s.";
+        case Id::FmtFacingMap:           return "Blick auf der Karte nach %d Grad, %s.";
 
-        case Id::FmtWorldStateOriented:       return "Blick %s.\n%s.";
-        case Id::FmtWorldStateUnknownCluster: return "Blick %s.";
+        case Id::FmtFacingWorld:              return "Blick %s.";
 
         case Id::MouseLookOn:          return "Maussteuerung an";
         case Id::MouseLookOff:         return "Maussteuerung aus";
@@ -571,6 +569,11 @@ const char* Get(Id id) {
         case Id::ModSettingUrgentVolumePreview: return "Beispielansage";
         case Id::ModSettingVoiceSettings:           return "Einstellungen der Ansagestimme";
         case Id::ModSettingsVoiceSettingsOpened:    return "Einstellungen der Ansagestimme ge\xF6" "ffnet";
+        case Id::ModSettingCompassSettings: return "Einstellungen der Kompassstimme";
+        case Id::ModSettingsCompassSettingsOpened: return "Einstellungen der Kompassstimme ge\xF6" "ffnet";
+        case Id::ModSettingCompassVolume: return "Lautst\xE4rke der Kompassstimme";
+        case Id::ModSettingCompassRate: return "Geschwindigkeit der Kompassstimme";
+        case Id::ModSettingCompassVoice: return "Kompassstimme";
         case Id::ModSettingCombatSettings: return "Positionierte Ansagen";
         case Id::ModSettingsCombatSettingsOpened: return "Positionierte Ansagen ge\xF6" "ffnet";
         case Id::ModSettingPositionalCombatSpeech: return "Kampfansagen in 3D";
@@ -669,7 +672,7 @@ const char* Get(Id id) {
         case Id::HelpKeyCycleObjects:   return "Komma und Punkt: bereits entdeckte Objekte der aktuellen Kategorie durchschalten";
         case Id::HelpKeyCycleCategory:  return "Umschalt und Komma oder Punkt: vorherige oder n\xE4""chste Kategorie";
         case Id::HelpKeyCycleEnds:      return "Strg und Komma oder Punkt: zum n\xE4""chsten oder entferntesten Objekt springen";
-        case Id::HelpKeyHeading:        return "Rechte Alt-Taste: genaue Blickrichtung in Grad ansagen";
+        case Id::HelpKeyHeading:        return "Rechte Alt-Taste: Blickrichtung und aktuellen Bereich ansagen";
         case Id::HelpKeyCameraOrient:   return "N: Kamera zur n\xE4""chsten Richtung drehen oder zum n\xE4""chsten Wegpunkt ausrichten";
         case Id::HelpKeyDropMarker:     return "Umschalt und N: eine Kartenmarkierung an deiner Position setzen";
 
@@ -712,7 +715,7 @@ const char* Get(Id id) {
         case Id::HelpKeyPadActionQueue:      return "Linker Trigger mit B: die Aktionswarteschlange. Steuerkreuz hoch und runter geht durch die Eintr\xE4ge, A entfernt den zuletzt eingereihten, Y leert die ganze Warteschlange, B schlie\xDFt";
         case Id::HelpKeyPadWalkToFocus:      return "Rechter Trigger mit rechter Schultertaste: zum fokussierten Objekt laufen";
         case Id::HelpKeyPadBeacon:           return "Linker Trigger mit linker Schultertaste: Audio-Bake zum fokussierten Objekt";
-        case Id::HelpKeyPadDegrees:          return "Rechter Trigger: Blickrichtung in Grad ansagen";
+        case Id::HelpKeyPadDegrees:          return "Rechter Trigger: Blickrichtung und aktuellen Bereich ansagen";
         case Id::HelpKeyPadCameraOrient:     return "Rechten Stick dr\xFC" "cken: Kamera zum n\xE4" "chsten Wegpunkt der Bake drehen, sonst zur n\xE4" "chsten Himmelsrichtung";
         case Id::HelpKeyPadHelp:             return "Beide Trigger: Tasten f\xFCr diesen Bildschirm. Der Eintrag Hilfe im Schnellmen\xFC \xF6" "ffnet diese Liste";
         case Id::HelpKeyPadQuickMenu:        return "Y: Schnellmen\xFC";
@@ -851,7 +854,7 @@ const char* Get(Id id) {
         case Id::KbNamePathfindFocus:       return "Zum Fokus gehen";
         case Id::KbNamePathfindFocusForce:  return "Zum Fokus gehen erzwingen";
         case Id::KbNameBeaconFocus:         return "Beacon zum Fokus";
-        case Id::KbNameAnnounceDegrees:     return "Blickrichtung in Grad";
+        case Id::KbNameAnnounceDegrees:     return "Blickrichtung";
         case Id::KbNamePartyLeaderAnnounce: return "Gruppenanf\xFChrer ansagen";
         case Id::KbNameCameraOrient:        return "Kamera ausrichten";
         case Id::KbNameSaveMarkerAtCursor:  return "Marke setzen";

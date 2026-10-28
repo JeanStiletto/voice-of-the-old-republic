@@ -189,7 +189,7 @@ bool IsPhysicalF1();
 //
 //   LT alone        open the unified action menu, or close it if it is up —
 //                   the pad's Shift+Enter, and its Esc
-//   RT alone        announce the facing in degrees (the keyboard's AltGr)
+//   RT alone        announce the facing (the keyboard's AltGr)
 //   LT + LB         audio beacon to the focused object
 //   RT + RB         walk to the focused object
 //   LT + RT         the current screen's keys (the keyboard's Ctrl+F1), or,

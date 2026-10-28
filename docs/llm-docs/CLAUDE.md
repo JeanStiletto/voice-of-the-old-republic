@@ -101,7 +101,7 @@ three extra script slots; CPazaakCard 8 -> 12 bytes). Full ledger in
 - `minigame_aim` — the shared primitives, fully ported. Its one Pick is
   CSWMiniPlayer.offset (0x1c4 -> 0x1f4).
 
-**Ports for free — no engine dependency.** `strfmt.h`, `announce_degrees`,
+**Ports for free — no engine dependency.** `strfmt.h`, `announce_facing`,
 the `strings*` localisation tables, and the debounce/geometry/formatting
 logic generally.
 

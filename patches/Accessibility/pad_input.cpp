@@ -1305,8 +1305,7 @@ void Tick() {
         // LT alone — open or close the action menu.
         if (ltReleased && !g_ltChorded) g_pendingLtSolo = true;
 
-        // RT alone — the exact keyboard AltGr binding: announce the facing in
-        // degrees.
+        // RT alone — the exact keyboard AltGr binding: announce the facing.
         if (rtReleased && !g_rtChorded) g_pendingRtSolo = true;
     }
 
@@ -1705,10 +1704,10 @@ void PollTriggers() {
         NoteNavPress();
         ToggleActionMenu();
     }
-    // RT — routed as a synthetic press so announce_degrees keeps its own
+    // RT — routed as a synthetic press so announce_facing keeps its own
     // world-vs-map branch rather than the pad growing a second copy.
     if (rt) {
-        acclog::Write("Pad", "RT -> announce facing in degrees");
+        acclog::Write("Pad", "RT -> announce facing");
         acc::hotkeys::PadPress(acc::hotkeys::Action::AnnounceDegrees);
     }
 }

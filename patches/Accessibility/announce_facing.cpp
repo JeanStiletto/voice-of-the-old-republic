@@ -1,4 +1,4 @@
-#include "announce_degrees.h"
+#include "announce_facing.h"
 
 #include <cmath>
 #include <cstdio>
@@ -17,7 +17,7 @@
 #include "transitions.h"
 #include "room_topology.h"
 
-namespace acc::announce_degrees {
+namespace acc::announce_facing {
 
 namespace {
 
@@ -83,11 +83,11 @@ bool ResolveClusterLabelForPlayer(std::string& outBuf) {
     return true;
 }
 
-void OnAnnounceWorldDegrees() {
+void AnnounceWorldFacing() {
     float engineYaw = 0.0f;
     if (!ReadCameraEngineYawDegrees(engineYaw)) {
         // Mid-transient (spawn / area-load / chain degenerate).
-        acclog::Write("AnnounceDegrees", "camera yaw unavailable, skipping");
+        acclog::Write("AnnounceFacing", "camera yaw unavailable, skipping");
         return;
     }
     int degrees    = CompassDegreesFromEngineYaw(engineYaw);
@@ -96,23 +96,15 @@ void OnAnnounceWorldDegrees() {
     std::string clusterBuf;
     bool haveCluster = ResolveClusterLabelForPlayer(clusterBuf);
 
-    std::string msg;
-    if (haveCluster) {
-        msg = acc::strfmt::Format(
-            acc::strings::Get(acc::strings::Id::FmtWorldStateOriented),
-            sector, clusterBuf.c_str());
-    } else {
-        msg = acc::strfmt::Format(
-            acc::strings::Get(acc::strings::Id::FmtWorldStateUnknownCluster),
-            sector);
-    }
-    // Normal priority — one-shot review key, no held-key cancel pressure
-    // to bypass. Urgent SAPI would change voice for no benefit.
-    prism::Speak(msg.c_str(), /*interrupt=*/true);
-    acclog::Write("AnnounceDegrees",
-        "world -> [%s] (camYaw=%.1f, deg=%d, sector=\"%s\", cluster=\"%s\")",
-        msg.c_str(), engineYaw, degrees, sector,
-        haveCluster ? clusterBuf.c_str() : "");
+    std::string facing = acc::strfmt::Format(
+        acc::strings::Get(acc::strings::Id::FmtFacingWorld), sector);
+    // The direction on the compass voice, the area after it on the screen
+    // reader: two voices, so the heading never runs into the area's own
+    // direction words.
+    prism::SpeakCompassThen(facing.c_str(), haveCluster ? clusterBuf.c_str() : nullptr);
+    acclog::Write("AnnounceFacing",
+        "world -> [%s] then [%s] (camYaw=%.1f, deg=%d, sector=\"%s\")",
+        facing.c_str(), haveCluster ? clusterBuf.c_str() : "", engineYaw, degrees, sector);
 }
 
 // Three-tier room name lookup matching transitions::Tick:
@@ -156,13 +148,13 @@ bool ResolveRoomNameForPlayer(char* outBuf, size_t bufSize) {
     return true;
 }
 
-void OnAnnounceMapDegrees() {
+void AnnounceMapFacing() {
     // Either failure falls back to world-frame so the key never feels eaten.
     float camYawDeg = 0.0f;
     if (!ReadCameraEngineYawDegrees(camYawDeg)) {
-        acclog::Write("AnnounceDegrees",
+        acclog::Write("AnnounceFacing",
             "map: camera facing unavailable; falling back to world");
-        OnAnnounceWorldDegrees();
+        AnnounceWorldFacing();
         return;
     }
     float yawRad = camYawDeg * kDegToRad;
@@ -172,18 +164,18 @@ void OnAnnounceMapDegrees() {
     facing.z = 0.0f;
     void* areaMap = acc::engine::GetAreaMap();
     if (!areaMap) {
-        acclog::Write("AnnounceDegrees",
+        acclog::Write("AnnounceFacing",
             "map: areaMap unavailable; falling back to world");
-        OnAnnounceWorldDegrees();
+        AnnounceWorldFacing();
         return;
     }
 
     float mapYawCCW = 0.0f;
     if (!acc::engine::GetMapRotateCCWFromWorldOrientation(
             areaMap, facing, mapYawCCW)) {
-        acclog::Write("AnnounceDegrees",
+        acclog::Write("AnnounceFacing",
             "map: GetMapRotateCCW failed; falling back to world");
-        OnAnnounceWorldDegrees();
+        AnnounceWorldFacing();
         return;
     }
 
@@ -195,20 +187,14 @@ void OnAnnounceMapDegrees() {
     char roomBuf[160];
     bool haveRoom = ResolveRoomNameForPlayer(roomBuf, sizeof(roomBuf));
 
-    char msg[384];
-    if (haveRoom) {
-        std::snprintf(msg, sizeof(msg),
-            acc::strings::Get(acc::strings::Id::FmtMapStateOriented),
-            roomBuf, degrees, sector);
-    } else {
-        std::snprintf(msg, sizeof(msg),
-            acc::strings::Get(acc::strings::Id::FmtMapStateUnknownRoom),
-            degrees, sector);
-    }
-    prism::Speak(msg, /*interrupt=*/true);
-    acclog::Write("AnnounceDegrees",
-        "map -> [%s] (camYaw=%.1f, mapYawCCW=%.1f, deg=%d, room=\"%s\")",
-        msg, camYawDeg, mapYawCCW, degrees, haveRoom ? roomBuf : "");
+    std::string line = acc::strfmt::Format(
+        acc::strings::Get(acc::strings::Id::FmtFacingMap), degrees, sector);
+    // Same split as the world readout: facing on the compass voice, the room
+    // after it on the screen reader.
+    prism::SpeakCompassThen(line.c_str(), haveRoom ? roomBuf : nullptr);
+    acclog::Write("AnnounceFacing",
+        "map -> [%s] then [%s] (camYaw=%.1f, mapYawCCW=%.1f, deg=%d)",
+        line.c_str(), haveRoom ? roomBuf : "", camYawDeg, mapYawCCW, degrees);
 }
 
 }  // namespace
@@ -220,10 +206,10 @@ void PollWin32() {
     if (!acc::engine::GetPlayerPosition(playerPos)) return;
 
     if (acc::engine::HasActiveMapPanel()) {
-        OnAnnounceMapDegrees();
+        AnnounceMapFacing();
     } else {
-        OnAnnounceWorldDegrees();
+        AnnounceWorldFacing();
     }
 }
 
-}  // namespace acc::announce_degrees
+}  // namespace acc::announce_facing

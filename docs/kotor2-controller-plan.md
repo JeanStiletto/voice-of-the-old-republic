@@ -95,7 +95,7 @@ there. In the world:
   engine's default-action-on-last-clicked); with the action menu open, fire the
   selected entry, because the menu is an overlay and claims the press first
 - B — close the action menu when it is up; otherwise the engine's own
-- RT (alone) — announce the facing in degrees (the keyboard's AltGr)
+- RT (alone) — announce the facing (the keyboard's AltGr)
 - LT + LB — audio beacon to the focused object
 - RT + RB — walk to the focused object
 - LT + RT — the current screen's keys (the keyboard's Ctrl+F1)

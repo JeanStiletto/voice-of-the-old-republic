@@ -117,7 +117,7 @@ Un secondo ciclo, oltre a Q / E, che percorre gli oggetti già scoperti nell'are
 
 <h3>Tasti della mod — orientamento e gruppo</h3>
 
-- AltGr (Alt destro, da solo) — Annunciare la direzione attuale come punto cardinale
+- AltGr (Alt destro, da solo) — Annunciare la direzione attuale come punto cardinale, con la voce della bussola, poi la zona in cui ti trovi
 - N — Ruotare la telecamera di 90° in senso orario verso il punto cardinale successivo; se un radiofaro è attivo, puntare invece al suo prossimo waypoint
 - Tab — Annuncia il nuovo capogruppo dopo che il motore ha cambiato controllo
 
@@ -186,7 +186,7 @@ I nomi dei tasti qui sotto seguono la disposizione Xbox: A, B, X, Y, i dorsali s
 - Levetta sinistra — Muoversi (tutte le otto direzioni: avanti, indietro e passo laterale)
 - Levetta destra — Ruotare la telecamera
 - R3 (premere la levetta destra) — Ruotare la telecamera verso il prossimo waypoint del radiofaro, altrimenti verso il punto cardinale successivo (l'N della tastiera)
-- Grilletto destro da solo — Annunciare l'orientamento in gradi
+- Grilletto destro da solo — Annunciare la direzione in cui guardi e la zona in cui ti trovi
 
 <h3>Oggetti e azioni</h3>
 

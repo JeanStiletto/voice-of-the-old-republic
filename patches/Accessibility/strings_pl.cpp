@@ -189,11 +189,9 @@ const char* Get(Id id) {
         case Id::StuckAllBlocked:      return "Wszystko zablokowane";
 
 
-        case Id::FmtMapStateOriented:    return "%s. Kierunek %d stopni na mapie, %s.";
-        case Id::FmtMapStateUnknownRoom: return "Kierunek %d stopni na mapie, %s.";
+        case Id::FmtFacingMap:           return "Kierunek %d stopni na mapie, %s.";
 
-        case Id::FmtWorldStateOriented:       return "Kierunek %s.\n%s.";
-        case Id::FmtWorldStateUnknownCluster: return "Kierunek %s.";
+        case Id::FmtFacingWorld:              return "Kierunek %s.";
 
         case Id::MouseLookOn:          return "Rozgl\xB9""danie mysz\xB9 w\xB3\xB9""czone";
         case Id::MouseLookOff:         return "Rozgl\xB9""danie mysz\xB9 wy\xB3\xB9""czone";
@@ -553,6 +551,11 @@ const char* Get(Id id) {
         case Id::ModSettingUrgentVolumePreview: return "Przyk\xB3""adowy komunikat";
         case Id::ModSettingVoiceSettings:           return "Ustawienia g\xB3osu komunikat\xF3w";
         case Id::ModSettingsVoiceSettingsOpened:    return "Otwarto ustawienia g\xB3osu komunikat\xF3w";
+        case Id::ModSettingCompassSettings: return "Ustawienia g\xB3osu kompasu";
+        case Id::ModSettingsCompassSettingsOpened: return "Otwarto ustawienia g\xB3osu kompasu";
+        case Id::ModSettingCompassVolume: return "G\xB3o\x9Cno\x9C\xE6 g\xB3osu kompasu";
+        case Id::ModSettingCompassRate: return "Szybko\x9C\xE6 g\xB3osu kompasu";
+        case Id::ModSettingCompassVoice: return "G\xB3os kompasu";
         case Id::ModSettingCombatSettings: return "Komunikaty przestrzenne";
         case Id::ModSettingsCombatSettingsOpened: return "Otwarto komunikaty przestrzenne";
         case Id::ModSettingPositionalCombatSpeech: return "Komunikaty walki w 3D";
@@ -648,7 +651,7 @@ const char* Get(Id id) {
         case Id::HelpKeyCycleObjects:   return "Przecinek i kropka: prze\xB3\xB9""czaj\xB9 odkryte obiekty w bie\xBF\xB9""cej kategorii";
         case Id::HelpKeyCycleCategory:  return "Shift z przecinkiem lub kropk\xB9: poprzednia lub nast\xEApna kategoria";
         case Id::HelpKeyCycleEnds:      return "Ctrl z przecinkiem lub kropk\xB9: skok do najbli\xBFszego lub najdalszego obiektu";
-        case Id::HelpKeyHeading:        return "Prawy Alt: podaje dok\xB3""adny kierunek w stopniach";
+        case Id::HelpKeyHeading:        return "Prawy Alt: podaje kierunek patrzenia i obszar, w kt\xF3rym jeste\x9C";
         case Id::HelpKeyCameraOrient:   return "N: obraca kamer\xEA na nast\xEApny kierunek lub w stron\xEA kolejnego punktu sygna\xB3u";
         case Id::HelpKeyDropMarker:     return "Shift i N: stawia znacznik mapy w twoim po\xB3o\xBF""eniu";
 
@@ -691,7 +694,7 @@ const char* Get(Id id) {
         case Id::HelpKeyPadActionQueue:      return "Lewy spust z B: kolejka akcji. Krzy\xBF" "ak w g\xF3r\xEA i w d\xF3\xB3 przechodzi przez pozycje, A usuwa ostatnio dodan\xB9, Y czy\x9C" "ci ca\xB3\xB9 kolejk\xEA, B zamyka";
         case Id::HelpKeyPadWalkToFocus:      return "Prawy spust z prawym bumperem: id\x9F do wybranego obiektu";
         case Id::HelpKeyPadBeacon:           return "Lewy spust z lewym bumperem: sygna\xB3 d\x9Fwi\xEAkowy do wybranego obiektu";
-        case Id::HelpKeyPadDegrees:          return "Prawy spust: podaj kierunek w stopniach";
+        case Id::HelpKeyPadDegrees:          return "Prawy spust: podaj kierunek patrzenia i obszar, w kt\xF3rym jeste\x9C";
         case Id::HelpKeyPadCameraOrient:     return "Naci\x9Cni\xEA" "cie prawej ga\xB3ki: obr\xF3\xE6 kamer\xEA do nast\xEApnego punktu sygna\xB3u albo do nast\xEApnej strony \x9Cwiata";
         case Id::HelpKeyPadHelp:             return "Oba spusty: klawisze tego ekranu. Pozycja Pomoc w szybkim menu otwiera t\xEA list\xEA";
         case Id::HelpKeyPadQuickMenu:        return "Y: szybkie menu";
@@ -829,7 +832,7 @@ const char* Get(Id id) {
         case Id::KbNamePathfindFocus:       return "Id\x9F do wybranego";
         case Id::KbNamePathfindFocusForce:  return "Id\x9F do wybranego, wymu\x9C";
         case Id::KbNameBeaconFocus:         return "Sygna\xB3 do wybranego";
-        case Id::KbNameAnnounceDegrees:     return "Kierunek w stopniach";
+        case Id::KbNameAnnounceDegrees:     return "Kierunek patrzenia";
         case Id::KbNamePartyLeaderAnnounce: return "Podaj przyw\xF3""dc\xEA dru\xBFyny";
         case Id::KbNameCameraOrient:        return "Ustaw kamer\xEA";
         case Id::KbNameSaveMarkerAtCursor:  return "Postaw znacznik";

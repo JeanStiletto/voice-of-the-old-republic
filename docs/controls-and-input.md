@@ -216,7 +216,7 @@ Both surfaces share one tagged catalog in `help.cpp` (`kEntries`): `grp` chooses
 
 ### Orientation & party
 
-- AltGr (right Alt alone, no Shift) — Speak current facing as compass degrees.
+- AltGr (right Alt alone, no Shift) — Speak the camera facing as a compass direction word on the compass voice, then the area the player stands in on the screen reader once that voice has finished (`announce_facing`). On the map screen: the facing in map-frame degrees plus the direction word, then the room.
 - Tab — Speak the party-leader name (after the engine has processed Tab's leader-cycle). Fires in-world and inside panels — the engine cycles control to the next living party member in both contexts; strip panels re-bind to the new leader, so the announce is wanted everywhere. (In-game panel switching is handled natively by the engine via Q/E.)
 - N — Camera orient. If an audio beacon is armed (Ctrl+`-`), point the camera at the beacon's next waypoint and speak "Beacon, <direction>". Otherwise advance the camera clockwise to the next cardinal direction (N → E → S → W → N) — silent; camera_announce's sector cross fires the new direction word naturally. Bare N has no engine binding (the engine ignores it in-world); Shift+N is reserved for SaveMarkerAtCursor on the map, so the binding forbids Shift. Engine surface: `CSWCModule::AcclTurnCamera @0x00640090` (relative-delta yaw setter in radians).
 

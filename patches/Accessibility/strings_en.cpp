@@ -168,11 +168,9 @@ const char* Get(Id id) {
         case Id::StuckAllBlocked:      return "All blocked";
 
 
-        case Id::FmtMapStateOriented:    return "%s. Facing %d degrees on the map, %s.";
-        case Id::FmtMapStateUnknownRoom: return "Facing %d degrees on the map, %s.";
+        case Id::FmtFacingMap:           return "Facing %d degrees on the map, %s.";
 
-        case Id::FmtWorldStateOriented:       return "Facing %s.\n%s.";
-        case Id::FmtWorldStateUnknownCluster: return "Facing %s.";
+        case Id::FmtFacingWorld:              return "Facing %s.";
 
         case Id::MouseLookOn:          return "Mouse Look on";
         case Id::MouseLookOff:         return "Mouse Look off";
@@ -555,6 +553,11 @@ const char* Get(Id id) {
         case Id::ModSettingUrgentVolumePreview: return "Sample announcement";
         case Id::ModSettingVoiceSettings:           return "Announcement voice settings";
         case Id::ModSettingsVoiceSettingsOpened:    return "Announcement voice settings opened";
+        case Id::ModSettingCompassSettings: return "Compass voice settings";
+        case Id::ModSettingsCompassSettingsOpened: return "Compass voice settings opened";
+        case Id::ModSettingCompassVolume: return "Compass voice volume";
+        case Id::ModSettingCompassRate: return "Compass voice speed";
+        case Id::ModSettingCompassVoice: return "Compass voice";
         case Id::ModSettingCombatSettings: return "Positional announcements";
         case Id::ModSettingsCombatSettingsOpened: return "Positional announcements opened";
         case Id::ModSettingPositionalCombatSpeech: return "3D combat announcements";
@@ -650,7 +653,7 @@ const char* Get(Id id) {
         case Id::HelpKeyCycleObjects:   return "Comma and period: cycle objects you have already discovered, in the current category";
         case Id::HelpKeyCycleCategory:  return "Shift plus comma or period: previous or next category";
         case Id::HelpKeyCycleEnds:      return "Control plus comma or period: jump to the nearest or farthest object";
-        case Id::HelpKeyHeading:        return "Right Alt: announce your exact heading in degrees";
+        case Id::HelpKeyHeading:        return "Right Alt: announce your facing direction and the area you are in";
         case Id::HelpKeyCameraOrient:   return "N: turn the camera to the next direction, or face the next beacon waypoint";
         case Id::HelpKeyDropMarker:     return "Shift plus N: drop a map marker at your position";
 
@@ -693,7 +696,7 @@ const char* Get(Id id) {
         case Id::HelpKeyPadActionQueue:      return "Left trigger with B: the action queue. D-pad up and down step through the entries, A removes the last one queued, Y clears the whole queue, B closes";
         case Id::HelpKeyPadWalkToFocus:      return "Right trigger with right shoulder button: walk to the focused object";
         case Id::HelpKeyPadBeacon:           return "Left trigger with left shoulder button: audio beacon to the focused object";
-        case Id::HelpKeyPadDegrees:          return "Right trigger: announce the facing in degrees";
+        case Id::HelpKeyPadDegrees:          return "Right trigger: announce your facing direction and the area you are in";
         case Id::HelpKeyPadCameraOrient:     return "Press the right stick: turn the camera to the beacon's next waypoint, otherwise to the next compass direction";
         case Id::HelpKeyPadHelp:             return "Both triggers: keys for this screen. The quick menu's Help entry opens this list";
         case Id::HelpKeyPadQuickMenu:        return "Y: quick menu";
@@ -830,7 +833,7 @@ const char* Get(Id id) {
         case Id::KbNamePathfindFocus:       return "Walk to focus";
         case Id::KbNamePathfindFocusForce:  return "Walk to focus, force";
         case Id::KbNameBeaconFocus:         return "Beacon to focus";
-        case Id::KbNameAnnounceDegrees:     return "Heading in degrees";
+        case Id::KbNameAnnounceDegrees:     return "Facing direction";
         case Id::KbNamePartyLeaderAnnounce: return "Announce party leader";
         case Id::KbNameCameraOrient:        return "Orient camera";
         case Id::KbNameSaveMarkerAtCursor:  return "Drop marker";

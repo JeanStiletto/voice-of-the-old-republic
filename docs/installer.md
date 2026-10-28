@@ -771,6 +771,31 @@ published EXE's file version against the release tag — a publish that silently
 ignored `-p:Version` would ship an installer that believes it is `1.0.0` forever
 and never offers itself an update.
 
+### Windows voices for the mod's own voices (2026-10-28)
+
+A checkbox on the install form, on by default ("Make all Windows voices
+available to the mod"), runs `WindowsVoicesInstaller` after the intro-movie
+step. Ported from the WowVision installer. The mod's announcement and compass
+voices are SAPI 5 voices; Windows keeps its newer (Narrator / OneCore) voices
+in `Speech_OneCore\Voices\Tokens`, which SAPI never lists. The step copies
+every OneCore token missing from `Speech\Voices\Tokens` into it, values and
+`Attributes` subkey included, after a `reg export` backup to
+`%LOCALAPPDATA%\KotorAccessibility\sapi-voices-backup\` (no backup, no change).
+
+**The 32-bit view, not the 64-bit one.** Both games are 32-bit processes, so
+SAPI inside them reads `WOW6432Node`. That list is typically missing the
+OneCore voices even where the 64-bit one already has them (the case on the dev
+PC: Katja and Stefan in the 64-bit list, absent from the 32-bit one). Windows
+registers the OneCore tokens and their engine CLSID in the 32-bit view too, so
+the copy runs entirely there. WowVision copies the 64-bit view, because WoW is
+64-bit; the two must not be "harmonised".
+
+Machine-wide, idempotent (the second form run with both games selected finds
+nothing missing), best-effort: every outcome goes to the event log and none
+fails the install. Off on the headless F5 path, where the user never saw the
+box. The uninstaller leaves the voices in place; the backup holds the original
+list.
+
 ### Layout dropped into the game folder
 
 After a successful install of a Steam KOTOR copy, the install root contains:

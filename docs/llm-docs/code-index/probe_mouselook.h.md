@@ -3,7 +3,7 @@
 Header for the view-mode "Mouse Look" feasibility probe. Notes the file is
 intended to go away (or the hotkey rebinds to a real view-mode toggle) once
 the probe has answered its question. Documents the Shift+AltGr key choice
-(AltGr alone is `announce_degrees`; Shift+AltGr avoids collision and is
+(AltGr alone is `announce_facing`; Shift+AltGr avoids collision and is
 unbound/rare in German typing).
 
 ## Declarations (in source order)

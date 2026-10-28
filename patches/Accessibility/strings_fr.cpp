@@ -176,11 +176,9 @@ const char* Get(Id id) {
         case Id::StuckAllBlocked:      return "Tout bloqu\xE9";
 
 
-        case Id::FmtMapStateOriented:    return "%s. Orient\xE9 \xE0 %d degr\xE9s sur la carte, %s.";
-        case Id::FmtMapStateUnknownRoom: return "Orient\xE9 \xE0 %d degr\xE9s sur la carte, %s.";
+        case Id::FmtFacingMap:           return "Orient\xE9 \xE0 %d degr\xE9s sur la carte, %s.";
 
-        case Id::FmtWorldStateOriented:       return "Direction %s.\n%s.";
-        case Id::FmtWorldStateUnknownCluster: return "Direction %s.";
+        case Id::FmtFacingWorld:              return "Direction %s.";
 
         case Id::MouseLookOn:          return "Vue souris activ\xE9""e";
         case Id::MouseLookOff:         return "Vue souris d\xE9sactiv\xE9""e";
@@ -554,6 +552,11 @@ const char* Get(Id id) {
         case Id::ModSettingUrgentVolumePreview: return "Exemple d'annonce";
         case Id::ModSettingVoiceSettings:           return "R\xE9glages de la voix des annonces";
         case Id::ModSettingsVoiceSettingsOpened:    return "R\xE9glages de la voix des annonces ouverts";
+        case Id::ModSettingCompassSettings: return "R\xE9glages de la voix de la boussole";
+        case Id::ModSettingsCompassSettingsOpened: return "R\xE9glages de la voix de la boussole ouverts";
+        case Id::ModSettingCompassVolume: return "Volume de la voix de la boussole";
+        case Id::ModSettingCompassRate: return "Vitesse de la voix de la boussole";
+        case Id::ModSettingCompassVoice: return "Voix de la boussole";
         case Id::ModSettingCombatSettings: return "Annonces positionn\xE9" "es";
         case Id::ModSettingsCombatSettingsOpened: return "Annonces positionn\xE9" "es ouvertes";
         case Id::ModSettingPositionalCombatSpeech: return "Annonces de combat en 3D";
@@ -649,7 +652,7 @@ const char* Get(Id id) {
         case Id::HelpKeyCycleObjects:   return "Virgule et point : faire d\xE9""filer les objets d\xE9j\xE0 d\xE9""couverts de la cat\xE9gorie actuelle";
         case Id::HelpKeyCycleCategory:  return "Maj plus virgule ou point : cat\xE9gorie pr\xE9""c\xE9""dente ou suivante";
         case Id::HelpKeyCycleEnds:      return "Ctrl plus virgule ou point : aller \xE0 l'objet le plus proche ou le plus \xE9loign\xE9";
-        case Id::HelpKeyHeading:        return "Alt droite : annoncer votre cap exact en degr\xE9s";
+        case Id::HelpKeyHeading:        return "Alt droite : annoncer votre orientation et la zone o\xF9 vous \xEAtes";
         case Id::HelpKeyCameraOrient:   return "N : tourner la cam\xE9ra vers la direction suivante, ou faire face au prochain point de passage";
         case Id::HelpKeyDropMarker:     return "Maj plus N : poser un marqueur de carte \xE0 votre position";
 
@@ -692,7 +695,7 @@ const char* Get(Id id) {
         case Id::HelpKeyPadActionQueue:      return "G\xE2" "chette gauche avec B : la file d'actions. La croix haut et bas parcourt les entr\xE9" "es, A retire la derni\xE8re mise en file, Y vide toute la file, B ferme";
         case Id::HelpKeyPadWalkToFocus:      return "G\xE2" "chette droite avec bouton de tranche droit : marcher jusqu'\xE0 l'objet cibl\xE9";
         case Id::HelpKeyPadBeacon:           return "G\xE2" "chette gauche avec bouton de tranche gauche : balise sonore vers l'objet cibl\xE9";
-        case Id::HelpKeyPadDegrees:          return "G\xE2" "chette droite : annoncer l'orientation en degr\xE9s";
+        case Id::HelpKeyPadDegrees:          return "G\xE2" "chette droite : annoncer votre orientation et la zone o\xF9 vous \xEAtes";
         case Id::HelpKeyPadCameraOrient:     return "Pression du stick droit : tourner la cam\xE9ra vers le prochain point de la balise, sinon vers le point cardinal suivant";
         case Id::HelpKeyPadHelp:             return "Les deux g\xE2" "chettes : touches de cet \xE9" "cran. L'entr\xE9" "e Aide du menu rapide ouvre cette liste";
         case Id::HelpKeyPadQuickMenu:        return "Y : menu rapide";
@@ -830,7 +833,7 @@ const char* Get(Id id) {
         case Id::KbNamePathfindFocus:       return "Aller \xE0 la cible";
         case Id::KbNamePathfindFocusForce:  return "Aller \xE0 la cible, forcer";
         case Id::KbNameBeaconFocus:         return "Balise vers la cible";
-        case Id::KbNameAnnounceDegrees:     return "Orientation en degr\xE9s";
+        case Id::KbNameAnnounceDegrees:     return "Orientation";
         case Id::KbNamePartyLeaderAnnounce: return "Annoncer le chef de groupe";
         case Id::KbNameCameraOrient:        return "Orienter la cam\xE9ra";
         case Id::KbNameSaveMarkerAtCursor:  return "Poser un marqueur";

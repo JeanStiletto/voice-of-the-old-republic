@@ -117,7 +117,7 @@ A second cycle, on top of Q / E, that steps through the objects you have already
 
 <h3>Mod keys — orientation and party</h3>
 
-- AltGr (right Alt, alone) — Speak the current facing as a compass direction
+- AltGr (right Alt, alone) — Speak the current facing as a compass direction, in the compass voice, then the area you are in
 - N — Turn the camera 90° clockwise to the next cardinal direction; if a beacon is armed, point at the beacon's next waypoint instead
 - Tab — Announces the new party leader after the engine cycles control
 
@@ -186,7 +186,7 @@ The button names below follow the Xbox layout: A, B, X, Y, the left and right sh
 - Left stick — Move (all eight directions: forward, backward, and strafing)
 - Right stick — Rotate the camera
 - R3 (press the right stick) — Turn the camera to the beacon's next waypoint, otherwise to the next compass direction (the keyboard's N)
-- Right trigger alone — Announce your facing in degrees
+- Right trigger alone — Announce your facing direction and the area you are in
 
 <h3>Objects and actions</h3>
 

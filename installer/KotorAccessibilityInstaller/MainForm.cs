@@ -32,6 +32,7 @@ namespace KotorAccessibilityInstaller
         private ProgressBar _progressBar;
         private Label _eventLogLabel;
         private EventLogView _eventLog;
+        private CheckBox _windowsVoicesCheckBox;
         private CheckBox _launchCheckBox;
         private CheckBox _readmeCheckBox;
 
@@ -74,7 +75,7 @@ namespace KotorAccessibilityInstaller
                            + " — " + _target.DisplayName;
 
             Text = title;
-            Size = new Size(520, 560);
+            Size = new Size(520, 585);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
@@ -143,10 +144,21 @@ namespace KotorAccessibilityInstaller
                 AccessibleName = InstallerLocale.Get("EventLog_Label")
             };
 
+            _windowsVoicesCheckBox = new CheckBox
+            {
+                Text = InstallerLocale.Get("Main_WindowsVoicesCheckBox"),
+                AccessibleDescription = InstallerLocale.Get("Main_WindowsVoicesCheckBox_Description"),
+                Location = new Point(20, 378),
+                Size = new Size(470, 25),
+                // Headless = the in-game updater; the user was never shown this
+                // box, so the machine-wide voice list is left alone.
+                Checked = !_headless
+            };
+
             _launchCheckBox = new CheckBox
             {
                 Text = InstallerLocale.Get("Main_LaunchCheckBox"),
-                Location = new Point(20, 378),
+                Location = new Point(20, 403),
                 Size = new Size(300, 25),
                 // Headless = invoked by in-game updater; the calling batch
                 // script relaunches the game, so this checkbox would race
@@ -157,7 +169,7 @@ namespace KotorAccessibilityInstaller
             _readmeCheckBox = new CheckBox
             {
                 Text = InstallerLocale.Get("Main_ReadmeCheckBox"),
-                Location = new Point(20, 403),
+                Location = new Point(20, 428),
                 Size = new Size(400, 25),
                 // Headless = unattended; don't pop a browser tab during what
                 // the user is treating as a transparent restart.
@@ -167,7 +179,7 @@ namespace KotorAccessibilityInstaller
             _installButton = new Button
             {
                 Text = InstallerLocale.Get(_updateOnly ? "Main_UpdateButton" : "Main_InstallButton"),
-                Location = new Point(300, 438),
+                Location = new Point(300, 463),
                 Size = new Size(90, 30)
             };
             _installButton.Click += InstallButton_Click;
@@ -175,7 +187,7 @@ namespace KotorAccessibilityInstaller
             _cancelButton = new Button
             {
                 Text = InstallerLocale.Get("Main_CancelButton"),
-                Location = new Point(400, 438),
+                Location = new Point(400, 463),
                 Size = new Size(90, 30)
             };
             _cancelButton.Click += (s, e) => Close();
@@ -184,7 +196,7 @@ namespace KotorAccessibilityInstaller
             {
                 _titleLabel, _statusLabel, _pathLabel, _pathTextBox, _browseButton,
                 _progressBar, _eventLogLabel, _eventLog,
-                _launchCheckBox, _readmeCheckBox, _installButton, _cancelButton
+                _windowsVoicesCheckBox, _launchCheckBox, _readmeCheckBox, _installButton, _cancelButton
             });
 
             // ValidatePath sets the status text AND refreshes the accessible
@@ -484,6 +496,16 @@ namespace KotorAccessibilityInstaller
                     Logger.Warning($"Intro disable failed: {introResult.Error}");
                 }
 
+                // Step 4.65: copy the Windows (OneCore) voices into the 32-bit
+                // SAPI list the game reads, so the in-game voice pickers offer
+                // them. Machine-wide and best-effort: every outcome is reported
+                // in the event log, none fails the install.
+                if (_windowsVoicesCheckBox.Checked)
+                {
+                    UpdateStatus(InstallerLocale.Get("Main_StatusWindowsVoices"));
+                    await Task.Run(() => WindowsVoicesInstaller.Install(UpdateStatus));
+                }
+
                 // Step 4.7: install user-selected optional mods (K1CP today, more later).
                 // _modSelection is null on the update-only path — the coordinator
                 // handles that by returning an empty result list and short-circuiting.
@@ -656,6 +678,7 @@ namespace KotorAccessibilityInstaller
             _browseButton.Enabled = enabled;
             _installButton.Enabled = enabled;
             _pathTextBox.Enabled = enabled;
+            _windowsVoicesCheckBox.Enabled = enabled;
             _launchCheckBox.Enabled = enabled;
             _readmeCheckBox.Enabled = enabled;
         }

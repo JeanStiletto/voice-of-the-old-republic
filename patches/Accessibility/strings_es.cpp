@@ -177,11 +177,9 @@ const char* Get(Id id) {
         case Id::StuckAllBlocked:      return "Todo bloqueado";
 
 
-        case Id::FmtMapStateOriented:    return "%s. Orientado a %d grados en el mapa, %s.";
-        case Id::FmtMapStateUnknownRoom: return "Orientado a %d grados en el mapa, %s.";
+        case Id::FmtFacingMap:           return "Orientado a %d grados en el mapa, %s.";
 
-        case Id::FmtWorldStateOriented:       return "Direcci\xF3""n %s.\n%s.";
-        case Id::FmtWorldStateUnknownCluster: return "Direcci\xF3""n %s.";
+        case Id::FmtFacingWorld:              return "Direcci\xF3""n %s.";
 
         case Id::MouseLookOn:          return "Vista con rat\xF3n activada";
         case Id::MouseLookOff:         return "Vista con rat\xF3n desactivada";
@@ -555,6 +553,11 @@ const char* Get(Id id) {
         case Id::ModSettingUrgentVolumePreview: return "Anuncio de ejemplo";
         case Id::ModSettingVoiceSettings:           return "Ajustes de la voz de los anuncios";
         case Id::ModSettingsVoiceSettingsOpened:    return "Ajustes de la voz de los anuncios abiertos";
+        case Id::ModSettingCompassSettings: return "Ajustes de la voz de la br\xFAjula";
+        case Id::ModSettingsCompassSettingsOpened: return "Ajustes de la voz de la br\xFAjula abiertos";
+        case Id::ModSettingCompassVolume: return "Volumen de la voz de la br\xFAjula";
+        case Id::ModSettingCompassRate: return "Velocidad de la voz de la br\xFAjula";
+        case Id::ModSettingCompassVoice: return "Voz de la br\xFAjula";
         case Id::ModSettingCombatSettings: return "Anuncios posicionales";
         case Id::ModSettingsCombatSettingsOpened: return "Anuncios posicionales abiertos";
         case Id::ModSettingPositionalCombatSpeech: return "Anuncios de combate en 3D";
@@ -650,7 +653,7 @@ const char* Get(Id id) {
         case Id::HelpKeyCycleObjects:   return "Coma y punto: recorrer los objetos ya descubiertos de la categor\xED""a actual";
         case Id::HelpKeyCycleCategory:  return "May\xFAs m\xE1s coma o punto: categor\xED""a anterior o siguiente";
         case Id::HelpKeyCycleEnds:      return "Ctrl m\xE1s coma o punto: ir al objeto m\xE1s cercano o m\xE1s lejano";
-        case Id::HelpKeyHeading:        return "Alt derecho: anunciar tu rumbo exacto en grados";
+        case Id::HelpKeyHeading:        return "Alt derecho: anunciar tu orientaci\xF3n y la zona en la que est\xE1s";
         case Id::HelpKeyCameraOrient:   return "N: girar la c\xE1mara hacia la siguiente direcci\xF3n, o mirar al siguiente punto de paso";
         case Id::HelpKeyDropMarker:     return "May\xFAs m\xE1s N: colocar un marcador de mapa en tu posici\xF3n";
 
@@ -693,7 +696,7 @@ const char* Get(Id id) {
         case Id::HelpKeyPadActionQueue:      return "Gatillo izquierdo con B: la cola de acciones. La cruceta arriba y abajo recorre las entradas, A quita la \xFAltima en cola, Y vac\xED" "a toda la cola, B cierra";
         case Id::HelpKeyPadWalkToFocus:      return "Gatillo derecho con bot\xF3n superior derecho: caminar hasta el objeto enfocado";
         case Id::HelpKeyPadBeacon:           return "Gatillo izquierdo con bot\xF3n superior izquierdo: baliza sonora hacia el objeto enfocado";
-        case Id::HelpKeyPadDegrees:          return "Gatillo derecho: anunciar la orientaci\xF3n en grados";
+        case Id::HelpKeyPadDegrees:          return "Gatillo derecho: anunciar tu orientaci\xF3n y la zona en la que est\xE1s";
         case Id::HelpKeyPadCameraOrient:     return "Pulsar la palanca derecha: girar la c\xE1mara hacia el siguiente punto de la baliza, o al siguiente punto cardinal";
         case Id::HelpKeyPadHelp:             return "Ambos gatillos: teclas de esta pantalla. La entrada Ayuda del men\xFA r\xE1pido abre esta lista";
         case Id::HelpKeyPadQuickMenu:        return "Y: men\xFA r\xE1pido";
@@ -831,7 +834,7 @@ const char* Get(Id id) {
         case Id::KbNamePathfindFocus:       return "Ir al objetivo";
         case Id::KbNamePathfindFocusForce:  return "Ir al objetivo, forzar";
         case Id::KbNameBeaconFocus:         return "Baliza al objetivo";
-        case Id::KbNameAnnounceDegrees:     return "Orientaci\xF3n en grados";
+        case Id::KbNameAnnounceDegrees:     return "Orientaci\xF3n";
         case Id::KbNamePartyLeaderAnnounce: return "Anunciar l\xED""der del grupo";
         case Id::KbNameCameraOrient:        return "Orientar c\xE1mara";
         case Id::KbNameSaveMarkerAtCursor:  return "Colocar marcador";

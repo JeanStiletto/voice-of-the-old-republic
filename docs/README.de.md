@@ -117,7 +117,7 @@ Ein zweiter Zyklus, zusätzlich zu Q / E, der die Objekte durchschreitet, die du
 
 <h3>Mod-Tasten — Orientierung und Gruppe</h3>
 
-- AltGr (rechte Alt-Taste, allein) — Aktuelle Blickrichtung als Himmelsrichtung ansagen
+- AltGr (rechte Alt-Taste, allein) — Aktuelle Blickrichtung als Himmelsrichtung ansagen, mit der Kompassstimme, danach den Bereich, in dem du stehst
 - N — Kamera 90° im Uhrzeigersinn zur nächsten Himmelsrichtung drehen; ist eine Bake aktiv, stattdessen zum nächsten Wegpunkt der Bake ausrichten
 - Tab — Den neuen Gruppenanführer ansagen, nachdem die Engine die Steuerung wechselt
 
@@ -186,7 +186,7 @@ Die Tastennamen unten folgen dem Xbox-Layout: A, B, X, Y, die linke und rechte S
 - Linker Stick — Bewegen (alle acht Richtungen: vorwärts, rückwärts und seitwärts)
 - Rechter Stick — Kamera drehen
 - R3 (rechten Stick drücken) — Kamera zum nächsten Wegpunkt der Bake drehen, sonst zur nächsten Himmelsrichtung (das N der Tastatur)
-- Rechter Trigger allein — Blickrichtung in Grad ansagen
+- Rechter Trigger allein — Blickrichtung und aktuellen Bereich ansagen
 
 <h3>Objekte und Aktionen</h3>
 

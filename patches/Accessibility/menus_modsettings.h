@@ -74,6 +74,11 @@ enum class Option {
                        // (prism owns the value + persistence)
     UrgentVoice,       // choice — which installed SAPI voice speaks the
                        // announcements (prism owns the value + persistence)
+    CompassSettings,   // submenu pivot inside the announcement-voice submenu —
+                       // the compass voice's own three rows below
+    CompassVolume,     // slider — loudness of the compass readout while turning
+    CompassRate,       // slider — its speed (prism owns both + persistence)
+    CompassVoice,      // choice — which SAPI voice speaks the compass readout
     CombatSettings,    // submenu pivot — the positional-announcements submenu
                        // (named "Combat announcements" until 2026-10-28)
     PositionalCombatSpeech,  // combat lines spoken from the creature they are

@@ -93,7 +93,9 @@ enum class Action : int {
     BeaconFocus,           // Ctrl+-
 
     // ----- Orientation & party -----
-    AnnounceDegrees,       // AltGr alone (Shift forbidden)
+    AnnounceDegrees,       // AltGr alone (Shift forbidden): facing readout.
+                           // Named from its degree days; kept because saved
+                           // keybinds store this name
     PartyLeaderAnnounce,   // Tab
     CameraOrient,          // N — beacon waypoint or next cardinal CW
     SaveMarkerAtCursor,    // Shift+N — drops marker on the map
@@ -193,7 +195,7 @@ void ClaimRisingEdge(Action a);
 // Fire `a` from a source that is not the keyboard — currently the KOTOR 2
 // gamepad, whose buttons never set a VK. Latches a one-shot rising edge that
 // the next Pressed(a) reports, so the action's existing poller runs unchanged:
-// camera_orient keeps its in-flight state machine, announce_degrees keeps its
+// camera_orient keeps its in-flight state machine, announce_facing keeps its
 // map-vs-world branch, and neither learns a controller exists. Reaching for
 // the handler directly instead would duplicate that logic per pad binding.
 //
