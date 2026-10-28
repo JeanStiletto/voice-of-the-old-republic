@@ -353,6 +353,12 @@ struct AreaGraph {
     // can dwell-gate sub-perceptual clusters (extent below a floor) at
     // announce time without touching the clustering itself.
     float       node_extent    [kMaxNodes];
+    // Centroid of the node's cluster — the point every exit word in its
+    // label is measured from. Consumed by GetClusterInfo so transitions.cpp
+    // can time a label to the player nearing that point (the centre rule).
+    Vector      node_centre    [kMaxNodes];
+    // ClusterInfo::footprintM of the node's cluster, written with it.
+    float       node_footprint [kMaxNodes];
     // Calibrated walkmesh floor height per node (the clearance probe's
     // probeZ, see ComputeNodeShapeFeatures). Engine path nodes carry
     // z=0; this is the resolved real height, persisted so LookupAt's
@@ -3917,6 +3923,19 @@ void PassClassifyClusters(void* area,
             if (sawTerminal) terminalDeadEndAgrees = anyAgrees;
         }
 
+        // Floor footprint for announce timing (ClusterInfo::footprintM).
+        // Node spread alone reads a single-node crossing as zero metres
+        // wide; the narrowest wall-to-wall axis through the members is
+        // the crossing's real width (an apartment-hall T junction on
+        // Taris: ~11 m, node spread 0).
+        float footprint = bboxExtent;
+        if (haveAxisExt) {
+            float narrowest = axisExt[0];
+            for (int a = 1; a < 4; ++a)
+                if (axisExt[a] < narrowest) narrowest = axisExt[a];
+            if (narrowest > footprint) footprint = narrowest;
+        }
+
         std::string label;
         int kind = kKindOpenArea, sig = 0;
         bool filtered = false;
@@ -3959,6 +3978,8 @@ void PassClassifyClusters(void* area,
             g_graph.node_sig[m]      = sig;
             g_graph.node_filtered[m] = filtered;
             g_graph.node_extent[m]   = bboxExtent;
+            g_graph.node_centre[m]   = centroid;
+            g_graph.node_footprint[m] = footprint;
         }
     }
     bp.clusters          = clusters;
@@ -4030,6 +4051,8 @@ void BuildForArea(void* area) {
         g_graph.node_kind[i]       = kKindOpenArea;
         g_graph.node_cluster_id[i] = kClusterIdNone;
         g_graph.node_extent[i]     = 0.0f;
+        g_graph.node_centre[i]     = g.nodes[i].pos;
+        g_graph.node_footprint[i]  = 0.0f;
         g_graph.node_floor_z[i]    = 0.0f;
     }
 
@@ -4155,16 +4178,17 @@ void DumpGraphToLog() {
     }
 }
 
-bool GetClusterInfo(void* area, int clusterId,
-                    int& outKind, float& outExtentM) {
-    outKind    = -1;
-    outExtentM = -1.0f;
+bool GetClusterInfo(void* area, int clusterId, ClusterInfo& out) {
+    out = ClusterInfo{};
     if (clusterId < 0) return false;
     if (!HasGraphForArea(area)) return false;
     for (int i = 0; i < g_graph.node_count; ++i) {
         if (g_graph.node_cluster_id[i] != clusterId) continue;
-        outKind    = g_graph.node_kind[i];
-        outExtentM = g_graph.node_extent[i];
+        out.kind       = g_graph.node_kind[i];
+        out.extentM    = g_graph.node_extent[i];
+        out.footprintM = g_graph.node_footprint[i];
+        out.centre     = g_graph.node_centre[i];
+        out.largeArea  = out.extentM >= kLargeAreaExtentMeters;
         return true;
     }
     return false;

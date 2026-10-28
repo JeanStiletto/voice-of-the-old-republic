@@ -156,14 +156,40 @@ player, and the 3D sound now makes that audible.
 **Suspected:** worst in wide streets and open outdoor areas (Kashyyyk), where
 the player passes a cluster's node at a distance; not yet checked there.
 
-**Open (decide with the user, one at a time):**
+**Decided (with the user, 2026-10-28): the centre rule.**
 
-- Measure the words from the player's position at speak time (labels would
-  stop being per-cluster constants: text dedup and the flap guard key on the
-  text).
-- Or keep the frame but delay a junction's announce until the player is near
-  its node.
-- Or name the frame in speech ("vom Knoten aus") — probably noise.
+- Labels stay per-cluster constants. Words measured from the player were
+  rejected: "the game can be confusing enough without labels dynamically
+  changing". Naming the frame in speech was rejected as noise.
+- Instead the TIMING moves: a cluster whose exit words are measured from its
+  centre speaks when the player is near that centre — within a quarter of
+  the cluster's extent — or has stopped getting closer to it (passing its
+  closest point, or standing still). Left the cluster before that: silent,
+  as the dwell gate already did for pass-through.
+- Covers Kreuzung, merged rooms (Bereich) and the zone-scale / open Bereich
+  under 40 m. It replaces the 500 ms dwell for those and the 1 s Platz delay
+  below 40 m.
+- Unchanged: Großer Bereich (>= 40 m; the player rarely nears its centre,
+  so it keeps today's timing), corridors and dead ends (keep the 500 ms
+  brush-past dwell: an axis word is true anywhere in a corridor, and a dead
+  end is most useful heard early), stability ticks and the flap guard.
+- Known limit: a single-node crossing passed at a distance (the Taris street
+  case above) still speaks off-frame — the closest approach is still ~7 m
+  away. That is a clustering issue, not timing; revisit only if it recurs.
+- Built 2026-10-28 (transitions.cpp `CentreRuleReady`). First test (K1,
+  patch-20261028-180057.log, Taris Südliche Apartments): words fit much
+  better, but the player overshot even medium crossings. Every crossing
+  there is a single node (extent 0, so "near" never fired) and the stall
+  test fires only after the closest point: 300 ms + the noun + reaction at
+  ~4.5 m/s = 4-5 m past, out into the next corridor (clusters 14, 29, 30).
+- Second build, same day, untested:
+  - "Near" uses the floor footprint: the larger of node spread and the
+    narrowest wall-to-wall axis of the clearance probe (those halls: ~11 m,
+    radius 2.8 m).
+  - Lead: a moving player is announced once the closest point of their
+    current path is less than (measured noun length + 500 ms reaction)
+    ahead, or already behind. The stall test stays for standing still.
+  - Log: `centre rule met: lead (... closest in Xs at Ym ...)`.
 
 ## Unreproduced
 

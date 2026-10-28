@@ -117,10 +117,160 @@ int   g_pending_cluster_count = 0;
 // swallowed it and the player stutter-stepped back to find it. Hearing
 // the label at all, even cut off by the next one, is what lets the
 // player turn back; a missed crossing costs far more than a clipped one.
+// Since 2026-10-28 the dwell gate only covers corridors and dead ends (and
+// the rare exit-less open fallback): clusters whose exit words are
+// measured from a centre take the centre rule below instead.
 constexpr float kMinorClusterExtentM = 12.0f;
 constexpr DWORD kMinorClusterDwellMs = 500;
 DWORD g_pending_cluster_since_ms = 0;
 bool  g_pending_cluster_minor    = false;
+
+// Centre rule (2026-10-28, Taris Upper City + 3D exit descriptions). A
+// Kreuzung, merged room or Bereich under Großer-Bereich size speaks exit
+// words measured from its centroid, but the cluster is entered when its
+// node becomes the nearest one, roughly halfway from the neighbour — up
+// to ~9 m off-centre on wide streets, where the 3D sound made the word
+// audibly wrong ("Süd-Ost" heard from nearly north). So the announce is
+// held until the player is where the words are true:
+//   - within a quarter of the cluster's extent of its centre, or
+//   - no longer getting closer: passing the closest point, or standing
+//     still. A player who never comes near hears it at the best spot the
+//     walk offers.
+// Left the cluster first: the pending observation is replaced and nothing
+// is spoken, as with the dwell gate. One rule for every size, replacing
+// the 500 ms dwell and the 1 s Platz delay for these kinds; Großer
+// Bereich keeps its old timing (its centre is rarely reached), corridors
+// and dead ends keep the dwell (an axis word is true anywhere in a run,
+// and a dead end is worth hearing early).
+// "Near" uses the cluster's floor footprint, not its node spread, so a
+// single-node crossing has a real radius (Taris apartment halls: ~11 m
+// wide, 2.8 m radius).
+//
+// Lead (2026-10-28, first test, Taris Südliche Apartments): firing only
+// once the player was no longer getting closer left them 4-5 m past the
+// centre — 300 ms to prove the stall, the noun "Kreuzung" (0.42 s), then
+// the reaction to let go of W, all at ~4.5 m/s running speed — and out of
+// a single-node crossing into the next corridor. What has to happen at
+// the centre is the player STOPPING, so the exit words are heard from
+// there. A moving player is therefore announced when the closest point of
+// their current path lies less than the lead time ahead (or already
+// behind): the measured length of the noun plus a reaction allowance.
+// Walking slowly fires close to the centre, running fires further out.
+// Standing still and slow drifting are left to the stall test.
+// The stall numbers only define "no longer getting closer": a step
+// toward the centre must gain more than walk jitter, and the stall must
+// outlast a single frame hitch. kCentreReactionMs is the one human
+// constant: the time from hearing the noun to the key coming up.
+constexpr float kCentreRadiusFraction = 0.25f;
+constexpr float kCentreProgressEpsM   = 0.05f;
+constexpr DWORD kCentreNoCloserMs     = 300;
+constexpr DWORD kCentreReactionMs     = 500;
+// Noun length until one exit list has played (or when exit descriptions
+// are off and the screen reader speaks): "Kreuzung" at the default rate.
+constexpr DWORD kCentreDefaultLeadMs  = 420;
+// Below this the player counts as standing (the stall test's case).
+constexpr float kCentreMovingMps      = 0.5f;
+bool   g_pending_cluster_centre = false;
+Vector g_pending_centre_pos     = {0.0f, 0.0f, 0.0f};
+float  g_pending_centre_radius  = 0.0f;
+float  g_pending_centre_best    = 0.0f;
+DWORD  g_pending_centre_best_ms = 0;
+
+// Player ground velocity, sampled every kMotionSampleMs (one frame is too
+// noisy, and a gap longer than kMotionStaleMs — a load, a pause — is not
+// motion). Updated every tick by TrackMotion, read by the centre rule.
+constexpr DWORD kMotionSampleMs = 100;
+constexpr DWORD kMotionStaleMs  = 500;
+Vector g_motion_prev_pos   = {0.0f, 0.0f, 0.0f};
+DWORD  g_motion_prev_ms    = 0;
+float  g_motion_vx         = 0.0f;
+float  g_motion_vy         = 0.0f;
+bool   g_motion_valid      = false;
+
+void TrackMotion(const Vector& pos) {
+    const DWORD now = GetTickCount();
+    if (g_motion_prev_ms == 0) {
+        g_motion_prev_pos = pos;
+        g_motion_prev_ms  = now;
+        return;
+    }
+    const DWORD dt = now - g_motion_prev_ms;
+    if (dt < kMotionSampleMs) return;
+    if (dt <= kMotionStaleMs) {
+        g_motion_vx    = (pos.x - g_motion_prev_pos.x) * 1000.0f / dt;
+        g_motion_vy    = (pos.y - g_motion_prev_pos.y) * 1000.0f / dt;
+        g_motion_valid = true;
+    } else {
+        g_motion_valid = false;
+    }
+    g_motion_prev_pos = pos;
+    g_motion_prev_ms  = now;
+}
+
+void ResetMotion() {
+    g_motion_prev_ms = 0;
+    g_motion_valid   = false;
+}
+
+float CentreDistance(const Vector& pos) {
+    const float dx = pos.x - g_pending_centre_pos.x;
+    const float dy = pos.y - g_pending_centre_pos.y;
+    return std::sqrt(dx * dx + dy * dy);
+}
+
+// True once the pending centre-rule cluster may speak. Tracks the closest
+// distance reached so far; called every tick while the cluster is pending.
+bool CentreRuleReady(int clusterId, const Vector& pos) {
+    const DWORD now  = GetTickCount();
+    const float dist = CentreDistance(pos);
+    if (dist <= g_pending_centre_radius) {
+        acclog::Write("Transition",
+                      "cluster -> %d centre rule met: near (dist=%.1fm <= "
+                      "%.1fm)", clusterId, dist, g_pending_centre_radius);
+        return true;
+    }
+    if (g_motion_valid) {
+        const float speedSq = g_motion_vx * g_motion_vx +
+                              g_motion_vy * g_motion_vy;
+        if (speedSq >= kCentreMovingMps * kCentreMovingMps) {
+            DWORD nounMs = acc::positional_speech::LastExitLeadMs();
+            if (nounMs == 0) nounMs = kCentreDefaultLeadMs;
+            const float leadS = (nounMs + kCentreReactionMs) / 1000.0f;
+            // Time until the closest point of the current path; negative
+            // once it is behind.
+            const float rx = g_pending_centre_pos.x - pos.x;
+            const float ry = g_pending_centre_pos.y - pos.y;
+            const float tClosest = (rx * g_motion_vx + ry * g_motion_vy) /
+                                   speedSq;
+            if (tClosest <= leadS) {
+                const float cx = rx - g_motion_vx * tClosest;
+                const float cy = ry - g_motion_vy * tClosest;
+                acclog::Write("Transition",
+                              "cluster -> %d centre rule met: lead (dist=%.1fm "
+                              "speed=%.1fm/s closest in %.2fs at %.1fm, "
+                              "lead=%.2fs noun=%lums radius=%.1fm)",
+                              clusterId, dist, std::sqrt(speedSq), tClosest,
+                              std::sqrt(cx * cx + cy * cy), leadS,
+                              (unsigned long)nounMs, g_pending_centre_radius);
+                return true;
+            }
+        }
+    }
+    if (dist < g_pending_centre_best - kCentreProgressEpsM) {
+        g_pending_centre_best    = dist;
+        g_pending_centre_best_ms = now;
+        return false;
+    }
+    if ((now - g_pending_centre_best_ms) >= kCentreNoCloserMs) {
+        acclog::Write("Transition",
+                      "cluster -> %d centre rule met: no closer for %lums "
+                      "(dist=%.1fm best=%.1fm radius=%.1fm)",
+                      clusterId, (unsigned long)(now - g_pending_centre_best_ms),
+                      dist, g_pending_centre_best, g_pending_centre_radius);
+        return true;
+    }
+    return false;
+}
 
 // Flat landmark cache. Built once on each area change by scanning
 // every CSWSWaypoint with has_map_note != 0 AND map_note_enabled != 0
@@ -364,7 +514,9 @@ void CommitSpokenLabel(const std::string& text, const Vector& pos,
 // cluster ids and the normal announce path; the parallel machinery was
 // removed rather than kept as a dead safety net.)
 
-// Platz delayed-announce state. When a multi-node Path 3 cluster
+// Platz delayed-announce state. Since 2026-10-28 only Großer Bereich
+// (extent >= the large-area threshold) takes this path; every smaller
+// Platz waits for the centre rule instead. When such a cluster
 // resolves (kind == KindPlatz) we defer the SAPI announce for
 // kPlatzDelayMs ms so the player has time to walk further into the
 // cluster — by the time the announce fires they're closer to the
@@ -599,7 +751,8 @@ void LogWallTopoComparison(void* area, int roomIndex,
 // combat / UI-blocking checks.
 //
 // Platz delay: when the resolved label is a multi-node Path 3 cluster
-// (kind == KindPlatz), defer the SAPI announce for kPlatzDelayMs. The
+// (kind == KindPlatz) of Großer-Bereich size, defer the SAPI announce for
+// kPlatzDelayMs (smaller ones take the centre rule in Tick instead). The
 // label + position are stashed; `TickPendingPlatz` fires the announce
 // later, re-resolving at the current player position so a player who
 // walked through doesn't get a stale label.
@@ -666,8 +819,16 @@ void SpeakRoomChange(void* area, int clusterId, const Vector& worldPos) {
                                      /*zTrusted=*/true)) {
         peekKind = peekSig & 0xff;
     }
-
+    // Only Großer Bereich still defers: a smaller Platz waited for the
+    // centre rule in Tick, so the player is already where its words hold.
+    bool peekLarge = false;
     if (peekKind == acc::room_topology::KindPlatz) {
+        acc::room_topology::ClusterInfo info;
+        if (acc::room_topology::GetClusterInfo(area, peekCid, info))
+            peekLarge = info.largeArea;
+    }
+
+    if (peekKind == acc::room_topology::KindPlatz && peekLarge) {
         // Defer: stash the resolved label + context for the timer in
         // Tick to fire. Advance g_last_spoken_room_text now so further
         // cluster transitions producing the same label get text-deduped
@@ -1089,6 +1250,8 @@ void ResetRoomSpeechState() {
     g_prev_cluster_id            = acc::room_topology::kClusterIdNone;
     g_pending_cluster_id         = acc::room_topology::kClusterIdNone;
     g_pending_cluster_count      = 0;
+    g_pending_cluster_centre     = false;
+    ResetMotion();
     g_prev_friendly_room_name[0] = '\0';
     g_last_spoken_room_text.clear();
     g_last_spoken_pos_valid      = false;
@@ -1269,6 +1432,10 @@ void Tick() {
 
     TickProximityLandmarks(pos);
 
+    // Every tick, so the velocity is current the moment a cluster becomes
+    // pending (the centre rule's lead).
+    TrackMotion(pos);
+
     // Pending Platz announce: fires whenever its delay elapses,
     // regardless of whether a new .lyt-room transition triggered this
     // tick. Lives outside the room-stability gate below so the
@@ -1393,19 +1560,48 @@ void Tick() {
         g_pending_cluster_since_ms = GetTickCount();
         // Classify once on first observation — labels are baked per
         // build, so the verdict can't change while pending.
-        g_pending_cluster_minor = false;
-        int   pendKind   = -1;
-        float pendExtent = -1.0f;
-        if (acc::room_topology::GetClusterInfo(area, clusterId,
-                                               pendKind, pendExtent) &&
-            pendExtent >= 0.0f && pendExtent < kMinorClusterExtentM) {
-            g_pending_cluster_minor = true;
-            acclog::Write("Transition",
-                          "cluster -> %d is minor (extent=%.1fm < %.1fm, "
-                          "kind=%d) — dwell-gated %lums",
-                          clusterId, pendExtent, kMinorClusterExtentM,
-                          pendKind, (unsigned long)kMinorClusterDwellMs);
+        g_pending_cluster_minor  = false;
+        g_pending_cluster_centre = false;
+        acc::room_topology::ClusterInfo info;
+        if (acc::room_topology::GetClusterInfo(area, clusterId, info) &&
+            info.extentM >= 0.0f) {
+            const bool centreKind =
+                info.kind == acc::room_topology::KindJunction ||
+                (!info.largeArea &&
+                 (info.kind == acc::room_topology::KindRoom ||
+                  info.kind == acc::room_topology::KindPlatz));
+            if (centreKind) {
+                g_pending_cluster_centre = true;
+                g_pending_centre_pos     = info.centre;
+                g_pending_centre_radius  = info.footprintM *
+                                           kCentreRadiusFraction;
+                g_pending_centre_best    = CentreDistance(pos);
+                g_pending_centre_best_ms = g_pending_cluster_since_ms;
+                acclog::Write("Transition",
+                              "cluster -> %d centre rule (kind=%d "
+                              "extent=%.1fm footprint=%.1fm radius=%.1fm "
+                              "dist=%.1fm)",
+                              clusterId, info.kind, info.extentM,
+                              info.footprintM, g_pending_centre_radius,
+                              g_pending_centre_best);
+            } else if (info.extentM < kMinorClusterExtentM) {
+                g_pending_cluster_minor = true;
+                acclog::Write("Transition",
+                              "cluster -> %d is minor (extent=%.1fm < %.1fm, "
+                              "kind=%d) — dwell-gated %lums",
+                              clusterId, info.extentM, kMinorClusterExtentM,
+                              info.kind, (unsigned long)kMinorClusterDwellMs);
+            }
         }
+    }
+
+    // Track the closest approach every tick from the first observation,
+    // not only once the stability window has passed.
+    if (g_pending_cluster_centre && !friendlyChanged) {
+        // Not at the spot the label's words are measured from yet: hold.
+        // Leaving first never commits, same as the dwell gate.
+        if (!CentreRuleReady(clusterId, pos)) return;
+        g_pending_cluster_centre = false;  // met: latch until committed
     }
 
     if (g_pending_cluster_count >= kClusterStabilityTicks &&

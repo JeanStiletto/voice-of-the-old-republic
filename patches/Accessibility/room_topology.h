@@ -139,13 +139,27 @@ bool LookupAt(void* area, const Vector& worldPos,
               bool zTrusted = false,
               std::vector<ExitMark>* outExits = nullptr);
 
-// Kind + footprint extent (longest bounding-box side of the member
-// nodes, metres) for a real cluster id returned by LookupAt. Lets
-// transitions.cpp dwell-gate sub-perceptual clusters without a second
-// label resolution. False (kind=-1, extent=-1) on sentinel ids, unknown
-// ids, or no graph.
-bool GetClusterInfo(void* area, int clusterId,
-                    int& outKind, float& outExtentM);
+// What transitions.cpp needs to time a cluster's announce without a
+// second label resolution.
+struct ClusterInfo {
+    int    kind      = -1;     // see Kind
+    // Longest bounding-box side of the member nodes, metres. Zero for a
+    // single node. Drives the dwell gate and the Großer-Bereich flag.
+    float  extentM   = -1.0f;
+    // How wide the space is on the floor: the larger of extentM and the
+    // narrowest wall-to-wall width through the members (the clearance
+    // probe). Gives a single-node crossing its real size. Drives the
+    // centre rule's "near" radius.
+    float  footprintM = -1.0f;
+    Vector centre    = {0.0f, 0.0f, 0.0f};  // what its exit words are measured from
+    // Big enough to speak as "Großer Bereich" (the noun swap applies only
+    // to area labels; the flag is extent alone).
+    bool   largeArea = false;
+};
+
+// False (out left at its defaults) on sentinel ids, unknown ids, or no
+// graph.
+bool GetClusterInfo(void* area, int clusterId, ClusterInfo& out);
 
 void DumpGraphToLog();
 

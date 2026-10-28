@@ -61,6 +61,8 @@ and add the German in parentheses if it genuinely aids clarity.
 - Shift+8 opens the action menu from the in-game menu, like Shift+4 to 7.
 - Each exit in a corridor, junction or area description is spoken from where
   it is, in 3D, so you hear which way to turn (on by default, same submenu).
+- Junctions, rooms and areas are announced as you reach their middle, so
+  the exit directions are right from where you stop.
 - After a fight, the area description waits until the combat announcements
   have finished.
 - When the beacon (Ctrl+-) finds no route, it says whether the target may be
@@ -170,6 +172,13 @@ and add the German in parentheses if it genuinely aids clarity.
   too. The lines use the announcement voice and the urgent volume and speed
   sliders; turn "3D exit descriptions" off in Mod settings, Positional
   announcements, for the centred description.
+- **Junctions, rooms and areas are announced as you reach their middle.**
+  Their exit directions are measured from the middle, but they used to be
+  spoken as soon as you stepped in, up to 9 m off on wide junctions, where
+  "south-east" could come from almost north. Now the description starts just
+  early enough that you come to a stop near the middle when you hear the
+  junction's name, and the exits follow from there. It takes your walking
+  speed and the voice's speed into account.
 - **After a fight, the area description waits for the combat announcements**
   to finish instead of talking over the last of them.
 - **The beacon's "no path" message says why.** "No path from here to X. It may

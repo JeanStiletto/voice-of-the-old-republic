@@ -285,6 +285,7 @@ struct Line {
     bool                  ahead   = false;  // straight ahead, no distance loss
     bool                  preview = false;  // ahead + the group audible under the menu pause
     bool                  noted   = false;  // its whole label already went to NoteSpokenElsewhere
+    bool                  lead    = false;  // first piece of an exit list (LastExitLeadMs)
     prism::RenderedSpeech speech;
 };
 
@@ -298,6 +299,7 @@ struct ChannelState {
 
 ChannelState g_channels[3];
 uint32_t     g_nextTicket = 1;
+DWORD        g_lastExitLeadMs = 0;
 
 ChannelState& StateOf(Channel c) { return g_channels[static_cast<int>(c)]; }
 
@@ -441,6 +443,7 @@ bool Play(ChannelState& ch, Line& line) {
         return false;
     }
     const DWORD durationMs = static_cast<DWORD>(1000.0 * frames / sp.sampleRate);
+    if (line.lead) g_lastExitLeadMs = durationMs;
     ch.busy      = true;
     ch.busyUntil = GetTickCount() + durationMs + kLineGapMs;
     acclog::Write("PosSpeech", "play %s%s at (%.1f,%.1f,%.1f) dist=%.1f m gain=%.2f rear=%.1f dB vol=%d %lu ms: [%s]",
@@ -666,6 +669,7 @@ bool SpeakExitList(const char* text,
         line.lastPos = p.pos;
         line.ahead   = !p.placed;
         line.noted   = true;
+        line.lead    = (&p == &pieces.front());
         line.state   = LineState::Unrendered;
         ch.queue.push_back(std::move(line));
     }
@@ -677,6 +681,10 @@ bool IsSpeaking(Channel channel) {
     const ChannelState& ch = StateOf(channel);
     if (!ch.queue.empty()) return true;
     return ch.busy && static_cast<int>(GetTickCount() - ch.busyUntil) < 0;
+}
+
+unsigned long LastExitLeadMs() {
+    return g_lastExitLeadMs;
 }
 
 bool Speak(Channel channel, const char* text, const char* subjectIn, const char* nearIn) {

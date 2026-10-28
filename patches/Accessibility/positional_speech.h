@@ -92,6 +92,12 @@ bool SpeakExitList(const char* text,
 // True while the channel has a line playing or waiting.
 bool IsSpeaking(Channel channel);
 
+// Length of the first piece of the last exit list played (the region
+// noun, "Kreuzung"), in ms; 0 before any. Follows the voice and its speed
+// slider, so transitions.cpp can start a label early enough that the noun
+// has been heard by the time the player reaches the spot it describes.
+unsigned long LastExitLeadMs();  // DWORD; this header stays free of windows.h
+
 // Speaks `text` on `channel` straight ahead of the listener, at the current
 // volume and speed and with no distance loss: the combat sliders' preview.
 // Replaces whatever the channel was playing, and rides the priority group
