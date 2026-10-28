@@ -30,6 +30,10 @@ namespace acc::audio {
 // (see GetCuePriorityGroup), not of this byte.
 constexpr uint8_t kCueVolumeFull = 127;
 
+// The engine's CExoSoundInternal (CExoSound facade +0x00), or nullptr while
+// the sound system is not up yet. Both games.
+void* GetSoundInternal();
+
 // --- Global cue volume (the user-facing "hint sounds" slider) --------
 // Percent in [0,100]; 100 = each cue at its base volume, 0 = muted.
 // Lives here (not in the menu TU) so the audio funnel stays the single

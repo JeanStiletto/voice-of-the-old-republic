@@ -74,9 +74,12 @@ enum class Option {
                        // (prism owns the value + persistence)
     UrgentVoice,       // choice — which installed SAPI voice speaks the
                        // announcements (prism owns the value + persistence)
-    CombatSettings,    // submenu pivot — the combat-announcements submenu
+    CombatSettings,    // submenu pivot — the positional-announcements submenu
+                       // (named "Combat announcements" until 2026-10-28)
     PositionalCombatSpeech,  // combat lines spoken from the creature they are
                              // about, in 3D (positional_speech; on by default)
+    PositionalExitSpeech,    // each exit of a walking region label spoken from
+                             // where it is (positional_speech Exits; on by default)
     CombatVolume,      // slider — loudness of the positional combat lines
                        // (positional_speech owns the value, normal channel)
     CombatRate,        // slider — their speed as an offset from the screen

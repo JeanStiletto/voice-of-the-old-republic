@@ -23,6 +23,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <vector>
 
 #include "engine_area.h"        // AreaObjectIterator, GetObjectKind, GameObjectKind::Door, GetObjectPosition, kDoorTransitionDestOffset, SegmentCrossesWalkmesh
 #include "engine_navgraph.h"
@@ -324,6 +325,9 @@ struct AreaGraph {
     int         node_count   = 0;
     Vector      node_pos    [kMaxNodes];
     std::string node_label  [kMaxNodes];
+    // The label's exit entries with their world points (ExitMark), written
+    // with node_label by Pass 3. Feeds 3D exit descriptions.
+    std::vector<ExitMark> node_exits[kMaxNodes];
     int         node_sig    [kMaxNodes];
     int         node_kind   [kMaxNodes];  // see kKind* constants
     // Frozen UFFind root per node, snapshotted at the end of BuildForArea
@@ -1200,6 +1204,28 @@ void AppendListEntry(std::string& list, const std::string& entry) {
     list += entry;
 }
 
+// Exit-mark sink for 3D exit descriptions. PassClassifyClusters points it
+// at the cluster's mark list around ClassifyCluster; every place that
+// appends an EXIT entry to a label notes the entry and its world point
+// here. Null outside classification, so the label helpers stay usable
+// on their own. A mark whose entry the final label drops (an exit list
+// the axis word covers) is harmless: SpeakExitList skips marks it cannot
+// find in the spoken text.
+std::vector<ExitMark>* g_exit_sink = nullptr;
+
+void NoteExit(const std::string& entry, const Vector& pos) {
+    if (g_exit_sink && !entry.empty()) g_exit_sink->push_back({entry, pos});
+}
+
+// Where an exit entry leads: the door's own position when it is a door,
+// else `fallback` (the nav point the shape path measured it from).
+Vector ExitPoint(int doorIdx, const Vector& fallback) {
+    if (doorIdx >= 0 && doorIdx < g_graph.door_count) {
+        return g_graph.doors[doorIdx].pos;
+    }
+    return fallback;
+}
+
 // Render the door-flavoured replacement of a direction word. Single
 // source of truth for the dead-end / corridor / junction-octant
 // rewrites. Each format takes (noun, direction[, extra]):
@@ -1298,9 +1324,13 @@ std::string DirEntry(acc::strings::Id dirId, bool markDeadEnd,
 // dead-end octants. Without the marker the Peragus Minenschächte droid
 // pocket announced as a plain "Ost" exit and the player searched the
 // east wall for a way out that never existed (2026-08-11 session).
+// `posA` / `posB` are where each end leads (ExitPoint); when the two
+// ends are named separately they are noted as exits (NoteExit). The
+// single axis word names the run, not an end, and notes nothing.
 std::string RenderCorridorAxis(int bitA, int doorA, bool deadA,
                                int bitB, int doorB, bool deadB,
-                               bool rampA = false, bool rampB = false) {
+                               bool rampA, bool rampB,
+                               const Vector& posA, const Vector& posB) {
     using acc::strings::Id;
     if (bitA < 0 || bitB < 0 || bitA == bitB) return std::string();
 
@@ -1343,13 +1373,14 @@ std::string RenderCorridorAxis(int bitA, int doorA, bool deadA,
     int second = bitB, secondDoor = doorB;
     bool firstDead = deadA, secondDead = deadB;
     bool firstRamp = rampA, secondRamp = rampB;
+    Vector firstPos = posA, secondPos = posB;
     if (octant_y[bitB] > octant_y[first] ||
         (octant_y[bitB] == octant_y[first] &&
          octant_x[bitB] >  octant_x[first])) {
         first  = bitB; firstDoor  = doorB; firstDead  = deadB;
-        firstRamp  = rampB;
+        firstRamp  = rampB; firstPos  = posB;
         second = bitA; secondDoor = doorA; secondDead = deadA;
-        secondRamp = rampA;
+        secondRamp = rampA; secondPos = posA;
     }
     // Passable end first (2026-08-26): the corridor form "Sackgasse
     // Nord, Süd" and the standalone dead-end form "Sackgasse, Nord"
@@ -1364,6 +1395,7 @@ std::string RenderCorridorAxis(int bitA, int doorA, bool deadA,
         int  tb = first;      first      = second;     second     = tb;
         int  td = firstDoor;  firstDoor  = secondDoor; secondDoor = td;
         bool tr = firstRamp;  firstRamp  = secondRamp; secondRamp = tr;
+        Vector tp = firstPos; firstPos   = secondPos;  secondPos  = tp;
         firstDead = false;    secondDead = true;
     }
     const char* wordA = acc::strings::Get(BitToOctant(first));
@@ -1377,15 +1409,19 @@ std::string RenderCorridorAxis(int bitA, int doorA, bool deadA,
     // instead of losing one. Door wins over the dead-end marker, same
     // rule as the junction emit loop.
     std::string combo;
-    AppendListEntry(combo, (firstDoor >= 0)
-                               ? RenderDoorDirection(firstDoor, wordA)
-                               : DirEntry(BitToOctant(first), firstDead,
-                                          !firstDead && firstRamp));
-    AppendListEntry(combo, (secondDoor >= 0)
-                               ? RenderDoorDirection(secondDoor, wordB)
-                               : DirEntry(BitToOctant(second), secondDead,
-                                          !secondDead && secondRamp));
+    std::string firstEntry = (firstDoor >= 0)
+                                 ? RenderDoorDirection(firstDoor, wordA)
+                                 : DirEntry(BitToOctant(first), firstDead,
+                                            !firstDead && firstRamp);
+    std::string secondEntry = (secondDoor >= 0)
+                                  ? RenderDoorDirection(secondDoor, wordB)
+                                  : DirEntry(BitToOctant(second), secondDead,
+                                             !secondDead && secondRamp);
+    AppendListEntry(combo, firstEntry);
+    AppendListEntry(combo, secondEntry);
     if (combo.empty()) return std::string();
+    NoteExit(firstEntry, firstPos);
+    NoteExit(secondEntry, secondPos);
 
     if (anyDoor) return combo;
     const char* fmt = acc::strings::Get(Id::FmtMapCursorCorridorDir);
@@ -1657,6 +1693,7 @@ void ClassifyAsArea(const acc::engine::navgraph::NavGraphSnapshot& g, int n,
                     const std::string& trigEntries,
                     std::string& outLabel, int& outKind, int& outSig) {
     using acc::strings::Id;
+    const size_t marksAtEntry = g_exit_sink ? g_exit_sink->size() : 0;
     bool   octHas[8]  = {false, false, false, false, false, false, false, false};
     int    octDoor[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
     Vector octPos[8]  = {};
@@ -1737,6 +1774,7 @@ void ClassifyAsArea(const acc::engine::navgraph::NavGraphSnapshot& g, int n,
             anyFar = true;
         }
         AppendListEntry(dirList, entry);
+        NoteExit(entry, ExitPoint(octDoor[bit], octPos[bit]));
     }
 
     // Attached transition triggers are exits like any other — appended
@@ -1778,6 +1816,8 @@ void ClassifyAsArea(const acc::engine::navgraph::NavGraphSnapshot& g, int n,
         }
     }
     bool haveExits = !dirList.empty() && !axisCoversExits;
+    // No exit list in the label: the axis word alone is spoken, centred.
+    if (!haveExits && g_exit_sink) g_exit_sink->resize(marksAtEntry);
 
     if (elong && axisW && axisW[0] && haveExits) {
         const char* fmt = acc::strings::Get(Id::FmtAreaAxisExits);
@@ -1825,6 +1865,7 @@ void ClassifyAsDeadEnd(const acc::engine::navgraph::NavGraphSnapshot& g, int n,
         std::string list = trigEntries;
         if (backWord && backWord[0]) {
             AppendListEntry(list, std::string(backWord));
+            NoteExit(backWord, g.nodes[nb].pos);
         }
         outLabel = list;
         outKind  = kKindCorridor;
@@ -1882,6 +1923,7 @@ void ClassifyAsDeadEnd(const acc::engine::navgraph::NavGraphSnapshot& g, int n,
     int doorIdx = externalDoorIdx ? externalDoorIdx[0] : -1;
     if (doorIdx >= 0 && word && word[0]) {
         outLabel = RenderDoorDirection(doorIdx, word);
+        NoteExit(outLabel, ExitPoint(doorIdx, g.nodes[nb].pos));
         if (gateAgrees) {
             acclog::Write(
                 "WallTopo",
@@ -1898,6 +1940,7 @@ void ClassifyAsDeadEnd(const acc::engine::navgraph::NavGraphSnapshot& g, int n,
         const char* fmt  = acc::strings::Get(Id::FmtMapCursorDeadEnd);
         if (fmt[0] && !w.empty()) {
             outLabel = acc::strfmt::Format(fmt, w.c_str());
+            NoteExit(w, g.nodes[nb].pos);  // the way out of the dead end
         }
     }
     outKind = kKindDeadEnd;
@@ -1994,7 +2037,9 @@ void ClassifyAsCorridor(const acc::engine::navgraph::NavGraphSnapshot& g, int n,
     bool rampA = (doorA < 0) && ExitIsRamp(nbA, centroidFloorZ);
     bool rampB = (doorB < 0) && ExitIsRamp(nbB, centroidFloorZ);
     outLabel = RenderCorridorAxis(bitA, doorA, deadA, bitB, doorB, deadB,
-                                  rampA, rampB);
+                                  rampA, rampB,
+                                  ExitPoint(doorA, g.nodes[nbA].pos),
+                                  ExitPoint(doorB, g.nodes[nbB].pos));
     AppendListEntry(outLabel, trigEntries);
     if (doorA >= 0 || doorB >= 0 || deadA || deadB || rampA || rampB) {
         acclog::Write(
@@ -2023,6 +2068,7 @@ void ClassifyDemotedToDeadEnd(const Vector& centroid,
                               const int octantDoorIdx[8],
                               const int realExitBits[8],
                               const bool octantAllRamp[8],
+                              const Vector octantPos[8],
                               const std::string& trigEntries,
                               std::string& outLabel, int& outKind,
                               int& outSig) {
@@ -2034,13 +2080,15 @@ void ClassifyDemotedToDeadEnd(const Vector& centroid,
         // Same rule as the degree-1 path: a transition trigger makes
         // this a passage toward the exit, not a Sackgasse.
         std::string list = trigEntries;
+        std::string way;
         if (octantDoorIdx[bit] >= 0) {
-            AppendListEntry(list,
-                            RenderDoorDirection(octantDoorIdx[bit],
-                                                dirWord ? dirWord : ""));
+            way = RenderDoorDirection(octantDoorIdx[bit],
+                                      dirWord ? dirWord : "");
         } else if (dirWord && dirWord[0]) {
-            AppendListEntry(list, std::string(dirWord));
+            way = dirWord;
         }
+        AppendListEntry(list, way);
+        NoteExit(way, ExitPoint(octantDoorIdx[bit], octantPos[bit]));
         outLabel = list;
         outKind  = kKindCorridor;
         outSig   = (kKindCorridor & 0xff) | ((bit & 0xff) << 8);
@@ -2054,12 +2102,14 @@ void ClassifyDemotedToDeadEnd(const Vector& centroid,
     if (octantDoorIdx[bit] >= 0) {
         outLabel = RenderDoorDirection(octantDoorIdx[bit],
                                        dirWord ? dirWord : "");
+        NoteExit(outLabel, ExitPoint(octantDoorIdx[bit], octantPos[bit]));
     } else {
         std::string w = DirEntry(dirId, /*markDeadEnd=*/false,
                                  octantAllRamp[bit]);
         const char* fmt = acc::strings::Get(Id::FmtMapCursorDeadEnd);
         if (fmt[0] && !w.empty()) {
             outLabel = acc::strfmt::Format(fmt, w.c_str());
+            NoteExit(w, octantPos[bit]);  // the way out of the dead end
         }
     }
     outKind = kKindDeadEnd;
@@ -2077,6 +2127,7 @@ void ClassifyDemotedToCorridor(const Vector& centroid,
                                const int octantDoorIdx[8],
                                const int realExitBits[8],
                                const bool octantAllRamp[8],
+                               const Vector octantPos[8],
                                const std::string& trigEntries,
                                std::string& outLabel, int& outKind,
                                int& outSig) {
@@ -2093,7 +2144,9 @@ void ClassifyDemotedToCorridor(const Vector& centroid,
     bool rampB = (doorB < 0) && bitB >= 0 && bitB < 8 && octantAllRamp[bitB];
     outLabel = RenderCorridorAxis(bitA, doorA, /*deadA=*/false,
                                   bitB, doorB, /*deadB=*/false,
-                                  rampA, rampB);
+                                  rampA, rampB,
+                                  ExitPoint(doorA, octantPos[bitA]),
+                                  ExitPoint(doorB, octantPos[bitB]));
     AppendListEntry(outLabel, trigEntries);
     outKind = kKindCorridor;
     int sigBitLo = (bitA < bitB) ? bitA : bitB;
@@ -2116,6 +2169,7 @@ void EmitJunctionLabel(const bool octantHasExit[8],
                        const bool octantAllDeadEnd[8],
                        const int octantDoorIdx[8],
                        const bool octantAllRamp[8],
+                       const Vector octantPos[8],
                        const std::string& trigEntries,
                        std::string& outLabel, int& outKind, int& outSig) {
     using acc::strings::Id;
@@ -2137,8 +2191,9 @@ for (int idx = 0; idx < 8; ++idx) {
     if (octantDoorIdx[bit] >= 0) {
         const char* dirWord = acc::strings::Get(dirId);
         if (dirWord[0]) {
-            AppendListEntry(dirList,
-                            RenderDoorDirection(octantDoorIdx[bit], dirWord));
+            std::string entry = RenderDoorDirection(octantDoorIdx[bit], dirWord);
+            AppendListEntry(dirList, entry);
+            NoteExit(entry, ExitPoint(octantDoorIdx[bit], octantPos[bit]));
         }
         continue;
     }
@@ -2146,8 +2201,10 @@ for (int idx = 0; idx < 8; ++idx) {
     bool markDeadEnd = octantAllDeadEnd[bit];
     if (markDeadEnd) deadEndMask |= (1 << bit);
     // Priority per annotation: door > dead-end > ramp > plain.
-    AppendListEntry(dirList, DirEntry(dirId, markDeadEnd,
-                                      !markDeadEnd && octantAllRamp[bit]));
+    std::string entry = DirEntry(dirId, markDeadEnd,
+                                 !markDeadEnd && octantAllRamp[bit]);
+    AppendListEntry(dirList, entry);
+    NoteExit(entry, octantPos[bit]);
 }
 
 // Attached transition triggers appended last, same as the area path.
@@ -2237,6 +2294,12 @@ void ClassifyClusterShape(const acc::engine::navgraph::NavGraphSnapshot& g,
     // direction word for the "Tür DIR" / "Tür DIR nach DEST" rewrite
     // and skips the (Sackgasse) marker for that octant — door wins.
     int octantDoorIdx[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
+    // Where each octant's exit leads, for 3D exit descriptions: the first
+    // contributing neighbour (a door octant is placed at the door itself,
+    // see ExitPoint).
+    Vector octantPos[8] = {};
+    bool   octantHasPos[8] = {false, false, false, false,
+                              false, false, false, false};
     // Ramp aggregation, same conservatism as the area path: annotate an
     // octant only when every contributing real exit crosses the
     // floor-level change (see ExitIsRamp).
@@ -2310,6 +2373,10 @@ void ClassifyClusterShape(const acc::engine::navgraph::NavGraphSnapshot& g,
         // exists in this octant. Wall-curves alone don't qualify.
         if (isOnwardExit || isRealDeadEnd || hasDoor) {
             octantHasExit[bit] = true;
+            if (!octantHasPos[bit]) {
+                octantPos[bit]    = g.nodes[nb].pos;
+                octantHasPos[bit] = true;
+            }
         }
         if (isOnwardExit || isRealDeadEnd) {
             if (ExitIsRamp(nb, centroidFloorZ)) octantAnyRamp[bit]  = true;
@@ -2365,20 +2432,21 @@ void ClassifyClusterShape(const acc::engine::navgraph::NavGraphSnapshot& g,
 
     if (realExitCount == 1) {
         ClassifyDemotedToDeadEnd(centroid, octantDoorIdx, realExitBits,
-                                 octantAllRamp,
+                                 octantAllRamp, octantPos,
                                  trigEntries, outLabel, outKind, outSig);
         return;
     }
 
     if (realExitCount == 2) {
         ClassifyDemotedToCorridor(centroid, octantDoorIdx, realExitBits,
-                                  octantAllRamp, trigEntries,
+                                  octantAllRamp, octantPos, trigEntries,
                                   outLabel, outKind, outSig);
         return;
     }
 
     EmitJunctionLabel(octantHasExit, octantAllDeadEnd, octantDoorIdx,
-                      octantAllRamp, trigEntries, outLabel, outKind, outSig);
+                      octantAllRamp, octantPos, trigEntries,
+                      outLabel, outKind, outSig);
 }
 
 // Classification entry point: pick the shape, then guarantee the cluster
@@ -2411,9 +2479,13 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
     // every path below.
     std::string trigEntries;
     for (int t = 0; t < trigCount; ++t) {
-        AppendListEntry(trigEntries,
-                        RenderTransitionExit(trigIdxs[t], centroid));
+        std::string entry = RenderTransitionExit(trigIdxs[t], centroid);
+        AppendListEntry(trigEntries, entry);
+        if (trigIdxs[t] >= 0 && trigIdxs[t] < g_graph.transition_count) {
+            NoteExit(entry, g_graph.transitions[trigIdxs[t]].pos);
+        }
     }
+    const size_t trigMarks = g_exit_sink ? g_exit_sink->size() : 0;
 
     ClassifyClusterShape(g, centroid, externalNbs, externalSrcs,
                          externalDoorIdx, externalCount,
@@ -2423,6 +2495,9 @@ void ClassifyCluster(const acc::engine::navgraph::NavGraphSnapshot& g,
                          outLabel, outKind, outSig, outFiltered);
     if (!outLabel.empty()) return;
 
+    // The shape branch gave up; whatever exits it noted belong to a label
+    // that was never written. The area path below notes its own.
+    if (g_exit_sink) g_exit_sink->resize(trigMarks);
     int n = static_cast<int>(g.nodes.size());
     ClassifyAsArea(g, n, centroid, centroidFloorZ, externalNbs,
                    externalSrcs, externalDoorIdx, externalCount,
@@ -3846,6 +3921,8 @@ void PassClassifyClusters(void* area,
         int kind = kKindOpenArea, sig = 0;
         bool filtered = false;
         float bboxXY[4] = {minX, minY, maxX, maxY};
+        std::vector<ExitMark> exits;
+        g_exit_sink = &exits;
         ClassifyCluster(g, centroid, externalNbs, externalSrcs,
                         externalDoorIdx, externalCount,
                         trigIdxs, trigCount,
@@ -3854,6 +3931,7 @@ void PassClassifyClusters(void* area,
                         haveAxisExt ? axisExt : nullptr,
                         bp.nodeDeadEnd, terminalDeadEndAgrees,
                         label, kind, sig, filtered);
+        g_exit_sink = nullptr;
 
         switch (kind) {
             case kKindDeadEnd:  ++deadEnds;  break;
@@ -3876,6 +3954,7 @@ void PassClassifyClusters(void* area,
         for (int m = 0; m < n; ++m) {
             if (UFFind(m) != root) continue;
             g_graph.node_label[m]    = label;
+            g_graph.node_exits[m]    = exits;
             g_graph.node_kind[m]     = kind;
             g_graph.node_sig[m]      = sig;
             g_graph.node_filtered[m] = filtered;
@@ -3946,6 +4025,7 @@ void BuildForArea(void* area) {
     for (int i = 0; i < n; ++i) {
         g_graph.node_pos[i]        = g.nodes[i].pos;
         g_graph.node_label[i].clear();
+        g_graph.node_exits[i].clear();
         g_graph.node_sig[i]        = 0;
         g_graph.node_kind[i]       = kKindOpenArea;
         g_graph.node_cluster_id[i] = kClusterIdNone;
@@ -4096,8 +4176,10 @@ bool LookupAt(void* area, const Vector& worldPos,
               int& outClusterId,
               bool allowDiagLog,
               bool requireWallReachable,
-              bool zTrusted) {
+              bool zTrusted,
+              std::vector<ExitMark>* outExits) {
     outLabel.clear();
+    if (outExits) outExits->clear();
     outSig = 0;
     outClusterId = kClusterIdNone;
     if (!HasGraphForArea(area)) return false;
@@ -4255,6 +4337,7 @@ bool LookupAt(void* area, const Vector& worldPos,
             outLabel     = g_graph.node_label[best];
             outSig       = g_graph.node_sig[best];
             outClusterId = g_graph.node_cluster_id[best];
+            if (outExits) *outExits = g_graph.node_exits[best];
             return true;
         }
     }
@@ -4287,6 +4370,7 @@ bool LookupAt(void* area, const Vector& worldPos,
             outLabel     = g_graph.node_label[bestFiltered];
             outSig       = g_graph.node_sig[bestFiltered];
             outClusterId = g_graph.node_cluster_id[bestFiltered];
+            if (outExits) *outExits = g_graph.node_exits[bestFiltered];
             return true;
         }
     }

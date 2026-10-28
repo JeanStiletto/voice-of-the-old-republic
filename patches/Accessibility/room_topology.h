@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "engine_offsets.h"
 
@@ -47,6 +48,15 @@ enum Kind {
 // real nodes and real cluster ids instead of a parallel announce path.)
 constexpr int kClusterIdNone      = -1;
 constexpr int kClusterIdOpenArea  = -2;
+
+// One exit entry of a region label, exactly as it appears in the label
+// text ("Nord", "Tür Süd-West nach X"), and the world point it leads to —
+// what 3D exit descriptions (positional_speech::SpeakExitList) place it at.
+// Recorded while the label is built; the label itself never changes.
+struct ExitMark {
+    std::string text;
+    Vector      pos;
+};
 
 // Idempotent on same area pointer. Requires the wall cache to be
 // populated; no-ops with empty graph until then.
@@ -116,12 +126,18 @@ void Reset();
 // outLabel receives the full region label — never truncated. It is
 // cleared on every call (including the false-returning paths), so callers
 // can read it unconditionally.
+//
+// outExits (optional) receives the label's exit entries with their world
+// points, in label order; cleared on every call like outLabel. Empty for
+// labels without placeable exits (axis-only corridors, the open-area
+// fallback).
 bool LookupAt(void* area, const Vector& worldPos,
               std::string& outLabel, int& outSig,
               int& outClusterId,
               bool allowDiagLog = true,
               bool requireWallReachable = true,
-              bool zTrusted = false);
+              bool zTrusted = false,
+              std::vector<ExitMark>* outExits = nullptr);
 
 // Kind + footprint extent (longest bounding-box side of the member
 // nodes, metres) for a real cluster id returned by LookupAt. Lets

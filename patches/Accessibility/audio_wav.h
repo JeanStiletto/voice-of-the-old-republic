@@ -35,4 +35,11 @@ Levels MeasureLevels(const std::vector<float>& samples);
 // (1 when untouched).
 float NormalizePeak(std::vector<float>& samples, float targetPeakDb);
 
+// RBJ-cookbook high-shelf biquad (shelf slope 1) over interleaved `samples`
+// in place: frequencies above `cornerHz` move by `gainDb` (negative = cut),
+// those below stay. Minimum-phase, so nothing smears or disappears. Used as
+// the "behind you" cue of positional speech. No-op for gainDb == 0.
+void ApplyHighShelf(std::vector<float>& samples, size_t channels, size_t sampleRate,
+                    float cornerHz, float gainDb);
+
 }  // namespace acc::audio

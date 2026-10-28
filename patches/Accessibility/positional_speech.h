@@ -40,20 +40,34 @@
 // after distance. Speed is an offset from the voice's own rate, so it still
 // follows a change made in NVDA.
 //
-// NEVER drops a line: when the feature is off, when the subject cannot be
-// found, a render fails, or the engine gives the source no 3D voice (no free
-// voice), the line is spoken the usual centred way instead.
+// NEVER drops a combat line: when the feature is off, when the subject cannot
+// be found, a render fails, or the engine gives the source no 3D voice (no
+// free voice), the line is spoken the usual centred way instead.
+//
+// 3D exit descriptions (2026-10-28) ride a third channel, Exits: a walking
+// region label ("Kreuzung: Nord, Tür Süd-West nach X") is split at its exit
+// entries and each exit sounds from where it is, the rest straight ahead.
+// Unlike combat lines, an exit list goes stale: a new label REPLACES the one
+// still playing, and combat or a blocking menu cuts it off. It uses the
+// announcement voice and the urgent sliders. Far exits keep their direction
+// at every distance (the guidance beacon's soft knee); see
+// docs/llm-docs/positional-speech.md "3D exit descriptions".
 
 #pragma once
 
+#include <vector>
+
+#include "room_topology.h"  // ExitMark
+
 namespace acc::positional_speech {
 
-enum class Channel { Normal, Urgent };
+enum class Channel { Normal, Urgent, Exits };
 
-// True while lines will be played positionally: the Mod-settings toggle is on.
-// (A build whose resource-manager addresses don't resolve still falls back,
-// line by line, inside Speak.)
-bool IsEnabled();
+// True while the channel's lines will be played positionally: the matching
+// Mod-settings toggle is on (combat announcements for Normal / Urgent, exit
+// descriptions for Exits). A build whose resource-manager addresses don't
+// resolve still falls back, line by line.
+bool IsEnabled(Channel channel);
 
 // Speaks `text` (game codepage) from the position of the object named
 // `subject` — a creature, or a door or placeable the party attacks — by its
@@ -67,6 +81,17 @@ bool IsEnabled();
 bool Speak(Channel channel, const char* text, const char* subject,
            const char* nearName = nullptr);
 
+// Speaks a region label (game codepage) on the Exits channel: each entry of
+// `exits` found in `text` sounds from its point, the text around them
+// straight ahead. Replaces any exit list still playing. Returns false only
+// when exit descriptions are off — the caller then speaks `text` the usual
+// way; once true, every later failure falls back inside this module.
+bool SpeakExitList(const char* text,
+                   const std::vector<acc::room_topology::ExitMark>& exits);
+
+// True while the channel has a line playing or waiting.
+bool IsSpeaking(Channel channel);
+
 // Speaks `text` on `channel` straight ahead of the listener, at the current
 // volume and speed and with no distance loss: the combat sliders' preview.
 // Replaces whatever the channel was playing, and rides the priority group
@@ -74,7 +99,8 @@ bool Speak(Channel channel, const char* text, const char* subject,
 // usual way when nothing can be placed (no area loaded, main menu).
 void Preview(Channel channel, const char* text);
 
-// ---- Settings (Mod settings → Combat announcements; persisted) -------------
+// ---- Settings (Mod settings → Positional announcements; persisted) ---------
+// Exits has no settings of its own: it uses Urgent's (same voice).
 
 // Loudness of a channel's lines, percent [kMinVolumePercent, 100], default
 // 100 = the engine's full source volume at close range. The floor keeps the

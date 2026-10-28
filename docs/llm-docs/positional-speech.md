@@ -12,8 +12,9 @@ does, how the pieces fit, the decisions behind it, and the traps already hit.
 
 ## What the player gets
 
-- Mod settings → "Combat announcements" (`Kampfansagen`) submenu → toggle
-  "3D positioned combat announcements" (`PositionalCombatSpeech`, persisted in
+- Mod settings → "Positional announcements" (`Positionierte Ansagen`; named
+  "Combat announcements" until 2026-10-28) submenu → toggle
+  "3D combat announcements" (`PositionalCombatSpeech`, persisted in
   `acc_settings.ini`, default ON), then four sliders (2026-10-28): volume and
   speed of the normal lines, volume and speed of the urgent lines.
 - Each spoken combat line sounds from the direction its effect lands, with
@@ -205,5 +206,88 @@ re-reads them, so a save takes effect on the next line — tested.
   order — the screen reader queued the same way).
 - Kill-line victim slicing per language (Polish / Russian word order).
 - Portable NVDA (config outside %APPDATA%) is not found → urgent voice.
-- Front/back separation is the engine's stereo limit; a rear-darkening filter
-  on our own PCM (WotR's trick) is an idea, not built.
+- Behind-you cue BUILT 2026-10-28, always on (user decision), untested: a
+  high-shelf CUT above 3 kHz (RBJ, slope 1, audio_wav ApplyHighShelf) ramping
+  from 0 at the side to -10 dB straight behind, applied after the peak
+  normaliser so a line behind is also a little quieter. Taken from Dark Vision
+  (the WotR blind mod, github.com/bradjrenshaw/darkvision-wotr,
+  src/Audio/Spatializer.cs — also where the positional-TTS idea came from;
+  both credited in the v0.9.0 changelog). Not a low-pass: that erases bright
+  cues, and a dry/wet blend comb-filters. Needed even with dsoal: generic
+  HRTFs confuse front and back without head tracking. Log: `rear=` dB on
+  every `PosSpeech: play` line.
+- Audio path CONFIRMED on the user's KOTOR 1 (2026-10-28 `Audio.Path` lines,
+  diag_settings.cpp): dsound.dll is dsoal from the game folder, OpenAL loaded,
+  the game opens Miles' "Creative Labs EAX (TM)" provider (handle read at
+  CExoSoundInternal +0xf8 matched Miles' own list), so 3D sounds — ours too —
+  reach dsoal as 3D buffers; alsoft.ini has stereo-encoding=hrtf. Not
+  confirmed: OpenAL's runtime HRTF state — its log can't be switched on from
+  our DLL (dsound.dll and its OpenAL load before our DllMain; both read the
+  env switches there), only from the launching shell.
+
+---
+
+# 3D exit descriptions (built 2026-10-28, untested)
+
+The walking region labels ("Kreuzung: Nord, Tür Süd-West nach X", "Bereich
+Ost-West, Ausgänge: ...") spoken with each EXIT sounding from where it is.
+
+## Decisions (with the user, 2026-10-28)
+
+- Mod settings: the "Combat announcements" submenu became "Positional
+  announcements"; it holds two toggles, "3D combat announcements"
+  (`PositionalCombatSpeech`) and "3D exit descriptions"
+  (`PositionalExitSpeech`, default ON like its sibling). The four sliders stay
+  shared: they belong to the two voices, not to a feature. The urgent pair
+  drives the exit lines too, and their labels say so.
+- The WORD stays what it was: the octant from the zone centre (plus the
+  "far in the north" add-on). The SOUND comes from the exit's real position
+  relative to the player and the camera. Word = where in the zone, sound =
+  which way to turn. They rarely disagree; when they do, the sound is the
+  truth from where you stand.
+- An exit right next to the player (the one just walked through) plays from
+  its true direction, no special case. Revisit only if it causes problems.
+  Within 1 m there is no direction at all and the piece plays straight ahead,
+  the same as combat.
+- Far exits: the guidance beacon's soft knee (`guidance_beacon.cpp`): honest
+  loudness up close, a faint but always placed far field, and the bearing kept
+  at EVERY distance. Combat's 20..30 m easing to straight ahead is not used.
+- A single axis word ("Korridor Nord-Süd", "Bereich Ost-West") stays one word,
+  played centred with the region name. Only real exit lists are placed:
+  junction and area exits, doors, transitions, corridors that name both ends,
+  a dead end's way out.
+- Own voice slot (`Channel::Exits`, announcement voice, urgent sliders). A new
+  region replaces the old exit list, as SpeakUrgent's interrupt did. When
+  combat starts or a blocking menu opens (`transitions::IsWorldSpeechGated`),
+  a playing exit list is cut off. After combat the region refire waits until
+  both combat voices are quiet, not just the fixed 1.5 s.
+
+## How it is built
+
+- `room_topology` records an `ExitMark` {entry text, point} at every place a
+  region label appends an exit entry, through a sink that `PassClassifyClusters`
+  arms around `ClassifyCluster`. The marks are stored per node next to
+  `node_label`; `LookupAt` hands them out through an optional out parameter.
+  The label text is untouched: marks are only recorded, never spliced in.
+  Points: an area exit's in-zone anchor (the far-qualifier anchor), a corridor /
+  junction / dead-end exit's outside neighbour node, a door's position, a
+  transition trigger's centre.
+- `positional_speech::SpeakExitList(text, exits)` splits the final spoken text
+  at the marks (searched in order, whole entries only: an entry followed or
+  preceded by a letter or '-' is not a match, so "Nord" never matches inside
+  "Nord-Süd"). Text between marks plays straight ahead at full level; each
+  exit plays from its point. Pieces render one at a time as they come up, so
+  walking into a junction costs one SAPI render per tick, not five at once.
+  Unmatched marks are dropped with a log line; no match at all still plays the
+  whole label through the slot (straight ahead), so one region label never
+  overlaps another.
+- Consumers: `transitions.cpp` (region change, the delayed Platz announce,
+  post-combat refire) and `view_mode.cpp` (the cursor's region). The map
+  screen cursor and the degrees key stay centred.
+
+## Logs (grep)
+
+- `PosSpeech: exits [..] -> N pieces, M placed` — the split.
+- `PosSpeech: exit mark not found in text: [..]` — a mark the text lost.
+- `PosSpeech: play exits at ... dist=.. gain=..` — a piece playing.
+- `PosSpeech: exits cut (..)` — replaced by a new region, or gated.

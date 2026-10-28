@@ -1718,15 +1718,20 @@ enum class Id : int {
     ModSettingVoiceSettings,
     ModSettingsVoiceSettingsOpened,
 
-    // Combat-announcements submenu. CombatSettings is the root row and the
-    // submenu's name, CombatSettingsOpened its opener cue (same shape as the
-    // voice submenu's). PositionalCombatSpeech is its toggle: combat lines
-    // spoken from the creature they are about (positional_speech).
+    // Positional-announcements submenu ("Combat announcements" until
+    // 2026-10-28; the ids kept their names). CombatSettings is the root row
+    // and the submenu's name, CombatSettingsOpened its opener cue (same shape
+    // as the voice submenu's). Its two toggles: PositionalCombatSpeech, combat
+    // lines spoken from the creature they are about, and
+    // PositionalExitSpeech, each exit of a walking region label spoken from
+    // where it is (positional_speech).
     ModSettingCombatSettings,
     ModSettingsCombatSettingsOpened,
     ModSettingPositionalCombatSpeech,
+    ModSettingPositionalExitSpeech,
     // Its four sliders: volume and speed of the normal lines, then of the
-    // urgent ones. Volumes read through FmtModSettingSlider. Speeds are an
+    // urgent ones (which the exit lines share). Volumes read through
+    // FmtModSettingSlider. Speeds are an
     // offset from the voice's own rate: 0 reads "Name: <RateSameAs...>"
     // through FmtModSettingOption (screen reader for the normal lines,
     // announcement voice for the urgent ones), else "Name: plus N" /

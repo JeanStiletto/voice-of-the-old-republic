@@ -54,10 +54,19 @@ and add the German in parentheses if it genuinely aids clarity.
   Sith troopers and explosive barrels by name.
 - Your party's attacks name the target they hit.
 - Combat announcements are spoken from where they happen on the battlefield,
-  in 3D (new Mod settings submenu "Combat announcements", on by default), with
-  their own volume and speed settings.
+  in 3D (new Mod settings submenu "Positional announcements", on by default),
+  with their own volume and speed settings.
+- Each exit in a corridor, junction or area description is spoken from where
+  it is, in 3D, so you hear which way to turn (on by default, same submenu).
+- After a fight, the area description waits until the combat announcements
+  have finished.
+- 3D speech behind you sounds darker than speech ahead, so you can tell the
+  two apart (a technique from the Dark Vision mod).
 - The KOTOR 2 party selection screen reads each companion's name instead of
   "control 13".
+- Log only: support logs show whether the game's 3D sound reaches the
+  optional spatial audio (dsoal) and its HRTF settings, and no longer report
+  its settings file as missing.
 
 <h3>KOTOR 2 turrets:</h3>
 
@@ -98,17 +107,46 @@ and add the German in parentheses if it genuinely aids clarity.
   NVDA's built-in eSpeak, the lines use your announcement voice. Urgent lines
   (kills, a companion stunned) keep using the announcement voice, so urgency
   stays audible.
-- **Volume and speed of their own.** Combat announcements has four sliders:
+- **Volume and speed of their own.** Positional announcements has four sliders:
   volume and speed of the normal lines, then of the urgent ones. Volume does
   not follow your screen reader, whose level is set for menus and would be
   too quiet in a fight. Speed starts at "same as screen reader" (or "same as
   announcement voice") and goes faster or slower from there in steps of 5, so
   it still follows a rate change in NVDA. Each step plays a sample line.
 - **Nothing is ever lost.** When a line cannot be placed (the creature has
-  already gone), it is spoken the usual way. Turn the feature
-  off in Mod settings, Combat announcements, to get the previous behaviour
-  back. Positional lines also reach Control+R and a braille display, like any
+  already gone), it is spoken the usual way. Turn "3D combat
+  announcements" off in Mod settings, Positional announcements, to get the
+  previous behaviour back. Positional lines also reach Control+R and a braille display, like any
   other announcement.
+- **Behind you sounds darker.** The game's 3D sound only pans left and
+  right, so a line straight behind you sounded exactly like one straight
+  ahead; even with the optional spatial audio's HRTF the two are easy to
+  confuse. Now the treble of a line drops the further behind you it is, down
+  to 10 dB straight behind, while lines ahead and to the side stay bright.
+  This applies to combat announcements and exit descriptions alike. The
+  technique is taken from
+  [Dark Vision](https://github.com/bradjrenshaw/darkvision-wotr), the
+  blind-accessibility mod for Pathfinder: Wrath of the Righteous by
+  bradjrenshaw.
+- **Credit.** The idea of speaking combat lines from where they happen comes
+  from [Dark Vision](https://github.com/bradjrenshaw/darkvision-wotr), the
+  blind-accessibility mod for Pathfinder: Wrath of the Righteous by
+  bradjrenshaw. Our version is built differently, but the idea is theirs.
+
+<h3>Exploration:</h3>
+
+- **Exits in 3D.** When you enter a corridor, junction or area, each exit in
+  its description sounds from where it really is, relative to you and the
+  camera; the region's name stays centred. The direction word is unchanged
+  and still says where the exit lies in the area, while the sound tells you
+  which way to turn from where you stand. Far exits get quieter but keep
+  their direction at any distance. A new region cuts off the previous
+  description, and a fight or an opened menu stops it. Works in view mode
+  too. The lines use the announcement voice and the urgent volume and speed
+  sliders; turn "3D exit descriptions" off in Mod settings, Positional
+  announcements, for the centred description.
+- **After a fight, the area description waits for the combat announcements**
+  to finish instead of talking over the last of them.
 
 <h3>Bug fixes:</h3>
 
@@ -122,6 +160,16 @@ and add the German in parentheses if it genuinely aids clarity.
   and so on, and one portrait was read as "2 Available Slots". The mod was
   looking for the wrong kind of control and never recognised a portrait. Each
   one now reads "<name>, in party" or "<name>, available".
+
+<h3>Support logs:</h3>
+
+- **The audio path is logged once per session:** where the DirectSound
+  library was loaded from, which 3D sound mode the game opened (only its
+  DirectSound 3D and EAX modes pass 3D sounds on to dsoal), and the HRTF
+  settings.
+- **The settings file of the optional spatial audio no longer reads as
+  missing.** The startup snapshot looked for the wrong file name, so every
+  log said the HRTF configuration was absent even when it was installed.
 
 <h2>v0.8.3</h2>
 

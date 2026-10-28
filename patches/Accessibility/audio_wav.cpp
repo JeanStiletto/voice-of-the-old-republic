@@ -81,4 +81,32 @@ float NormalizePeak(std::vector<float>& samples, float targetPeakDb) {
     return gain;
 }
 
+void ApplyHighShelf(std::vector<float>& samples, size_t channels, size_t sampleRate,
+                    float cornerHz, float gainDb) {
+    if (gainDb == 0.0f || channels == 0 || sampleRate == 0 || cornerHz <= 0.0f) return;
+    // Robert Bristow-Johnson's Audio EQ Cookbook, high shelf, S = 1.
+    const double A     = std::pow(10.0, gainDb / 40.0);
+    const double w0    = 2.0 * 3.14159265358979 * cornerHz / static_cast<double>(sampleRate);
+    const double cosw  = std::cos(w0);
+    const double alpha = std::sin(w0) / 2.0 * std::sqrt(2.0);
+    const double sqA2a = 2.0 * std::sqrt(A) * alpha;
+    const double a0 =        (A + 1) - (A - 1) * cosw + sqA2a;
+    const double b0 =  A * ((A + 1) + (A - 1) * cosw + sqA2a) / a0;
+    const double b1 = -2 * A * ((A - 1) + (A + 1) * cosw)     / a0;
+    const double b2 =  A * ((A + 1) + (A - 1) * cosw - sqA2a) / a0;
+    const double a1 =  2 * ((A - 1) - (A + 1) * cosw)         / a0;
+    const double a2 =       ((A + 1) - (A - 1) * cosw - sqA2a) / a0;
+    // Direct form I, one state per channel (samples are interleaved).
+    for (size_t c = 0; c < channels; ++c) {
+        double x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+        for (size_t i = c; i < samples.size(); i += channels) {
+            const double x = samples[i];
+            const double y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+            x2 = x1; x1 = x;
+            y2 = y1; y1 = y;
+            samples[i] = static_cast<float>(y);
+        }
+    }
+}
+
 }  // namespace acc::audio

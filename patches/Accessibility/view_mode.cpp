@@ -300,8 +300,10 @@ void StepCursor(float dt) {
 // → shape cache. False = no tier resolved; caller stays silent.
 bool ResolveCursorRegionLabel(void* area, const Vector& cursor,
                               std::string& outBuf,
-                              const char*& outSource) {
+                              const char*& outSource,
+                              std::vector<acc::room_topology::ExitMark>& outExits) {
     outBuf.clear();
+    outExits.clear();
     outSource = "none";
 
     // 15m matches the walking adapter's enter/exit windows.
@@ -338,7 +340,11 @@ bool ResolveCursorRegionLabel(void* area, const Vector& cursor,
     int  clusterId  = acc::room_topology::kClusterIdNone;
     if (acc::room_topology::LookupAt(area, cursor,
                                      shapeBuf,
-                                     shapeSig, clusterId) &&
+                                     shapeSig, clusterId,
+                                     /*allowDiagLog=*/true,
+                                     /*requireWallReachable=*/true,
+                                     /*zTrusted=*/false,
+                                     &outExits) &&
         !shapeBuf.empty()) {
         outBuf = shapeBuf;
         outSource = "shape";
@@ -362,8 +368,9 @@ void AnnounceCursorRegion(void* area, const Vector& cursor) {
     }
 
     std::string label;
+    std::vector<acc::room_topology::ExitMark> exits;
     const char* source = "none";
-    bool resolved = ResolveCursorRegionLabel(area, cursor, label, source);
+    bool resolved = ResolveCursorRegionLabel(area, cursor, label, source, exits);
     if (!resolved || label.empty()) {
         g_state.region_pending_text.clear();
         g_state.region_pending_started_ms = 0;
@@ -381,7 +388,7 @@ void AnnounceCursorRegion(void* area, const Vector& cursor) {
     if (label == g_state.region_pending_text &&
         g_state.region_pending_started_ms != 0) {
         if (now - g_state.region_pending_started_ms >= kHoverPauseMs) {
-            prism::SpeakUrgent(label.c_str());
+            acc::transitions::SpeakRegionLabel(label.c_str(), exits);
             g_state.region_last_spoken_text = label;
             g_state.region_pending_text.clear();
             g_state.region_pending_started_ms = 0;

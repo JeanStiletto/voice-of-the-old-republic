@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <vector>
 
 #include "bringup_announce.h" // IsMoviePlaying — gate speech during movies
 #include "combat.h"          // IsCombatActive — gate room-change speech
@@ -19,6 +20,7 @@
 #include "log.h"
 #include "menus_modsettings.h"  // RoomShapes toggle gates the shape tier
 #include "narrated_target.h" // clear on area transition
+#include "positional_speech.h"  // 3D exit descriptions; combat voices gate the refire
 #include "same_name_suffix.h"   // Reset() on area transition
 #include "strings.h"
 #include "prism.h"
@@ -489,11 +491,15 @@ DWORD g_gate_clear_since_ms     = 0;
 // don't correspond to doorways. The Path 3 classifier now treats every
 // degree-2 node as a corridor; real doorway detection would need
 // wall-geometry constriction sensing.
+// outExitsOpt receives the shape label's exits for 3D exit descriptions
+// (empty for a friendly room name).
 bool ResolveRoomSpeech(void* area, const Vector& worldPos,
                        std::string& outBuf,
                        const char*& outSource,
-                       int* outClusterIdOpt = nullptr) {
+                       int* outClusterIdOpt = nullptr,
+                       std::vector<acc::room_topology::ExitMark>* outExitsOpt = nullptr) {
     outBuf.clear();
+    if (outExitsOpt) outExitsOpt->clear();
     outSource = "none";
     if (outClusterIdOpt) *outClusterIdOpt = acc::room_topology::kClusterIdNone;
 
@@ -547,7 +553,8 @@ bool ResolveRoomSpeech(void* area, const Vector& worldPos,
                                      path3Sig, clusterId,
                                      /*allowDiagLog=*/true,
                                      /*requireWallReachable=*/true,
-                                     /*zTrusted=*/true) &&
+                                     /*zTrusted=*/true,
+                                     outExitsOpt) &&
         !path3Buf.empty()) {
         outBuf = path3Buf;
         outSource = "shape";
@@ -603,11 +610,12 @@ void LogWallTopoComparison(void* area, int roomIndex,
 // available (TSL coverage).
 void SpeakRoomChange(void* area, int clusterId, const Vector& worldPos) {
     std::string speechBuf;
+    std::vector<acc::room_topology::ExitMark> exits;
     const char* source = "none";
     int resolvedCluster = acc::room_topology::kClusterIdNone;
     if (!ResolveRoomSpeech(area, worldPos,
                            speechBuf, source,
-                           &resolvedCluster) ||
+                           &resolvedCluster, &exits) ||
         speechBuf.empty()) {
         acclog::Write("Transition",
                       "cluster -> %d unresolved (src=none) — staying silent "
@@ -686,7 +694,7 @@ void SpeakRoomChange(void* area, int clusterId, const Vector& worldPos) {
     // a different shape, the deferred Platz no longer applies).
     g_pending_platz_valid = false;
 
-    prism::SpeakUrgent(speechBuf.c_str());
+    acc::transitions::SpeakRegionLabel(speechBuf.c_str(), exits);
     CommitSpokenLabel(speechBuf, worldPos, GetTickCount());
     g_last_spoken_pos       = worldPos;
     g_last_spoken_pos_valid = true;
@@ -712,14 +720,16 @@ void TickPendingPlatz(void* area, const Vector& playerPos) {
     acc::engine::GetRoomAtIndexed(area, playerPos, roomIdx);
 
     std::string fireBuf;
+    std::vector<acc::room_topology::ExitMark> exits;
     const char* source = "none";
     bool resolved = ResolveRoomSpeech(area, playerPos,
-                                      fireBuf, source) &&
+                                      fireBuf, source,
+                                      nullptr, &exits) &&
                     !fireBuf.empty();
 
     if (resolved && fireBuf == g_pending_platz_text) {
         // Same Platz still under the player. Fire the announce now.
-        prism::SpeakUrgent(fireBuf.c_str());
+        acc::transitions::SpeakRegionLabel(fireBuf.c_str(), exits);
         g_last_spoken_pos       = playerPos;
         g_last_spoken_pos_valid = true;
         acclog::Write("Transition",
@@ -730,7 +740,7 @@ void TickPendingPlatz(void* area, const Vector& playerPos) {
     } else if (resolved && fireBuf != g_last_spoken_room_text) {
         // Player has moved on to a different shape during the delay.
         // Fire the NEW label so we don't leave them unannounced.
-        prism::SpeakUrgent(fireBuf.c_str());
+        acc::transitions::SpeakRegionLabel(fireBuf.c_str(), exits);
         CommitSpokenLabel(fireBuf, playerPos, now);
         g_last_spoken_pos       = playerPos;
         g_last_spoken_pos_valid = true;
@@ -766,7 +776,13 @@ void TickGatedClusterRefire(void* area, const Vector& playerPos) {
     if (!g_gated_cluster_pending) return;
 
     DWORD now = GetTickCount();
-    if (IsWorldSpeechGatedImpl()) {
+    // Positional combat lines play one after another, so a long fight can
+    // still be speaking well past combat end; the refire waits for both
+    // combat voices to finish instead of talking over their tail.
+    using acc::positional_speech::Channel;
+    if (IsWorldSpeechGatedImpl() ||
+        acc::positional_speech::IsSpeaking(Channel::Normal) ||
+        acc::positional_speech::IsSpeaking(Channel::Urgent)) {
         g_gate_clear_since_ms = 0;  // gate re-engaged — restart the clock
         return;
     }
@@ -1426,6 +1442,13 @@ void Tick() {
 
 bool IsWorldSpeechGated() {
     return IsWorldSpeechGatedImpl();
+}
+
+void SpeakRegionLabel(const char* text,
+                      const std::vector<acc::room_topology::ExitMark>& exits) {
+    if (!acc::positional_speech::SpeakExitList(text, exits)) {
+        prism::SpeakUrgent(text);
+    }
 }
 
 bool IsModuleLoadPending() {

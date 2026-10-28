@@ -130,6 +130,41 @@ Follow-ups to decide:
   Fuel Depot should load with the id=106 line. Remove the two test files
   from both Overrides before release.
 
+### Exit direction WORDS are measured from the junction's map point, not from where the player stands — found 2026-10-28, revisit later
+
+Surfaced by 3D exit descriptions (docs/llm-docs/positional-speech.md "3D exit
+descriptions"). The 3D sound is right; the spoken word can be wrong for the
+player, and the 3D sound now makes that audible.
+
+**Known (log patch-20261028-125607.log, Taris Upper City, KOTOR 1):**
+
+- A Kreuzung there is a SINGLE nav node at (131.6, 93.1), north of the street.
+  The label is built once per cluster from that node (room_topology
+  ClassifyCluster): "Kreuzung, Nord, Einfache Sicherheitstür Süd-Ost, West".
+- The announcement fires on cluster change, when that node becomes the nearest
+  labelled one — the player was at (125.7, 85.9) / (124.7, 89.1), ~9 m away,
+  walking along the south side of the street.
+- The security door at (134.3, 90.7) is south-east of the node, but
+  east-north-east of the player (~30° north of east). The user heard it from
+  the north, next to the "Nord" exit, and reported the word as wrong. Same in
+  the neighbouring junction (node (112.8, 85.7), player ~7 m west and 4 m
+  north of it).
+- Every exit word in every region label has this frame: octant from the
+  cluster centroid / node, independent of where the player is when it is
+  spoken. Small rooms hide it; wide streets and single-node junctions expose it.
+
+**Suspected:** worst in wide streets and open outdoor areas (Kashyyyk), where
+the player passes a cluster's node at a distance; not yet checked there.
+
+**Open (decide with the user, one at a time):**
+
+- Measure the words from the player's position at speak time (labels would
+  stop being per-cluster constants: text dedup and the flap guard key on the
+  text).
+- Or keep the frame but delay a junction's announce until the player is near
+  its node.
+- Or name the frame in speech ("vom Knoten aus") — probably noise.
+
 ## Unreproduced
 
 ### Dead keyboard on a machine with no mouse — fix built, awaiting a no-mouse session

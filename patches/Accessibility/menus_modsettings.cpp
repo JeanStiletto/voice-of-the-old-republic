@@ -98,6 +98,10 @@ bool s_toggles[static_cast<int>(Option::Count)] = {
                                   // lines sound from the creature they are
                                   // about; off = the centred screen-reader /
                                   // SAPI speech they had before.
+    /* PositionalExitSpeech */ true,  // default on, like its sibling
+                                  // (2026-10-28): each exit of a walking region
+                                  // label sounds from where it is; off = the
+                                  // centred announcement voice as before.
     /* CombatVolume    */ false,  // unused — RowKind::Slider; the four combat
     /* CombatRate      */ false,  // sliders' values live in positional_speech
     /* CombatUrgentVolume */ false,  // (Get/SetVolumePercent,
@@ -326,6 +330,7 @@ constexpr OptionSpec k_options[] = {
     { Option::UrgentVoice,     acc::strings::Id::ModSettingUrgentVoice,     RowKind::Choice  },
     { Option::CombatSettings,  acc::strings::Id::ModSettingCombatSettings,  RowKind::Submenu },
     { Option::PositionalCombatSpeech, acc::strings::Id::ModSettingPositionalCombatSpeech, RowKind::Toggle },
+    { Option::PositionalExitSpeech,   acc::strings::Id::ModSettingPositionalExitSpeech,   RowKind::Toggle },
     { Option::CombatVolume,       acc::strings::Id::ModSettingCombatVolume,       RowKind::Slider },
     { Option::CombatRate,         acc::strings::Id::ModSettingCombatRate,         RowKind::Slider },
     { Option::CombatUrgentVolume, acc::strings::Id::ModSettingCombatUrgentVolume, RowKind::Slider },
@@ -384,10 +389,12 @@ constexpr Option k_voiceRows[] = {
 constexpr int k_voiceRowCount = static_cast<int>(
     sizeof(k_voiceRows) / sizeof(k_voiceRows[0]));
 
-// The combat-announcements submenu: the 3D toggle, then volume and speed of
-// the normal lines, then of the urgent ones.
+// The positional-announcements submenu: the two 3D toggles, then volume and
+// speed of the normal combat lines, then of the urgent ones (which the exit
+// lines share: same voice).
 constexpr Option k_combatRows[] = {
     Option::PositionalCombatSpeech,
+    Option::PositionalExitSpeech,
     Option::CombatVolume,
     Option::CombatRate,
     Option::CombatUrgentVolume,
@@ -463,6 +470,7 @@ const char* PersistKey(Option opt) {
         case Option::SubtitleSapi:    return "SubtitleSapi";
         case Option::TurretAutoAim:   return "TurretAutoAim";
         case Option::PositionalCombatSpeech: return "PositionalCombatSpeech";
+        case Option::PositionalExitSpeech:   return "PositionalExitSpeech";
         default:                      return nullptr;  // not persisted here
     }
 }

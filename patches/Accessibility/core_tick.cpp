@@ -20,6 +20,7 @@
 #include "engine_keymap.h"  // FirstMovementKeyHeld — dead-keyboard watchdog probe
 #include "focus_guard.h"
 #include "dialog_speech.h"
+#include "diag_settings.h"  // LogAudioPathOnce — one-shot audio-path report
 #include "discovery.h"
 #include "endar_softlock.h"
 #include "door_announce.h"
@@ -868,6 +869,9 @@ void Dispatch() {
     // (Eloquence) renders, falls back on failures. After the combat flushers
     // above so a line they queue this tick can start at once.
     PHASE("positional_speech", acc::positional_speech::Tick());
+    // One-shot audio-path report (Miles 3D provider, dsoal, HRTF) once the
+    // sound system is up; a no-op every tick after.
+    PHASE("audio_path", acc::diag::settings::LogAudioPathOnce());
     PHASE("combat.leaderChange",
           acc::combat::query::TickLeaderChangeAutoAnnounce());
     PHASE("combat.queue", acc::combat::queue::Tick());

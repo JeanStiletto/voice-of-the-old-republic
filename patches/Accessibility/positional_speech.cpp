@@ -1,6 +1,7 @@
 #include "positional_speech.h"
 
 #include <windows.h>
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -23,6 +24,7 @@
 #include "mod_settings_store.h"
 #include "nvda_config.h"
 #include "prism.h"
+#include "transitions.h"       // IsWorldSpeechGated — cuts a stale exit list
 #include "view_mode.h"
 
 namespace acc::positional_speech {
@@ -57,9 +59,32 @@ constexpr float kFloorAtM      = 30.0f;
 constexpr float kFloorGain     = 0.4f;   // swoop's far pads: 50 / 127
 constexpr float kCentreFromM   = 20.0f;
 constexpr float kCentredAtM    = 30.0f;
-// A subject this close to the player (a hit on the player) has no usable
-// direction: straight ahead.
+// Exit lines (2026-10-28): the guidance beacon's soft knee
+// (guidance_beacon.cpp CompressHeartbeatPosition), as our own gain since the
+// source sits at kPlaceRadiusM anyway. Full within kFullVolumeM, linear down
+// to kExitKneeGain at kExitKneeM, then easing asymptotically toward
+// kExitFarGain, so a far exit is faint but still placed and still a little
+// quieter the farther it is: ~0.47 at 50 m, ~0.41 at 100 m. The bearing is
+// NEVER eased toward straight ahead (combat's kCentreFromM): a Kashyyyk exit
+// 80 m off has to say which way to turn.
+constexpr float kExitKneeM     = 18.0f;
+constexpr float kExitKneeGain  = 0.55f;
+constexpr float kExitFarGain   = 0.4f;
+constexpr float kExitFarScaleM = 40.0f;
+// A subject this close to the player (a hit on the player, an exit the
+// player stands in) has no usable direction: straight ahead.
 constexpr float kNoDirectionM  = 1.0f;
+// Behind-you cue (2026-10-28), taken from Dark Vision, the blind-accessibility
+// mod for Pathfinder: Wrath of the Righteous (github.com/bradjrenshaw/
+// darkvision-wotr, src/Audio/Spatializer.cs), which is also where the idea of
+// positional speech came from. The engine only pans, so a line straight
+// behind sounds exactly like one straight ahead; even dsoal's HRTF confuses
+// the two without head tracking. A line in the rear half gets a high-shelf
+// CUT above kRearCornerHz, ramping linearly from 0 at the side to
+// kRearMaxCutDb straight behind: darker = behind. A shelf, not a low-pass,
+// so speech only darkens, never disappears. Always on (user, 2026-10-28).
+constexpr float kRearCornerHz  = 3000.0f;
+constexpr float kRearMaxCutDb  = 10.0f;
 // Priority group for the sliders' preview: one of the groups that stay
 // audible while the in-game menu pauses the world (as the cue-volume
 // preview in menus_modsettings.cpp).
@@ -85,8 +110,9 @@ ChannelSettings g_settings[2] = {
 
 int Clamp(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
+// Exits shares Urgent's record: same voice, same sliders.
 ChannelSettings& SettingsOf(Channel c) {
-    ChannelSettings& s = g_settings[c == Channel::Urgent ? 1 : 0];
+    ChannelSettings& s = g_settings[c == Channel::Normal ? 0 : 1];
     if (!s.loaded) {
         s.loaded = true;
         s.volume = Clamp(acc::settings::GetInt(s.volumeKey, 100), kMinVolumePercent, 100);
@@ -245,16 +271,20 @@ uint32_t FindSubject(const char* name, const Vector& ref, Vector& outPos) {
 }
 
 // ---- Lines and channels ------------------------------------------------------
-enum class LineState { Rendering, Ready, Failed };
+// Unrendered: rendered when it reaches the front of its queue (exit pieces —
+// a junction's five pieces would otherwise cost five SAPI renders in one tick).
+enum class LineState { Unrendered, Rendering, Ready, Failed };
 
 struct Line {
     uint32_t              ticket = 0;
     Channel               channel = Channel::Normal;
     std::string           text;
     uint32_t              subject = 0;    // server handle; position read at play time
-    Vector                lastPos = {};   // position at enqueue, the fallback
+    Vector                lastPos = {};   // position at enqueue (a fixed point when no subject)
     LineState             state = LineState::Rendering;
-    bool                  preview = false;  // straight ahead, no distance loss
+    bool                  ahead   = false;  // straight ahead, no distance loss
+    bool                  preview = false;  // ahead + the group audible under the menu pause
+    bool                  noted   = false;  // its whole label already went to NoteSpokenElsewhere
     prism::RenderedSpeech speech;
 };
 
@@ -266,17 +296,26 @@ struct ChannelState {
     int                    flip      = 0;   // alternates the resref per line
 };
 
-ChannelState g_channels[2];
+ChannelState g_channels[3];
 uint32_t     g_nextTicket = 1;
 
-ChannelState& StateOf(Channel c) { return g_channels[c == Channel::Urgent ? 1 : 0]; }
+ChannelState& StateOf(Channel c) { return g_channels[static_cast<int>(c)]; }
+
+const char* ChannelName(Channel c) {
+    switch (c) {
+        case Channel::Normal: return "normal";
+        case Channel::Urgent: return "urgent";
+        case Channel::Exits:  return "exits";
+    }
+    return "?";
+}
 
 // The centred fallback — the path these lines took before this feature.
 void SpeakCentred(const Line& line, const char* why) {
-    acclog::Write("PosSpeech", "fallback (%s) %s: [%s]", why,
-                  line.channel == Channel::Urgent ? "urgent" : "normal", line.text.c_str());
-    if (line.channel == Channel::Urgent) prism::SpeakUrgent(line.text.c_str());
-    else                                 prism::Speak(line.text.c_str(), /*interrupt=*/false);
+    acclog::Write("PosSpeech", "fallback (%s) %s: [%s]", why, ChannelName(line.channel),
+                  line.text.c_str());
+    if (line.channel == Channel::Normal) prism::Speak(line.text.c_str(), /*interrupt=*/false);
+    else                                 prism::SpeakUrgent(line.text.c_str());
 }
 
 // Synchronous render for every voice but Eloquence (SAPI / OneCore take
@@ -305,13 +344,27 @@ float DistanceGain(float d) {
     return 1.0f + (d - kFullVolumeM) / (kFloorAtM - kFullVolumeM) * (kFloorGain - 1.0f);
 }
 
+// The exit lines' curve, the beacon's soft knee (see Tuning).
+float ExitDistanceGain(float d) {
+    if (d <= kFullVolumeM) return 1.0f;
+    if (d <= kExitKneeM) {
+        return 1.0f + (d - kFullVolumeM) / (kExitKneeM - kFullVolumeM) * (kExitKneeGain - 1.0f);
+    }
+    return kExitFarGain +
+           (kExitKneeGain - kExitFarGain) * std::exp(-(d - kExitKneeM) / kExitFarScaleM);
+}
+
 // Where a line about `subject` (null = straight ahead, the preview) is played
 // from, and its distance gain. Direction and distance are measured from the
 // player (the view-mode cursor while it is active) against the camera's yaw,
 // as every spoken bearing is; the source goes next to the engine's listener
 // — the camera, or the cursor in view mode, which the listener detour
-// substitutes. False when there is no viewpoint (no area loaded).
-bool Place(const Vector* subject, Vector& outPos, float& outGain, float& outDist) {
+// substitutes. `exitProfile`: keep the bearing at every distance and use the
+// exit curve. `outRear`: how far behind the listener the line sounds, 0 (ahead
+// or to the side) .. 1 (straight behind), for the behind-you cue. False when
+// there is no viewpoint (no area loaded).
+bool Place(const Vector* subject, bool exitProfile, Vector& outPos, float& outGain,
+           float& outDist, float& outRear) {
     Vector ref;
     float  yawDeg = 0.0f;
     if (!acc::view_mode::GetEffectiveViewpoint(ref, yawDeg)) return false;
@@ -328,16 +381,21 @@ bool Place(const Vector* subject, Vector& outPos, float& outGain, float& outDist
             rel = std::atan2(dy, dx) - yaw;
             while (rel >  3.14159265f) rel -= 6.2831853f;
             while (rel < -3.14159265f) rel += 6.2831853f;
-            float t = (outDist - kCentreFromM) / (kCentredAtM - kCentreFromM);
-            t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
-            rel *= 1.0f - t;
+            if (!exitProfile) {
+                float t = (outDist - kCentreFromM) / (kCentredAtM - kCentreFromM);
+                t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+                rel *= 1.0f - t;
+            }
         }
     }
     const float a = yaw + rel;
+    outRear  = std::cos(rel) < 0.0f ? -std::cos(rel) : 0.0f;
     outPos   = listener;
     outPos.x += std::cos(a) * kPlaceRadiusM;
     outPos.y += std::sin(a) * kPlaceRadiusM;
-    outGain  = subject ? DistanceGain(outDist) : 1.0f;
+    outGain  = !subject    ? 1.0f
+             : exitProfile ? ExitDistanceGain(outDist)
+                           : DistanceGain(outDist);
     return true;
 }
 
@@ -345,15 +403,24 @@ bool Place(const Vector* subject, Vector& outPos, float& outGain, float& outDist
 // it (the caller falls back).
 bool Play(ChannelState& ch, Line& line) {
     Vector subject = line.lastPos;
-    if (void* obj = acc::engine::ResolveServerObjectHandle(line.subject)) {
-        Vector live;
-        if (acc::engine::GetObjectPosition(obj, live)) subject = live;
+    if (line.subject) {
+        if (void* obj = acc::engine::ResolveServerObjectHandle(line.subject)) {
+            Vector live;
+            if (acc::engine::GetObjectPosition(obj, live)) subject = live;
+        }
     }
     Vector pos;
-    float  gain = 1.0f, dist = 0.0f;
-    if (!Place(line.preview ? nullptr : &subject, pos, gain, dist)) return false;
+    float  gain = 1.0f, dist = 0.0f, rear = 0.0f;
+    if (!Place(line.ahead ? nullptr : &subject, line.channel == Channel::Exits, pos, gain,
+               dist, rear)) {
+        return false;
+    }
     prism::RenderedSpeech& sp = line.speech;
     acc::audio::NormalizePeak(sp.samples, kPeakDb);
+    // After the normaliser, so the cut also leaves a line behind a little
+    // quieter, as in Dark Vision.
+    const float rearDb = -kRearMaxCutDb * rear;
+    acc::audio::ApplyHighShelf(sp.samples, sp.channels, sp.sampleRate, kRearCornerHz, rearDb);
     const size_t frames = sp.samples.size() / sp.channels;
     std::vector<unsigned char> wav;
     if (!acc::audio::BuildMonoPcm16Wav(sp.samples.data(), frames, sp.channels,
@@ -364,8 +431,7 @@ bool Play(ChannelState& ch, Line& line) {
     int volumeByte = static_cast<int>(kFullSourceVolume * volume * gain + 0.5f);
     if (volumeByte < 1) volumeByte = 1;
     char resref[17];
-    snprintf(resref, sizeof(resref), "acc_tts_%c%d",
-             line.channel == Channel::Urgent ? 'u' : 'n', ch.flip);
+    snprintf(resref, sizeof(resref), "acc_tts_%c%d", ChannelName(line.channel)[0], ch.flip);
     ch.flip ^= 1;
     const int group = line.preview ? kPreviewPriorityGroup : acc::audio::GetCuePriorityGroup();
     if (!ch.source.StartFromMemory(resref, wav.data(), wav.size(), pos, group, volumeByte,
@@ -377,11 +443,12 @@ bool Play(ChannelState& ch, Line& line) {
     const DWORD durationMs = static_cast<DWORD>(1000.0 * frames / sp.sampleRate);
     ch.busy      = true;
     ch.busyUntil = GetTickCount() + durationMs + kLineGapMs;
-    acclog::Write("PosSpeech", "play %s%s at (%.1f,%.1f,%.1f) dist=%.1f m gain=%.2f vol=%d %lu ms: [%s]",
-                  line.channel == Channel::Urgent ? "urgent" : "normal",
-                  line.preview ? " preview" : "", pos.x, pos.y, pos.z, dist, gain,
+    acclog::Write("PosSpeech", "play %s%s at (%.1f,%.1f,%.1f) dist=%.1f m gain=%.2f rear=%.1f dB vol=%d %lu ms: [%s]",
+                  ChannelName(line.channel),
+                  line.preview ? " preview" : (line.ahead ? " ahead" : ""), pos.x, pos.y, pos.z,
+                  dist, gain, rearDb,
                   volumeByte, durationMs, line.text.c_str());
-    prism::NoteSpokenElsewhere(line.text.c_str());  // log, Ctrl+R, braille
+    if (!line.noted) prism::NoteSpokenElsewhere(line.text.c_str());  // log, Ctrl+R, braille
     return true;
 }
 
@@ -391,11 +458,31 @@ void TickChannel(ChannelState& ch) {
     ch.busy = false;
     while (!ch.queue.empty()) {
         Line& front = ch.queue.front();
+        if (front.state == LineState::Unrendered) {
+            front.state = RenderNow(front.channel, VoiceChoice{}, front.text.c_str(),
+                                    front.speech)
+                              ? LineState::Ready
+                              : LineState::Failed;
+        }
         if (front.state == LineState::Rendering) return;  // keep order: wait for it
-        if (front.state == LineState::Failed) {
-            SpeakCentred(front, "render failed");
-        } else if (!Play(ch, front)) {
-            SpeakCentred(front, "no 3D voice");
+        const char* why = front.state == LineState::Failed ? "render failed"
+                        : !Play(ch, front)                 ? "no 3D voice"
+                                                           : nullptr;
+        if (why && front.channel == Channel::Exits) {
+            // SpeakUrgent interrupts, so piece by piece only the last one
+            // would be heard: the rest of the list goes centred as one line.
+            Line rest;
+            rest.channel = Channel::Exits;
+            for (const Line& l : ch.queue) {
+                if (!rest.text.empty()) rest.text += ", ";
+                rest.text += l.text;
+            }
+            ch.queue.clear();
+            SpeakCentred(rest, why);
+            return;
+        }
+        if (why) {
+            SpeakCentred(front, why);
         } else {
             ch.queue.pop_front();
             return;  // playing; the next line waits for this one
@@ -439,22 +526,163 @@ void Enqueue(Line&& line, const char* subjectName) {
                                                                   : LineState::Failed;
     }
     acclog::Write("PosSpeech", "queue %s subject=[%s] handle=0x%08X voice=%s state=%d: [%s]",
-                  channel == Channel::Urgent ? "urgent" : "normal", subjectName, line.subject,
-                  channel == Channel::Urgent ? "urgent" : KindName(voice.kind),
+                  ChannelName(channel), subjectName, line.subject,
+                  channel == Channel::Normal ? KindName(voice.kind) : "urgent",
                   static_cast<int>(line.state), text);
     StateOf(channel).queue.push_back(std::move(line));
     TickChannel(StateOf(channel));
 }
 
+// Drops the channel's waiting lines and stops the one playing.
+void Cut(Channel channel) {
+    ChannelState& ch = StateOf(channel);
+    ch.queue.clear();
+    ch.source.Stop();
+    ch.busy = false;
+}
+
+// ---- Exit lists ----------------------------------------------------------------
+// One piece of a split region label: an exit (placed at `pos`) or the text
+// between exits (straight ahead).
+struct Piece {
+    std::string text;
+    bool        placed = false;
+    Vector      pos    = {};
+};
+
+// A byte that continues a word: a match ending or starting next to one is
+// inside a longer word ("Nord" in "Nord-Süd"). Bytes >= 0x80 are the
+// codepage's letters (ü, é, Cyrillic).
+bool IsWordByte(unsigned char c) {
+    return (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+           c == '-' || c >= 0x80;
+}
+
+// Adds the text between two exits as a straight-ahead piece, minus the list
+// separators around it; nothing when only separators are left.
+void AddAhead(const std::string& text, size_t from, size_t to, std::vector<Piece>& out) {
+    auto isSep = [](char c) { return c == ' ' || c == ',' || c == ';' || c == '.'; };
+    while (from < to && isSep(text[from])) ++from;
+    while (to > from && isSep(text[to - 1])) --to;
+    if (from == to) return;
+    Piece p;
+    p.text = text.substr(from, to - from);
+    out.push_back(std::move(p));
+}
+
+// Splits `text` at the exits. Longest entries claim their span first, so a
+// short entry ("Nord") can't land inside a longer one ("Übergang Nord nach X");
+// a claim must be a whole entry (IsWordByte) and must not overlap an earlier
+// claim. Marks the text doesn't contain are dropped with a log line.
+void SplitAtExits(const std::string& text,
+                  const std::vector<acc::room_topology::ExitMark>& exits,
+                  std::vector<Piece>& out) {
+    struct Span { size_t at, end; const acc::room_topology::ExitMark* mark; };
+    std::vector<const acc::room_topology::ExitMark*> order;
+    for (const auto& e : exits) {
+        if (!e.text.empty()) order.push_back(&e);
+    }
+    std::stable_sort(order.begin(), order.end(), [](const auto* a, const auto* b) {
+        return a->text.size() > b->text.size();
+    });
+    std::vector<Span> spans;
+    for (const auto* mark : order) {
+        bool claimed = false;
+        for (size_t at = text.find(mark->text); at != std::string::npos;
+             at = text.find(mark->text, at + 1)) {
+            const size_t end = at + mark->text.size();
+            const bool whole =
+                (at == 0 || !IsWordByte(static_cast<unsigned char>(text[at - 1]))) &&
+                (end == text.size() || !IsWordByte(static_cast<unsigned char>(text[end])));
+            bool overlaps = false;
+            for (const Span& s : spans) {
+                if (at < s.end && s.at < end) overlaps = true;
+            }
+            if (whole && !overlaps) {
+                spans.push_back({at, end, mark});
+                claimed = true;
+                break;
+            }
+        }
+        if (!claimed) {
+            acclog::Write("PosSpeech", "exit mark not found in text: [%s] in [%s]",
+                          mark->text.c_str(), text.c_str());
+        }
+    }
+    std::sort(spans.begin(), spans.end(),
+              [](const Span& a, const Span& b) { return a.at < b.at; });
+    size_t cursor = 0;
+    for (const Span& s : spans) {
+        AddAhead(text, cursor, s.at, out);
+        Piece p;
+        p.text   = s.mark->text;
+        p.placed = true;
+        p.pos    = s.mark->pos;
+        out.push_back(std::move(p));
+        cursor = s.end;
+    }
+    AddAhead(text, cursor, text.size(), out);
+}
+
 }  // namespace
 
-bool IsEnabled() {
-    return acc::menus::modsettings::GetToggle(
-        acc::menus::modsettings::Option::PositionalCombatSpeech);
+bool IsEnabled(Channel channel) {
+    using acc::menus::modsettings::Option;
+    return acc::menus::modsettings::GetToggle(channel == Channel::Exits
+                                                  ? Option::PositionalExitSpeech
+                                                  : Option::PositionalCombatSpeech);
+}
+
+bool SpeakExitList(const char* text,
+                   const std::vector<acc::room_topology::ExitMark>& exits) {
+    if (!text || !*text || !IsEnabled(Channel::Exits)) return false;
+    if (IsSpeaking(Channel::Exits)) {
+        acclog::Write("PosSpeech", "exits cut (replaced by a new label)");
+    }
+    Cut(Channel::Exits);
+
+    std::vector<Piece> pieces;
+    SplitAtExits(text, exits, pieces);
+    int placed = 0;
+    for (const Piece& p : pieces) placed += p.placed ? 1 : 0;
+    acclog::Write("PosSpeech", "exits [%s] -> %d pieces, %d placed", text,
+                  static_cast<int>(pieces.size()), placed);
+    // A label with no exit in it still plays through this slot, straight
+    // ahead: one region label must never overlap another.
+    if (pieces.empty()) {
+        Piece whole;
+        whole.text = text;
+        pieces.push_back(std::move(whole));
+    }
+    // The whole label, once: Ctrl+R repeats it and braille shows it, not
+    // just the last piece.
+    prism::NoteSpokenElsewhere(text);
+    ChannelState& ch = StateOf(Channel::Exits);
+    for (Piece& p : pieces) {
+        Line line;
+        line.ticket  = g_nextTicket++;
+        line.channel = Channel::Exits;
+        line.text    = std::move(p.text);
+        line.lastPos = p.pos;
+        line.ahead   = !p.placed;
+        line.noted   = true;
+        line.state   = LineState::Unrendered;
+        ch.queue.push_back(std::move(line));
+    }
+    TickChannel(ch);
+    return true;
+}
+
+bool IsSpeaking(Channel channel) {
+    const ChannelState& ch = StateOf(channel);
+    if (!ch.queue.empty()) return true;
+    return ch.busy && static_cast<int>(GetTickCount() - ch.busyUntil) < 0;
 }
 
 bool Speak(Channel channel, const char* text, const char* subjectIn, const char* nearIn) {
-    if (!text || !*text || !subjectIn || !IsEnabled()) return false;
+    if (!text || !*text || !subjectIn || channel == Channel::Exits || !IsEnabled(channel)) {
+        return false;
+    }
     Vector ref;
     if (!acc::engine::GetPlayerPosition(ref)) return false;
     // Callers may hand raw slices of a log line ("Name " before an anchor).
@@ -483,14 +711,12 @@ bool Speak(Channel channel, const char* text, const char* subjectIn, const char*
 
 void Preview(Channel channel, const char* text) {
     if (!text || !*text) return;
-    ChannelState& ch = StateOf(channel);
-    ch.queue.clear();  // each slider press restarts the sample
-    ch.source.Stop();
-    ch.busy = false;
+    Cut(channel);  // each slider press restarts the sample
     Line line;
     line.ticket  = g_nextTicket++;
     line.channel = channel;
     line.text    = text;
+    line.ahead   = true;
     line.preview = true;
     Enqueue(std::move(line), "(preview)");
 }
@@ -513,8 +739,14 @@ void SetRateOffset(Channel channel, int offset) {
 
 void Tick() {
     CollectEloquence();
-    TickChannel(g_channels[0]);
-    TickChannel(g_channels[1]);
+    // An exit list is about where the player stands right now: combat or a
+    // blocking menu makes it stale (and the menu would pause the source
+    // mid-list). Region speech stays gated until that ends.
+    if (IsSpeaking(Channel::Exits) && acc::transitions::IsWorldSpeechGated()) {
+        acclog::Write("PosSpeech", "exits cut (world speech gated: combat or menu)");
+        Cut(Channel::Exits);
+    }
+    for (ChannelState& ch : g_channels) TickChannel(ch);
 }
 
 }  // namespace acc::positional_speech

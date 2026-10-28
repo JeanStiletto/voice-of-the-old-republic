@@ -8,7 +8,9 @@
 #include <cstdio>
 #include <cstring>
 
+#include "audio_bus.h"    // GetSoundInternal — the engine's Miles 3D provider handle
 #include "engine_game.h"  // IsKotor2 — per-game ini filename
+#include "engine_offsets_select.h"
 #include "log.h"
 
 namespace acc::diag::settings {
@@ -112,7 +114,137 @@ int CountFiles(const char* relDir) {
     return n;
 }
 
+// ---- Audio path ----------------------------------------------------------
+// dsoal (the DirectSound -> OpenAL Soft wrapper the installer offers) can only
+// spatialize what reaches it as a DirectSound 3D buffer. That depends on the
+// 3D provider the game's sound library, Miles, opened: its DirectSound3D and
+// EAX providers hand each 3D sound to dsound.dll; its own software providers
+// mix 3D sounds down to stereo first, leaving dsoal nothing to place. Nothing
+// in the game reports which one it opened, so LogAudioPathOnce does.
+
+// CExoSoundInternal +0xf8 holds the HPROVIDER from AIL_open_3D_provider (the
+// Ghidra type database's "3d_provider_handle"; a placeholder-struct offset,
+// so LogMilesProvider only trusts it when it equals a handle Miles itself
+// enumerates). KOTOR 2's layout is not mapped.
+const size_t kSoundInternal3dProviderOff = acc::off::Todo(0xf8);
+
+// Miles (MSS 6) export, __stdcall. HPROENUM / HPROVIDER are 32-bit handles;
+// enumeration starts at HPROENUM_FIRST = 0.
+typedef int (__stdcall* AilEnumerate3dProvidersFn)(uint32_t* next, uint32_t* provider,
+                                                   char** name);
+
+bool ContainsNoCase(const char* hay, const char* needle) {
+    if (!hay || !needle) return false;
+    const size_t n = strlen(needle);
+    for (; *hay; ++hay) {
+        if (_strnicmp(hay, needle, n) == 0) return true;
+    }
+    return false;
+}
+
+// Reads the engine's provider handle and walks Miles' provider list. SEH
+// only: no objects with destructors here (C2712).
+void LogMilesProvider(void* soundInternal) {
+    HMODULE mss = GetModuleHandleA("mss32.dll");
+    if (!mss) {
+        acclog::Write("Audio.Path", "mss32.dll not loaded; no Miles provider to report");
+        return;
+    }
+    auto enumerate = reinterpret_cast<AilEnumerate3dProvidersFn>(
+        GetProcAddress(mss, "_AIL_enumerate_3D_providers@12"));
+    if (!enumerate) {
+        acclog::Write("Audio.Path", "mss32.dll has no AIL_enumerate_3D_providers export");
+        return;
+    }
+
+    uint32_t opened = 0;
+    bool     haveOpened = false;
+    if (acc::off::Ok(kSoundInternal3dProviderOff)) {
+        __try {
+            opened = *reinterpret_cast<uint32_t*>(
+                reinterpret_cast<char*>(soundInternal) + kSoundInternal3dProviderOff);
+            haveOpened = true;
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            haveOpened = false;
+        }
+    }
+
+    char chosen[128] = {};
+    int  count = 0;
+    __try {
+        uint32_t next = 0, provider = 0;
+        char*    name = nullptr;
+        while (count < 32 && enumerate(&next, &provider, &name)) {
+            const bool isOpened = haveOpened && provider == opened;
+            acclog::Write("Audio.Path", "Miles 3D provider %u: %s%s", provider,
+                          name ? name : "(no name)", isOpened ? "   <- opened by the game" : "");
+            if (isOpened) _snprintf_s(chosen, sizeof(chosen), _TRUNCATE, "%s", name ? name : "");
+            ++count;
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        acclog::Write("Audio.Path", "Miles provider enumeration faulted after %d entries", count);
+    }
+
+    if (!haveOpened) {
+        acclog::Write("Audio.Path", "provider the game opened: not read on this game (layout not mapped)");
+        return;
+    }
+    if (!chosen[0]) {
+        acclog::Write("Audio.Path",
+                      "provider the game opened: handle %u matches none of the %d listed "
+                      "(no 3D provider open, or the offset is wrong)", opened, count);
+        return;
+    }
+    const bool viaDirectSound = ContainsNoCase(chosen, "DirectSound") || ContainsNoCase(chosen, "EAX");
+    acclog::Write("Audio.Path", "provider the game opened: %s -> %s", chosen,
+                  viaDirectSound
+                      ? "3D sounds reach dsound.dll as 3D buffers (dsoal spatializes them when installed)"
+                      : "Miles mixes 3D sounds itself; dsoal only receives the stereo result (no HRTF)");
+}
+
+// Where dsound.dll was loaded from: the game folder means dsoal, System32
+// means Windows' own DirectSound.
+void LogDirectSoundModule() {
+    HMODULE ds = GetModuleHandleA("dsound.dll");
+    if (!ds) {
+        acclog::Write("Audio.Path", "dsound.dll not loaded");
+    } else {
+        char path[MAX_PATH] = {};
+        GetModuleFileNameA(ds, path, sizeof(path));
+        acclog::Write("Audio.Path", "dsound.dll loaded from %s", path);
+    }
+    acclog::Write("Audio.Path", "dsoal-aldrv.dll (dsoal's OpenAL Soft) %s",
+                  GetModuleHandleA("dsoal-aldrv.dll") ? "loaded" : "not loaded");
+}
+
+// The alsoft.ini keys that decide HRTF.
+void LogAlsoftConfig() {
+    char path[MAX_PATH];
+    if (!ResolveInstallRelative("alsoft.ini", path, sizeof(path)) ||
+        GetFileAttributesA(path) == INVALID_FILE_ATTRIBUTES) {
+        return;
+    }
+    static const char* const kKeys[] = {"channels", "stereo-mode", "stereo-encoding", "hrtf",
+                                        "default-hrtf", "hrtf-mode"};
+    for (const char* key : kKeys) {
+        char value[128] = {};
+        GetPrivateProfileStringA("general", key, "", value, sizeof(value), path);
+        if (value[0]) acclog::Write("Audio.Path", "alsoft.ini [general] %s=%s", key, value);
+    }
+}
+
 }  // namespace
+
+void LogAudioPathOnce() {
+    static bool done = false;
+    if (done) return;
+    void* internal = acc::audio::GetSoundInternal();
+    if (!internal) return;  // sound system not up yet
+    done = true;
+    LogDirectSoundModule();
+    LogMilesProvider(internal);
+    LogAlsoftConfig();
+}
 
 void LogStartupSnapshot() {
     static bool fired = false;
@@ -134,7 +266,7 @@ void LogStartupSnapshot() {
     // replacement would explain a sudden no-audio report.
     ProbeFile("dsound.dll");
     ProbeFile("dsoal-aldrv.dll");
-    ProbeFile("dsoal-alsoft.ini");
+    ProbeFile("alsoft.ini");  // dsoal's OpenAL Soft config (HRTF on/off)
     ProbeFile("dinput8.dll");
     ProbeFile("mss32.dll");
 

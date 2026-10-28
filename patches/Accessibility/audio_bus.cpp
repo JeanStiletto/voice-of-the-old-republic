@@ -140,6 +140,17 @@ constexpr int      kMaxGroupScan             = 40;
 
 }  // namespace
 
+void* GetSoundInternal() {
+    void* exoSound = GetCExoSound();
+    if (!exoSound) return nullptr;
+    __try {
+        return *reinterpret_cast<void**>(
+            reinterpret_cast<char*>(exoSound) + kSoundInternalOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
 void SetGlobalCueVolumePercent(int percent) {
     if (percent < 0)   percent = 0;
     if (percent > 100) percent = 100;

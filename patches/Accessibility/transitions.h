@@ -12,7 +12,10 @@
 
 #pragma once
 
+#include <vector>
+
 #include "engine_offsets.h"
+#include "room_topology.h"  // ExitMark
 
 namespace acc::transitions {
 
@@ -66,6 +69,13 @@ bool IsResrefStyleRoomName(const char* name);
 // Area-name transitions bypass the gate — the player just changed
 // module, the cue is always worth it.
 bool IsWorldSpeechGated();
+
+// Speaks a perceptual-region label (the walking announce and the view-mode
+// cursor's): through 3D exit descriptions when they are on, each of
+// `exits` sounding from where it leads, else the announcement voice,
+// centred. Either way it replaces the previous region label.
+void SpeakRegionLabel(const char* text,
+                      const std::vector<acc::room_topology::ExitMark>& exits);
 
 // True between SetMoveToModuleString firing and the next fresh area
 // pointer surfacing. Probes that call into player/leader/area accessors
