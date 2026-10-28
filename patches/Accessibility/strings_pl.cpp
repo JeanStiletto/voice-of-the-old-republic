@@ -83,7 +83,8 @@ const char* Get(Id id) {
         // Beacon (Ctrl+-).
         case Id::FmtBeaconStarted:     return "Sygna\xB3 do %s";
         case Id::BeaconCancelled:      return "Sygna\xB3 wy\xB3\xB9""czony";
-        case Id::FmtBeaconNoPath:      return "Brak drogi do %s";
+        case Id::FmtBeaconNoPath:      return "Brak drogi st\xB9""d do %s. Mo\xBF""e da si\xEA tam dotrze\xE6 z innej strony.";
+        case Id::FmtBeaconMapUnreadable: return "Brak drogi do %s: nie mo\xBFna odczyta\xE6 mapy obszaru.";
         case Id::BeaconAlreadyAtDest:  return "Ju\xBF u celu";
         // Route description.
         case Id::FmtRouteHeader:       return "Trasa do %s (%d metr\xF3w): %s. %s.";

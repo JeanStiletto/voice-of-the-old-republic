@@ -70,7 +70,8 @@ const char* Get(Id id) {
         // Beacon (Ctrl+-).
         case Id::FmtBeaconStarted:     return "Beacon zu %s";
         case Id::BeaconCancelled:      return "Beacon abgebrochen";
-        case Id::FmtBeaconNoPath:      return "Kein Pfad zu %s";
+        case Id::FmtBeaconNoPath:      return "Kein Pfad von hier zu %s. Vielleicht von einer anderen Seite erreichbar.";
+        case Id::FmtBeaconMapUnreadable: return "Kein Pfad zu %s: Die Gebietskarte ist nicht lesbar.";
         case Id::BeaconAlreadyAtDest:  return "Bereits am Ziel";
         // Route description.
         // Args: name, total metres, joined segment list, transition tail.

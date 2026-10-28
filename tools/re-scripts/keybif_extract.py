@@ -1,10 +1,10 @@
 """Minimal KEY/BIF extractor: pull resources by resref substring + type list.
 usage: keybif_extract.py <game_root> <out_dir> <resref_substring> <type,type,...>
-types: lyt=3000 mdl=2002 mdx=3008 wav=4 tpc=3007 are=2012
+types: lyt=3000 wok=2016 mdl=2002 mdx=3008 wav=4 tpc=3007 are=2012
 """
 import os, struct, sys
 root, out, needle, types = sys.argv[1], sys.argv[2], sys.argv[3].lower(), sys.argv[4]
-typemap = {'lyt':3000,'mdl':2002,'mdx':3008,'wav':4,'tpc':3007,'are':2012,'utc':2027,'ncs':2010,'2da':2017}
+typemap = {'lyt':3000,'mdl':2002,'mdx':3008,'wav':4,'tpc':3007,'are':2012,'utc':2027,'ncs':2010,'2da':2017,'wok':2016}
 want = {typemap[t] for t in types.split(',')}
 inv = {v:k for k,v in typemap.items()}
 key = open(os.path.join(root,'chitin.key'),'rb').read()

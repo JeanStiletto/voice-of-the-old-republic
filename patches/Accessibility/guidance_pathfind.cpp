@@ -144,8 +144,12 @@ int FindBlockingEdge(const acc::engine::WallEdge* walls, int wallCount,
 bool ComputePath(void* area,
                  const Vector& start,
                  const Vector& goal,
-                 std::vector<Vector>& outWaypoints) {
+                 std::vector<Vector>& outWaypoints,
+                 PathFailure* failure) {
     outWaypoints.clear();
+    // Every early return below is a map-read failure except the exhausted
+    // open set, which overrides this; success resets it to None.
+    if (failure) *failure = PathFailure::MapUnreadable;
     if (!area) {
         acclog::Write("Pathfind", "ComputePath: area=null");
         return false;
@@ -176,6 +180,7 @@ bool ComputePath(void* area,
     if (DistXY(start, goal) < 0.5f) {
         outWaypoints.push_back(goal);
         acclog::Write("Pathfind", "ComputePath: start == goal (single-point path)");
+        if (failure) *failure = PathFailure::None;
         return true;
     }
 
@@ -203,6 +208,7 @@ bool ComputePath(void* area,
         outWaypoints.push_back(goal);
         acclog::Write("Pathfind", "ComputePath: start/goal share node %d "
                       "(single-point path)", startNode);
+        if (failure) *failure = PathFailure::None;
         return true;
     }
 
@@ -238,6 +244,9 @@ bool ComputePath(void* area,
         if (best < 0) {
             acclog::Write("Pathfind", "ComputePath: open set exhausted "
                           "(no path) expanded=%d", expanded);
+            // Undirected graph: an exhausted search means start and goal
+            // are on separate islands.
+            if (failure) *failure = PathFailure::Unreachable;
             return false;
         }
         if (best == goalNode) break;  // found
@@ -418,6 +427,7 @@ bool ComputePath(void* area,
                       walls, wallCount);
     }
 
+    if (failure) *failure = PathFailure::None;
     return true;
 }
 

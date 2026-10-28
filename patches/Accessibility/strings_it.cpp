@@ -67,7 +67,8 @@ const char* Get(Id id) {
         // Beacon (Ctrl+-).
         case Id::FmtBeaconStarted:     return "Segnale verso %s";
         case Id::BeaconCancelled:      return "Segnale annullato";
-        case Id::FmtBeaconNoPath:      return "Nessun percorso verso %s";
+        case Id::FmtBeaconNoPath:      return "Nessun percorso da qui verso %s. Forse raggiungibile da un altro lato.";
+        case Id::FmtBeaconMapUnreadable: return "Nessun percorso verso %s: impossibile leggere la mappa della zona.";
         case Id::BeaconAlreadyAtDest:  return "Gi\xE0 a destinazione";
         // Route description.
         // Example: "Percorso verso Porta (25 metri): 5 metri Nord,

@@ -859,16 +859,24 @@ void OnBeaconFocus() {
     PlayActivationCue(a);
 
     std::vector<Vector> waypoints;
-    bool pathOk = acc::guidance::ComputePath(area, playerPos, a.pos, waypoints);
+    acc::guidance::PathFailure failure = acc::guidance::PathFailure::None;
+    bool pathOk = acc::guidance::ComputePath(area, playerPos, a.pos, waypoints,
+                                             &failure);
 
     if (!pathOk || waypoints.empty()) {
-        char msg[192];
+        // An island ("no path from here, maybe from another side") is a fact
+        // of the area; an unreadable map is our fault and worth reporting.
+        bool unreadable = (failure == acc::guidance::PathFailure::MapUnreadable);
+        char msg[256];
         std::snprintf(msg, sizeof(msg),
-                      acc::strings::Get(acc::strings::Id::FmtBeaconNoPath),
+                      acc::strings::Get(unreadable
+                          ? acc::strings::Id::FmtBeaconMapUnreadable
+                          : acc::strings::Id::FmtBeaconNoPath),
                       a.name);
         prism::Speak(msg, /*interrupt=*/true);
-        acclog::Write("Cycle", "Ctrl+- -> [%s] obj=%p (ComputePath failed)",
-                      msg, a.obj);
+        acclog::Write("Cycle", "Ctrl+- -> [%s] obj=%p (ComputePath failed, "
+                      "reason=%s)", msg, a.obj,
+                      unreadable ? "map-unreadable" : "unreachable");
         return;
     }
 

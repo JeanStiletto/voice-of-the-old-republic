@@ -60,6 +60,8 @@ and add the German in parentheses if it genuinely aids clarity.
   it is, in 3D, so you hear which way to turn (on by default, same submenu).
 - After a fight, the area description waits until the combat announcements
   have finished.
+- When the beacon (Ctrl+-) finds no route, it says whether the target may be
+  reachable from another side or the mod could not read the area map.
 - 3D speech behind you sounds darker than speech ahead, so you can tell the
   two apart (a technique from the Dark Vision mod).
 - The KOTOR 2 party selection screen reads each companion's name instead of
@@ -147,6 +149,13 @@ and add the German in parentheses if it genuinely aids clarity.
   announcements, for the centred description.
 - **After a fight, the area description waits for the combat announcements**
   to finish instead of talking over the last of them.
+- **The beacon's "no path" message says why.** "No path from here to X. It may
+  be reachable from another side." means the area's walk map has no
+  connection from where you stand. That happens in places the game reaches
+  only from one side, such as the Peragus fuel depot's lower door to the
+  hangar. "No path to X: the area map could not be read." is a mod fault worth
+  reporting. Routes still ignore locked doors, because on Peragus a door's
+  state changes with the story phase and the character you play.
 
 <h3>Bug fixes:</h3>
 

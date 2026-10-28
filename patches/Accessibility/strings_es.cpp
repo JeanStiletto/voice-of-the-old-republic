@@ -69,7 +69,8 @@ const char* Get(Id id) {
         // Beacon (Ctrl+-).
         case Id::FmtBeaconStarted:     return "Baliza hacia %s";
         case Id::BeaconCancelled:      return "Baliza cancelada";
-        case Id::FmtBeaconNoPath:      return "No hay ruta hacia %s";
+        case Id::FmtBeaconNoPath:      return "No hay ruta desde aqu\xED hacia %s. Quiz\xE1 se pueda llegar desde otro lado.";
+        case Id::FmtBeaconMapUnreadable: return "No hay ruta hacia %s: no se pudo leer el mapa de la zona.";
         case Id::BeaconAlreadyAtDest:  return "Ya en el destino";
         // Route description.
         // Example: "Ruta hacia Puerta (25 metros): 5 metros Norte,

@@ -180,8 +180,12 @@ enum class Id : int {
     //      `FmtBeaconStarted`     — opener spoken when StartBeacon arms.
     //                               One `%s` (resolved destination name).
     //      `BeaconCancelled`      — cancel-on-second-press toggle. Fixed.
-    //      `FmtBeaconNoPath`      — A* returned empty / no path found.
-    //                               One `%s` (destination name).
+    //      `FmtBeaconNoPath`      — no route from the player's part of the
+    //                               nav graph to the target's; says it may
+    //                               be reachable from another side (Peragus
+    //                               islands). One `%s` (destination name).
+    //      `FmtBeaconMapUnreadable` — the area's nav graph could not be
+    //                               read at all (mod-side fault). One `%s`.
     //      `BeaconAlreadyAtDest`  — player is already within reach of the
     //                               focused object; no path to describe.
     //      `FmtRouteHeader`       — assembled route description sentence.
@@ -199,6 +203,7 @@ enum class Id : int {
     FmtBeaconStarted,
     BeaconCancelled,
     FmtBeaconNoPath,
+    FmtBeaconMapUnreadable,
     BeaconAlreadyAtDest,
     FmtRouteHeader,
     FmtRouteSegment,

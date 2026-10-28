@@ -41,10 +41,22 @@ namespace acc::guidance {
 // isn't ready (only before the change-detector's first post-area tick),
 // raw A* output is returned — degraded but never wrong.
 //
+// Why a path could not be found, so the caller can tell the player whether
+// the world or the mod is at fault.
+//   Unreachable   — start and goal sit on separate parts of the nav graph.
+//                   Real islands exist: Peragus's fuel depot keeps its lower
+//                   hangar door in a corridor only the hangar side reaches,
+//                   and some authored graphs simply miss a link (a hangar
+//                   footlocker, 4 m of flat floor away). Either way there is
+//                   no route from HERE, which may not hold from another side
+//                   or in a later phase.
+//   MapUnreadable — null area, empty or unreadable graph, malformed graph.
+enum class PathFailure { None, Unreachable, MapUnreadable };
+
 // Returns:
 //   true  — non-empty path. Degenerate "start == goal" returns just the
 //           goal so callers handle "already there".
-//   false — null area / empty graph / no path / any read faulted.
+//   false — see PathFailure (written to *failure when non-null).
 //           outWaypoints is cleared on every failure.
 //
 // O(N²) open-set scan; N < 200 in practice beats a heap. Every nav-graph
@@ -52,7 +64,8 @@ namespace acc::guidance {
 bool ComputePath(void* area,
                  const Vector& start,
                  const Vector& goal,
-                 std::vector<Vector>& outWaypoints);
+                 std::vector<Vector>& outWaypoints,
+                 PathFailure* failure = nullptr);
 
 }  // namespace acc::guidance
 
