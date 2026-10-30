@@ -55,8 +55,10 @@
     { 0x009AABA4, 0x00996874 },  // kVtableCSWGuiPortraitCharGen
     { 0x009AAC4C, 0x0099691C },  // kVtableCSWGuiNameChargen
     { 0x00A10340, 0x009F2B8C },  // (inline) acc::addr::PickGlobal(0, 0x00a10340);
+    { 0x00A1090C, 0x009F296C },  // kAddrDesiredOrientation
     { 0x00A10910, 0x009F2970 },  // kAddrScreenFramePercent
     { 0x00A1B48C, 0x00A11BEC },  // (inline) acc::addr::PickGlobal(0x007a39e4, 0x00a1b48c);
+    { 0x00A1B490, 0x00A11BF0 },  // kAddrExoResManPtr
     { 0x00A1B494, 0x00A11BF4 },  // kAddrCExoSoundPtr / kAddrExoSoundPtr
     { 0x00A1B49C, 0x00A11BFC },  // kAddrGuiManagerPtr
     { 0x00A1B4A4, 0x00A11C04 },  // kAddrAppManagerPtr

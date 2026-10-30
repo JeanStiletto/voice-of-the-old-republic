@@ -656,7 +656,7 @@ const char* Get(Id id) {
         case Id::HelpKeyCycleCategory:  return "Maj plus virgule ou point : cat\xE9gorie pr\xE9""c\xE9""dente ou suivante";
         case Id::HelpKeyCycleEnds:      return "Ctrl plus virgule ou point : aller \xE0 l'objet le plus proche ou le plus \xE9loign\xE9";
         case Id::HelpKeyHeading:        return "Alt droite : annoncer votre orientation et la zone o\xF9 vous \xEAtes";
-        case Id::HelpKeyCameraOrient:   return "N : tourner la cam\xE9ra vers la direction suivante, ou faire face au prochain point de passage";
+        case Id::HelpKeyCameraOrient:   return "N : tourner la cam\xE9ra vers la sortie la plus proche, puis dans le sens horaire vers la suivante, ou faire face au prochain point de passage";
         case Id::HelpKeyDropMarker:     return "Maj plus N : poser un marqueur de carte \xE0 votre position";
 
         case Id::FmtHelpNumberActions:   return "1 \xE0 7 : utiliser la derni\xE8re action d'une cat\xE9gorie. 1 %s, 2 %s, 3 %s, 4 %s, 5 %s, 6 %s, 7 %s";
@@ -699,7 +699,7 @@ const char* Get(Id id) {
         case Id::HelpKeyPadWalkToFocus:      return "G\xE2" "chette droite avec bouton de tranche droit : marcher jusqu'\xE0 l'objet cibl\xE9";
         case Id::HelpKeyPadBeacon:           return "G\xE2" "chette gauche avec bouton de tranche gauche : balise sonore vers l'objet cibl\xE9";
         case Id::HelpKeyPadDegrees:          return "G\xE2" "chette droite : annoncer votre orientation et la zone o\xF9 vous \xEAtes";
-        case Id::HelpKeyPadCameraOrient:     return "Pression du stick droit : tourner la cam\xE9ra vers le prochain point de la balise, sinon vers le point cardinal suivant";
+        case Id::HelpKeyPadCameraOrient:     return "Pression du stick droit : tourner la cam\xE9ra vers le prochain point de la balise, sinon vers la sortie la plus proche, puis dans le sens horaire vers la suivante";
         case Id::HelpKeyPadHelp:             return "Les deux g\xE2" "chettes : touches de cet \xE9" "cran. L'entr\xE9" "e Aide du menu rapide ouvre cette liste";
         case Id::HelpKeyPadQuickMenu:        return "Y : menu rapide";
         case Id::HelpKeyPadCycleTargets:     return "Boutons de tranche gauche et droit : changer de cible";

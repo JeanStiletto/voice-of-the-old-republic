@@ -676,7 +676,7 @@ const char* Get(Id id) {
         case Id::HelpKeyCycleCategory:  return "Umschalt und Komma oder Punkt: vorherige oder n\xE4""chste Kategorie";
         case Id::HelpKeyCycleEnds:      return "Strg und Komma oder Punkt: zum n\xE4""chsten oder entferntesten Objekt springen";
         case Id::HelpKeyHeading:        return "Rechte Alt-Taste: Blickrichtung und aktuellen Bereich ansagen";
-        case Id::HelpKeyCameraOrient:   return "N: Kamera zur n\xE4""chsten Richtung drehen oder zum n\xE4""chsten Wegpunkt ausrichten";
+        case Id::HelpKeyCameraOrient:   return "N: Kamera zum n\xE4""chsten Ausgang drehen, dann im Uhrzeigersinn weiter, oder zum n\xE4""chsten Wegpunkt ausrichten";
         case Id::HelpKeyDropMarker:     return "Umschalt und N: eine Kartenmarkierung an deiner Position setzen";
 
         case Id::FmtHelpNumberActions:   return "1 bis 7: die zuletzt benutzte Aktion einer Kategorie einsetzen. 1 %s, 2 %s, 3 %s, 4 %s, 5 %s, 6 %s, 7 %s";
@@ -719,7 +719,7 @@ const char* Get(Id id) {
         case Id::HelpKeyPadWalkToFocus:      return "Rechter Trigger mit rechter Schultertaste: zum fokussierten Objekt laufen";
         case Id::HelpKeyPadBeacon:           return "Linker Trigger mit linker Schultertaste: Audio-Bake zum fokussierten Objekt";
         case Id::HelpKeyPadDegrees:          return "Rechter Trigger: Blickrichtung und aktuellen Bereich ansagen";
-        case Id::HelpKeyPadCameraOrient:     return "Rechten Stick dr\xFC" "cken: Kamera zum n\xE4" "chsten Wegpunkt der Bake drehen, sonst zur n\xE4" "chsten Himmelsrichtung";
+        case Id::HelpKeyPadCameraOrient:     return "Rechten Stick dr\xFC" "cken: Kamera zum n\xE4" "chsten Wegpunkt der Bake drehen, sonst zum n\xE4" "chsten Ausgang, dann im Uhrzeigersinn weiter";
         case Id::HelpKeyPadHelp:             return "Beide Trigger: Tasten f\xFCr diesen Bildschirm. Der Eintrag Hilfe im Schnellmen\xFC \xF6" "ffnet diese Liste";
         case Id::HelpKeyPadQuickMenu:        return "Y: Schnellmen\xFC";
         case Id::HelpKeyPadCycleTargets:     return "Linke und rechte Schultertaste: Ziele durchschalten";

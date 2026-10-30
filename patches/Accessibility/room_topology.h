@@ -53,6 +53,9 @@ constexpr int kClusterIdOpenArea  = -2;
 // text ("Nord", "Tür Süd-West nach X"), and the world point it leads to —
 // what 3D exit descriptions (positional_speech::SpeakExitList) place it at.
 // Recorded while the label is built; the label itself never changes.
+// Empty text = an exit the label names only through its axis word
+// ("Korridor Nord-Süd", "Bereich Ost-West"): it has a real point but no
+// entry of its own, so 3D speech skips it and only camera_orient (N) uses it.
 struct ExitMark {
     std::string text;
     Vector      pos;
@@ -129,8 +132,8 @@ void Reset();
 //
 // outExits (optional) receives the label's exit entries with their world
 // points, in label order; cleared on every call like outLabel. Empty for
-// labels without placeable exits (axis-only corridors, the open-area
-// fallback).
+// labels without exits (the open-area fallback, a roomy area with no
+// axis). Axis-only labels carry their two ends as empty-text marks.
 bool LookupAt(void* area, const Vector& worldPos,
               std::string& outLabel, int& outSig,
               int& outClusterId,

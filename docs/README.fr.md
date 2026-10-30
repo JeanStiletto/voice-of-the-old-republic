@@ -118,7 +118,7 @@ Un second cycle, en plus de Q / E, qui parcourt les objets que vous avez déjà 
 <h3>Touches du mod — orientation et groupe</h3>
 
 - AltGr (Alt droite, seule) — Annoncer l'orientation actuelle comme point cardinal, avec la voix de la boussole, puis la zone où vous êtes
-- N — Tourner la caméra de 90° dans le sens horaire vers le point cardinal suivant ; si une balise est armée, viser plutôt le point de passage suivant de la balise
+- N — Tourner la caméra vers la sortie de votre zone actuelle la plus proche de la direction où vous regardez, mesurée depuis votre position ; chaque nouvelle pression tourne dans le sens horaire vers la sortie suivante. Là où aucune sortie n'est connue, tourne de 90° dans le sens horaire vers le point cardinal suivant. Si une balise est armée, viser plutôt le point de passage suivant de la balise
 - Tab — Annonce le nouveau chef de groupe après que le moteur a changé de contrôle
 
 <h3>Touches du mod — mode vue</h3>
@@ -185,7 +185,7 @@ Les noms de boutons ci-dessous suivent la disposition Xbox : A, B, X, Y, les bou
 
 - Stick gauche — Se déplacer (les huit directions : avant, arrière et pas chassé)
 - Stick droit — Tourner la caméra
-- R3 (appuyer sur le stick droit) — Tourner la caméra vers le prochain point de passage de la balise, sinon vers le point cardinal suivant (le N du clavier)
+- R3 (appuyer sur le stick droit) — Tourner la caméra vers le prochain point de passage de la balise, sinon vers la sortie la plus proche puis dans le sens horaire vers la suivante (le N du clavier)
 - Gâchette droite seule — Annoncer l'orientation et la zone où vous êtes
 
 <h3>Objets et actions</h3>

@@ -657,7 +657,7 @@ const char* Get(Id id) {
         case Id::HelpKeyCycleCategory:  return "May\xFAs m\xE1s coma o punto: categor\xED""a anterior o siguiente";
         case Id::HelpKeyCycleEnds:      return "Ctrl m\xE1s coma o punto: ir al objeto m\xE1s cercano o m\xE1s lejano";
         case Id::HelpKeyHeading:        return "Alt derecho: anunciar tu orientaci\xF3n y la zona en la que est\xE1s";
-        case Id::HelpKeyCameraOrient:   return "N: girar la c\xE1mara hacia la siguiente direcci\xF3n, o mirar al siguiente punto de paso";
+        case Id::HelpKeyCameraOrient:   return "N: girar la c\xE1mara hacia la salida m\xE1s cercana y luego en sentido horario a la siguiente, o mirar al siguiente punto de paso";
         case Id::HelpKeyDropMarker:     return "May\xFAs m\xE1s N: colocar un marcador de mapa en tu posici\xF3n";
 
         case Id::FmtHelpNumberActions:   return "1 a 7: usar la \xFAltima acci\xF3n de una categor\xED""a. 1 %s, 2 %s, 3 %s, 4 %s, 5 %s, 6 %s, 7 %s";
@@ -700,7 +700,7 @@ const char* Get(Id id) {
         case Id::HelpKeyPadWalkToFocus:      return "Gatillo derecho con bot\xF3n superior derecho: caminar hasta el objeto enfocado";
         case Id::HelpKeyPadBeacon:           return "Gatillo izquierdo con bot\xF3n superior izquierdo: baliza sonora hacia el objeto enfocado";
         case Id::HelpKeyPadDegrees:          return "Gatillo derecho: anunciar tu orientaci\xF3n y la zona en la que est\xE1s";
-        case Id::HelpKeyPadCameraOrient:     return "Pulsar la palanca derecha: girar la c\xE1mara hacia el siguiente punto de la baliza, o al siguiente punto cardinal";
+        case Id::HelpKeyPadCameraOrient:     return "Pulsar la palanca derecha: girar la c\xE1mara hacia el siguiente punto de la baliza, o a la salida m\xE1s cercana y luego en sentido horario a la siguiente";
         case Id::HelpKeyPadHelp:             return "Ambos gatillos: teclas de esta pantalla. La entrada Ayuda del men\xFA r\xE1pido abre esta lista";
         case Id::HelpKeyPadQuickMenu:        return "Y: men\xFA r\xE1pido";
         case Id::HelpKeyPadCycleTargets:     return "Botones superiores izquierdo y derecho: cambiar de objetivo";

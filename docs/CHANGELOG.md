@@ -48,6 +48,9 @@ and add the German in parentheses if it genuinely aids clarity.
 
 - The installer's self-update now updates the installer file you started.
 - An installer older than the mod no longer marks the mod as up to date.
+- N turns the camera to the exits of the area you are in: the one closest to
+  where you look first, then clockwise with each press.
+- N turns instantly.
 - KOTOR 2's party selection screen works with the arrow keys and Enter.
 - The party selection screen says when the game locks a companion in or out.
 - Empty slots on the party selection screen are read as "Empty slot".
@@ -57,6 +60,7 @@ and add the German in parentheses if it genuinely aids clarity.
   it stops your screen reader.
 - A controller press stops them too.
 - A new urgent 3D combat announcement replaces the one still playing.
+- 3D speech works on the GOG release of KOTOR 2.
 
 <h3>Installer:</h3>
 
@@ -73,6 +77,22 @@ and add the German in parentheses if it genuinely aids clarity.
   bundled runtime files, and it recorded the newest version number anyway, so a
   current installer never offered the update that would replace those files.
   It now records its own version.
+
+<h3>World navigation:</h3>
+
+- **N turns the camera to the exits of the area you are in.** The first press
+  faces the exit closest to where you are looking, measured from where you
+  stand, so you face the end of a corridor exactly instead of the nearest
+  compass direction. Each further press turns clockwise to the next exit.
+  Straight corridors and long areas whose description names only their axis
+  ("north-south") count both ends as exits. Where no exits are known, N turns
+  to the next compass direction as before, and with a beacon armed it faces
+  the beacon's next waypoint. Both games.
+- **N turns instantly.** It used to hold your turn key, so a half turn took
+  about a second at the game's keyboard camera speed and could stop several
+  degrees past the target. It now sets the camera's heading directly and
+  lands within a frame. The combat camera does not accept that, so there N
+  still turns by key. Both games.
 
 <h3>Bug fixes:</h3>
 
@@ -108,6 +128,8 @@ and add the German in parentheses if it genuinely aids clarity.
 - **A new urgent 3D combat announcement replaces the one still playing**, as
   the centred announcement voice always has. They used to queue, so in a busy
   fight urgent lines could pile up and arrive late.
+- **3D speech works on the GOG release of KOTOR 2.** Two engine addresses
+  were missing for that build, so every line fell back to centred speech.
 
 <h2>v0.9.0</h2>
 

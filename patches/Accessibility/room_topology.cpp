@@ -1214,13 +1214,17 @@ void AppendListEntry(std::string& list, const std::string& entry) {
 // at the cluster's mark list around ClassifyCluster; every place that
 // appends an EXIT entry to a label notes the entry and its world point
 // here. Null outside classification, so the label helpers stay usable
-// on their own. A mark whose entry the final label drops (an exit list
-// the axis word covers) is harmless: SpeakExitList skips marks it cannot
-// find in the spoken text.
+// on their own. An exit the label names only through its axis word is
+// noted with empty text (NoteUnspokenExit): SpeakExitList skips it, the
+// N key (camera_orient) still turns to its point.
 std::vector<ExitMark>* g_exit_sink = nullptr;
 
 void NoteExit(const std::string& entry, const Vector& pos) {
     if (g_exit_sink && !entry.empty()) g_exit_sink->push_back({entry, pos});
+}
+
+void NoteUnspokenExit(const Vector& pos) {
+    if (g_exit_sink) g_exit_sink->push_back({std::string(), pos});
 }
 
 // Where an exit entry leads: the door's own position when it is a door,
@@ -1332,7 +1336,8 @@ std::string DirEntry(acc::strings::Id dirId, bool markDeadEnd,
 // east wall for a way out that never existed (2026-08-11 session).
 // `posA` / `posB` are where each end leads (ExitPoint); when the two
 // ends are named separately they are noted as exits (NoteExit). The
-// single axis word names the run, not an end, and notes nothing.
+// single axis word names the run, not an end, so its ends are noted
+// unspoken (NoteUnspokenExit) — the N key still needs where they are.
 std::string RenderCorridorAxis(int bitA, int doorA, bool deadA,
                                int bitB, int doorB, bool deadB,
                                bool rampA, bool rampB,
@@ -1364,8 +1369,10 @@ std::string RenderCorridorAxis(int bitA, int doorA, bool deadA,
         const char* word = acc::strings::Get(wordId);
         if (!word[0]) return std::string();
         const char* fmt = acc::strings::Get(Id::FmtMapCursorCorridorDir);
-        if (fmt[0]) return acc::strfmt::Format(fmt, word);
-        return std::string();
+        if (!fmt[0]) return std::string();
+        NoteUnspokenExit(posA);
+        NoteUnspokenExit(posB);
+        return acc::strfmt::Format(fmt, word);
     }
 
     // Render both endpoints. Order by y-component descending, x-component
@@ -1822,8 +1829,13 @@ void ClassifyAsArea(const acc::engine::navgraph::NavGraphSnapshot& g, int n,
         }
     }
     bool haveExits = !dirList.empty() && !axisCoversExits;
-    // No exit list in the label: the axis word alone is spoken, centred.
-    if (!haveExits && g_exit_sink) g_exit_sink->resize(marksAtEntry);
+    // No exit list in the label: the axis word alone is spoken, centred,
+    // and the exits it covers stay as unspoken points for the N key.
+    if (axisCoversExits && g_exit_sink) {
+        for (size_t i = marksAtEntry; i < g_exit_sink->size(); ++i) {
+            (*g_exit_sink)[i].text.clear();
+        }
+    }
 
     if (elong && axisW && axisW[0] && haveExits) {
         const char* fmt = acc::strings::Get(Id::FmtAreaAxisExits);

@@ -334,7 +334,8 @@ void InitDefaults() {
     bind(Action::AnnounceDegrees,      VK_RMENU, 0, 0, kModShift);
     bind(Action::PartyLeaderAnnounce,  VK_TAB,   0, 0, 0);
     // N alone — camera-orient (face beacon's next waypoint when armed,
-    // else cycle camera CW to the next cardinal). Shift forbidden so we
+    // else the region's exits: nearest first, then clockwise; cardinal
+    // step when no exits are known). Shift forbidden so we
     // don't fight SaveMarkerAtCursor (Shift+N drops a map marker).
     bind(Action::CameraOrient,         'N', 0, 0,
                                        kModShift | kModCtrl | kModAlt | kModAltGr);

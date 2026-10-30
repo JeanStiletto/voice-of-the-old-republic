@@ -72,6 +72,17 @@ inside it). Same three-source shape as KOTOR 1, with these differences:
 
 ---
 
+## camera_snap_and_turn_speed
+_How the free-roam camera can be turned: the keyboard ramp, Q/E's look-at, and the one-shot desired-orientation request camera_orient (N) uses. Decompiled 2026-10-30, both games._
+
+**Keyboard turn speed is three ini options**, `[Game Options]` in swkotor.ini / swkotor2.ini (both games use the same key names): `Keyboard Camera DPS` (top speed, default 200 deg/s), `Keyboard Camera Acceleration` (500 deg/s²), `Keyboard Camera Deceleration` (2000 deg/s²). K1: loaded in `CClientOptions::LoadOptions` @0x0061dbe0, read through `GetCameraKeyboardDPS` @0x0061d5e0 / `...Acceleration` @0x0061d610 / `...Deceleration` @0x0061d640, each preferring an override global (`KeyboardCameraRotationSpeed/Accl/Decel` @0x007a2320/24/28) when it is not -1. At the defaults a 150° held-key turn takes about one second (0.4 s ramp to 200 deg/s, ~0.1 s braking). That braking matches the measured key-hold coast of rate × 75..123 ms.
+
+**Q/E does not use the keyboard ramp.** `ShowObject` @0x005f9c60 calls `CSWCCreature::LookAt` (head look) and, when its third argument is set or in combat, `CSWCameraOnAStick::SetLookAtTarget` @0x00639c30. The camera then aims at the target itself inside `Control_UpdateCameraDesiredOrientation` (with a ±15° offset, easing by `cameraInterpAmt2`), so one Q/E press can jump the camera almost instantly (log: 3327 deg/s discontinuity).
+
+**The desired-orientation request — a one-shot "face this yaw".** `CSWCameraOnAStick::Control_UpdateCameraDesiredOrientation` (K1 @0x006391a0, K2 @0x007dea10; called from `Control`, vtable slot 2 — K1 @0x0063bcb0, K2 @0x007de200) ends with `if (desiredOrientation >= 0) { orientation = YawPitchRoll(desiredOrientation, 0, 0); desiredOrientation = -1; }`. The global is K1 @0x007a2440, Steam K2 @0x00a1090c, GOG K2 @0x009f296c — 4 bytes below `screenFramePercentage` in all three builds. Nothing in the engine writes it (K1 xrefs: those two reads and the reset), so a write from the mod is consumed on the next camera update. Units are degrees in the engine `Yaw()` frame: `Yaw(v) = atan2(-x, y)`, North = 0, CCW+, i.e. the mod's engine frame (East = 0, CCW+) minus 90°. The combat camera (`CSWBehaviorCameraCombat`) never reads it; camera_orient detects the unconsumed request after 200 ms, withdraws it (writes -1) and falls back to the key-hold turn. Whether the camera jumps or eases after taking it: see the `snap landed ... elapsed=` lines of the first test round.
+
+---
+
 ## kotor_camera_character_decoupling
 _Stock-engine behaviour — A/D pans camera without rotating character; the character "snaps" to camera yaw only when W or S is pressed. Verified blind via AltGr heading announce 2026-05-06._
 

@@ -64,6 +64,8 @@ does, how the pieces fit, the decisions behind it, and the traps already hit.
   pad's NoteNavPress, beside its prism::Silence); urgent — a new line
   replaces the one playing, as SpeakUrgent interrupts. Until then urgent
   queued too, so it could pile up where the SAPI voice never did.
+  TESTED in KOTOR 1 by the user 2026-10-30 (commit f1350ec): key presses
+  cut it as they should, no more piling up.
 
 ## Pieces
 

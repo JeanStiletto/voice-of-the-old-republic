@@ -655,7 +655,7 @@ const char* Get(Id id) {
         case Id::HelpKeyCycleCategory:  return "Maiusc pi\xF9 virgola o punto: categoria precedente o successiva";
         case Id::HelpKeyCycleEnds:      return "Ctrl pi\xF9 virgola o punto: andare all'oggetto pi\xF9 vicino o pi\xF9 lontano";
         case Id::HelpKeyHeading:        return "Alt destro: annunciare la direzione in cui guardi e la zona in cui ti trovi";
-        case Id::HelpKeyCameraOrient:   return "N: girare la telecamera verso la direzione successiva, o orientarsi al prossimo punto di passaggio";
+        case Id::HelpKeyCameraOrient:   return "N: girare la telecamera verso l'uscita pi\xF9 vicina, poi in senso orario verso la successiva, o orientarsi al prossimo punto di passaggio";
         case Id::HelpKeyDropMarker:     return "Maiusc pi\xF9 N: posizionare un indicatore sulla mappa nella tua posizione";
 
         case Id::FmtHelpNumberActions:   return "Da 1 a 7: usare l'ultima azione di una categoria. 1 %s, 2 %s, 3 %s, 4 %s, 5 %s, 6 %s, 7 %s";
@@ -698,7 +698,7 @@ const char* Get(Id id) {
         case Id::HelpKeyPadWalkToFocus:      return "Grilletto destro con dorsale destro: cammina verso l'oggetto selezionato";
         case Id::HelpKeyPadBeacon:           return "Grilletto sinistro con dorsale sinistro: radiofaro sonoro verso l'oggetto selezionato";
         case Id::HelpKeyPadDegrees:          return "Grilletto destro: annuncia la direzione in cui guardi e la zona in cui ti trovi";
-        case Id::HelpKeyPadCameraOrient:     return "Premi la levetta destra: ruota la telecamera verso il prossimo punto del radiofaro, altrimenti verso il punto cardinale successivo";
+        case Id::HelpKeyPadCameraOrient:     return "Premi la levetta destra: ruota la telecamera verso il prossimo punto del radiofaro, altrimenti verso l'uscita pi\xF9 vicina, poi in senso orario verso la successiva";
         case Id::HelpKeyPadHelp:             return "Entrambi i grilletti: tasti di questa schermata. La voce Aiuto del menu rapido apre questo elenco";
         case Id::HelpKeyPadQuickMenu:        return "Y: menu rapido";
         case Id::HelpKeyPadCycleTargets:     return "Dorsali sinistro e destro: cambia bersaglio";

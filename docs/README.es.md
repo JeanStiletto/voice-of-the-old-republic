@@ -118,7 +118,7 @@ Un segundo ciclo, además de Q / E, que recorre los objetos que ya has descubier
 <h3>Teclas del mod — orientación y grupo</h3>
 
 - AltGr (Alt derecho, solo) — Anunciar la orientación actual como punto cardinal, con la voz de la brújula, y después la zona en la que estás
-- N — Girar la cámara 90° en sentido horario hacia el siguiente punto cardinal; si hay una baliza activa, apuntar en su lugar al siguiente punto de ruta de la baliza
+- N — Girar la cámara hacia la salida de tu zona actual más cercana a la dirección en la que miras, medida desde donde estás; cada pulsación más gira en sentido horario a la siguiente salida. Donde no se conocen salidas, gira 90° en sentido horario hacia el siguiente punto cardinal. Si hay una baliza activa, apuntar en su lugar al siguiente punto de ruta de la baliza
 - Tab — Anuncia el nuevo líder del grupo después de que el motor cambie el control
 
 <h3>Teclas del mod — modo vista</h3>
@@ -185,7 +185,7 @@ Los nombres de botones de abajo siguen la disposición de Xbox: A, B, X, Y, los 
 
 - Palanca izquierda — Moverse (las ocho direcciones: adelante, atrás y desplazamiento lateral)
 - Palanca derecha — Girar la cámara
-- R3 (pulsar la palanca derecha) — Girar la cámara hacia el siguiente punto de ruta de la baliza, o si no hacia el siguiente punto cardinal (la N del teclado)
+- R3 (pulsar la palanca derecha) — Girar la cámara hacia el siguiente punto de ruta de la baliza, o si no hacia la salida más cercana y luego en sentido horario a la siguiente (la N del teclado)
 - Gatillo derecho solo — Anunciar la orientación y la zona en la que estás
 
 <h3>Objetos y acciones</h3>

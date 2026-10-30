@@ -657,7 +657,7 @@ const char* Get(Id id) {
         case Id::HelpKeyCycleCategory:  return "Shift plus comma or period: previous or next category";
         case Id::HelpKeyCycleEnds:      return "Control plus comma or period: jump to the nearest or farthest object";
         case Id::HelpKeyHeading:        return "Right Alt: announce your facing direction and the area you are in";
-        case Id::HelpKeyCameraOrient:   return "N: turn the camera to the next direction, or face the next beacon waypoint";
+        case Id::HelpKeyCameraOrient:   return "N: turn the camera to the nearest exit, then clockwise to the next one, or face the next beacon waypoint";
         case Id::HelpKeyDropMarker:     return "Shift plus N: drop a map marker at your position";
 
         case Id::FmtHelpNumberActions:   return "1 to 7: use a category's most recent action. 1 %s, 2 %s, 3 %s, 4 %s, 5 %s, 6 %s, 7 %s";
@@ -700,7 +700,7 @@ const char* Get(Id id) {
         case Id::HelpKeyPadWalkToFocus:      return "Right trigger with right shoulder button: walk to the focused object";
         case Id::HelpKeyPadBeacon:           return "Left trigger with left shoulder button: audio beacon to the focused object";
         case Id::HelpKeyPadDegrees:          return "Right trigger: announce your facing direction and the area you are in";
-        case Id::HelpKeyPadCameraOrient:     return "Press the right stick: turn the camera to the beacon's next waypoint, otherwise to the next compass direction";
+        case Id::HelpKeyPadCameraOrient:     return "Press the right stick: turn the camera to the beacon's next waypoint, otherwise to the nearest exit, then clockwise to the next one";
         case Id::HelpKeyPadHelp:             return "Both triggers: keys for this screen. The quick menu's Help entry opens this list";
         case Id::HelpKeyPadQuickMenu:        return "Y: quick menu";
         case Id::HelpKeyPadCycleTargets:     return "Left and right shoulder buttons: cycle targets";
