@@ -31,8 +31,12 @@
 // The screen reader itself can never be positional: it plays its own audio
 // and gives the mod no way to get at it.
 //
-// Each channel speaks one line at a time, in order; the two channels may
-// overlap, as the screen reader and the SAPI urgent voice do today.
+// Each channel cancels the way its centred counterpart does. Normal queues,
+// one line at a time in order; a key press empties it, as the screen reader
+// drops its queue (Tick watches the keyboard), and so does a controller press
+// (pad_input's NoteNavPress). Urgent: a new line replaces the one playing, as
+// SpeakUrgent interrupts. The two channels may overlap, as
+// the screen reader and the SAPI urgent voice do.
 //
 // Volume and speed are the mod's own per channel (Mod settings → Combat
 // announcements), NOT the screen reader's: its volume is tuned for centred
@@ -91,6 +95,9 @@ bool SpeakExitList(const char* text,
 
 // True while the channel has a line playing or waiting.
 bool IsSpeaking(Channel channel);
+
+// Drops the channel's waiting lines and stops the one playing.
+void Cut(Channel channel);
 
 // Length of the first piece of the last exit list played (the region
 // noun, "Kreuzung"), in ms; 0 before any. Follows the voice and its speed

@@ -16,13 +16,16 @@
 #include "audio_bus.h"         // GetCuePriorityGroup
 #include "audio_loop.h"
 #include "audio_wav.h"
+#include "camera_orient.h"     // IsActive — its held turn key is not the player's
 #include "eloquence_render.h"
 #include "engine_area.h"
 #include "engine_player.h"
+#include "hotkeys.h"           // IsForegroundGame
 #include "log.h"
 #include "menus_modsettings.h"
 #include "mod_settings_store.h"
 #include "nvda_config.h"
+#include "pad_input.h"         // StickMoving — pad_movement's held WASD is not the player's
 #include "prism.h"
 #include "transitions.h"       // IsWorldSpeechGated — cuts a stale exit list
 #include "view_mode.h"
@@ -540,14 +543,6 @@ void Enqueue(Line&& line, const char* subjectName) {
     TickChannel(StateOf(channel));
 }
 
-// Drops the channel's waiting lines and stops the one playing.
-void Cut(Channel channel) {
-    ChannelState& ch = StateOf(channel);
-    ch.queue.clear();
-    ch.source.Stop();
-    ch.busy = false;
-}
-
 // ---- Exit lists ----------------------------------------------------------------
 // One piece of a split region label: an exit (placed at `pos`) or the text
 // between exits (straight ahead).
@@ -631,7 +626,64 @@ void SplitAtExits(const std::string& text,
     AddAhead(text, cursor, text.size(), out);
 }
 
+// ---- Keyboard cancel -----------------------------------------------------------
+// The screen reader drops its queued speech when a key goes down; the Normal
+// channel is game audio it cannot reach, so the same cancel is done here: any
+// key press but Shift, Alt and Windows empties it (Ctrl included — it is
+// NVDA's stop key). Presses only, not the OS key repeat: a held key cancels
+// once. Mouse buttons do not count, as for NVDA.
+//
+// Keys the mod synthesises itself look like the player's to GetAsyncKeyState,
+// so edges are ignored while one of its holding injectors is driving
+// (camera_orient's turn key, pad_movement's WASD). The pad's own presses
+// cancel through pad_input's NoteNavPress; its taps release inside the same
+// SendInput, so a poll never sees them down.
+//
+// Scans only while the channel has something to cut. On the idle -> busy edge
+// the first scan just records the keyboard, so a key already held (walking)
+// is not taken for a fresh press.
+bool    g_keysPrimed = false;
+uint8_t g_keyWasDown[256];
+
+bool IsCancelKey(int vk) {
+    switch (vk) {
+        case VK_LBUTTON: case VK_RBUTTON: case VK_MBUTTON:
+        case VK_XBUTTON1: case VK_XBUTTON2: case VK_CANCEL:
+        case VK_SHIFT: case VK_LSHIFT: case VK_RSHIFT:
+        case VK_MENU: case VK_LMENU: case VK_RMENU:
+        case VK_LWIN: case VK_RWIN:
+            return false;
+    }
+    return true;
+}
+
+void CutNormalOnKeyPress() {
+    if (!IsSpeaking(Channel::Normal) || !acc::hotkeys::IsForegroundGame()) {
+        g_keysPrimed = false;
+        return;
+    }
+    const bool injecting = acc::camera_orient::IsActive() || acc::pad::StickMoving();
+    int pressed = 0;
+    for (int vk = 1; vk < 255; ++vk) {
+        const uint8_t down = (GetAsyncKeyState(vk) & 0x8000) ? 1 : 0;
+        if (down && !g_keyWasDown[vk] && IsCancelKey(vk) && !pressed) pressed = vk;
+        g_keyWasDown[vk] = down;
+    }
+    const bool primed = g_keysPrimed;
+    g_keysPrimed = true;
+    if (!primed || injecting || !pressed) return;
+    acclog::Write("PosSpeech", "normal cut (key press, vk 0x%02X)", pressed);
+    Cut(Channel::Normal);
+}
+
 }  // namespace
+
+void Cut(Channel channel) {
+    ChannelState& ch = StateOf(channel);
+    ch.queue.clear();
+    ch.source.Stop();
+    ch.busy = false;
+}
 
 bool IsEnabled(Channel channel) {
     using acc::menus::modsettings::Option;
@@ -698,6 +750,15 @@ bool Speak(Channel channel, const char* text, const char* subjectIn, const char*
     if (!text || !*text || !subjectIn || channel == Channel::Exits || !IsEnabled(channel)) {
         return false;
     }
+    // An urgent line replaces the one before it, as the centred urgent voice
+    // does (SpeakUrgent interrupts). Cut before placing, so a line that falls
+    // back to centred still ends the 3D one it replaces.
+    if (channel == Channel::Urgent) {
+        if (IsSpeaking(channel)) {
+            acclog::Write("PosSpeech", "urgent cut (replaced by a new line)");
+        }
+        Cut(channel);
+    }
     Vector ref;
     if (!acc::engine::GetPlayerPosition(ref)) return false;
     // Callers may hand raw slices of a log line ("Name " before an anchor).
@@ -754,6 +815,7 @@ void SetRateOffset(Channel channel, int offset) {
 
 void Tick() {
     CollectEloquence();
+    CutNormalOnKeyPress();
     // An exit list is about where the player stands right now: combat or a
     // blocking menu makes it stale (and the menu would pause the source
     // mid-list). Region speech stays gated until that ends.

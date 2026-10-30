@@ -55,8 +55,15 @@ does, how the pieces fit, the decisions behind it, and the traps already hit.
   `ECI.DLL`). Never shipped or copied — no distribution rights.
 - **No bundled eSpeak NG** ("rarely used; those users can sort it out").
 - **Two channels, as today**: normal (screen-reader voice) and urgent
-  (announcement voice) — each speaks one line at a time, in order; the two may
-  overlap, like NVDA + SAPI did before.
+  (announcement voice); the two may overlap, like NVDA + SAPI did before.
+  Each cancels like its centred counterpart (user decision 2026-10-30):
+  normal queues in order and a key press empties it (NVDA's typed-key cancel
+  can't reach game audio, so Tick watches GetAsyncKeyState edges: any key but
+  Shift / Alt / Win, presses not OS repeats, ignored while camera_orient or
+  pad_movement holds a synthesised key), as does a controller press (the
+  pad's NoteNavPress, beside its prism::Silence); urgent — a new line
+  replaces the one playing, as SpeakUrgent interrupts. Until then urgent
+  queued too, so it could pile up where the SAPI voice never did.
 
 ## Pieces
 

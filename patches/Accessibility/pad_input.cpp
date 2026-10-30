@@ -30,6 +30,7 @@
                              // has, as opposed to what we managed to bind
 #include "pad_quickmenu.h"   // the KOTOR 1 Y menu (K2 uses the engine's own)
 #include "peek_description.h" // OnShiftReleased — Y is the pad's peek modifier
+#include "positional_speech.h" // Cut — a pad press empties the 3D normal voice too
 #include "prism.h"           // Silence — the cancel a pad press has no
                              // keystroke to trigger
 #include "strings.h"
@@ -392,8 +393,12 @@ bool InWorldSurface() {
 // leaves every announce path unchanged — the alternative, flipping dozens of
 // call sites to interrupt=true, would also change keyboard behaviour and break
 // the announcements that intentionally queue.
+//
+// Positional speech's screen-reader voice queues the same way and is the
+// game's audio, out of every speech backend's reach, so it is cut here too.
 void NoteNavPress() {
     prism::Silence();
+    acc::positional_speech::Cut(acc::positional_speech::Channel::Normal);
 }
 
 // Route a logical nav / activate / cancel code into whichever in-DLL overlay

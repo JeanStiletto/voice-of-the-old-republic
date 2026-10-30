@@ -53,6 +53,10 @@ and add the German in parentheses if it genuinely aids clarity.
 - Empty slots on the party selection screen are read as "Empty slot".
 - KOTOR 2's in-game menu reads its party selection button as "Party Selection"
   instead of "Messages".
+- A key press stops 3D combat announcements in your screen-reader voice, as
+  it stops your screen reader.
+- A controller press stops them too.
+- A new urgent 3D combat announcement replaces the one still playing.
 
 <h3>Installer:</h3>
 
@@ -90,6 +94,20 @@ and add the German in parentheses if it genuinely aids clarity.
 - **KOTOR 2's in-game menu reads its party selection button as "Party
   Selection".** The fifth button opens the party screen on KOTOR 2, but the
   mod used KOTOR 1's caption for that position and called it "Messages".
+
+<h3>3D speech:</h3>
+
+- **A key press stops 3D combat announcements in your screen-reader voice.**
+  These lines are game sound, so your screen reader's own stop-on-keypress
+  never reached them, and in a long fight they could fall far behind. Now any
+  key except Shift, Alt and Windows stops the line playing and drops the ones
+  waiting, as your screen reader does; Ctrl counts. A held key stops them
+  once, not again with each key repeat.
+- **A controller press stops them too**, the same press that already stops
+  your screen reader.
+- **A new urgent 3D combat announcement replaces the one still playing**, as
+  the centred announcement voice always has. They used to queue, so in a busy
+  fight urgent lines could pile up and arrive late.
 
 <h2>v0.9.0</h2>
 
