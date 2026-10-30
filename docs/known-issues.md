@@ -251,10 +251,10 @@ Right arrow moved through portraits, and it spoke "control 15" on an empty
 slot. Fixes: KOTOR 2-only PartySelection row (strref 48625); portraits say
 "in party, locked" / "unavailable" when GetNPCSelectability is off (that
 roster had Bao-Dur locked in, T3-M4 locked out); empty slots say "Empty
-slot"; "Party full" no longer speaks over a locked companion. Still open:
-the strip's slot-4 label reads "Messages" (strref 1563) on KOTOR 2, while
-48625 "Party Selection" is the right caption (menus_extract.cpp icon table).
-Test: open with the hotkey and with Tab, Up/Down step portraits, Enter
+slot"; "Party full" no longer speaks over a locked companion. The strip's slot-4
+label read "Messages" (strref 1563) on KOTOR 2; it now uses 48625 "Party
+Selection" (menus_extract.cpp icon table). Test: the fifth strip button
+says "Party Selection"; open with the hotkey and with Tab, Up/Down step portraits, Enter
 toggles Kreia/Atton, OK commits, Esc closes; KOTOR 1 party screen unchanged.
 
 **v0.8.3 did not fix it (issue 9, ricki35, 2026-09-23, mod 0.8.3, Steam).**

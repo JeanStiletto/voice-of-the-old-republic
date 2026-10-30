@@ -1338,10 +1338,12 @@ const char* TryInGameMenuIcon(void* control, void* owner,
             { 1, 48220u,      48621u, "Inventar"      },     // inventory
             { 2, 48225u,      48622u, "Charakterblatt" },    // character_sheet
             { 3, 48224u,      48623u, "F\xe4higkeiten" },    // abilities
-            // K2's messages slot (48624) is an EMPTY entry in its TLK, so this
-            // uses the standalone "Nachrichten" at 1563; on lookup failure the
-            // literal below still carries the caption.
-            { 4, 48223u,      1563u,  "Nachrichten"   },     // messages
+            // Slot 4 is messages on KOTOR 1 but the party screen on KOTOR 2:
+            // its SwitchToSWInGameGui (0x007CA550) maps id 4 to the
+            // PartySelection slot, and 48625 is K2's caption for it (48624 is
+            // empty). It read "Messages" until 2026-10-30. The literal is the
+            // KOTOR 1 lookup-failure fallback.
+            { 4, 48223u,      48625u, "Nachrichten"   },     // messages / party
             { 5, 48218u,      48627u, "Auftr\xe4ge"   },     // journal
             { 6, 48221u,      48626u, "Karte"         },     // map
             { 7, 48222u,      48628u, "Optionen"      },     // options

@@ -367,7 +367,9 @@ void MonitorFocusedControl() {
 // strrefK1/strrefK2: KOTOR 2's dialog.tlk assigns KOTOR 1's ids to unrelated
 // strings (48218 there is "Ablativplatten Mk 1"), so each game needs its own
 // cluster — K1 48218..48225, K2 48620..48628. Same values as the icon table in
-// menus_extract.cpp; keep the two in sync. Use SpecStrref() to read them.
+// menus_extract.cpp (slot 4 there matches the PartySelection row on KOTOR 2
+// and the InGameMessages row on KOTOR 1); keep the two in sync. Use
+// SpecStrref() to read them.
 // kotor2Only: the row is a sub-screen on KOTOR 2 alone; FindSpec skips it on
 // KOTOR 1. Rows that leave it out get false.
 struct InGameSubScreenSpec {

@@ -51,6 +51,8 @@ and add the German in parentheses if it genuinely aids clarity.
 - KOTOR 2's party selection screen works with the arrow keys and Enter.
 - The party selection screen says when the game locks a companion in or out.
 - Empty slots on the party selection screen are read as "Empty slot".
+- KOTOR 2's in-game menu reads its party selection button as "Party Selection"
+  instead of "Messages".
 
 <h3>Installer:</h3>
 
@@ -85,6 +87,9 @@ and add the German in parentheses if it genuinely aids clarity.
 - **Empty slots on the party selection screen read "Empty slot"** instead of
   "control 15" when the game's own Left and Right arrows land on them. Both
   games.
+- **KOTOR 2's in-game menu reads its party selection button as "Party
+  Selection".** The fifth button opens the party screen on KOTOR 2, but the
+  mod used KOTOR 1's caption for that position and called it "Messages".
 
 <h2>v0.9.0</h2>
 
