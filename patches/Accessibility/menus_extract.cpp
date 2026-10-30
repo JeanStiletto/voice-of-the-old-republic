@@ -1056,6 +1056,12 @@ const char* TryPartyPortrait(void* control, char* outBuf, size_t bufSize,
     int partyId = portrait.partyId;
     bool inActiveParty = selected != 0;
     bool available = PartyTableIsNPCAvailable(npcSlot);
+    // Story locks: the engine refuses to toggle a companion whose
+    // GetNPCSelectability is off — a benched one can't be added, a member
+    // can't be removed. Both games' panels gate the click on it (K2 clears
+    // the portrait's flags bit 0 and shows a message box), so say so up
+    // front instead of calling the companion "available".
+    bool selectable = PartyTableIsNPCSelectable(npcSlot);
     if ((inActiveParty || available) &&
         npcSlot >= 0 && npcSlot < PartyRosterSlotCount()) {
         char name[128];
@@ -1063,15 +1069,18 @@ const char* TryPartyPortrait(void* control, char* outBuf, size_t bufSize,
             name[0]) {
             // Compose "{name}, im Team" / "{name}, verfügbar" so the
             // user hears whether the slot is currently selected for
-            // the party or just on the bench. The per-tick focus
+            // the party or just on the bench, plus the lock when the
+            // engine won't let it change. The per-tick focus
             // monitor re-runs this extractor and re-announces when
             // `selected` flips, so a toggle is heard immediately.
-            // Locked slots are dropped from the chain by RebindChain
-            // so we never reach this branch for them.
+            // Unrecruited slots are dropped from the chain by
+            // RebindChain and handled by the empty-slot branch below.
             acc::strings::Id statusFmt =
                 inActiveParty
-                    ? acc::strings::Id::FmtPartyPortraitInTeam
-                    : acc::strings::Id::FmtPartyPortraitAvailable;
+                    ? (selectable ? acc::strings::Id::FmtPartyPortraitInTeam
+                                  : acc::strings::Id::FmtPartyPortraitInTeamLocked)
+                    : (selectable ? acc::strings::Id::FmtPartyPortraitAvailable
+                                  : acc::strings::Id::FmtPartyPortraitUnavailable);
             int n = _snprintf(outBuf,
                               bufSize,
                               acc::strings::Get(statusFmt),
@@ -1087,13 +1096,23 @@ const char* TryPartyPortrait(void* control, char* outBuf, size_t bufSize,
                 }
             }
         }
+    } else if (!inActiveParty && !available) {
+        // Unrecruited / empty slot. The chain skips these, but the engine's
+        // own Left/Right moves focus through the whole portrait grid and
+        // lands on them, where the ladder had nothing better than
+        // "control 15" (patch-20261029-192616.log). No name, per the
+        // spoiler rule above.
+        if (EmitText(outBuf, bufSize,
+                     acc::strings::Get(acc::strings::Id::PartyPortraitEmpty))) {
+            source = "party-portrait-empty";
+        }
     }
     acclog::Trace("Menus.PartyPortrait",
                   "slot=%d selected=%d flags=0x%x partyId=%d "
-                  "available=%d inActiveParty=%d text=\"%s\"",
+                  "available=%d selectable=%d inActiveParty=%d text=\"%s\"",
                   npcSlot, selected, flags, partyId,
-                  available ? 1 : 0, inActiveParty ? 1 : 0,
-                  source ? outBuf : "");
+                  available ? 1 : 0, selectable ? 1 : 0,
+                  inActiveParty ? 1 : 0, source ? outBuf : "");
     return source;
 }
 

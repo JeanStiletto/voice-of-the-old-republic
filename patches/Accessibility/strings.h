@@ -746,8 +746,20 @@ enum class Id : int {
     //                                    bench (PartyTableIsNPCAvailable
     //                                    returns true, partyId < 0). One
     //                                    `%s` (name).
+    //        FmtPartyPortraitInTeamLocked / FmtPartyPortraitUnavailable —
+    //                                    the same two states when the
+    //                                    engine's GetNPCSelectability is off
+    //                                    (story lock): the member can't be
+    //                                    removed, the benched one can't be
+    //                                    added. One `%s` (name).
+    //        PartyPortraitEmpty        — an unrecruited / empty slot, reached
+    //                                    by the engine's own Left/Right grid
+    //                                    nav. No arguments, no name.
     FmtPartyPortraitInTeam,
     FmtPartyPortraitAvailable,
+    FmtPartyPortraitInTeamLocked,
+    FmtPartyPortraitUnavailable,
+    PartyPortraitEmpty,
 
     // ---- Spoken when the user presses Enter to add a benched companion
     //      but the party is already full (two companions chosen). The

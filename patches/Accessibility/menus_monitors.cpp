@@ -368,12 +368,15 @@ void MonitorFocusedControl() {
 // strings (48218 there is "Ablativplatten Mk 1"), so each game needs its own
 // cluster — K1 48218..48225, K2 48620..48628. Same values as the icon table in
 // menus_extract.cpp; keep the two in sync. Use SpecStrref() to read them.
+// kotor2Only: the row is a sub-screen on KOTOR 2 alone; FindSpec skips it on
+// KOTOR 1. Rows that leave it out get false.
 struct InGameSubScreenSpec {
     PanelKind   kind;
     int         guiId;
     uint32_t    strrefK1;
     uint32_t    strrefK2;
     const char* literal;
+    bool        kotor2Only;
 };
 
 const InGameSubScreenSpec k_inGameSubScreens[] = {
@@ -385,8 +388,19 @@ const InGameSubScreenSpec k_inGameSubScreens[] = {
     { PanelKind::InGameJournal,   5, 48218u,      48627u, "Auftr\xe4ge" },
     { PanelKind::InGameOptions,   7, 48222u,      48628u, "Optionen" },
     // K2's own messages entry (48624) is empty in its TLK; 1563 carries the
-    // caption there.
+    // caption there. guiId 4 is KOTOR 1's: KOTOR 2 opens the message log
+    // from the journal's Message Log button instead (no strip icon).
     { PanelKind::InGameMessages,  4, 48223u,      1563u,  "Nachrichten" },
+    // KOTOR 2 files the party screen in the strip's fifth slot. Its
+    // SwitchToSWInGameGui (0x007CA550) opens the panel at [gui+0xc+id*4], and
+    // id 4 lands on [gui+0x1c], the CSWGuiPartySelection slot
+    // (engine_panels.cpp). So it opens like any strip sub-screen, the strip
+    // stays in front, and only the drill below routes the arrows into it.
+    // Without this row they stayed on the strip (field log 2026-10-29,
+    // patch-20261029-192616.log). 48625 is K2's caption for that slot. On
+    // KOTOR 1 the party screen is a standalone panel and must not drill.
+    { PanelKind::PartySelection,  4, 0xFFFFFFFFu, 48625u, "Gruppenauswahl",
+      /*kotor2Only=*/true },
     // Quest-items modal pushed by the journal's "Auftrags-Gegenstände" button.
     // Not a strip sub-screen (no icon → guiId -1); its title is read live from
     // LBL_TITLE in the announce path, so strref/literal are unused sentinels.
@@ -404,6 +418,7 @@ uint32_t SpecStrref(const InGameSubScreenSpec* s) {
 
 const InGameSubScreenSpec* FindSpec(PanelKind k) {
     for (const auto& s : k_inGameSubScreens) {
+        if (s.kotor2Only && !acc::game::IsKotor2()) continue;
         if (s.kind == k) return &s;
     }
     return nullptr;

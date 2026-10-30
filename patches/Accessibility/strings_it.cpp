@@ -210,6 +210,9 @@ const char* Get(Id id) {
 
         case Id::FmtPartyPortraitInTeam:    return "%s, nel gruppo";
         case Id::FmtPartyPortraitAvailable: return "%s, disponibile";
+        case Id::FmtPartyPortraitInTeamLocked: return "%s, nel gruppo, bloccato";
+        case Id::FmtPartyPortraitUnavailable:  return "%s, non disponibile";
+        case Id::PartyPortraitEmpty:           return "Posto vuoto";
         case Id::PartySelectionFull:        return "Gruppo al completo";
 
         case Id::DisabledSuffix:       return ", non disponibile";

@@ -190,7 +190,9 @@ void HandleEnterActivation(void* activePanel, int code, int val, bool& consumed)
     // toggle does nothing, leaving no state change for the focus monitor to
     // re-announce. We still let the engine run (the no-op path plays its UI
     // click sound and refreshes the count label) but speak "Gruppe voll" so
-    // the silent refusal is audible.
+    // the silent refusal is audible. Not for a story-locked companion: the
+    // engine refuses that one for its own reason (KOTOR 2 says why in a
+    // message box), and the portrait already announced the lock.
     bool isPartyAddBlocked = false;
     if (acc::engine::IdentifyPanel(g_chainPanel) ==
             acc::engine::PanelKind::PartySelection) {
@@ -198,6 +200,7 @@ void HandleEnterActivation(void* activePanel, int code, int val, bool& consumed)
         if (acc::engine::ReadPartyPortrait(e.control, &portrait)) {
             isPartyAddBlocked =
                 portrait.selected == 0 &&
+                acc::engine::PartyTableIsNPCSelectable(portrait.npcSlot) &&
                 acc::engine::PartySelectionChosenCount(g_chainPanel) > 1;
         }
     }

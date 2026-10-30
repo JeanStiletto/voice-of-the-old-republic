@@ -231,6 +231,9 @@ const char* Get(Id id) {
 
         case Id::FmtPartyPortraitInTeam:    return "%s, \xE2 \xEE\xF2\xF0\xFF\xE4\xE5";
         case Id::FmtPartyPortraitAvailable: return "%s, \xE4\xEE\xF1\xF2\xF3\xEF\xE5\xED";
+        case Id::FmtPartyPortraitInTeamLocked: return "%s, \xE2 \xEE\xF2\xF0\xFF\xE4\xE5, \xE7\xE0\xE1\xEB\xEE\xEA\xE8\xF0\xEE\xE2\xE0\xED";
+        case Id::FmtPartyPortraitUnavailable:  return "%s, \xED\xE5\xE4\xEE\xF1\xF2\xF3\xEF\xE5\xED";
+        case Id::PartyPortraitEmpty:           return "\xCF\xF3\xF1\xF2\xEE\xE5 \xEC\xE5\xF1\xF2\xEE";
         case Id::PartySelectionFull:        return "\xCE\xF2\xF0\xFF\xE4 \xE7\xE0\xEF\xEE\xEB\xED\xE5\xED";
 
         case Id::DisabledSuffix:       return ", \xED\xE5\xE4\xEE\xF1\xF2\xF3\xEF\xED\xEE";

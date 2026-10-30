@@ -238,6 +238,25 @@ Offer the community resolution / widescreen + HR-menus patches as an installer o
 
 ### KOTOR 2 party selection read "control 13..24" — v0.8.3 fix FAILED in the field, re-fixed 2026-10-24, awaiting test (GitHub issues 6, 7 and 9)
 
+**v0.9.0 field log (2026-10-29, `k2-patch-20261029-192616.log`, Telos Czerka
+site): names now correct, but the screen was not operable — fixed 2026-10-30,
+built, untested.** Every portrait read "<name>, in party/available" as
+intended. But Up/Down never reached them: KOTOR 2 opens the party screen
+from strip slot 4 (its SwitchToSWInGameGui maps id 4 to the PartySelection
+slot), so the strip stays in front, and the sub-screen table in
+`menus_monitors.cpp` had no PartySelection row, so the drill never armed.
+Arrows walked the strip, and Enter on its party-order controls popped "Party
+order can not be changed in the Party Select screen". Only the engine's
+Right arrow moved through portraits, and it spoke "control 15" on an empty
+slot. Fixes: KOTOR 2-only PartySelection row (strref 48625); portraits say
+"in party, locked" / "unavailable" when GetNPCSelectability is off (that
+roster had Bao-Dur locked in, T3-M4 locked out); empty slots say "Empty
+slot"; "Party full" no longer speaks over a locked companion. Still open:
+the strip's slot-4 label reads "Messages" (strref 1563) on KOTOR 2, while
+48625 "Party Selection" is the right caption (menus_extract.cpp icon table).
+Test: open with the hotkey and with Tab, Up/Down step portraits, Enter
+toggles Kreia/Atton, OK commits, Esc closes; KOTOR 1 party screen unchanged.
+
 **v0.8.3 did not fix it (issue 9, ricki35, 2026-09-23, mod 0.8.3, Steam).**
 The tester's `k2-patch-20260923-125859.log` still speaks "control 13" / "control
 15" on two visits, and its panel walk prints every BTN_NPC portrait as

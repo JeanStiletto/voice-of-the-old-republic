@@ -48,6 +48,9 @@ and add the German in parentheses if it genuinely aids clarity.
 
 - The installer's self-update now updates the installer file you started.
 - An installer older than the mod no longer marks the mod as up to date.
+- KOTOR 2's party selection screen works with the arrow keys and Enter.
+- The party selection screen says when the game locks a companion in or out.
+- Empty slots on the party selection screen are read as "Empty slot".
 
 <h3>Installer:</h3>
 
@@ -64,6 +67,24 @@ and add the German in parentheses if it genuinely aids clarity.
   bundled runtime files, and it recorded the newest version number anyway, so a
   current installer never offered the update that would replace those files.
   It now records its own version.
+
+<h3>Bug fixes:</h3>
+
+- **KOTOR 2's party selection screen works with the arrow keys and Enter.**
+  KOTOR 2 opens it from the in-game menu like Equipment or Map, and the mod
+  did not treat it as one of those screens: Up and Down walked the menu strip
+  behind it, so no companion could be added or removed, and Enter there
+  brought up "Party order can not be changed in the Party Select screen".
+  The screen now also announces its name each time it opens, including with
+  Tab.
+- **The party selection screen says when the game locks a companion.** A
+  companion the story keeps in the party reads "in party, locked", and one
+  that cannot join right now reads "unavailable" instead of "available".
+  "Party full" is no longer spoken on Enter on such a companion; the game
+  gives its own reason. Both games.
+- **Empty slots on the party selection screen read "Empty slot"** instead of
+  "control 15" when the game's own Left and Right arrows land on them. Both
+  games.
 
 <h2>v0.9.0</h2>
 
