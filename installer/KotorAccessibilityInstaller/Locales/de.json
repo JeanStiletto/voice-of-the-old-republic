@@ -305,5 +305,6 @@
     "SelfUpdate_FailedTitle": "Installer-Aktualisierung fehlgeschlagen",
     "SelfUpdate_BadHash": "Die heruntergeladene Datei stimmt nicht mit der veröffentlichten Prüfsumme überein.",
     "SelfUpdate_Done_Format": "Der Installer hat sich auf Version {0} aktualisiert und neu gestartet.",
+    "SelfUpdate_DoneStaged_Format": "Der Installer hat sich auf Version {0} aktualisiert und neu gestartet.\n\nDie Installer-Datei, die du gestartet hast, konnte nicht ersetzt werden und ist daher noch die ältere Version. Lade den Installer beim nächsten Mal erneut von der Release-Seite herunter.",
     "SelfUpdate_DoneTitle": "Installer aktualisiert"
 }

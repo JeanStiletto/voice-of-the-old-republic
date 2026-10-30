@@ -171,7 +171,7 @@ namespace KotorAccessibilityInstaller
 
                     if (selfPrompt.Choice == SelfUpdateChoice.Restart)
                     {
-                        SelfUpdater.LaunchStaged(selfPrompt.StagedExe, args);
+                        SelfUpdater.ReplaceAndLaunch(selfPrompt.StagedExe, args);
                         return;
                     }
                 }

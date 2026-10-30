@@ -42,19 +42,24 @@ namespace KotorAccessibilityInstaller
     /// bundled binaries, and that mismatch is not something the user can see or
     /// report usefully.</para>
     ///
-    /// <para>HOW THE SWAP WORKS — and why it is not Sku's swap. Sku's updater
-    /// renames itself aside and moves the download into its own name, because it
-    /// lives at one fixed path that a Start-menu shortcut points at. This EXE has
-    /// no fixed home: it is run out of Downloads, out of the game folder (the
-    /// uninstaller copy), or out of %TEMP% (the in-game F5 handoff), and at
-    /// ~85 MB it is the payload rather than a stub. So instead of overwriting
-    /// wherever we happen to be sitting — which needs write access to somebody
-    /// else's folder and silently rewrites a file the user downloaded — the
-    /// verified download is STAGED in %TEMP% and simply started. The old file
-    /// stays where it was and is never touched. The install that follows copies
-    /// the NEW EXE into the game folder as the uninstaller (see
-    /// <c>InstallationManager.CopyUninstaller</c>), so the one copy that has to
-    /// stay current does.</para>
+    /// <para>HOW THE SWAP WORKS. The verified download is staged in %TEMP%, then
+    /// swapped into the running EXE's own name: the running file is renamed
+    /// aside to "&lt;name&gt;.old" (Windows allows renaming a running image, not
+    /// overwriting it), the staged file is moved into its place, and that is
+    /// started. The new instance deletes the ".old" once the old one has exited.
+    /// This is the rename-and-replace convention single-EXE tools use (rustup,
+    /// Sku's updater).</para>
+    ///
+    /// <para>It replaces rather than merely starting the staged copy because
+    /// this EXE has no fixed home — Downloads, the game folder (the uninstaller
+    /// copy), wherever the user put it — and the file the user launches IS the
+    /// installer to them. Starting a %TEMP% copy and leaving the original alone
+    /// meant the next launch was the old version again: it swept the staged
+    /// copy, offered the same 88 MB update, and the installer looked to the
+    /// user as if it never updated at all (the "not updating to 0.9" report).
+    /// When the swap cannot be made — a read-only folder, antivirus holding a
+    /// lock — the staged copy is started instead, and it says plainly that the
+    /// file the user launched is still the older version.</para>
     ///
     /// <para>WHAT IT REFUSES TO DO. It never runs an unverified binary: the
     /// published SHA-256 must match and the downloaded file's own version
@@ -87,6 +92,21 @@ namespace KotorAccessibilityInstaller
         private const string StagedPrefix = "VoiceOfTheOldRepublicInstaller-";
 
         /// <summary>
+        /// Suffix the replaced EXE is renamed to, next to the new one. The new
+        /// instance deletes it once the old process has let go of it.
+        /// </summary>
+        private const string AsideSuffix = ".old";
+
+        /// <summary>
+        /// How long a freshly swapped-in instance waits for the old process to
+        /// exit so it can delete the ".old" file. The old process returns right
+        /// after starting us and only flushes its log on the way out, so this is
+        /// normally well under a second; past the limit the file is left for the
+        /// next run's sweep.
+        /// </summary>
+        private static readonly TimeSpan AsideDeleteWait = TimeSpan.FromSeconds(5);
+
+        /// <summary>
         /// Set on the run that follows a successful self-update, so the user can
         /// be told what happened. A restart with no explanation is exactly the
         /// kind of thing a screen-reader user cannot see the cause of.
@@ -99,18 +119,30 @@ namespace KotorAccessibilityInstaller
         private static string RunningExe => Environment.ProcessPath ?? string.Empty;
 
         /// <summary>
-        /// Housekeeping for every run: note a completed self-update, and drop
-        /// staged EXEs left in %TEMP% by earlier runs. Also runs when NO update
-        /// happened, so a download that was cancelled or died halfway does not
-        /// leave 85 MB behind forever.
+        /// Housekeeping for every run: note a completed self-update, drop the
+        /// ".old" EXE a swap left next to us, and drop staged EXEs left in %TEMP%
+        /// by earlier runs. Also runs when NO update happened, so a download that
+        /// was cancelled or died halfway does not leave 85 MB behind forever.
         /// </summary>
         public static void CleanUp(string[] args)
         {
-            if (HasSwitch(args, UpdatedSwitch))
+            bool justUpdated = HasSwitch(args, UpdatedSwitch);
+            if (justUpdated)
             {
-                PostUpdateNotice = InstallerLocale.Format("SelfUpdate_Done_Format", RunningVersion);
-                Logger.Info($"Restarted after a self-update; now running {RunningVersion}.");
+                // Started from %TEMP% means the swap fell back to the staged
+                // copy: the file the user launched was NOT replaced, and saying
+                // "updated" without that caveat is how the next launch of the
+                // old file came as a surprise.
+                bool ranFromStaging = IsStagedPath(RunningExe);
+                PostUpdateNotice = InstallerLocale.Format(
+                    ranFromStaging ? "SelfUpdate_DoneStaged_Format" : "SelfUpdate_Done_Format", RunningVersion);
+                Logger.Info($"Restarted after a self-update; now running {RunningVersion} from " +
+                            $"{(ranFromStaging ? "the staged copy (original file not replaced)" : "the original location")}.");
             }
+
+            // Only a fresh restart waits for the old process; any other run
+            // just tries once and leaves a still-locked file for later.
+            DeleteAsideFile(justUpdated ? AsideDeleteWait : TimeSpan.Zero);
 
             try
             {
@@ -334,12 +366,111 @@ namespace KotorAccessibilityInstaller
         }
 
         /// <summary>
-        /// Starts the verified staged EXE and hands it this run's arguments, so a
-        /// launch that carried a game path or a --game keeps carrying it across
-        /// the restart. The caller returns straight afterwards; nothing was
-        /// overwritten, so there is nothing to roll back.
+        /// Swaps the verified staged EXE into the running EXE's place and starts
+        /// it; when the swap cannot be made, starts the staged copy instead. The
+        /// caller returns straight afterwards. See the class summary for why the
+        /// file is replaced rather than left alone.
         /// </summary>
-        public static void LaunchStaged(string staged, string[] args)
+        public static void ReplaceAndLaunch(string staged, string[] args)
+        {
+            string target = RunningExe;
+            Launch(TryReplaceInPlace(staged, target) ? target : staged, args);
+        }
+
+        /// <summary>
+        /// Renames the running EXE aside and moves the staged one into its name.
+        /// Returns false — with the original back in place wherever possible —
+        /// when either step fails; the caller then starts the staged copy.
+        /// </summary>
+        private static bool TryReplaceInPlace(string staged, string target)
+        {
+            if (string.IsNullOrEmpty(target) || !File.Exists(target) || IsStagedPath(target))
+                return false;
+
+            string aside = target + AsideSuffix;
+            try
+            {
+                if (File.Exists(aside)) File.Delete(aside);
+                File.Move(target, aside);
+            }
+            catch (Exception ex)
+            {
+                Logger.Warning($"Could not move the running installer aside ({ex.Message}); " +
+                               $"starting the update from {staged} instead.");
+                return false;
+            }
+
+            try
+            {
+                File.Move(staged, target);
+                Logger.Info($"Replaced {target} with the verified update; the previous version is {aside} " +
+                            "until the new one deletes it.");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Logger.Warning($"Could not move the update into {target} ({ex.Message}); " +
+                               $"restoring the original and starting the update from {staged} instead.");
+                // A cross-volume move that died halfway leaves a partial file
+                // in the way of the restore.
+                TryDelete(target);
+                try { File.Move(aside, target); }
+                catch (Exception restoreEx)
+                {
+                    Logger.Error($"Could not restore the original installer from {aside}", restoreEx);
+                }
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Deletes the ".old" EXE next to us, retrying for up to
+        /// <paramref name="wait"/> while the process that left it is still
+        /// exiting.
+        /// </summary>
+        private static void DeleteAsideFile(TimeSpan wait)
+        {
+            string running = RunningExe;
+            if (string.IsNullOrEmpty(running)) return;
+            string aside = running + AsideSuffix;
+            if (!File.Exists(aside)) return;
+
+            var deadline = DateTime.UtcNow + wait;
+            while (true)
+            {
+                try
+                {
+                    File.Delete(aside);
+                    Logger.Info($"Removed the replaced installer: {aside}");
+                    return;
+                }
+                catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+                {
+                    if (DateTime.UtcNow >= deadline)
+                    {
+                        Logger.Info($"Replaced installer {Path.GetFileName(aside)} still in use ({ex.Message}); left for the next run.");
+                        return;
+                    }
+                    Thread.Sleep(250);
+                }
+            }
+        }
+
+        private static bool IsStagedPath(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return false;
+            string dir = Path.GetDirectoryName(Path.GetFullPath(path)) ?? string.Empty;
+            string temp = Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar);
+            return string.Equals(dir.TrimEnd(Path.DirectorySeparatorChar), temp, StringComparison.OrdinalIgnoreCase)
+                && Path.GetFileName(path).StartsWith(StagedPrefix, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Starts the given EXE and hands it this run's arguments, so a launch
+        /// that carried a game path or a --game keeps carrying it across the
+        /// restart.
+        /// </summary>
+        private static void Launch(string exe, string[] args)
         {
             var forwarded = new StringBuilder();
             foreach (var a in args ?? new string[0])
@@ -349,13 +480,13 @@ namespace KotorAccessibilityInstaller
             }
             forwarded.Append(UpdatedSwitch);
 
-            Logger.Info($"Starting the updated installer: {staged} {forwarded}");
+            Logger.Info($"Starting the updated installer: {exe} {forwarded}");
             Process.Start(new ProcessStartInfo
             {
-                FileName = staged,
+                FileName = exe,
                 Arguments = forwarded.ToString(),
                 UseShellExecute = true,     // keeps the elevation we already hold
-                WorkingDirectory = Path.GetDirectoryName(staged) ?? string.Empty,
+                WorkingDirectory = Path.GetDirectoryName(exe) ?? string.Empty,
             });
         }
 

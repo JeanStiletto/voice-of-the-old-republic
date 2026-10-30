@@ -305,5 +305,6 @@
     "SelfUpdate_FailedTitle": "Installer update failed",
     "SelfUpdate_BadHash": "The downloaded file did not match the published checksum.",
     "SelfUpdate_Done_Format": "The installer updated itself to version {0} and restarted.",
+    "SelfUpdate_DoneStaged_Format": "The installer updated itself to version {0} and restarted.\n\nThe installer file you started could not be replaced, so it is still the older version. Next time, download the installer again from the release page.",
     "SelfUpdate_DoneTitle": "Installer updated"
 }

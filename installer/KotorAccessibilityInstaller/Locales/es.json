@@ -305,5 +305,6 @@
     "SelfUpdate_FailedTitle": "Error al actualizar el instalador",
     "SelfUpdate_BadHash": "El archivo descargado no coincide con la suma de comprobación publicada.",
     "SelfUpdate_Done_Format": "El instalador se actualizó a la versión {0} y se reinició.",
+    "SelfUpdate_DoneStaged_Format": "El instalador se actualizó a la versión {0} y se reinició.\n\nNo se pudo reemplazar el archivo del instalador que iniciaste, así que sigue siendo la versión anterior. La próxima vez, descarga de nuevo el instalador desde la página de versiones.",
     "SelfUpdate_DoneTitle": "Instalador actualizado"
 }

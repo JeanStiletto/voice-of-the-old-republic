@@ -305,5 +305,6 @@
     "SelfUpdate_FailedTitle": "Échec de la mise à jour de l'installateur",
     "SelfUpdate_BadHash": "Le fichier téléchargé ne correspond pas à la somme de contrôle publiée.",
     "SelfUpdate_Done_Format": "L'installateur s'est mis à jour vers la version {0} et a redémarré.",
+    "SelfUpdate_DoneStaged_Format": "L'installateur s'est mis à jour vers la version {0} et a redémarré.\n\nLe fichier de l'installateur que vous avez lancé n'a pas pu être remplacé ; il reste donc l'ancienne version. La prochaine fois, téléchargez de nouveau l'installateur depuis la page des versions.",
     "SelfUpdate_DoneTitle": "Installateur mis à jour"
 }

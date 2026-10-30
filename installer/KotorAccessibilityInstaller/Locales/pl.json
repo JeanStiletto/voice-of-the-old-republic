@@ -305,5 +305,6 @@
     "SelfUpdate_FailedTitle": "Aktualizacja instalatora nie powiodła się",
     "SelfUpdate_BadHash": "Pobrany plik nie zgadza się z opublikowaną sumą kontrolną.",
     "SelfUpdate_Done_Format": "Instalator zaktualizował się do wersji {0} i uruchomił ponownie.",
+    "SelfUpdate_DoneStaged_Format": "Instalator zaktualizował się do wersji {0} i uruchomił ponownie.\n\nNie udało się zastąpić uruchomionego pliku instalatora, więc nadal jest to starsza wersja. Następnym razem pobierz instalator ponownie ze strony wydań.",
     "SelfUpdate_DoneTitle": "Instalator zaktualizowany"
 }

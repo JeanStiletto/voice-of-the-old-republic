@@ -42,6 +42,29 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>v0.9.1</h2>
+
+<h3>Overview:</h3>
+
+- The installer's self-update now updates the installer file you started.
+- An installer older than the mod no longer marks the mod as up to date.
+
+<h3>Installer:</h3>
+
+- **The installer's self-update now updates the installer file you started.**
+  Until now it ran the new version from the Windows Temp folder and left your
+  file at the old version, so the next launch offered the same update again
+  and the installer seemed never to update. It now swaps the new version into
+  your file's place. If that file cannot be replaced, the installer says so and
+  asks you to download it again from the release page. This takes effect from
+  the next update onwards: updating from 0.9.0 still runs the old method, so
+  download 0.9.1 from the release page once.
+- **An installer older than the mod no longer marks the mod as up to date.**
+  An older installer still installs the newest mod, but with its own, older
+  bundled runtime files, and it recorded the newest version number anyway, so a
+  current installer never offered the update that would replace those files.
+  It now records its own version.
+
 <h2>v0.9.0</h2>
 
 <h3>Overview:</h3>

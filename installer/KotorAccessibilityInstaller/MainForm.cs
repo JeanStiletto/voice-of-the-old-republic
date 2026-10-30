@@ -535,7 +535,16 @@ namespace KotorAccessibilityInstaller
 
                 UpdateStatus(InstallerLocale.Get("Main_StatusRegistering"));
                 UpdateProgress(95);
-                string registeredVersion = latestVersion ?? "1.0.0";
+                // The lower of the mod release and this installer. The .kpatch
+                // always comes from the newest release, but the bundled runtime
+                // files come out of this EXE — registering the release number
+                // from an older installer told every later run (including a
+                // current installer) that the install was up to date, so the
+                // stale bundled files were never replaced.
+                string installerVersion = InstallerVersion.Number();
+                string registeredVersion = latestVersion == null || Program.IsNewerVersion(latestVersion, installerVersion)
+                    ? installerVersion
+                    : latestVersion;
                 RegistryManager.Register(_target, _gamePath, registeredVersion, uninstallerPath);
 
                 UpdateProgress(100);

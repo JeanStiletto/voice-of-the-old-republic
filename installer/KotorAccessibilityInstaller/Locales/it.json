@@ -305,5 +305,6 @@
     "SelfUpdate_FailedTitle": "Aggiornamento dell'installer non riuscito",
     "SelfUpdate_BadHash": "Il file scaricato non corrisponde al checksum pubblicato.",
     "SelfUpdate_Done_Format": "L'installer si è aggiornato alla versione {0} e si è riavviato.",
+    "SelfUpdate_DoneStaged_Format": "L'installer si è aggiornato alla versione {0} e si è riavviato.\n\nIl file dell'installer che hai avviato non è stato sostituito, quindi è ancora la versione precedente. La prossima volta scarica di nuovo l'installer dalla pagina delle release.",
     "SelfUpdate_DoneTitle": "Installer aggiornato"
 }
