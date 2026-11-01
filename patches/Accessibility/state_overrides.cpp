@@ -40,13 +40,17 @@ struct StateOverride {
 // wall3 itself and 1→0→1 on wall4 in lock-step, validating the
 // Duros's in-dialog hint that "moving one switch moves its neighbour".
 //
-// Label mapping is the conservative initial guess: 0 = off (red, the
-// target state Duros names), 1 = on. If the in-game speech turns out
-// inverted on the panels whose initial position we can verify, the
-// map is the only thing that needs swapping.
+// The dword is the placeable's Locked flag, which the panel scripts
+// (tar09_wall1..5) use as the switch position: an unlocked panel plays
+// ANIMATION_PLACEABLE_DEACTIVATE and locks itself when used, a locked one
+// plays ACTIVATE and unlocks. So 0 = activated = green "on", 1 = red
+// "off". The release check fires when every panel is locked (all off),
+// the execution check when every panel is unlocked (all on). Confirmed
+// against the module blueprints: wall1/3/5 start Locked=0 with
+// AnimationState activated, wall2/4 Locked=1 deactivated.
 constexpr LabelEntry kWallSwitchLabels[] = {
-    {0, acc::strings::Id::ModSettingStateOff},
-    {1, acc::strings::Id::ModSettingStateOn},
+    {0, acc::strings::Id::ModSettingStateOn},
+    {1, acc::strings::Id::ModSettingStateOff},
     {0, acc::strings::Id::Count_},
 };
 
