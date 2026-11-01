@@ -11,6 +11,7 @@
 #include "engine_scriptvar.h" // Get/SetPlayerVarString
 #include "filter_objects.h"   // ObjectMatches / CycleCategory
 #include "log.h"
+#include "same_name_suffix.h"
 
 namespace acc::discovery {
 
@@ -63,13 +64,10 @@ std::string ToUpperAscii(const std::string& s) {
     return out;
 }
 
-// North-to-south total order — mirrors cycle_input::PositionLess so the
-// discovery ordinal matches the spoken "Nordpfad 3" numbering the player
-// already hears. Greater Y = more north = ranks first; X then Z break ties.
+// Same order as the spoken numbering (narration::PositionLess), so the
+// discovery ordinal matches the "Nordpfad 3" the player already hears.
 bool PositionLess(const Vector& a, const Vector& b) {
-    if (a.y != b.y) return a.y > b.y;
-    if (a.x != b.x) return a.x < b.x;
-    return a.z < b.z;
+    return acc::narration::PositionLess(a, b);
 }
 
 // Eligible discovery categories (Item + generic creatures are out of scope).

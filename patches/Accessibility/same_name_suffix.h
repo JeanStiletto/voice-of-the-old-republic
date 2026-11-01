@@ -81,8 +81,9 @@ void AppendAreaPositionOrdinal(void* gameObject,
 // North-to-south world ordering. KOTOR's +Y axis points north (the compass
 // derives heading as 90 - engineYaw, so due-north corresponds to increasing
 // Y), making the greatest-Y entry the northmost. Ranking greatest-Y-first
-// numbers from north to south; X then Z break exact ties so the order is
-// total and reproducible.
+// numbers from north to south, in half-metre bands: objects in the same band
+// form one row and number west to east. Exact Y then Z break the remaining
+// ties so the order is total and reproducible.
 bool PositionLess(const Vector& a, const Vector& b);
 
 // Hooked into transitions.cpp's area-reset chain.

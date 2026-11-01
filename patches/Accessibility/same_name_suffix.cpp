@@ -1,5 +1,6 @@
 #include "same_name_suffix.h"
 
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -133,9 +134,29 @@ void AppendSuffix(void* gameObject, char* outBuf, size_t bufSize) {
     }
 }
 
+// Objects within the same half-metre north-south band count as one row and
+// are numbered west to east. Without the band, a row of panels set along one
+// wall was ranked by centimetre-level Y jitter in the blueprints (the Taris
+// Sith-base Lights Out panels came out 1, 2, 5, 4, 3 along the wall), which
+// made a neighbour-flipping puzzle impossible to reason about by ear.
+// Quantising rather than comparing with a tolerance keeps the order
+// transitive.
+namespace {
+
+constexpr float kRowBandMetres = 0.5f;
+
+long RowBand(float y) {
+    return static_cast<long>(std::floor(y / kRowBandMetres));
+}
+
+}  // namespace
+
 bool PositionLess(const Vector& a, const Vector& b) {
-    if (a.y != b.y) return a.y > b.y;  // greater Y = more north = ranks first
+    const long ra = RowBand(a.y);
+    const long rb = RowBand(b.y);
+    if (ra != rb) return ra > rb;  // more northerly band ranks first
     if (a.x != b.x) return a.x < b.x;
+    if (a.y != b.y) return a.y > b.y;
     return a.z < b.z;
 }
 
