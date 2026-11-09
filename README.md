@@ -359,6 +359,10 @@ A lot of people helped me testing the game, found all the bugs I couldn't find, 
 - zersiax
 - Michael
 
+Thanks also to everyone who contributed code:
+
+- ampage87
+
 **Foundations and dependencies:**
 
 - **Lane Dibello** — [Kotor-Patch-Manager](https://github.com/LaneDibello/Kotor-Patch-Manager), the reverse-engineered Ghidra database, and the patch framework

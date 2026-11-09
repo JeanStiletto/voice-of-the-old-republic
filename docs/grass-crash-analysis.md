@@ -116,29 +116,18 @@ stride (`0xc`), `param_3` = passed but **unused**, `param_4` = attribute stride
 `CAurTriangleBin::RenderGrassPolys` @ `0x004a6d30` has two ways of issuing the
 draw.
 
-Single call, when the bin needs no per-texture splitting:
-
-```c
-DrawLightmappedGrass(<base>, 0xc, <&field20_0x44>, iVar8, 0, this->field6_0xc);
-//                                                        first=0  count=T
-```
+Single call, when the bin needs no per-texture splitting: `param_5` (first) is
+0 and `param_6` (quad count) is the bin's total quad count `T`, read from
+`field6_0xc`.
 
 Loop, one call per sub-bin (one per grass texture / lightmap pair in the area) —
 this is the path taken when multitexturing or ATI fragment shaders are
-available, i.e. on any modern GPU:
-
-```c
-iVar6 = 0;                                     // running vertex offset, GLOBAL
-iVar10 = 0;
-do {
-    /* bind this sub-bin's textures */
-    DrawLightmappedGrass(<base>, 0xc, <&field20_0x44>, iVar8,
-                         iVar6,                                  // first
-                         (this->field25_0x58).data[iVar10]);     // count, THIS sub-bin only
-    iVar6 += (this->field25_0x58).data[iVar10] * 4;
-    iVar10++;
-} while (iVar10 < (this->field25_0x58).size);
-```
+available, i.e. on any modern GPU. Each iteration binds that sub-bin's textures,
+then draws with:
+- `param_5` (first) = a running vertex offset over the whole bin, starting at
+  0 and advanced by the sub-bin's quad count × 4 after each draw;
+- `param_6` (quad count) = that sub-bin's own count only, read from the
+  per-sub-bin count array at `field25_0x58`.
 
 The defect: `DrawLightmappedGrass` derives the attribute base as
 `param_1 + param_6 * 0x30`. Per the confirmed layout above, attributes begin at

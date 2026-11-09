@@ -165,21 +165,7 @@ _Q/E cycle returns the no-target sentinel when CanSee LOS fails for every candid
 
 `CClientExoAppInternal::SelectNearestObject @ 0x005fb050` is the engine's Q/E (and mouse-look-toggle) hostile cycler. It reads a candidate list at `this->field164_0x2a8` (count at `field165_0x2ac`), advances through it by current direction, and calls `ShowObject(this, target, ...)` at `LAB_005fb3cd`.
 
-**The sentinel path** (calls `ShowObject(NULL)` → our hook sees `0x7f000000`):
-
-```c
-if ((iVar8 == 0) || (local_c == 0)) {       // iteration exhausted
-    if (iStack_4 == 0) {                     // no valid candidate found
-        if (this->field165_0x2ac != 0) {
-            return (int *)local_10;          // candidates remain → return WITHOUT ShowObject
-        }
-        // ALL candidates removed during iteration:
-        this->last_target = 0x7f000000;
-        pCVar3 = (CSWCObject *)0x0;
-        goto LAB_005fb3cd;                   // ShowObject(this, NULL, ...)
-    }
-}
-```
+**The sentinel path** (calls `ShowObject(NULL)` → our hook sees `0x7f000000`): once iteration is exhausted with no valid candidate found, the function checks the candidate count at `field165_0x2ac`. If candidates remain it returns without calling ShowObject (see below). If none remain, it stores `0x7f000000` as the last target and jumps to the ShowObject call with a NULL object.
 
 Sentinel fires only when the inner loop drained the candidate array to 0 elements. Three removal triggers, all hit `LAB_005fb32e`:
 1. `CGameObjectArray::GetGameObject` returns miss (stale handle). Note: returns TRUE on miss — `project_csws_area_handles`.
@@ -188,7 +174,7 @@ Sentinel fires only when the inner loop drained the candidate array to 0 element
 
 The CanSee path is the dominant cause in practice. When the player's pose makes the LOS check fail for every candidate at once, the list empties and the sentinel fires.
 
-**The other no-narrate path**: when iteration ran out (`local_c == 0`) but candidates still remain (`field165_0x2ac != 0`), the function returns WITHOUT calling ShowObject. Our hook never fires; from the user's perspective the Q/E press has no effect.
+**The other no-narrate path**: when iteration ran out but candidates still remain (`field165_0x2ac != 0`), the function returns WITHOUT calling ShowObject. Our hook never fires; from the user's perspective the Q/E press has no effect.
 
 **Filter mode `param_2`** (set by the caller, presumably by combat mode / context):
 - `0` → LOS-only filter (CanSee check is the gate)
