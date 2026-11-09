@@ -42,6 +42,49 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>v0.9.2</h2>
+
+<h3>Overview:</h3>
+
+- Energy shields now make a sound when they run out or break, in both games.
+- In KOTOR 1, locked plastic crates now make the locked sound.
+- In KOTOR 1, sonic weapon shots now make an impact sound.
+- The wall panels of the Duros cage puzzle in the Taris Sith base speak their
+  real on or off state.
+- Objects with the same name set in a row are numbered west to east.
+
+<h3>Game sound fixes (installer):</h3>
+
+- **Energy shields now make a sound when they run out or break, in both
+  games** — yours, your companions' and your enemies'. The games ship this
+  sound, but a misspelled column name in the visual-effects table kept the
+  engine from ever finding it. The installer adds the correctly spelled column
+  and keeps the old one, so other mods that edit the table keep working.
+- **In KOTOR 1, locked plastic crates now make the locked sound.** The table
+  named a sound file that does not exist; it now uses the sound the other
+  plastic containers use, the same correction KOTOR 2 shipped with.
+- **In KOTOR 1, sonic weapon shots now make an impact sound.** Same kind of
+  broken file name; it now uses the heavy-blaster impact, as KOTOR 2 does. No
+  sonic impact sound exists in either game.
+- **Credit.** Thanks to the KOTOR modding Discord for the hint that led to the
+  shield sound fix.
+
+<h3>Objects:</h3>
+
+- **The wall panels of the Duros cage puzzle in the Taris Sith base speak their
+  real on or off state.** Each panel was read the wrong way round: "off" for a panel
+  that was on, and the other way round. Following the speech to switch every
+  panel off therefore switched them all on and triggered the execution. The
+  panels are now read correctly, and switching them all off frees the Duros.
+- **Objects with the same name set in a row are numbered west to east.** Objects
+  with the same name are numbered north to south, but objects lined up along one
+  wall sit at almost the same north-south position, so their numbers came out
+  scrambled: the cage panels were 1, 2, 5, 4, 3 along the wall, which made a
+  puzzle where each panel flips its neighbours impossible to follow by ear.
+  Objects within half a metre of each other north to south are now numbered
+  west to east, so the panels read 1 to 5 in order. This can change the
+  numbers of such objects anywhere in the game.
+
 <h2>v0.9.1</h2>
 
 <h3>Overview:</h3>
