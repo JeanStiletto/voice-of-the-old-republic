@@ -109,6 +109,14 @@
          cannot share the KOTOR 1 file: KOTOR 2 splits volume and the two
          distance columns per platform (volume_pc / volume_xbox and so on). -->
     <EmbeddedResource Include="Resources\prioritygroups_k2.2da" />
+    <!-- Vanilla tables SoundTableFixes repairs when Override has no copy
+         (InstallationManager.InstallSoundTableFixes). Extracted from each
+         game's data/2da.bif. KOTOR 1 needs three; KOTOR 2 only shares the
+         visual-effects column typo, and its table differs from KOTOR 1's. -->
+    <EmbeddedResource Include="Resources\visualeffects.2da" />
+    <EmbeddedResource Include="Resources\placeableobjsnds.2da" />
+    <EmbeddedResource Include="Resources\ammunitiontypes.2da" />
+    <EmbeddedResource Include="Resources\visualeffects_k2.2da" />
     <!-- 7zr.exe: official standalone 7-Zip console (reduced, .7z only) from
          7-zip.org. Used by LogCollector to compress the beta-test log bundle
          with LZMA2 — a 158 MB crash dump deflates to ~67 MB but LZMA2-packs to

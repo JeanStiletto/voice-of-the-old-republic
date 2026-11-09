@@ -104,6 +104,14 @@ namespace KotorAccessibilityInstaller
         /// </summary>
         public string VanillaPriorityGroupResource { get; private init; }
 
+        /// <summary>
+        /// Tables <see cref="SoundTableFixes"/> repairs on this game, each paired
+        /// with the embedded vanilla copy used when Override has none. Listed per
+        /// game because only KOTOR 1 ships the two bad sound cells; KOTOR 2
+        /// shares the visual-effects column typo alone.
+        /// </summary>
+        public IReadOnlyList<(string TableFile, string VanillaResource)> SoundFixTables { get; private init; }
+
         public override string ToString() => DisplayName;
 
         // ------------------------------------------------------------------
@@ -147,6 +155,13 @@ namespace KotorAccessibilityInstaller
             StorePageGog = "https://www.gog.com/game/star_wars_knights_of_the_old_republic",
             RegistryKeyName = "KotorAccessibility",
             VanillaPriorityGroupResource = "prioritygroups.2da",
+
+            SoundFixTables = new[]
+            {
+                ("visualeffects.2da", "visualeffects.2da"),
+                ("placeableobjsnds.2da", "placeableobjsnds.2da"),
+                ("ammunitiontypes.2da", "ammunitiontypes.2da"),
+            },
 
             BundledPatches = new[]
             {
@@ -205,6 +220,11 @@ namespace KotorAccessibilityInstaller
             StorePageGog = "https://www.gog.com/game/star_wars_knights_of_the_old_republic_ii_the_sith_lords",
             RegistryKeyName = "KotorAccessibility_K2",
             VanillaPriorityGroupResource = "prioritygroups_k2.2da",
+
+            SoundFixTables = new[]
+            {
+                ("visualeffects.2da", "visualeffects_k2.2da"),
+            },
 
             // Lane's two static engine patches. Feature-equivalent to the
             // community 3C-FD tool's 4 GB + borderless entries, minus a second

@@ -712,6 +712,42 @@ recommended reading before working on this one) with three KOTOR-specific deltas
   the IT/ES localisation footnote) in a screen-reader-friendly linear layout
   using a focusable multiline read-only `TextBox`.
 
+### Game sound table fixes (2026-11-09)
+
+`SoundTableFixes` repairs vanilla 2DA data that keeps shipped sounds silent;
+`InstallationManager.InstallSoundTableFixes` runs it after the optional mods,
+so it patches whatever copy those left in Override (otherwise a bundled
+vanilla copy from `Resources/`). Both games:
+
+- `visualeffects.2da` spells the cessation-sound column `soundcessastion`; the
+  engine's effect-stop routine asks for `SoundCessation`, finds nothing and
+  plays nothing, so the shield-off sounds (`gen_shieldbluoff` /
+  `gen_shieldredoff`, present in `sounds.bif`) never play. We add a correctly
+  spelled column sharing the old column's cells and keep the old one: a
+  patcher-based mod editing rows by the old name keeps working.
+
+KOTOR 1 only (KOTOR 2's own tables already carry both corrections, which is
+where the replacement values come from):
+
+- `placeableobjsnds.2da` row `PLC_PlstcCrt`, locked: `pl_plastsm_lock` (no such
+  file) becomes `pl_plastic_lock`.
+- `ammunitiontypes.2da` row `Sonic`, impact sounds: `cb_ht_sonblclth1` (no such
+  file) becomes `cb_ht_hvyblleth1`.
+
+Cell fixes match the known-bad value, not a row index, so a cell another mod
+already changed is left alone and re-running is a no-op. K1CP edits these
+tables row by row and never touches the fixed cells; TSLRCM ships none of
+them. A mod that later drops a whole replacement table into Override undoes
+the fix until the installer runs again. Uninstall leaves the files in place,
+like `prioritygroups.2da`: they may carry other mods' edits and are plain bug
+fixes.
+
+Found by a scan of every 2DA in both games for columns the executable asks for
+under a different spelling, and for sound cells naming files absent from the
+key, BIFs and stream folders. Missing assets with no correction in either game
+(inventory item sounds, Force footsteps, carbonite encasing, the K1 Wookiee
+alien-voice rows, plastic-object destroyed sounds) are not changed.
+
 ### The installer updates itself (2026-08-28)
 
 Modelled on the Sku TBC installer's self-update (`Sku-TBC/installer/SkuInstaller/SelfUpdater.cs`),

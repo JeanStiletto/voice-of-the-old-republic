@@ -21,21 +21,11 @@ namespace KotorAccessibilityInstaller
     /// <c>FadeTime</c> column (<see cref="SentinelFadeTime"/>; vanilla fade
     /// times are only 0 or 1000), so it works wherever the row ends up.</para>
     ///
-    /// <para>2DA V2.b binary layout:
-    /// <code>
-    /// "2DA V2.b\n"
-    /// &lt;col header&gt;\t ... \t \0
-    /// uint32 row_count
-    /// &lt;row label&gt;\t ...            (one tab-terminated token per row)
-    /// uint16 cell_offset[row_count*col_count]   (offset into data block)
-    /// uint16 data_size
-    /// &lt;data block&gt;                  (NUL-terminated strings)
-    /// </code>
-    /// Append preserves every existing byte of the offset table and data block:
-    /// row_count grows by one, one row label and col_count offsets are appended,
-    /// the new cells' strings go on the end of the data block, and data_size is
-    /// bumped. Existing offsets stay valid because the block only grows at the
-    /// tail.</para>
+    /// <para>Append preserves every existing byte of the offset table and data
+    /// block: row_count grows by one, one row label and col_count offsets are
+    /// appended, the new cells' strings go on the end of the data block, and
+    /// data_size is bumped. Existing offsets stay valid because the block only
+    /// grows at the tail. File layout: <see cref="TwoDa"/>.</para>
     /// </summary>
     public static class PriorityGroup2da
     {
@@ -98,105 +88,22 @@ namespace KotorAccessibilityInstaller
                 (SpatialSentinelFadeTime, SpatialRow),
             };
 
-        private static readonly byte[] Magic = Encoding.ASCII.GetBytes("2DA V2.b\n");
-
-        private sealed class Table
-        {
-            public List<string> Cols;
-            public int RowCount;
-            public List<string> Labels;
-            public List<ushort> Offsets;
-            public byte[] DataBlock;
-        }
-
-        private static Table Parse(byte[] buf)
-        {
-            if (buf.Length < Magic.Length)
-                throw new InvalidDataException("prioritygroups.2da too short");
-            for (int i = 0; i < Magic.Length; i++)
-                if (buf[i] != Magic[i])
-                    throw new InvalidDataException("not a 2DA V2.b file");
-
-            int p = Magic.Length;
-            int hdrEnd = Array.IndexOf(buf, (byte)0, p);
-            if (hdrEnd < 0) throw new InvalidDataException("2da header not NUL-terminated");
-            var cols = new List<string>(
-                Encoding.ASCII.GetString(buf, p, hdrEnd - p).Split('\t'));
-            if (cols.Count > 0 && cols[cols.Count - 1].Length == 0)
-                cols.RemoveAt(cols.Count - 1);  // trailing tab leaves an empty token
-
-            p = hdrEnd + 1;
-            int rowCount = BitConverter.ToInt32(buf, p);
-            p += 4;
-
-            var labels = new List<string>(rowCount);
-            for (int r = 0; r < rowCount; r++)
-            {
-                int t = Array.IndexOf(buf, (byte)'\t', p);
-                if (t < 0) throw new InvalidDataException("2da row label not terminated");
-                labels.Add(Encoding.ASCII.GetString(buf, p, t - p));
-                p = t + 1;
-            }
-
-            int ncells = rowCount * cols.Count;
-            var offsets = new List<ushort>(ncells);
-            for (int i = 0; i < ncells; i++) { offsets.Add(BitConverter.ToUInt16(buf, p)); p += 2; }
-
-            int dataSize = BitConverter.ToUInt16(buf, p);
-            p += 2;
-            if (p + dataSize > buf.Length)
-                throw new InvalidDataException("2da data block runs past EOF");
-            var data = new byte[dataSize];
-            Array.Copy(buf, p, data, 0, dataSize);
-
-            return new Table { Cols = cols, RowCount = rowCount, Labels = labels,
-                               Offsets = offsets, DataBlock = data };
-        }
-
-        private static byte[] Build(Table t)
-        {
-            using var ms = new MemoryStream();
-            ms.Write(Magic, 0, Magic.Length);
-            byte[] hdr = Encoding.ASCII.GetBytes(string.Join("\t", t.Cols) + "\t");
-            ms.Write(hdr, 0, hdr.Length);
-            ms.WriteByte(0);
-            ms.Write(BitConverter.GetBytes(t.RowCount), 0, 4);
-            foreach (var lbl in t.Labels)
-            {
-                byte[] lb = Encoding.ASCII.GetBytes(lbl);
-                ms.Write(lb, 0, lb.Length);
-                ms.WriteByte((byte)'\t');
-            }
-            foreach (var off in t.Offsets) ms.Write(BitConverter.GetBytes(off), 0, 2);
-            ms.Write(BitConverter.GetBytes((ushort)t.DataBlock.Length), 0, 2);
-            ms.Write(t.DataBlock, 0, t.DataBlock.Length);
-            return ms.ToArray();
-        }
-
-        private static string Cell(Table t, int row, int colIdx)
-        {
-            int off = t.Offsets[row * t.Cols.Count + colIdx];
-            int end = Array.IndexOf(t.DataBlock, (byte)0, off);
-            return Encoding.ASCII.GetString(t.DataBlock, off, end - off);
-        }
-
-        private static int FadeTimeCol(Table t) =>
-            t.Cols.FindIndex(c => c.Equals("fadetime", StringComparison.OrdinalIgnoreCase));
+        private static int FadeTimeCol(TwoDa.Table t) => TwoDa.ColumnIndex(t, "fadetime");
 
         /// <summary>True if the parsed table carries a row with the given sentinel.</summary>
-        private static bool HasSentinel(Table t, int fadeCol, ushort sentinel)
+        private static bool HasSentinel(TwoDa.Table t, int fadeCol, ushort sentinel)
         {
             if (fadeCol < 0) return false;
             string s = sentinel.ToString();
             for (int r = 0; r < t.RowCount; r++)
-                if (Cell(t, r, fadeCol) == s) return true;
+                if (TwoDa.Cell(t, r, fadeCol) == s) return true;
             return false;
         }
 
         /// <summary>True if the table already carries ALL of our sentinel rows.</summary>
         public static bool HasAccGroup(byte[] buf)
         {
-            var t = Parse(buf);
+            var t = TwoDa.Parse(buf);
             int fc = FadeTimeCol(t);
             if (fc < 0) return false;
             foreach (var (sentinel, _) in AccRows)
@@ -228,7 +135,7 @@ namespace KotorAccessibilityInstaller
         }
 
         // Appends one row (dictionary keyed by logical column name) to the parsed table.
-        private static void AppendRow(Table t, Dictionary<string, string> row)
+        private static void AppendRow(TwoDa.Table t, Dictionary<string, string> row)
         {
             int newIdx = t.RowCount;
             var data = new List<byte>(t.DataBlock);
@@ -270,7 +177,7 @@ namespace KotorAccessibilityInstaller
         /// </summary>
         public static byte[] AppendAccGroup(byte[] source)
         {
-            var t = Parse(source);
+            var t = TwoDa.Parse(source);
             int fc = FadeTimeCol(t);
 
             bool changed = false;
@@ -282,7 +189,7 @@ namespace KotorAccessibilityInstaller
             }
             if (!changed) return source;
 
-            byte[] outBytes = Build(t);
+            byte[] outBytes = TwoDa.Build(t);
 
             // Self-check: every row must read back from the freshly written bytes.
             if (!HasAccGroup(outBytes))

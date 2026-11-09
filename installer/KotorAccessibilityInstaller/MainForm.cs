@@ -530,6 +530,20 @@ namespace KotorAccessibilityInstaller
                         UpdateStatus);
                 }
 
+                // Step 4.8: repair the table data that keeps shipped sounds
+                // silent (shield-off, plastic-crate locked, sonic impact).
+                // Deliberately after the optional mods so it patches whatever
+                // copy they left in Override. Best-effort and per-table isolated
+                // inside; this catch only covers an unexpected throw.
+                try
+                {
+                    await Task.Run(() => installationManager.InstallSoundTableFixes());
+                }
+                catch (Exception sfEx)
+                {
+                    Logger.Warning($"Could not install sound table fixes: {sfEx.Message}");
+                }
+
                 // Step 5: persistent uninstaller + registry
                 string uninstallerPath = installationManager.CopyUninstaller();
 

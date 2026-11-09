@@ -630,6 +630,51 @@ namespace KotorAccessibilityInstaller
         }
 
         /// <summary>
+        /// Repairs the vanilla table data that keeps shipped sounds silent (see
+        /// <see cref="SoundTableFixes"/>). Patches the current Override copy of
+        /// each table when present, preserving other mods' edits, otherwise the
+        /// bundled vanilla copy. Idempotent, and isolated per table so one bad
+        /// file does not cost the others their fix.
+        ///
+        /// Like the priority group, these files are left in place on uninstall:
+        /// they may carry another mod's edits, and the fixes are plain bug fixes
+        /// that work without our DLL.
+        /// </summary>
+        public void InstallSoundTableFixes()
+        {
+            string overrideDir = Path.Combine(_gameDir, "Override");
+            Directory.CreateDirectory(overrideDir);
+
+            foreach (var (tableFile, vanillaResource) in _target.SoundFixTables)
+            {
+                try
+                {
+                    string target = Path.Combine(overrideDir, tableFile);
+                    bool fromExisting = File.Exists(target);
+                    byte[] source = fromExisting
+                        ? File.ReadAllBytes(target)
+                        : ReadEmbeddedResourceBytes(vanillaResource);
+
+                    var applied = new List<string>();
+                    byte[] result = SoundTableFixes.Apply(tableFile, source, applied);
+                    if (ReferenceEquals(result, source))
+                    {
+                        Logger.Info($"Sound fixes: {tableFile} already correct; skipping.");
+                        continue;
+                    }
+
+                    WriteFileResilient(target, result, tableFile);
+                    Logger.Info($"Sound fixes: {tableFile} ({(fromExisting ? "existing Override file" : "bundled vanilla")}): " +
+                                string.Join("; ", applied));
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warning($"Sound fixes: {tableFile} could not be patched: {ex.Message}");
+                }
+            }
+        }
+
+        /// <summary>
         /// Copies the running installer EXE into the game folder so Add/Remove
         /// Programs has a stable uninstaller path even if the user deletes the
         /// original download. Returns the destination path for registry use.
