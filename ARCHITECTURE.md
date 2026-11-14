@@ -87,7 +87,7 @@ Read-only mirrors / vendored binaries:
 
 - `Kotor-Patch-Manager/` — Lane Dibello's hook framework. We patch local copies of upstream bugs here (see `archiev/framework-changes-backup.patch`).
 - `KotorMessageInjector/` — out-of-process attach / inject library. Demoted to research tool; not in the runtime path.
-- `prism-dist/` — Prism x86 binaries + MPL-2.0 license.
+- `prism-dist/` — Prism x86 binaries and headers, built from the shared patched Prism checkout (`prism-dist/README.md`).
 - `tolk/` — Tolk + NVDA controller-client x86 binaries + LGPL.
 
 ## Key design decisions

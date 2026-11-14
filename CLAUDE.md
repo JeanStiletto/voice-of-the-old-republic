@@ -72,7 +72,7 @@ Example - instead of tables, format like this:
 - **`patches/Accessibility/`** — our patch source (hooks, menus, narration, audio, guidance, and engine-interface modules)
 - **`installer/KotorAccessibilityInstaller/`** — end-user installer (.NET 8 WinForms, self-contained single-file EXE). References KPatchCore directly; modelled on the arena installer (`AccessibleArenaInstaller/IMPLEMENTATION.md` in the sibling arena project) — read that first if touching this code.
 - **`installer/release.ps1`** — local release pipeline (kdev build → publish installer → extract changelog notes → tag → gh release)
-- **`third_party/`** — vendored dependencies: `Kotor-Patch-Manager`, `KotorMessageInjector`, `KotOR_IO`, `prism`/`prism-dist`, `dsoal`, `tolk`, and others. See the directory for the current set.
+- **`third_party/`** — vendored dependencies: `Kotor-Patch-Manager`, `KotorMessageInjector`, `KotOR_IO`, `prism-dist` (prebuilt; source in the shared `Dev\prism` checkout, see its README), `dsoal`, `tolk`, and others. See the directory for the current set.
 - **`docs/`** — see Documentation below
 - **`build/`, `logs/`** — generated; gitignored
 - **`kdev.toml`** — project-level config consumed by `kdev`

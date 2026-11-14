@@ -625,8 +625,10 @@ etc.) intact.
 ### PR-7. prism `acquire_best`/`create_best` crash when a backend's `initialize()` faults
 
 **Repo:** `ethindp/prism`
-**Status:** Bug confirmed (pl-PL beta tester, ZDSR). Fixed locally atop upstream
-v0.16.5; recorded in `docs/prism-local-patches.patch`. Not yet drafted as a PR.
+**Status:** Bug confirmed (pl-PL beta tester, ZDSR). Still not upstream as of
+v0.18.3 (2026-11-14). Carried as a local commit on branch `arena-patched` of the
+shared Prism checkout (see `third_party/prism-dist/README.md`); since 0.18.x the
+guard sits once in `source/backend.h`. Not yet drafted as a PR.
 **Discovered:** v0.2.1 startup crash; re-confirmed against upstream v0.16.5
 (2026-06-13) — the unguarded loop is unchanged in the latest release.
 
@@ -652,9 +654,10 @@ delay-load a vendor DLL, so they never trip it.
 as "failed to initialize" — skip the backend and continue the priority walk
 (down to SAPI as the universal catch-all) instead of crashing. A faulting
 backend should never take down backend selection for every other reader. See
-`docs/prism-local-patches.patch` for the exact diff (a `seh_safe_initialize`
-helper holding only PODs to satisfy MSVC C2712, plus a portable `try_initialize`
-wrapper used by both `acquire_best` and `create_best`).
+`third_party/prism-dist/prism-local-patches.patch` for the exact diff. Since 0.18.x every
+initialisation goes through `TextToSpeechBackend::initialize_tracked()` / `ensure_initialized()`
+in `source/backend.h`, so the guard (`seh_guarded_initialize`, PODs only for MSVC C2712) sits
+there once and covers `prism_backend_initialize` and the registry walks alike.
 
 **Risks.** Low. Behaviour is unchanged on the common path (no fault). On a
 faulting backend the only change is "skip instead of crash." `BackendResult<>`
@@ -675,9 +678,10 @@ follow-up is now PR-10, and it also identifies *why* the symbol set looked
 ### PR-10. prism: ZDSR / BoyPC / PC-Talker can never bind on 32-bit (decorated import names)
 
 **Repo:** `ethindp/prism`
-**Status:** Root cause confirmed by binary inspection 2026-07-26; fixed locally
-atop upstream v0.16.5, recorded in `docs/prism-local-patches.patch` (change 3).
-Not yet drafted as a PR. Upstream `defs/zdsr32.def` still has the bug on `main`.
+**Status:** Root cause confirmed by binary inspection 2026-07-26. **Resolved
+upstream in v0.18.3** (ethindp/prism#146): the vendor DLLs are now loaded at runtime
+and bound by their undecorated names, and the `.def` files are gone. No longer a
+local patch.
 **Relationship to PR-7:** PR-7 stops the crash; this is the actual defect that
 caused it. Both are wanted — PR-7 remains valuable defence in depth.
 

@@ -1,5 +1,0 @@
-@ cdecl prism_speechd_available()
-@ cdecl prism_speechd_create(ptr)
-@ cdecl prism_speechd_destroy(ptr)
-@ cdecl prism_speechd_speak(ptr str)
-@ cdecl prism_speechd_stop(ptr)

@@ -97,15 +97,9 @@ Thumbs.db
 # bundled in the installer Resources/ folder, not the source.
 /third_party/dsoal/
 
-# Prism — vendored source clone at third_party/prism/ for rebuildability,
-# vendored prebuilt artifacts at third_party/prism-dist/ for kdev apply.
-# Build trees + clone metadata are throwaway; the prebuilt artifacts ARE
-# committed so the patch ships without requiring users to build Prism.
-/third_party/prism/build_*/
-/third_party/prism/.git/
-/third_party/prism/.github/
-/third_party/prism/.cache/
-/third_party/prism/gdextension/godot-cpp/
+# Prism — prebuilt artifacts at third_party/prism-dist/ are committed so the patch
+# ships without requiring users to build Prism. The patched source lives in its own
+# checkout outside this repo (see third_party/prism-dist/README.md).
 
 # Third-party game translations kept locally for testing. Redistributing
 # someone else's translation is not ours to do, and the archives are large

@@ -52,6 +52,7 @@ and add the German in parentheses if it genuinely aids clarity.
 - The wall panels of the Duros cage puzzle in the Taris Sith base speak their
   real on or off state.
 - Objects with the same name set in a row are numbered west to east.
+- The speech library Prism is updated to version 0.18.3.
 
 <h3>Game sound fixes (installer):</h3>
 
@@ -84,6 +85,14 @@ and add the German in parentheses if it genuinely aids clarity.
   Objects within half a metre of each other north to south are now numbered
   west to east, so the panels read 1 to 5 in order. This can change the
   numbers of such objects anywhere in the game.
+
+<h3>Speech:</h3>
+
+- **The speech library Prism is updated from 0.17.3 to 0.18.3.** Speech should sound
+  the same: the same screen readers are found in the same order. ZDSR, PC-Talker and
+  BoyPC Reader are now loaded the way our own patch used to do it, which upstream
+  adopted, and ZDSR also works with versions that have no braille function. The
+  crash protection for broken screen reader installations is kept.
 
 <h2>v0.9.1</h2>
 

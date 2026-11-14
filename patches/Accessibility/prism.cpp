@@ -491,9 +491,9 @@ void CaptureSpokenW(const wchar_t* text) {
 // crashes the game at startup before any speech — reported by a pl-PL beta
 // tester with ZDSR installed.
 //
-// The root fix lives in prism itself: BackendRegistry::acquire_best /
-// create_best now SEH-guard each backend's initialize() and skip a faulting
-// one (third_party/prism/source/backends/backend_registry.cpp). So we let
+// The root fix lives in prism itself: every backend initialize() runs inside
+// an SEH guard and a faulting one is skipped (local patch in source/backend.h,
+// see third_party/prism-dist/README.md). So we let
 // prism own backend selection — the normal channel is a single acquire_best
 // call and nothing here reimplements prism's priority walk. These wrappers
 // remain for two narrow reasons: (1) a thin belt-and-suspenders net around
