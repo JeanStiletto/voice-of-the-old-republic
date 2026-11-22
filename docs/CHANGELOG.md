@@ -53,6 +53,12 @@ and add the German in parentheses if it genuinely aids clarity.
   real on or off state.
 - Objects with the same name set in a row are numbered west to east.
 - The speech library Prism is updated to version 0.18.3.
+- While a companion is in control, your own character counts as a party
+  member (not yet tested in game).
+- A quick modifier hotkey no longer lets its letter reach the game (not yet
+  tested in game).
+- KOTOR 2's tutorial hints show their keyboard wording (not yet tested in
+  game).
 
 <h3>Game sound fixes (installer):</h3>
 
@@ -93,6 +99,26 @@ and add the German in parentheses if it genuinely aids clarity.
   BoyPC Reader are now loaded the way our own patch used to do it, which upstream
   adopted, and ZDSR also works with versions that have no braille function. The
   crash protection for broken screen reader installations is kept.
+
+<h3>Bug fixes (not yet tested in game):</h3>
+
+- **While a companion is in control, your own character counts as a party
+  member.** The engine's member table lists the companions only, so after Tab
+  the mod could take your main character for a stranger: combat lines about
+  hits on it were dropped as "not party", and the trap watch, the Q/E ring
+  and the object cues treated it as an outsider. The mod now adds your
+  character's creature whenever someone else leads.
+- **A quick modifier hotkey no longer lets its letter reach the game.** The
+  game reads key presses from a buffer, the mod reads the live keyboard. When
+  you let go of the modifier a moment before the game processed the letter,
+  the game saw a bare key: a quick Shift+L could open the Quests screen on
+  top of the mod's action. The letter of a hotkey the mod has just seen is now
+  taken from the game once, within half a second.
+- **KOTOR 2's tutorial hints show their keyboard wording.** The call that
+  replaces the hint's mouse wording pointed at the wrong engine function on
+  KOTOR 2, so the text was never set.
+- **Credit.** Thanks to aradix85: the first two fixes come from their fork of
+  the mod, and their review of our engine address data turned up the third.
 
 <h2>v0.9.1</h2>
 
