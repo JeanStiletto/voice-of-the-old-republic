@@ -64,6 +64,12 @@ bool GetCameraYawRadians(float& outRad);
 // creature (e.g. AddMoveToPointAction) without redoing the chain walk.
 void* GetPlayerServerCreature();
 
+// The player character's own CSWSCreature*, whoever is in control: the
+// controlled creature while the player character leads, its creature in the
+// area while a companion does (Tab). nullptr with no controlled creature or
+// with the player character outside the area.
+void* GetPlayerCharacterServerCreature();
+
 // Reads CClientExoAppInternal::player_character_name (+0x294) via
 // CClientExoApp::GetPlayerCharacterName @0x5edab0. Engine owns the
 // CExoString lifetime; we copy bytes into outBuf.
@@ -173,7 +179,10 @@ int GetPlayerActionQueueDepth();
 // Each slot index is resolved to the live creature's object handle via
 // CSWPartyTable::GetNPCObject, so outHandles are real handles comparable to
 // GetObjectHandle(). Slots that don't resolve to a live creature are
-// skipped. Returns count written; 0 on early-init / SEH / empty roster.
+// skipped. With a companion in control the player character is appended:
+// the result is every party member, the controlled creature included unless
+// it is the player character. Returns count written; 0 on early-init / SEH /
+// empty roster.
 int GetPartyMembers(uint32_t* outHandles, int maxCount);
 
 // Active CSWPartyTable*. Exposed so callers that need NPC-slot

@@ -26,6 +26,7 @@
 #include "log.h"
 #include "engine_rebase.h"
 #include "engine_offsets_select.h"
+#include "engine_offsets_values.h"  // kInvalidObjectId
 
 namespace acc::engine {
 
@@ -291,8 +292,44 @@ bool GetPlayerCharacterName(char* outBuf, size_t bufSize) {
 }
 
 
-int GetPartyMembers(uint32_t* outHandles, int maxCount) {
-    if (!outHandles || maxCount <= 0) return 0;
+// The engine hands the player character's creature an id from the player-
+// object range: above kInvalidObjectId, counting down from 0x7fffffff, a new
+// one with every load. Companions and every other area object get ordinary
+// ids. (Credit: aradix85's fork, issue 12.)
+static bool IsPlayerCharacterId(uint32_t id) {
+    return id > kInvalidObjectId && id != 0xFFFFFFFFu;
+}
+
+// Separate from the SEH code below (C2712: AreaObjectIterator). The id is
+// kept while it still resolves, so the area scan runs once per load.
+static uint32_t FindPlayerCharacterId() {
+    static uint32_t s_id = 0;
+    if (s_id != 0 && ResolveServerObjectHandle(s_id)) return s_id;
+    s_id = 0;
+    void* area = GetCurrentArea();
+    if (!area) return 0;
+    AreaObjectIterator it(area);
+    while (void* obj = it.Next()) {
+        if (GetObjectKind(obj) != static_cast<int>(GameObjectKind::Creature)) continue;
+        const uint32_t id = GetObjectHandle(obj);
+        if (IsPlayerCharacterId(id)) {
+            s_id = id;
+            break;
+        }
+    }
+    return s_id;
+}
+
+void* GetPlayerCharacterServerCreature() {
+    void* controlled = GetPlayerServerCreature();
+    if (!controlled || IsPlayerCharacterId(GetObjectHandle(controlled))) {
+        return controlled;
+    }
+    const uint32_t pc = FindPlayerCharacterId();
+    return pc != 0 ? ResolveServerObjectHandle(pc) : nullptr;
+}
+
+static int ReadRosterMembers(uint32_t* outHandles, int maxCount) {
     __try {
         // GetServerPartyTable walks AppManager+0x8 → facade → +0x4 internal
         // → +0x1b770. The old inline chain here skipped the +0x4 internal
@@ -332,6 +369,19 @@ int GetPartyMembers(uint32_t* outHandles, int maxCount) {
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return 0;
     }
+}
+
+int GetPartyMembers(uint32_t* outHandles, int maxCount) {
+    if (!outHandles || maxCount <= 0) return 0;
+    int written = ReadRosterMembers(outHandles, maxCount);
+    // The member table lists companions only. With a companion in control
+    // (Tab) the player character follows like any member, so add it; while
+    // it leads it is the controlled creature, which callers handle already.
+    void* pc = GetPlayerCharacterServerCreature();
+    if (written < maxCount && pc && pc != GetPlayerServerCreature()) {
+        outHandles[written++] = GetObjectHandle(pc);
+    }
+    return written;
 }
 
 void* GetServerPartyTable() {
