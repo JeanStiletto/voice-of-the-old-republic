@@ -37,8 +37,14 @@ constexpr uint32_t kMountDefaultK2 = 0x7f000000u;
 // CSWGuiMessageBox::SetMessage(strref) @0x006249d0 — resolves the strref via the
 // TLK and sets the box text. (The CExoString overload @0x006271a0 destroys its
 // arg, so we use the strref one.)
+// KOTOR 2: vtable slot 28, not 27 — K2's CSWGuiPanel gained a virtual ahead of
+// it, so K1's slot 27 pairs with K2's slot 28. 0x0075BDE0 resolves the strref
+// through the TLK manager and forwards to the CExoString overload (vtable
+// +0x74), ret 4; KPM's GOG db names its GOG twin SetMessage_2 (4-byte param).
+// The old 0x0040FFB0 was K2 slot 27, a zero-argument child-control loop: the
+// text was never set and the call left ESP 4 bytes off.
 using PFN_SetMessageStrref = void(__thiscall*)(void* box, uint32_t strref);
-const uintptr_t kAddrSetMessageStrref = acc::addr::Pick(0x006249d0, 0x0040FFB0);
+const uintptr_t kAddrSetMessageStrref = acc::addr::Pick(0x006249d0, 0x0075BDE0);
 
 // CSWGuiTutorialBox::SetTutorialReason @0x006aa900 — configures the box as a
 // TUTORIAL (single "Weiter"/OK prompt, page state) for a row, the way the funnel
