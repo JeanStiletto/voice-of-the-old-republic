@@ -16,7 +16,11 @@ Inputs (all already in the repo or build/):
   * RTTI scans of both K2 exes (rtti_scan.py output, work/ folder).
   * patches/Accessibility/engine_offsets_fields.h  per-game struct offsets.
 
-Usage:  py tools/re-scripts/kpm_export.py <steam-k2-exe> <gog-k2-exe>
+Usage:  py tools/re-scripts/kpm_export.py <steam-k2-exe> <gog-k2-exe> [<kpm-db-dir>]
+
+<kpm-db-dir> defaults to the vendored AddressDatabases. Pass a folder holding
+current KPM master's .db files to build on upstream as it is now (our rows are
+only ever ADDED; KPM's rows always win).
 """
 import csv
 import json
@@ -43,6 +47,12 @@ RELINK_HASHES = [
 ]
 
 SRC_MOD = "Voice of the Old Republic: used by the mod on this build"
+# Vtable slot 0 holds the scalar deleting destructor. KPM's KOTOR 1 db names
+# that function Destructor / Destructor_2, so the K1 name must not be carried
+# into K2, where it would collide with the real destructor. This spelling is
+# the clean one among the variants KPM's GOG db uses.
+SCALAR_DTOR = "scalar_deleting_destructor"
+
 SRC_SLOT = ("vtable slot match against the KOTOR 1 class (equal slot count); "
             "not individually verified")
 
@@ -205,6 +215,12 @@ def main(steam_path, gog_path):
     # ---- KOTOR 2: virtuals by vtable slot ----------------------------------
     svt = load_vtables(os.path.join(WORK, "k2-steam-vtables.csv"))
     gvt = load_vtables(os.path.join(WORK, "k2-gog-vtables.csv"))
+    slot0 = {steam.u32(va) for va in svt.values()}
+    n_scalar = sum(1 for r in mod_funcs if r[4] in slot0)
+    # The scalar deleting destructor takes one 4-byte flags argument; KPM's
+    # GOG rows record it so, whatever the K1 row says.
+    mod_funcs = [(c, SCALAR_DTOR, "__thiscall", 4, s, g) if s in slot0 else
+                 (c, f, cc, ps, s, g) for c, f, cc, ps, s, g in mod_funcs]
     slot_funcs, slot_skip, by_fn = [], Counter(), defaultdict(list)
     slot_csv = os.path.join(ROOT, "docs/llm-docs/re/k2/k2-vtable-slots.csv")
     with open(slot_csv, encoding="utf-8", errors="replace") as f:
@@ -235,7 +251,40 @@ def main(steam_path, gog_path):
             slot_skip["vtables disagree on the address"] += 1
             continue
         _, s, g = own[0]
+        if s in slot0:
+            n2, cc, ps = SCALAR_DTOR, "__thiscall", 4
+            n_scalar += 1
         slot_funcs.append((n1, n2, cc, ps, s, g))
+
+    # A class whose slot pairing disagrees with KPM's GOG names anywhere is
+    # dropped whole: equal slot counts do not guarantee aligned slots (KOTOR 2
+    # inserted virtuals mid-table in e.g. CSWGuiPanel and dropped others), and
+    # such a shift shows up as a RUN of rows each named for its neighbour.
+    # Rows KPM cannot confirm are trusted only when their class is clean.
+    kpm_gog, kpm_gog_name = defaultdict(set), {}
+    for c_, f, a in sqlite3.connect(os.path.join(KPM_DB, "kotor2_gog_aspyr.db")).execute(
+            "select class_name, function_name, address from functions"):
+        kpm_gog[a].add(re.sub(r"_\d+$", "", f))
+        kpm_gog_name[(c_, f)] = a
+    def kpm_disagrees(fn, g, cls=None):
+        if kpm_gog_name.get((cls, fn), g) != g:
+            return True  # KPM has this exact name at another address
+        names = kpm_gog.get(g)
+        if not names or re.sub(r"_\d+$", "", fn) in names:
+            return False
+        dtor = fn in (SCALAR_DTOR,) or fn.startswith("Destructor")
+        return not (dtor and any("scalar" in x or "Destructor" in x for x in names))
+    shifted = {c for c, f, _, _, _, g in slot_funcs if kpm_disagrees(f, g, c)}
+    dropped = [r for r in slot_funcs if r[0] in shifted]
+    slot_funcs = [r for r in slot_funcs if r[0] not in shifted]
+    with open(os.path.join(OUT, "k2-vtable-slot-rows-withdrawn.csv"), "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["class_name", "function_name", "steam_address", "gog_address",
+                    "kpm_gog_name_at_address", "class_has_kpm_disagreement"])
+        for c, fn, _, _, s, g in sorted(dropped):
+            w.writerow([c, fn, f"0x{s:08X}", f"0x{g:08X}",
+                        " / ".join(sorted(kpm_gog.get(g, ()))),
+                        "yes" if kpm_disagrees(fn, g, c) else "no (same class)"])
 
     # Cross-check: where both sources name the same function, GOG must agree.
     mod_gog = {(a, b): g for a, b, _, _, _, g in mod_funcs}
@@ -338,6 +387,9 @@ def main(steam_path, gog_path):
     report += [
         f"mod functions (named via KPM K1 db): {len(mod_funcs)}",
         f"vtable-slot functions accepted: {len(slot_funcs)}; skipped: {dict(slot_skip)}",
+        f"slot-0 functions named {SCALAR_DTOR}: {n_scalar}",
+        f"vtable-slot rows withdrawn (class disagrees with KPM GOG names): "
+        f"{len(dropped)} in {len(shifted)} classes",
         f"GOG cross-check where both sources name a function: agree {agree}, disagree {disagree}",
         f"leading 6 bytes identical Steam vs GOG: {pro_same} of {len(slot_funcs) + len(mod_funcs)}",
     ]
@@ -387,4 +439,6 @@ def export_offsets():
 
 
 if __name__ == "__main__":
+    if len(sys.argv) > 3:
+        KPM_DB = os.path.abspath(sys.argv[3])
     main(sys.argv[1], sys.argv[2])

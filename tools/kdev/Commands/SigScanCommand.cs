@@ -59,11 +59,17 @@ public static class SigScanCommand
             "kotor2.hooks.toml), reference the clean Steam Aspyr exe, resolve into the " +
             "GOG 2021 relink. Defaults: --reference C:\\Tools\\k2re\\swkotor2.exe, " +
             "--target the GOG Galaxy install.");
+        var addrOpt = new Option<FileInfo?>("--addresses",
+            "Scan this address list instead of the mod's own addresses: one " +
+            "`0xADDRESS,name` per line (extra columns ignored, '#' lines skipped). " +
+            "Writes the report only, no rebase table or hooks file. Used to map a " +
+            "whole third-party address database (e.g. KPM's) between builds; give " +
+            "--reference and --target explicitly.");
 
         var cmd = new Command("sigscan",
             "Rebase our hardcoded engine addresses onto another swkotor.exe build.")
         {
-            refOpt, targetOpt, outOpt, emitOnlyOpt, k2Opt
+            refOpt, targetOpt, outOpt, emitOnlyOpt, k2Opt, addrOpt
         };
 
         cmd.SetHandler((InvocationContext ctx) =>
@@ -73,7 +79,8 @@ public static class SigScanCommand
                 ctx.ParseResult.GetValueForOption(targetOpt),
                 ctx.ParseResult.GetValueForOption(outOpt),
                 ctx.ParseResult.GetValueForOption(emitOnlyOpt),
-                ctx.ParseResult.GetValueForOption(k2Opt));
+                ctx.ParseResult.GetValueForOption(k2Opt),
+                ctx.ParseResult.GetValueForOption(addrOpt));
         });
         return cmd;
     }
@@ -87,8 +94,13 @@ public static class SigScanCommand
         @"C:\Program Files\GOG Galaxy\Games\Star Wars - KotOR2\swkotor2.exe";
 
     internal static int Run(FileInfo? refFile, FileInfo? targetFile, DirectoryInfo? outDir,
-        bool emitOnly, bool k2 = false)
+        bool emitOnly, bool k2 = false, FileInfo? addressList = null)
     {
+        if (addressList != null && !addressList.Exists)
+        {
+            Console.Error.WriteLine($"ERROR: address list not found: {addressList.FullName}");
+            return 1;
+        }
         var cfg = KdevConfig.LoadOrPrintErrors(out int cfgExit);
         if (cfg == null) return cfgExit;
 
@@ -141,13 +153,18 @@ public static class SigScanCommand
         }
 
         // ---- addresses ----
-        var addresses = k2
-            ? EngineAddresses.CollectKotor2(cfg.AccessibilitySource, cfg.ProjectRoot)
-            : EngineAddresses.Collect(cfg.AccessibilitySource, cfg.ProjectRoot);
+        var addresses = addressList != null
+            ? ReadAddressList(addressList.FullName)
+            : k2
+                ? EngineAddresses.CollectKotor2(cfg.AccessibilitySource, cfg.ProjectRoot)
+                : EngineAddresses.Collect(cfg.AccessibilitySource, cfg.ProjectRoot);
         // The hand-resolved supplement is the K1 kXrefTable; K2 has no analog
         // yet (anything sigscan cannot place there is resolved by the .rdata /
-        // .data cross-reference scripts instead).
-        s_handResolved = k2 ? new() : EngineAddresses.CollectHandResolved(cfg.AccessibilitySource);
+        // .data cross-reference scripts instead). It maps OUR reference build,
+        // so it never applies to an external list.
+        s_handResolved = k2 || addressList != null
+            ? new()
+            : EngineAddresses.CollectHandResolved(cfg.AccessibilitySource);
         // Merge duplicates by address. A hook site and a constexpr constant can
         // name the same address; keep whichever record carries OriginalBytes so
         // the hooks.toml cross-check below still sees all 25 detours rather
@@ -235,7 +252,8 @@ public static class SigScanCommand
                 return 1;
             }
             int rc = Resolve(records, targetFile.FullName, refImage, refPe, refImageAligned, refText);
-            WriteReports(dest, records, refPath, targetFile.FullName, k2, cfg.AccessibilitySource);
+            WriteReports(dest, records, refPath, targetFile.FullName, k2, cfg.AccessibilitySource,
+                         emitArtifacts: addressList == null);
             // Resolve() owns the verdict once it has run. A signature that
             // failed to build is not a failure if the ordinal pass or the
             // hand-resolved supplement placed the address anyway — what matters
@@ -248,8 +266,34 @@ public static class SigScanCommand
             Console.WriteLine("No --target given; skipping the resolve half.");
         }
 
-        WriteReports(dest, records, refPath, targetFile?.FullName, k2, cfg.AccessibilitySource);
+        WriteReports(dest, records, refPath, targetFile?.FullName, k2, cfg.AccessibilitySource,
+                     emitArtifacts: addressList == null);
         return failedBuild == 0 ? 0 : 1;
+    }
+
+    /// <summary>
+    /// Reads an external address list for --addresses: `0xADDRESS,name` per
+    /// line, further columns ignored, blank and '#' lines skipped. A line
+    /// whose first column is not a hex address (a CSV header) is skipped too.
+    /// </summary>
+    private static List<EngineAddress> ReadAddressList(string path)
+    {
+        var list = new List<EngineAddress>();
+        int line = 0;
+        foreach (var raw in File.ReadLines(path))
+        {
+            line++;
+            var s = raw.Trim();
+            if (s.Length == 0 || s.StartsWith('#')) continue;
+            var cols = s.Split(',');
+            var a = cols[0].Trim();
+            if (a.StartsWith("0x", StringComparison.OrdinalIgnoreCase)) a = a[2..];
+            if (!uint.TryParse(a, System.Globalization.NumberStyles.HexNumber, null, out uint va))
+                continue;
+            string name = cols.Length > 1 ? cols[1].Trim() : $"0x{va:X8}";
+            list.Add(new EngineAddress(va, name, Path.GetFileName(path), line));
+        }
+        return list;
     }
 
     private static bool IsIn(PeInfo pe, PeSection sec, uint va)
@@ -362,19 +406,30 @@ public static class SigScanCommand
             int tLen = Math.Min((int)text.RawSize, img.Length - tStart);
             uint tVaBase = pe.ImageBase + text.VirtualAddress;
 
+            // Index every `call rel32` in the reference by its target once, so
+            // the pass costs one .text sweep however many addresses are open
+            // (an --addresses run brings thousands).
+            var callSites = new Dictionary<uint, List<int>>();
+            for (int i = 0; i + 5 <= rLen; i++)
+            {
+                if (refImage[rStart + i] != 0xE8) continue;
+                int rel = BitConverter.ToInt32(refImage, rStart + i + 1);
+                uint tgt = (uint)(rVaBase + (uint)i + 5 + rel);
+                if (!callSites.TryGetValue(tgt, out var at)) callSites[tgt] = at = new List<int>();
+                at.Add(i);
+            }
+
             foreach (var rec in records.Where(r => r.Status is "ambiguous" or "not-found" or "build-failed").ToList())
             {
                 // consumed exits move with their hook; the delta pass below is
                 // their resolver (they are jump targets, not call targets).
                 if (rec.Address.Name.EndsWith(" (consumed exit)")) continue;
+                if (!callSites.TryGetValue(rec.Address.Va, out var refSites)) continue;
 
                 var votes = new Dictionary<uint, int>();
                 int sites = 0;
-                for (int i = 0; i + 5 <= rLen; i++)
+                foreach (int i in refSites)
                 {
-                    if (refImage[rStart + i] != 0xE8) continue;
-                    int rel = BitConverter.ToInt32(refImage, rStart + i + 1);
-                    if ((uint)(rVaBase + (uint)i + 5 + rel) != rec.Address.Va) continue;
                     sites++;
                     // Progressively shorter preceding-context windows: long
                     // ones can embed another relocated operand (no hit),
@@ -588,7 +643,7 @@ public static class SigScanCommand
     }
 
     private static void WriteReports(string dest, List<SigRecord> records, string refPath,
-        string? targetPath, bool k2 = false, string? sourceDir = null)
+        string? targetPath, bool k2 = false, string? sourceDir = null, bool emitArtifacts = true)
     {
         string txt = Path.Combine(dest, "sigscan-report.txt");
         string json = Path.Combine(dest, "sigscan-report.json");
@@ -645,7 +700,7 @@ public static class SigScanCommand
         Console.WriteLine($"Wrote {txt}");
         Console.WriteLine($"Wrote {json}");
 
-        if (targetPath == null) return;
+        if (targetPath == null || !emitArtifacts) return;
         if (k2) EmitK2Artifacts(dest, records, targetPath, sourceDir!);
         else EmitArtifacts(dest, records, targetPath);
     }
