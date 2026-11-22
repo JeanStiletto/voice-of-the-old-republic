@@ -326,7 +326,11 @@ extern "C" int __cdecl OnClientHandleInputEvent(void* this_ptr,
             int nv = acc::engine_keymap::VksForCode(param_1, vks, 4);
             bool owned = false;
             for (int i = 0; i < nv; ++i) {
-                if (acc::hotkeys::ModifiedComboOwns(vks[i])) { owned = true; break; }
+                if (acc::hotkeys::ModifiedComboOwns(vks[i])) {
+                    owned = true;
+                    acc::hotkeys::ChordPressSwallowed(vks[i]);
+                    break;
+                }
             }
             acclog::Write("Diag.ModShadow",
                 "seq=%u code=%s(%d) mods=0x%x CONSUMED — %s",
@@ -353,6 +357,21 @@ extern "C" int __cdecl OnClientHandleInputEvent(void* this_ptr,
                 PrepareBareDispatchForNarratedTarget();
             }
             return 1;  // consume → consumed_exit (POP*5 + RET 8)
+        }
+        // No modifier held, yet the key of a mod hotkey the poll just saw go
+        // down: the engine's press is buffered, and a quick tap can release
+        // the modifier before it arrives (hotkeys_chord_latch.h). Take it once.
+        if (!modHeld && !passThrough) {
+            int vks[4];
+            int nv = acc::engine_keymap::VksForCode(param_1, vks, 4);
+            for (int i = 0; i < nv; ++i) {
+                if (!acc::hotkeys::TakeChordPress(vks[i])) continue;
+                acclog::Write("Diag.ModShadow",
+                    "seq=%u code=%s(%d) CONSUMED — the key of a mod hotkey "
+                    "whose modifier is already released",
+                    seq, acc::engine::InputIndexName(param_1), param_1);
+                return 1;  // consume → consumed_exit (POP*5 + RET 8)
+            }
         }
     }
 

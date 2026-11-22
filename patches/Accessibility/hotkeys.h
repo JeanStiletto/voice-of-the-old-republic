@@ -224,6 +224,13 @@ uint32_t CurrentModifiers();
 // key. Registry-driven, so it follows free rebinds automatically.
 bool ModifiedComboOwns(int vk);
 
+// The input hooks' side of hotkeys_chord_latch.h; `vk` is the physical key of
+// an engine press. ChordPressSwallowed after swallowing it under a held
+// modifier. TakeChordPress when it arrives with no modifier held: true, once,
+// when it is the key of a hotkey combo the poll just saw go down.
+void ChordPressSwallowed(int vk);
+bool TakeChordPress(int vk);
+
 bool IsForegroundGame();
 
 // IsUserRebindable returns false for diagnostic probes (excluded from

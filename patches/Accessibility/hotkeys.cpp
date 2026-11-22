@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 
+#include "hotkeys_chord_latch.h" // ChordLatch — chord key arriving after its modifier
 #include "log.h"                 // acclog::PatchDir / Write — override load gate
 #include "mod_settings_store.h"  // persist user rebinds across launches
 
@@ -61,6 +62,8 @@ struct EdgeState {
     bool padLatch;
 };
 EdgeState g_edge[static_cast<int>(Action::COUNT)] = {};
+
+ChordLatch g_chordLatch;
 
 // Per-Action name strings for logs / future rebind UI. One slot per Action;
 // must be kept in sync with the enum. Lined up vertically so a missing row
@@ -539,9 +542,17 @@ void BeginTick() {
     InitDefaults();
     EnsureOverridesLoaded();
     uint32_t mods = ReadModifiers();
+    const uint64_t nowMs = GetTickCount64();
     for (int i = 0; i < static_cast<int>(Action::COUNT); ++i) {
-        g_edge[i].now    = BindingMatches(g_bindings[i], mods);
-        g_edge[i].keyNow = BindingKeyDown(g_bindings[i]);
+        const Binding& b = g_bindings[i];
+        EdgeState& e = g_edge[i];
+        e.now    = BindingMatches(b, mods);
+        e.keyNow = BindingKeyDown(b);
+        // A modified combo going down: its key's buffered engine press may
+        // still be on the way (hotkeys_chord_latch.h).
+        if (b.modsRequired != 0 && e.now && !e.last && !e.keyLast) {
+            g_chordLatch.ChordDown(IsDownVk(b.vk) ? b.vk : b.altVk, nowMs);
+        }
     }
 }
 
@@ -653,6 +664,14 @@ bool ModifiedComboOwns(int vk) {
         }
     }
     return false;
+}
+
+void ChordPressSwallowed(int vk) {
+    g_chordLatch.EngineSwallowed(vk, GetTickCount64());
+}
+
+bool TakeChordPress(int vk) {
+    return g_chordLatch.TakeEnginePress(vk, GetTickCount64());
 }
 
 // ----- Rebinding ------------------------------------------------------------
