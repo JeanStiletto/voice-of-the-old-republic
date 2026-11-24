@@ -143,8 +143,15 @@ All constants are first guesses at the top of `positional_speech.cpp`.
 
 `positional_speech.cpp` `ChooseNormalVoice`, cached 2 s:
 
-1. Active screen reader not NVDA (`prism::ActiveScreenReader()`) → urgent
-   voice. JAWS etc. cannot be imitated (their voices live inside them).
+1. Active screen reader (`prism::ActiveScreenReader()`) is NVDA → step 2.
+   Otherwise Narrator.exe running (Prism has no Narrator backend; the
+   process is the witness) → step 3. Otherwise → urgent voice. JAWS / ZDSR
+   are not imitated yet: their usual engines live inside them; a SAPI 5
+   voice chosen in either could be read from their settings files once a
+   tester supplies real ones (research 2026-11-23: ZDSR's API cannot report
+   the voice and its config storage is undocumented; JAWS stores
+   Synthesizer / VoiceName / Speed in VoiceProfiles.INI + .vpf under
+   `%APPDATA%\Freedom Scientific\JAWS\<ver>\Settings`).
 2. NVDA `[speech] synth`:
    - `ibmeci` and the engine file exists → Eloquence, settings from
      `[speech] [[ibmeci]]` (voice = ECI dialect id, variant, rate, rateBoost,
@@ -158,8 +165,21 @@ All constants are first guesses at the top of `positional_speech.cpp`.
      match when equal or a leading part ("Microsoft Stefan"). Rate % passed
      to Prism 1:1 — exact for SAPI's -10..+10, approximate for OneCore
      (Prism's curve: 0.5× / 1× / 6× at 0 / 0.5 / 1).
-   - anything else (eSpeak, …) → urgent voice.
-3. A named render that fails → urgent voice; that fails → centred.
+   - `sapi5_32` (NVDA 2026.1+, which is 64-bit: its 32-bit SAPI 5 host,
+     `source/synthDrivers/sapi5_32.py`, hands off to the same sapi5 driver)
+     → treated as `sapi5`, section `[[sapi5_32]]`. A 64-bit `sapi5` voice
+     with no 32-bit token finds no name → urgent voice.
+   - anything else (eSpeak — NVDA 2026's copy is 64-bit and cannot load in
+     the 32-bit game; mssp; paid add-ons) → urgent voice.
+3. Narrator: always a OneCore voice. `HKCU\Software\Microsoft\Narrator`
+   and `...\Narrator\NoRoam` (guides disagree on which key holds which
+   value, both read): `SpeechVoice` = display name, `SpeechSpeed` 0..20
+   (10 = default) → ×5 onto the percent scale. No `SpeechVoice` (never
+   changed) → the Windows default OneCore voice, `Speech_OneCore\Voices
+   DefaultTokenId` (HKCU, else HKLM). Narrator's natural voices are not
+   OneCore voices → no match → urgent voice. Registry locations from
+   consumer guides, UNVERIFIED on a live Narrator install.
+4. A named render that fails → urgent voice; that fails → centred.
 
 NVDA settings are the SAVED ones: NVDA has no API to read its live settings.
 They change on NVDA+Control+C or on exit (with save-on-exit). Every line

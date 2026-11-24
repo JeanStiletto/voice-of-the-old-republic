@@ -1,6 +1,7 @@
 #include "positional_speech.h"
 
 #include <windows.h>
+#include <tlhelp32.h>          // NarratorRunning
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -11,7 +12,7 @@
 #include <string>
 #include <vector>
 
-#pragma comment(lib, "advapi32.lib")  // RegOpenKeyExA — NVDA voice token names
+#pragma comment(lib, "advapi32.lib")  // RegGetValueA — voice token names, Narrator settings
 
 #include "audio_bus.h"         // GetCuePriorityGroup
 #include "audio_loop.h"
@@ -147,35 +148,50 @@ const char* KindName(VoiceKind k) {
     return "?";
 }
 
+// A REG_SZ value; `valueName` null = the key's default value. Empty when the
+// key or value is missing.
+std::string RegString(HKEY root, const char* subKey, const char* valueName) {
+    char value[256] = {};
+    DWORD size = sizeof(value) - 1;
+    if (RegGetValueA(root, subKey, valueName, RRF_RT_REG_SZ, nullptr, value, &size) !=
+        ERROR_SUCCESS) {
+        return std::string();
+    }
+    return std::string(value);
+}
+
+// A REG_DWORD value, `fallback` when missing.
+int RegDword(HKEY root, const char* subKey, const char* valueName, int fallback) {
+    DWORD value = 0;
+    DWORD size  = sizeof(value);
+    if (RegGetValueA(root, subKey, valueName, RRF_RT_REG_DWORD, nullptr, &value, &size) !=
+        ERROR_SUCCESS) {
+        return fallback;
+    }
+    return static_cast<int>(value);
+}
+
 // NVDA stores a SAPI / OneCore voice as its registry token path
-// ("HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Speech_OneCore\Voices\Tokens\...").
-// The token key's default value is the voice's display name. The game is
-// 32-bit, so the read lands in WOW6432Node — where both kinds of token are
-// registered for 32-bit clients.
+// ("HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Speech_OneCore\Voices\Tokens\..."),
+// and so does Windows for its default voice. The token key's default value
+// is the voice's display name. The game is 32-bit, so the read lands in
+// WOW6432Node — where both kinds of token are registered for 32-bit clients.
 std::string TokenDisplayName(const char* tokenPath) {
     if (!tokenPath) return std::string();
     const char* kHklm = "HKEY_LOCAL_MACHINE\\";
     if (strncmp(tokenPath, kHklm, strlen(kHklm)) != 0) return std::string();
-    HKEY key = nullptr;
-    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, tokenPath + strlen(kHklm), 0, KEY_READ, &key) !=
-        ERROR_SUCCESS) {
-        return std::string();
-    }
-    char value[256] = {};
-    DWORD size = sizeof(value) - 1;
-    DWORD type = 0;
-    const LONG rc = RegQueryValueExA(key, nullptr, nullptr, &type,
-                                     reinterpret_cast<BYTE*>(value), &size);
-    RegCloseKey(key);
-    return (rc == ERROR_SUCCESS && type == REG_SZ) ? std::string(value) : std::string();
+    return RegString(HKEY_LOCAL_MACHINE, tokenPath + strlen(kHklm), nullptr);
 }
 
-// What voice the normal channel imitates right now. Only NVDA is imitated:
-// it is the one reader whose voice and settings the mod can read.
-VoiceChoice ChooseNormalVoice() {
+// NVDA: Eloquence, SAPI 5 or OneCore, read from its saved nvda.ini.
+// NVDA 2026.1 is 64-bit and runs 32-bit SAPI 5 voices through a separate
+// driver, "sapi5_32" (source/synthDrivers/sapi5_32.py): it hands off to the
+// same sapi5 driver, so the [[sapi5_32]] section stores the same voice token
+// path and rate. Those are exactly the voices the game can render. A
+// "sapi5" voice that only exists in the 64-bit list has no 32-bit token: the
+// name lookup comes back empty and the line takes the urgent voice.
+VoiceChoice ChooseNvdaVoice() {
     VoiceChoice v;
-    const wchar_t* reader = prism::ActiveScreenReader();
-    if (!reader || wcscmp(reader, L"NVDA") != 0) return v;
     nvda_config::Config cfg;
     if (!nvda_config::Load(cfg)) return v;
     const char* synth = cfg.Find("speech", "", "synth");
@@ -184,7 +200,7 @@ VoiceChoice ChooseNormalVoice() {
         if (eloquence::IsNvdaSynth()) v.kind = VoiceKind::Eloquence;
         return v;
     }
-    const bool sapi    = strcmp(synth, "sapi5") == 0;
+    const bool sapi    = strcmp(synth, "sapi5") == 0 || strcmp(synth, "sapi5_32") == 0;
     const bool oneCore = strcmp(synth, "oneCore") == 0;
     if (!sapi && !oneCore) return v;
     std::string name = TokenDisplayName(cfg.Find("speech", synth, "voice"));
@@ -193,6 +209,63 @@ VoiceChoice ChooseNormalVoice() {
     v.name   = name;
     v.rate   = cfg.FindInt("speech", synth, "rate", -1);
     return v;
+}
+
+// Is Windows Narrator running? Prism has no Narrator backend (it reaches
+// Narrator through UI Automation or OneCore), so the process is the witness.
+bool NarratorRunning() {
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE) return false;
+    PROCESSENTRY32W entry = {};
+    entry.dwSize = sizeof(entry);
+    bool found = false;
+    for (BOOL ok = Process32FirstW(snap, &entry); ok && !found;
+         ok = Process32NextW(snap, &entry)) {
+        found = _wcsicmp(entry.szExeFile, L"Narrator.exe") == 0;
+    }
+    CloseHandle(snap);
+    return found;
+}
+
+// Narrator always speaks with a OneCore voice. Its choice is the display
+// name in HKCU\Software\Microsoft\Narrator[\NoRoam] "SpeechVoice", its speed
+// "SpeechSpeed" 0..20 (10 = the voice's default); guides disagree on which
+// of the two keys holds which value, so both are read. Never changed, there
+// is no SpeechVoice and Narrator uses the Windows default OneCore voice
+// (Speech_OneCore\Voices "DefaultTokenId", per user, else machine-wide).
+// Narrator's natural voices are not OneCore voices: their name matches
+// nothing, the render fails and the line takes the urgent voice.
+VoiceChoice ChooseNarratorVoice() {
+    constexpr const char* kKey       = "Software\\Microsoft\\Narrator";
+    constexpr const char* kNoRoamKey = "Software\\Microsoft\\Narrator\\NoRoam";
+    constexpr const char* kDefault   = "Software\\Microsoft\\Speech_OneCore\\Voices";
+    VoiceChoice v;
+    std::string name = RegString(HKEY_CURRENT_USER, kNoRoamKey, "SpeechVoice");
+    if (name.empty()) name = RegString(HKEY_CURRENT_USER, kKey, "SpeechVoice");
+    if (name.empty()) {
+        std::string token = RegString(HKEY_CURRENT_USER, kDefault, "DefaultTokenId");
+        if (token.empty()) token = RegString(HKEY_LOCAL_MACHINE, kDefault, "DefaultTokenId");
+        name = TokenDisplayName(token.c_str());
+    }
+    if (name.empty()) return v;
+    int speed = RegDword(HKEY_CURRENT_USER, kKey, "SpeechSpeed", -1);
+    if (speed < 0) speed = RegDword(HKEY_CURRENT_USER, kNoRoamKey, "SpeechSpeed", -1);
+    v.kind = VoiceKind::OneCore;
+    v.name = name;
+    // 0..20 onto the percent scale, 10 -> 50 = the voice's default. Exact at
+    // the default, approximate elsewhere (Prism's OneCore rate curve).
+    v.rate = speed < 0 ? -1 : Clamp(speed, 0, 20) * 5;
+    return v;
+}
+
+// What voice the normal channel imitates right now: NVDA's or Narrator's,
+// the readers whose voice and settings the mod can read. Narrator only when
+// NVDA is not the reader in use.
+VoiceChoice ChooseNormalVoice() {
+    const wchar_t* reader = prism::ActiveScreenReader();
+    if (reader && wcscmp(reader, L"NVDA") == 0) return ChooseNvdaVoice();
+    if (NarratorRunning()) return ChooseNarratorVoice();
+    return VoiceChoice{};
 }
 
 const VoiceChoice& CachedNormalVoice() {
