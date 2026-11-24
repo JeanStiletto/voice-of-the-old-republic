@@ -490,6 +490,7 @@ const size_t kAreaMapWorldPerPxYOffset = acc::off::Same(0x1c);
 //   0x0083EA60), CExoString::operator=(char*) 0x007338D0 (strlen /
 //   free-old / realloc / copy — K1's exact shape).
 const uintptr_t kAddrOperatorNew = acc::addr::Pick(0x0043E1B0, 0x00919723);  // __cdecl(ulong)
+typedef void* (__cdecl* PFN_OperatorNew)(size_t /*size*/);
 const uintptr_t kAddrCSWCMapPinCtor = acc::addr::Pick(0x00692540, 0x00893460);
 const uintptr_t kAddrCExoStringAssignFromCString = acc::addr::Pick(0x005E5140, 0x007338D0);  // __thiscall(CExoString*, char*)
 const uintptr_t kAddrCSWCAreaAddMapPin = acc::addr::Pick(0x00606D90, 0x007A9640);  // __thiscall(CSWCArea*, pin)

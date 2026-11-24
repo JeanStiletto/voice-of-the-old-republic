@@ -434,9 +434,10 @@ DoorStabilityState g_doors_stability;
 constexpr int kNavGraphRetryCapTicks = 120;
 
 struct NavGraphRetryState {
-    void* area         = nullptr;
-    int   failed_ticks = 0;
-    bool  gave_up      = false;
+    void* area            = nullptr;
+    int   failed_ticks    = 0;
+    bool  gave_up         = false;
+    int   wall_wait_ticks = 0;   // split graph waiting for the wall cache
 };
 NavGraphRetryState g_navgraph_retry;
 
@@ -4010,11 +4011,34 @@ void BuildForArea(void* area) {
 
     // Per-area retry accounting — see kNavGraphRetryCapTicks.
     if (g_navgraph_retry.area != area) {
-        g_navgraph_retry.area         = area;
-        g_navgraph_retry.failed_ticks = 0;
-        g_navgraph_retry.gave_up      = false;
+        g_navgraph_retry.area            = area;
+        g_navgraph_retry.failed_ticks    = 0;
+        g_navgraph_retry.gave_up         = false;
+        g_navgraph_retry.wall_wait_ticks = 0;
     }
     if (g_navgraph_retry.gave_up) return;
+
+    // Split K2 graphs: link the islands in the ENGINE's path graph first, so
+    // this build, our route finder and the engine's own planner (walk-to,
+    // use/talk approach, map pins, companions) all read one linked network.
+    // No-op for intact graphs (every K1 area). Needs the wall cache for the
+    // link test; while it's missing on a split graph, wait — building now
+    // would bake the split into this area's labels for the whole visit.
+    const acc::engine::WallEdge* bw = nullptr;
+    int bwCount = 0;
+    if (!acc::spatial::change_detector::GetCachedWalls(bw, bwCount)) {
+        bw = nullptr;
+        bwCount = 0;
+    }
+    if (acc::engine::navgraph::EnsureAreaIslandsBridged(area, bw, bwCount) ==
+            acc::engine::navgraph::BridgeWrite::NoWalls &&
+        g_navgraph_retry.wall_wait_ticks < kNavGraphRetryCapTicks) {
+        if (g_navgraph_retry.wall_wait_ticks++ == 0) {
+            acclog::Write("WallTopo", "BuildForArea: split nav graph, wall cache "
+                          "not ready — waiting to link islands (areaPtr=%p)", area);
+        }
+        return;
+    }
 
     Reset();
     g_graph.area_owner = area;
@@ -4040,6 +4064,21 @@ void BuildForArea(void* area) {
         return;
     }
     g_navgraph_retry.failed_ticks = 0;
+
+    // Fallback only: if the engine write above could not happen (truncated
+    // graph, fault, walls arrived late), link this snapshot the same way so
+    // labels still see a joined network. After a successful engine write the
+    // snapshot is already one network and this is a no-op.
+    {
+        const acc::engine::navgraph::IslandBridgeStats bs =
+            acc::engine::navgraph::BridgeIslands(g, bw, bwCount);
+        if (bs.bridges > 0 || bs.skippedNoWalls) {
+            acclog::Write("WallTopo", "BuildForArea: fallback snapshot linking — "
+                          "islands %d -> %d (bridges=%d%s)",
+                          bs.islandsBefore, bs.islandsAfter, bs.bridges,
+                          bs.skippedNoWalls ? ", no wall cache — left split" : "");
+        }
+    }
 
     int n = static_cast<int>(g.nodes.size());
     if (n > kMaxNodes) {

@@ -83,3 +83,7 @@ const size_t kAreaPathConnectionsPtrOffset   = acc::off::Pick(0x244, 0x268);
 const size_t kPathPointStride                = acc::off::Same(0x10);
 const size_t kPathPointPositionOffset        = acc::off::Same(0x00);  // Vector
 const size_t kPathPointCsrOffset             = acc::off::Same(0x0c);  // uint32
+// Connection COUNT for the point — the engine's successor generator reads
+// [first, first+count) per point (PathPointDFSGenerateSuccessors), never the
+// next point's first. Same parser store as First_Conection, both games.
+const size_t kPathPointCountOffset           = acc::off::Same(0x08);  // uint32

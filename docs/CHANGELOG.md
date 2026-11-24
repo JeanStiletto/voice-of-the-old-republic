@@ -59,6 +59,20 @@ and add the German in parentheses if it genuinely aids clarity.
   tested in game).
 - KOTOR 2's tutorial hints show their keyboard wording (not yet tested in
   game).
+- 3D combat lines use your NVDA voice again with NVDA 2026 and a 32-bit SAPI
+  voice (not yet tested in game).
+- 3D combat lines use your Narrator voice and speed (not yet tested in game).
+- In KOTOR 2, walking to far targets, the beacon and companions following work
+  across maps whose path network was split, such as Malachor (not yet tested
+  in game).
+- In KOTOR 2, area descriptions on those maps no longer call a passage a dead
+  end where the split was (not yet tested in game).
+- Long walks to far targets are no longer cancelled as "way blocked" before
+  they start (not yet tested in game).
+- The key-binding menu names punctuation and other special keys after your
+  keyboard layout instead of saying "?" (not yet tested in game).
+- Log only: each linked map logs its added links, and each walk logs how long
+  it took to start.
 
 <h3>Game sound fixes (installer):</h3>
 
@@ -119,6 +133,57 @@ and add the German in parentheses if it genuinely aids clarity.
   KOTOR 2, so the text was never set.
 - **Credit.** Thanks to aradix85: the first two fixes come from their fork of
   the mod, and their review of our engine address data turned up the third.
+
+<h3>3D speech voices (not yet tested in game):</h3>
+
+- **3D combat lines use your NVDA voice again with NVDA 2026 and a 32-bit
+  SAPI voice.** NVDA 2026 is 64-bit and runs 32-bit SAPI voices through a
+  new driver with a new name, which the mod did not know, so these lines fell
+  back to the announcement voice. A SAPI voice that only exists in 64-bit
+  form still cannot be used: the game is 32-bit and only sees the 32-bit
+  voices.
+- **3D combat lines use your Narrator voice and speed.** With Windows
+  Narrator running, the mod reads Narrator's chosen voice and speed and speaks
+  the 3D lines with them. If you never changed Narrator's voice, the Windows
+  default voice is used. Narrator's natural voices cannot be used yet; with
+  one of them the lines keep the announcement voice.
+
+<h3>Movement on KOTOR 2 maps (not yet tested in game):</h3>
+
+- **Walking to far targets, the beacon and companions following now work
+  across split maps.** Every map ships a network of path points that both the
+  game and the mod plan long walks over. In every KOTOR 1 map that network is
+  one piece; in many KOTOR 2 maps it is split into islands. Malachor's surface
+  is split into 11, so walk-to and the beacon answered "no path" for places a
+  few metres away. On loading such a map, the mod now joins the islands with
+  the shortest links that are clear of walls along their whole length, with
+  room for a body, and writes them into the game's own network — so the
+  game's walking, the companions and the mod's guidance all use the same
+  joined network. Maps that were already one piece are left untouched, so
+  KOTOR 1 does not change. It reads whatever map files are installed, so maps
+  changed by other mods are linked the same way. Affected maps include
+  Malachor's surface, the Telos underground base, the Nar Shaddaa docks and
+  refugee sector, the Ravager command deck and several Citadel Station
+  modules. Islands on separate floors, reached by an elevator or a door to
+  another area, stay separate. All links were checked offline against the
+  walkable floor of every split map. Thanks to the beta
+  tester whose Malachor log showed the problem.
+- **Area descriptions on those maps no longer call a passage a dead end where
+  the split was.** The area descriptions are built from the same joined
+  network.
+- **Long walks to far targets are no longer cancelled as "way blocked" before
+  they start.** When the mod's own route shows the target is reachable and the
+  route is longer than 40 metres, the game gets up to 6 seconds to start
+  walking instead of 1.8.
+
+<h3>Key names (not yet tested in game):</h3>
+
+- **The key-binding menu names punctuation and other special keys after your
+  keyboard layout instead of saying "?".** Keys like the apostrophe or the
+  numpad keys were missing from a fixed list. Punctuation keys now say what
+  your layout prints on them, so a German keyboard says "#" for the key
+  English layouts call "/", and the key left of 1 is no longer always called
+  "Ö".
 
 <h2>v0.9.1</h2>
 

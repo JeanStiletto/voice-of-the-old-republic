@@ -3,12 +3,14 @@
 #include <windows.h>
 #include <cmath>
 #include <cstdio>
+#include <vector>
 
 #include "engine_area.h"      // GetObjectPosition / GetObjectName
 #include "engine_compass.h"   // EngineYawToCompass / CompassToSector / SectorString
 #include "engine_panels.h"    // HasActiveDialogPanel / IsForegroundUiBlocking / SetGlobalDialogState
 #include "engine_player.h"    // GetPlayerPosition / SetPlayerInputEnabled
 #include "guidance_autowalk.h"// CancelMovement
+#include "guidance_pathfind.h"// ComputePath — long-route start allowance
 #include "log.h"
 #include "prism.h"
 #include "spectator_scene.h" // Endar Spire scripted spectator-battle cue
@@ -39,6 +41,16 @@ constexpr float kReissueUseMSq  = 16.0f;   // (4m)^2 — a retried walk that set
                                            // because the walk targets the object
                                            // centre while the walkmesh can stop
                                            // the PC a metre or two short of it.
+// Long-route start allowance. The engine plans a long walk over the area's
+// path-point graph, which (now that split K2 graphs are linked) can route
+// 200 m+ across a map — planning latency for that was never measured, and
+// the 1.8 s "never started" verdict is tuned on short walks. When OUR route
+// finder proves the target reachable and the route is long, give the first
+// step up to this long before the never-started retry. Short routes keep the
+// 1.8 s verdict (the Telos console rescue stays fast), unreachable ones too.
+// "Approach: first step after" lines record the real latency for tuning.
+constexpr DWORD kLongRouteStartMs = 6000;
+constexpr float kLongRouteM       = 40.0f;
 constexpr DWORD kCancelGraceMs  = 300;     // movement-key cancel ignores the
                                            // first 300ms after a dispatch — covers
                                            // a key still held from before the walk
@@ -68,6 +80,9 @@ struct ApproachState {
     // The coordinate-walk retry is one-shot per arm; without this a target the
     // A* also can't reach would re-dispatch every stall window forever.
     bool          coordRetried  = false;
+    // Our own route to the target, checked once at the first never-started
+    // verdict: 0 = not checked, 1 = long + reachable, 2 = otherwise.
+    int           longRoute     = 0;
 
     // Use-verb handle to re-fire once the retried walk lands (see the header
     // note on ApproachArm::useHandle), and its one-shot latch.
@@ -135,6 +150,31 @@ bool TryCoordinateWalkRetry(const Vector& tgt) {
         "— retrying as coordinate walk to (%.2f,%.2f,%.2f) name=[%s]",
         tgt.x, tgt.y, tgt.z, g_st.name);
     return true;
+}
+
+// Never-started on a LONG reachable route: the engine may still be planning.
+// Returns true while we should keep waiting (caller must not retry/announce).
+// Only the first-step window is extended — once the PC has moved, the normal
+// 1.8 s stall rule applies unchanged.
+bool WaitForLongRouteStart(const Vector& tgt, const Vector& pos, DWORD now) {
+    if (g_st.movedSinceArm) return false;
+    if (g_st.longRoute == 0) {
+        g_st.longRoute = 2;
+        std::vector<Vector> wps;
+        if (acc::guidance::ComputePath(acc::engine::GetCurrentArea(), pos, tgt, wps) &&
+            !wps.empty()) {
+            float len = 0.0f;
+            Vector prev = pos;
+            for (const Vector& w : wps) { len += GapTo(w, prev); prev = w; }
+            if (len >= kLongRouteM) g_st.longRoute = 1;
+            acclog::Write("Approach", "never started yet; own route %.0fm (%s) name=[%s]",
+                          len, g_st.longRoute == 1 ? "long — allowing planning time"
+                                                   : "short — normal verdict",
+                          g_st.name);
+        }
+    }
+    if (g_st.longRoute != 1) return false;
+    return now - g_st.armedAt < kLongRouteStartMs;
 }
 
 // The coordinate-walk retry only walks. It has to clear the failed plan to free
@@ -327,6 +367,12 @@ void TickApproach() {
     float dx = pos.x - g_st.lastPos.x;
     float dy = pos.y - g_st.lastPos.y;
     if ((dx * dx + dy * dy) >= kProgressEpsSq) {
+        if (!g_st.movedSinceArm) {
+            Vector t;
+            acclog::Write("Approach", "first step after %lums (gap %.1fm) name=[%s]",
+                          static_cast<unsigned long>(now - g_st.armedAt),
+                          ResolveTargetPos(t) ? GapTo(t, pos) : -1.0f, g_st.name);
+        }
         g_st.lastPos       = pos;
         g_st.progressAt    = now;
         g_st.movedSinceArm = true;
@@ -393,6 +439,7 @@ void TickApproach() {
     // turned into motion leaves the PC rooted where it stood, and announcing
     // "way blocked" there tells the player no route exists when the coordinate
     // A* would have walked them straight to it.
+    if (WaitForLongRouteStart(tgt, pos, now)) return;
     if (TryCoordinateWalkRetry(tgt)) return;
 
     OnBlocked(now - g_st.progressAt);

@@ -162,11 +162,34 @@ bool ComputePath(void* area,
     }
 
     const int nodeCount  = static_cast<int>(graph.nodes.size());
-    const int connsCount = static_cast<int>(graph.conns.size());
     if (nodeCount <= 0) {
         acclog::Write("Pathfind", "ComputePath: no nodes loaded");
         return false;
     }
+
+    // Wall cache pulled from spatial::change_detector (built once per
+    // area-load by Pillar 1's BuildAreaWallCache). Used for island bridging,
+    // anchor-node selection and the smoothing pass below; all degrade
+    // gracefully if it isn't ready yet.
+    const acc::engine::WallEdge* walls = nullptr;
+    int wallCount = 0;
+    bool haveWalls = acc::spatial::change_detector::GetCachedWalls(
+                         walls, wallCount)
+                     && walls != nullptr && wallCount > 0;
+    if (!haveWalls) { walls = nullptr; wallCount = 0; }
+
+    // Split K2 graphs: join the islands before searching (see BridgeIslands).
+    // Same call room_topology makes, so labels and routes share one network.
+    const acc::engine::navgraph::IslandBridgeStats bridged =
+        acc::engine::navgraph::BridgeIslands(graph, walls, wallCount);
+    if (bridged.islandsBefore > 1) {
+        acclog::Write("Pathfind", "islands %d -> %d (bridges=%d longest=%.1fm "
+                      "wallRejects=%d%s)",
+                      bridged.islandsBefore, bridged.islandsAfter,
+                      bridged.bridges, bridged.longestM, bridged.wallRejects,
+                      bridged.skippedNoWalls ? " — no wall cache, not bridged" : "");
+    }
+    const int connsCount = static_cast<int>(graph.conns.size());
 
     acclog::Write("Pathfind", "graph nodes=%d conns=%d "
                   "start=(%.2f,%.2f,%.2f) goal=(%.2f,%.2f,%.2f)",
@@ -183,17 +206,6 @@ bool ComputePath(void* area,
         if (failure) *failure = PathFailure::None;
         return true;
     }
-
-    // Wall cache pulled from spatial::change_detector (built once per
-    // area-load by Pillar 1's BuildAreaWallCache). Used for anchor-node
-    // selection and the smoothing pass below; both degrade gracefully if
-    // it isn't ready yet.
-    const acc::engine::WallEdge* walls = nullptr;
-    int wallCount = 0;
-    bool haveWalls = acc::spatial::change_detector::GetCachedWalls(
-                         walls, wallCount)
-                     && walls != nullptr && wallCount > 0;
-    if (!haveWalls) { walls = nullptr; wallCount = 0; }
 
     int startNode = FindAnchorNode(graph, walls, wallCount, start, "start");
     int goalNode  = FindAnchorNode(graph, walls, wallCount, goal,  "goal");

@@ -11,6 +11,7 @@
 #include "hotkeys_chord_latch.h" // ChordLatch — chord key arriving after its modifier
 #include "log.h"                 // acclog::PatchDir / Write — override load gate
 #include "mod_settings_store.h"  // persist user rebinds across launches
+#include "prism.h"               // GetSpeechCodepage — layout key labels
 
 #pragma comment(lib, "user32.lib")
 
@@ -775,6 +776,57 @@ const char* Name(Action a) {
     return kActionNames[idx];
 }
 
+namespace {
+
+// Rotating pool for layout-derived labels: Describe() takes two labels per
+// call (vk + altVk) and appends each immediately, so 4 slots is ample.
+char g_layoutLabelBufs[4][32];
+int  g_layoutLabelNext = 0;
+
+// Label for a key whose printed character depends on the keyboard layout
+// (punctuation / OEM keys, numpad, ...). A fixed table is wrong for all but
+// one layout: VK_OEM_3 is Ö on German, Ё on Russian, ` on US; VK_OEM_2 is /
+// on US, # on German, . on Russian. And every key missing from a fixed table
+// was spoken as "?" (2026-11-24 Russian log: "Alt+?" in the keybind menu).
+//
+// Asks the game thread's active layout — the same source engine_keymap uses
+// for its scancode mapping. First the unshifted character the key types;
+// if it has none (or it can't be expressed in the game codepage), the
+// layout's own key name ("Num 5"). Returns nullptr when neither exists.
+const char* LayoutKeyLabel(int vk) {
+    HKL layout = GetKeyboardLayout(0);
+    char* out = g_layoutLabelBufs[g_layoutLabelNext];
+    g_layoutLabelNext = (g_layoutLabelNext + 1) % 4;
+    const UINT cp = prism::GetSpeechCodepage();
+
+    // High bit marks a dead key (accent keys); the character is still the
+    // one printed on the key, so keep it.
+    UINT ch = MapVirtualKeyExW(static_cast<UINT>(vk), MAPVK_VK_TO_CHAR, layout)
+              & 0x7FFFFFFFu;
+    if (ch > 0x20 && ch != 0x7F) {
+        wchar_t w[2] = {static_cast<wchar_t>(ch), 0};
+        BOOL lossy = FALSE;
+        int got = WideCharToMultiByte(cp, 0, w, -1, out, sizeof(g_layoutLabelBufs[0]),
+                                      nullptr, &lossy);
+        if (got > 0 && !lossy) return out;
+    }
+
+    UINT sc = MapVirtualKeyExW(static_cast<UINT>(vk), MAPVK_VK_TO_VSC, layout);
+    if (sc != 0) {
+        wchar_t w[32] = {};
+        if (GetKeyNameTextW(static_cast<LONG>(sc << 16), w, 32) > 0) {
+            BOOL lossy = FALSE;
+            int got = WideCharToMultiByte(cp, 0, w, -1, out,
+                                          sizeof(g_layoutLabelBufs[0]),
+                                          nullptr, &lossy);
+            if (got > 0 && !lossy) return out;
+        }
+    }
+    return nullptr;
+}
+
+}  // namespace
+
 const char* VkLabel(int vk) {
     switch (vk) {
     case 0:             return "(unbound)";
@@ -788,11 +840,6 @@ const char* VkLabel(int vk) {
     case VK_HOME:       return "Home";
     case VK_END:        return "End";
     case VK_SPACE:      return "Space";
-    case VK_OEM_COMMA:  return ",";
-    case VK_OEM_PERIOD: return ".";
-    case VK_OEM_MINUS:  return "-";
-    case VK_OEM_2:      return "/";
-    case VK_OEM_3:      return "\xD6";  // Ö on the German layout
     case VK_RMENU:      return "AltGr";
     case VK_LMENU:      return "LAlt";
     case VK_MENU:       return "Alt";
@@ -827,6 +874,9 @@ const char* VkLabel(int vk) {
         letter[0] = static_cast<char>(vk);
         return letter;
     }
+    // Everything else (punctuation / OEM, numpad, ...) prints differently per
+    // layout — ask the active one.
+    if (const char* fromLayout = LayoutKeyLabel(vk)) return fromLayout;
     return "?";
 }
 

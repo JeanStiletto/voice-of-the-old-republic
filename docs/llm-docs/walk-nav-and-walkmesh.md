@@ -59,14 +59,18 @@ KOTOR's per-area nav graph (the data Bioware's pathfinder reads, e.g. `CSWSModul
 - `CSWSArea.path_connections_count` at `+0x240` (ulong)
 - `CSWSArea.path_connections` at `+0x244` (ulong*, heap)
 
-**PathPoint stride: 16 bytes.**
+**PathPoint stride: 16 bytes.** (Corrected 2026-11-24 from the `LoadPathPoints` decompile — the original note read a Vector here.)
 
 ```
-+0x00  Vector position    (12 bytes: float x, y, z)
-+0x0c  uint32 csr_offset  (start index into path_connections[])
++0x00  float x
++0x04  float y            (no height field — path points are 2D)
++0x08  uint32 connections (count)
++0x0c  uint32 first_connection (start index into path_connections[])
 ```
 
-**Adjacency: CSR (compressed sparse row) over `path_connections[]`.** Node N's neighbours = `path_connections[meta_N .. meta_{N+1}-1]`. Last node's terminator = `path_connections_count`. Sample CSR sequence observed: `0, 1, 2, 5, 8, 10, 11, 14` → node 0 has 1 neighbour, node 1 has 1, node 2 has 3, node 3 has 3, node 4 has 2, etc.
+KOTOR 2 (Aspyr) offsets on `CSWSArea`: `+0x25c / +0x260 / +0x264 / +0x268` (count, points, conn count, conns); the per-point layout is identical.
+
+**Adjacency: node N's neighbours = `path_connections[first_N .. first_N + count_N - 1]`.** That is how the engine's `PathPointDFSGenerateSuccessors` reads it. Authored `.pth` data stores the runs in point order (every K1 and K2 module checked 2026-11-24), so "next point's first" gives the same answer for authored data — but the mod's island bridging relocates bridged runs to the end of the array, so **always read first + count**.
 
 **path_connections[] is a flat `uint32[]` of neighbour node indices.** Edges are symmetric undirected (0↔2, 1↔3 observed in samples).
 
@@ -77,6 +81,21 @@ KOTOR's per-area nav graph (the data Bioware's pathfinder reads, e.g. `CSWSModul
 **How to apply:** When building `guidance_pathfind` in Phase 5 lay-off 2 — read these offsets directly from the area pointer (`acc::engine::GetCurrentArea()`). No engine call needed; pure data access. SEH-guard the reads per project convention. Cache the parsed graph once per area-change (rebuilds on `transitions::OnAreaChange`).
 
 ---
+
+## k2_split_path_graphs_and_island_linking
+_Engine path planner + split KOTOR 2 path graphs + the mod's island linking — 2026-11-24 (Malachor tester log patch-20261124-143027.log). Built, UNTESTED in game._
+
+**Every K1 area's path graph is one connected network; many K2 areas ship theirs split into islands.** Offline scan of every module: 901MAL (Malachor surface) 11 islands with none dominant, 232TEL (Telos underground base) 7, 303NAR 12, 851NIH 11, 301NAR 11, ... K1: 0 split areas.
+
+**The engine plans long walks over this same graph.** `CSWSModule::PlotPathInArea` first runs `CSWSArea::TestDirectLine` start→goal (with the creature's personal space); clear → a direct 2-point path. Otherwise, if the area has path points, `PlotPathPointPath` → `ClosestPathPoint` at both ends → `PathPointDFSearch`; the walkmesh grid planner `PlotGridPath` is used only for areas with no path points. So neither the engine nor the mod could route island to island: walk-to and the beacon said "no path" for places metres away (Malachor: the exit route began 2.4 m from the player's island).
+
+**Successor generation** (`PathPointDFSGenerateSuccessors`) tests each graph link with `NoNonWalkPolysDetailed` using personal space, but only DROPS a link blocked by a door (field +0x3c0) or placeable — a walkmesh-blocked authored link is kept. So the engine trusts authored links; a bridged link must be genuinely walkable with body width.
+
+**Allocation:** `LoadPathPoints` allocates both arrays with engine `operator new`; `~CSWSArea` frees them with `_free`. Path data is not in savegames — reloaded on every area entry.
+
+**The mod's fix** (`engine_navgraph.cpp` `EnsureAreaIslandsBridged`, called from `room_topology::BuildForArea`): link islands shortest-first (one link per merge) up to 40 m, each link clear of walkmesh walls along its centre line and ±0.5 m either side (player personal space is 0.35 m in both games), then write the links INTO the engine's graph: new connection array from engine operator new, authored prefix verbatim, bridged points' runs re-appended, pointer swapped before count, bridged points repointed last — every intermediate state valid; old array deliberately leaked. Intact graphs are never touched. Route finder and labels snapshot the linked engine graph (each keeps a snapshot-level fallback).
+
+**Offline validation:** `tools/re-scripts/pathgraph_bridge_check.py` rebuilds the walkmesh walls from the game files (walkable-floor boundary — a subset of the in-game wall set, which also carries some cliff-face edges we can't reproduce from the files) and walks every link on the real walkable triangles. Result for all split K2 areas: 111 links, all walkable with body width. Still split, correctly (islands on separate floor): 903MAL, 101PER, 103PER, and cutscene points ~1300 m off in 501OND / 512OND / 950COR.
 
 ## dialog_speaker_resolution
 _How to identify the current conversation partner from any in-dialog state — and the per-line speaker caveat for multi-party cutscenes_

@@ -265,7 +265,9 @@ const char* Name(Action a);
 const char* Describe(Action a);
 
 // Spoken/printable label for a bare VK ("V", "F5", "Enter", ...). Static
-// storage; "?" for unmapped VKs, "(unbound)" for 0. Exposed for consumers
+// storage; punctuation/OEM and other unlisted keys are named from the active
+// keyboard layout (game codepage); "?" only when the layout has no name
+// either, "(unbound)" for 0. Exposed for consumers
 // that announce a GAME binding (not a mod Action) — e.g. the floor-puzzle
 // solo-mode hint, which resolves the game's solo key from swkotor.ini.
 const char* VkLabel(int vk);
