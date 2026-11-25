@@ -145,8 +145,10 @@ bool ComputePath(void* area,
                  const Vector& start,
                  const Vector& goal,
                  std::vector<Vector>& outWaypoints,
-                 PathFailure* failure) {
+                 PathFailure* failure,
+                 std::vector<Vector>* outRawNodes) {
     outWaypoints.clear();
+    if (outRawNodes) outRawNodes->clear();
     // Every early return below is a map-read failure except the exhausted
     // open set, which overrides this; success resets it to None.
     if (failure) *failure = PathFailure::MapUnreadable;
@@ -316,6 +318,7 @@ bool ComputePath(void* area,
     for (int i = len - 1; i >= 0; --i) {
         outWaypoints.push_back(graph.nodes[chain[i]].pos);
     }
+    if (outRawNodes) *outRawNodes = outWaypoints;  // before the goal append
     // Append the original goal as the terminal anchor — the last
     // path_point is `goalNode` (closest node to goal), but the user
     // actually wants to end up AT goal, not at the nearest nav node.

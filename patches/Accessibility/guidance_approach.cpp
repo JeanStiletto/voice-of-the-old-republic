@@ -5,10 +5,14 @@
 #include <cstdio>
 #include <vector>
 
-#include "engine_area.h"      // GetObjectPosition / GetObjectName
+#include "bringup_announce.h" // IsMoviePlaying — a movie ends the walk silently
+#include "combat.h"           // IsPartyInCombat — combat-interrupted verdict
+#include "engine_area.h"      // GetObjectPosition / GetObjectName / GetCurrentArea
 #include "engine_compass.h"   // EngineYawToCompass / CompassToSector / SectorString
 #include "engine_panels.h"    // HasActiveDialogPanel / IsForegroundUiBlocking / SetGlobalDialogState
+#include "engine_picker.h"    // InitiateDialog / Drive — legged walk's arrival acts
 #include "engine_player.h"    // GetPlayerPosition / SetPlayerInputEnabled
+#include "engine_subscreen.h" // WorldIsPaused — the stall clock stops while paused
 #include "guidance_autowalk.h"// CancelMovement
 #include "guidance_pathfind.h"// ComputePath — long-route start allowance
 #include "log.h"
@@ -55,6 +59,19 @@ constexpr DWORD kCancelGraceMs  = 300;     // movement-key cancel ignores the
                                            // first 300ms after a dispatch — covers
                                            // a key still held from before the walk
                                            // and the engine's enqueue ramp-up.
+// Legged walk (BeginLeggedApproach). The engine's planner fails at 51 path
+// points and at 4096 expansions per search pass; the second cap bites well
+// before the first in a dense network, and no live witness yet says where.
+// Routes up to kEngineRouteMaxPoints keep the engine's own single walk (the
+// 58 m and 149 m Malachor walks started in 0.4 s); longer ones walk legs of
+// kLegPoints. "Approach: leg" lines record each leg's start for tuning.
+constexpr int   kEngineRouteMaxPoints = 40;
+constexpr int   kLegPoints            = 30;
+constexpr int   kMaxLegs              = 16;     // 480 points — past kMaxNodes'
+                                                // reach in practice
+constexpr float kLegHandoffMSq        = 9.0f;   // (3m)^2 — next leg queued this
+                                                // close to the current leg's end,
+                                                // before the walk slows to a stop
 
 struct ApproachState {
     bool          active        = false;
@@ -88,6 +105,25 @@ struct ApproachState {
     // note on ApproachArm::useHandle), and its one-shot latch.
     uint32_t      useHandle     = 0;
     bool          useReissued   = false;
+
+    // Interruption context, snapshotted at arm. A walk dispatched in combat
+    // keeps the ordinary verdicts; only combat that BEGAN after the dispatch
+    // earns the combat message. The area pointer changes on every area load.
+    bool          combatAtArm   = false;
+    void*         areaAtArm     = nullptr;
+    // Last tick time — a paused world shifts armedAt/progressAt by the gap so
+    // the pause never counts as stall or start latency.
+    DWORD         lastTickAt    = 0;
+
+    // Legged walk. legEnd[0..legCount) are path-point positions on our route;
+    // legIdx is the leg being walked. Once the last leg end is reached the
+    // arrival act fires and the tracker continues as an ordinary approach.
+    bool          legged        = false;
+    int           legCount      = 0;
+    int           legIdx        = 0;
+    Vector        legEnd[kMaxLegs] = {};
+    ArrivalAct    arrivalAct    = ArrivalAct::None;
+    uint32_t      arrivalHandle = 0;
 };
 ApproachState g_st;
 
@@ -224,13 +260,33 @@ bool TryReissueUse(float gap) {
 // caller disabled it (explicit, so engine_player's queue-watched restore and
 // this tracker never fight), clear dialog-pending limbo (talk only), and
 // announce "way blocked" when the arm asked for it. Disarms.
-void OnBlocked(DWORD stalledMs) {
-    acc::guidance::CancelMovement();
+//
+// byCombat: combat began after the dispatch and the character stood still
+// since — the fight stopped the walk, not the walkmesh. Same teardown minus
+// the ClearAllActions, which would also wipe the attacks the engine queues
+// on the leader each combat round, and a message that names the real cause.
+void OnBlocked(DWORD stalledMs, bool byCombat) {
+    if (!byCombat) acc::guidance::CancelMovement();
     if (g_st.inputDisabled) {
         acc::engine::SetPlayerInputEnabled(true);
     }
     if (g_st.isDialog) {
         acc::engine::SetGlobalDialogState(0);
+    }
+
+    if (byCombat) {
+        if (g_st.speakBlocked) {
+            prism::Speak(acc::strings::Get(acc::strings::Id::MovementInterruptedCombat),
+                         /*interrupt=*/true);
+        }
+        acclog::Write("Approach", "INTERRUPTED by combat — owner=%d isDialog=%d "
+            "inputDisabled=%d stalled=%lums legged=%d leg=%d/%d name=[%s] "
+            "(walk kept, input restored)",
+            static_cast<int>(g_st.owner), g_st.isDialog ? 1 : 0,
+            g_st.inputDisabled ? 1 : 0, static_cast<unsigned long>(stalledMs),
+            g_st.legged ? 1 : 0, g_st.legIdx + 1, g_st.legCount, g_st.name);
+        g_st.active = false;
+        return;
     }
 
     if (g_st.speakBlocked) {
@@ -257,11 +313,84 @@ void OnBlocked(DWORD stalledMs) {
     }
 
     acclog::Write("Approach", "BLOCKED — owner=%d isDialog=%d inputDisabled=%d "
-        "stalled=%lums name=[%s] (cancelled approach)",
+        "stalled=%lums legged=%d leg=%d/%d name=[%s] (cancelled approach)",
         static_cast<int>(g_st.owner), g_st.isDialog ? 1 : 0,
         g_st.inputDisabled ? 1 : 0, static_cast<unsigned long>(stalledMs),
-        g_st.name);
+        g_st.legged ? 1 : 0, g_st.legIdx + 1, g_st.legCount, g_st.name);
     g_st.active = false;
+}
+
+// Silent disarm for story taking over (conversation, movie, area change) or
+// the player's own next action. Touches neither the engine queue nor input:
+// scripts own the character now, and engine_player's queue-watched restore
+// hands input back when its session drains or stalls.
+void DisarmQuietly(const char* why) {
+    acclog::Write("Approach", "%s — disarm quietly (legged=%d leg=%d/%d name=[%s])",
+                  why, g_st.legged ? 1 : 0, g_st.legIdx + 1, g_st.legCount,
+                  g_st.name);
+    g_st.active = false;
+}
+
+// Last leg reached: fire the act the caller would have dispatched, from a
+// distance the engine plans in one go, and continue as an ordinary approach
+// (stall / settle / success verdicts unchanged). The act lands on top of the
+// leg walk still finishing its last three metres; queued behind it or
+// replacing it, the engine plans from here either way.
+void FireArrivalAct() {
+    g_st.legged = false;
+    g_st.useReissued = true;   // the act fires here; never a second time
+    bool ok = false;
+    const char* what = "walk";
+    const uint32_t h = g_st.arrivalHandle;
+    switch (g_st.arrivalAct) {
+        case ArrivalAct::Use: {
+            what = "use";
+            bool disabled = acc::engine::SetPlayerInputEnabled(false);
+            ok = acc::guidance::UseObject(h);
+            if (ok) g_st.inputDisabled = disabled;
+            else if (disabled) acc::engine::SetPlayerInputEnabled(true);
+            break;
+        }
+        case ArrivalAct::Talk:
+            what = "talk";
+            ok = acc::picker::InitiateDialog(h);
+            if (ok) g_st.isDialog = true;
+            break;
+        case ArrivalAct::EngineVerb: {
+            what = "engine verb";
+            acc::picker::ActionSnapshot snap = {};
+            ok = acc::picker::Drive(h, &snap, /*forceRadial=*/false,
+                                    /*populateOnly=*/false);
+            break;
+        }
+        case ArrivalAct::None:
+            break;
+    }
+    // No act, or the act refused: finish as a coordinate walk to the target.
+    Vector tgt;
+    if (!ok && ResolveTargetPos(tgt)) {
+        ok = acc::guidance::WalkTo(tgt);
+        if (g_st.arrivalAct != ArrivalAct::None) what = "act refused -> walk";
+    }
+    g_st.haveProgress = false;          // fresh stall window for the last stretch
+    g_st.progressAt   = GetTickCount();
+    acclog::Write("Approach", "leg %d/%d reached — arrival %s handle=0x%08x ok=%d "
+        "name=[%s]", g_st.legCount, g_st.legCount, what, h, ok ? 1 : 0, g_st.name);
+}
+
+// Queue the next leg as the current one nears its end (or fire the arrival
+// act after the last).
+void AdvanceLeg() {
+    ++g_st.legIdx;
+    if (g_st.legIdx >= g_st.legCount) {
+        FireArrivalAct();
+        return;
+    }
+    const Vector& end = g_st.legEnd[g_st.legIdx];
+    bool ok = acc::guidance::WalkTo(end);
+    acclog::Write("Approach", "leg %d/%d reached — next leg to (%.2f,%.2f) ok=%d "
+        "name=[%s]", g_st.legIdx, g_st.legCount, end.x, end.y, ok ? 1 : 0,
+        g_st.name);
 }
 
 }  // namespace
@@ -288,6 +417,9 @@ void ArmApproach(const ApproachArm& arm) {
     g_st.armedAt       = now;
     g_st.haveProgress  = false;
     g_st.progressAt    = now;
+    g_st.lastTickAt    = now;
+    g_st.combatAtArm   = acc::combat::IsPartyInCombat();
+    g_st.areaAtArm     = acc::engine::GetCurrentArea();
 
     // If no fallback pos was supplied but we have the object, snapshot a live
     // read now so a later announce still has a position even if the object
@@ -310,6 +442,8 @@ void ArmApproach(const ApproachArm& arm) {
 void TickApproach() {
     if (!g_st.active) return;
     DWORD now = GetTickCount();
+    const DWORD sinceLast = now - g_st.lastTickAt;
+    g_st.lastTickAt = now;
 
     // Success 1 — a conversation opened (talk verbs). PC reached range and the
     // dialog started; nothing to cancel.
@@ -343,6 +477,28 @@ void TickApproach() {
         return;
     }
 
+    // Story took over: a movie, or a load into another area (scripted
+    // transition, cutscene module). Nothing to judge and nothing to say —
+    // a system message here would talk over the scene. A null area pointer
+    // mid-load counts as changed; an arm that never read one skips the test.
+    if (acc::bringup_announce::IsMoviePlaying()) {
+        DisarmQuietly("movie playing");
+        return;
+    }
+    if (g_st.areaAtArm && acc::engine::GetCurrentArea() != g_st.areaAtArm) {
+        DisarmQuietly("area changed");
+        return;
+    }
+
+    // World paused (pause key, combat auto-pause, a menu holding the world):
+    // the walk waits with it, so the clock stops — shift the arm and progress
+    // stamps by the paused tick instead of judging a frozen character.
+    if (acc::engine::WorldIsPaused()) {
+        g_st.armedAt    += sinceLast;
+        g_st.progressAt += sinceLast;
+        return;
+    }
+
     Vector pos;
     if (!acc::engine::GetPlayerPosition(pos)) {
         // Blind read — don't act on it; fall back to the hard ceiling so a
@@ -352,6 +508,16 @@ void TickApproach() {
             g_st.active = false;
         }
         return;
+    }
+
+    // Legged walk: queue the next leg (or fire the arrival act) as the
+    // character nears the current leg's end. Distance-driven, so it works
+    // whether the engine appends the new walk or replaces the running one.
+    if (g_st.legged && g_st.legIdx < g_st.legCount) {
+        const Vector& end = g_st.legEnd[g_st.legIdx];
+        float ex = pos.x - end.x;
+        float ey = pos.y - end.y;
+        if (ex * ex + ey * ey <= kLegHandoffMSq) AdvanceLeg();
     }
 
     // Movement liveness. lastPos updates only when the PC has moved ≥0.5 m, so a
@@ -397,6 +563,23 @@ void TickApproach() {
     // blocked verdict honest for any caller whose target can't be positioned —
     // disarm quietly and let engine_player's queue-watched restore re-enable
     // input. (Mirrors the bark branch: when in doubt the interaction fired.)
+    // A leg walk that settled short of its leg end — the engine parks the
+    // character where the walkmesh allows, a few metres off a path point in a
+    // corner — has done its leg; walk on rather than call the route blocked.
+    if (g_st.legged && g_st.legIdx < g_st.legCount) {
+        const Vector& end = g_st.legEnd[g_st.legIdx];
+        float ex = pos.x - end.x;
+        float ey = pos.y - end.y;
+        if (ex * ex + ey * ey <= kReachedMSq) {
+            acclog::Write("Approach", "leg %d/%d settled %.1fm short of its end — "
+                "advancing name=[%s]", g_st.legIdx + 1, g_st.legCount,
+                std::sqrt(ex * ex + ey * ey), g_st.name);
+            g_st.progressAt = now;
+            AdvanceLeg();
+            return;
+        }
+    }
+
     Vector tgt;
     if (!ResolveTargetPos(tgt)) {
         acclog::Write("Approach", "stalled but target position unresolvable — "
@@ -439,10 +622,90 @@ void TickApproach() {
     // turned into motion leaves the PC rooted where it stood, and announcing
     // "way blocked" there tells the player no route exists when the coordinate
     // A* would have walked them straight to it.
-    if (WaitForLongRouteStart(tgt, pos, now)) return;
-    if (TryCoordinateWalkRetry(tgt)) return;
+    //
+    // Combat that began after the dispatch is the clear cause when the
+    // character stands still in it — checked first, so neither the start
+    // allowance nor the retry spends a walk the fight already stopped.
+    if (!g_st.combatAtArm && acc::combat::IsPartyInCombat()) {
+        OnBlocked(now - g_st.progressAt, /*byCombat=*/true);
+        return;
+    }
+    // A legged walk already walks routes the engine cannot plan; the start
+    // allowance and the coordinate retry would only re-ask the engine for
+    // the route it refused.
+    if (!g_st.legged) {
+        if (WaitForLongRouteStart(tgt, pos, now)) return;
+        if (TryCoordinateWalkRetry(tgt)) return;
+    }
 
-    OnBlocked(now - g_st.progressAt);
+    OnBlocked(now - g_st.progressAt, /*byCombat=*/false);
+}
+
+bool BeginLeggedApproach(const ApproachArm& arm) {
+    Vector goal = arm.targetPos;
+    if (arm.targetObj) {
+        Vector live;
+        if (acc::engine::GetObjectPosition(arm.targetObj, live)) goal = live;
+    }
+    if (goal.x == 0.0f && goal.y == 0.0f && goal.z == 0.0f) return false;
+    Vector pos;
+    if (!acc::engine::GetPlayerPosition(pos)) return false;
+
+    std::vector<Vector> wps;
+    std::vector<Vector> nodes;
+    if (!acc::guidance::ComputePath(acc::engine::GetCurrentArea(), pos, goal, wps,
+                                    nullptr, &nodes)) {
+        return false;   // unreachable / unreadable: the caller's dispatch and
+                        // the ordinary verdicts handle it as before
+    }
+    const int n = static_cast<int>(nodes.size());
+    if (n <= kEngineRouteMaxPoints) return false;
+
+    // Leg ends every kLegPoints points along our route, until the rest — last
+    // leg end to the goal node — fits one engine plan.
+    Vector ends[kMaxLegs];
+    int count = 0;
+    int last  = 0;
+    while ((n - 1) - last > kLegPoints) {
+        if (count == kMaxLegs) {
+            acclog::Write("Approach", "legged walk: route of %d points needs more "
+                "than %d legs — engine dispatch as usual name=[%s]",
+                n, kMaxLegs, arm.name);
+            return false;
+        }
+        last += kLegPoints;
+        ends[count++] = nodes[last];
+    }
+
+    ArmApproach(arm);
+    g_st.inputDisabled = false;     // legs are input-enabled coordinate walks
+    g_st.isDialog      = false;     // set by the Talk act, not before
+    g_st.legged        = true;
+    g_st.legCount      = count;
+    g_st.legIdx        = 0;
+    for (int i = 0; i < count; ++i) g_st.legEnd[i] = ends[i];
+    g_st.arrivalAct    = arm.arrivalAct;
+    g_st.arrivalHandle = arm.arrivalHandle;
+
+    if (!acc::guidance::WalkTo(ends[0])) {
+        acclog::Write("Approach", "legged walk: first leg failed to queue — "
+            "engine dispatch as usual name=[%s]", arm.name);
+        g_st.active = false;
+        return false;
+    }
+    acclog::Write("Approach", "legged walk: route %d points > %d — %d leg(s) of "
+        "%d points, then arrival act %d handle=0x%08x; leg 1 to (%.2f,%.2f) "
+        "name=[%s]", n, kEngineRouteMaxPoints, count, kLegPoints,
+        static_cast<int>(arm.arrivalAct), arm.arrivalHandle,
+        ends[0].x, ends[0].y, arm.name);
+    return true;
+}
+
+void YieldToPlayerAction(const char* reason) {
+    if (!g_st.active) return;
+    char why[96];
+    std::snprintf(why, sizeof(why), "player action (%s)", reason ? reason : "?");
+    DisarmQuietly(why);
 }
 
 bool IsApproachInFlight() {

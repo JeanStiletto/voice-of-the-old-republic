@@ -767,6 +767,29 @@ void OnPathfindFocus() {
     const bool walkToCoord =
         a.isMapPin || a.handle == 0 ||
         a.category == acc::filter::CycleCategory::Transition;
+
+    // A route longer than the engine's planner can take walks in legs, the
+    // use firing from the last one (see BeginLeggedApproach).
+    {
+        acc::guidance::ApproachArm legArm;
+        legArm.owner         = acc::guidance::ApproachOwner::Cycle;
+        std::snprintf(legArm.name, sizeof(legArm.name), "%s", a.name);
+        legArm.targetObj     = walkToCoord ? nullptr : a.obj;
+        legArm.targetPos     = a.pos;
+        legArm.speakBlocked  = true;
+        legArm.arrivalAct    = walkToCoord ? acc::guidance::ArrivalAct::None
+                                           : acc::guidance::ArrivalAct::Use;
+        legArm.arrivalHandle = walkToCoord ? 0u : a.handle;
+        if (acc::guidance::BeginLeggedApproach(legArm)) {
+            prism::Speak(msg, /*interrupt=*/true);
+            acclog::Write("Cycle", "Shift+- -> [%s] via legged walk obj=%p "
+                          "handle=0x%08x pin=%d dest=(%.2f,%.2f,%.2f)",
+                          msg, a.obj, a.handle, a.isMapPin ? 1 : 0,
+                          a.pos.x, a.pos.y, a.pos.z);
+            return;
+        }
+    }
+
     if (walkToCoord) {
         ok   = acc::guidance::WalkTo(a.pos);
         path = "WalkTo(coord)";

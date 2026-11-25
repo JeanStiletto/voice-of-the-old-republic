@@ -41,6 +41,8 @@
 #include "engine_panels.h"   // HasActiveDialogPanel — suppress the bare 1..7
                              // combat dispatch while a dialog reply listbox
                              // owns the number keys
+#include "guidance_approach.h"  // YieldToPlayerAction — a bare action key
+                                // ends any mod walk without "way blocked"
 #include "log.h"
 #include "narrated_target.h" // TryGet — pull the unified "current focus"
 #include "pad_input.h"       // TranslateClientEvent — the pad's in-world route
@@ -513,6 +515,7 @@ extern "C" int __cdecl OnClientHandleInputEvent(void* this_ptr,
         // so its detour speaks the authoritative "X, Platz N" cue (and
         // engine auto-attacks, which have no press, stay silent).
         acc::combat::queue::ArmUserQueueAdd();
+        acc::guidance::YieldToPlayerAction("bare action key");
         // Watch for a swallowed press on the PERSONAL columns only (4..7 —
         // note the engine's 6/7 swap above). Bare 1..3 are target rows, which
         // act without a combat-round add as a matter of course; see

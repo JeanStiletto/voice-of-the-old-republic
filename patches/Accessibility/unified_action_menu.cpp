@@ -18,6 +18,8 @@
 #include "engine_radial.h"      // target block read + primitives
 #include "engine_reads.h"       // ResolveActionDescriptionFromActionId
 #include "engine_subscreen.h"   // Begin/EndOverlayPause
+#include "guidance_approach.h"  // YieldToPlayerAction — a fired action ends
+                                // any mod walk without a "way blocked"
 #include "hotkeys.h"            // ShiftHeld
 #include "log.h"
 #include "menus_speak.h"
@@ -1033,6 +1035,7 @@ bool DispatchWithQueueAppend(void* tam, void* mi, const Cat& cur) {
     // Attribute the AddAction this dispatch triggers to the user so its
     // detour speaks the "X, Platz N" cue (see ArmUserQueueAdd).
     acc::combat::queue::ArmUserQueueAdd();
+    acc::guidance::YieldToPlayerAction("action menu");
     // Personal only — a target row acting without a queue add is normal, not a
     // no-op (see ArmNoOpWatch).
     if (cur.kind == CatKind::Personal) acc::combat::queue::ArmNoOpWatch();
@@ -1144,6 +1147,7 @@ bool FireMedicalDirect(void* mi, const Cat& c, int sel, void* targetCre,
     }
     acc::combat_diag::LogPreFire("med-direct");
     acc::combat::queue::ArmUserQueueAdd();
+    acc::guidance::YieldToPlayerAction("medical row");
     acc::combat::queue::ArmNoOpWatch();
     bool ok = acc::engine_actionbar::SendUseItemRequestK2(aid, targetCre);
     acclog::Write("UnifiedMenu", "medical %s fire id=0x%08x sent=%d",

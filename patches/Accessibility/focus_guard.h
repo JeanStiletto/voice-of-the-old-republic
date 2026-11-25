@@ -61,4 +61,22 @@ bool GameOwnsForeground();
 // tick on the engine's main thread (speech path is COM-safe there).
 void DrainInputBlockedWarning();
 
+// Fix + diagnostic for "stuck on the loading screen" (KOTOR 2 tester,
+// patch-20261124-174110.log: Ebon Hawk scene -> movie -> 907MAL, loading
+// screen never closed, repeatable; an Alt+Tab away and back un-sticks it).
+// Both games keep their own "render window active" flag, cleared by
+// DeactivateRenderWindow (which also pauses and turns the engine's input off)
+// and set by ActivateRenderWindow. KOTOR 2's post-load step hides the loading
+// screen only while that flag is set, and its movie-end handler re-activates
+// the window only in full screen — so a stray deactivate at a movie's end in
+// windowed mode leaves the loading screen up for good.
+//
+// The fix: when the flag stays 0 for 1.5 s while the game's render window
+// holds the foreground and no movie is on screen (or ended within 2 s), call
+// the engine's own ActivateRenderWindow — what Alt+Tab back does. Cooldown 5 s.
+// The diagnostic: every flip of the flag is logged (with who owns the
+// foreground), and the relevant state is dumped when a modal panel is still up
+// 5 s after an area loaded. Call once per tick on the main thread.
+void TickEngineActive();
+
 }  // namespace acc::focus_guard

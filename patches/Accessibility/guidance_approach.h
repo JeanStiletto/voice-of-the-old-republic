@@ -18,6 +18,16 @@
 //     it, clear dialog-pending state (talk only), and — if the arm asked for
 //     it — announce "way blocked" with the target's live distance + direction.
 //
+// Something else stopping the walk is not "way blocked", and the tracker only
+// says so on a game signal that cannot be misread:
+//   - world paused (pause key, combat auto-pause, a menu): the clock stops —
+//     the walk resumes with the world, so nothing is judged meanwhile;
+//   - combat began after the dispatch: "movement cancelled, combat";
+//   - a movement key (CancelByMovement): "movement cancelled";
+//   - another mod action queued by the player (YieldToPlayerAction): silent;
+//   - a conversation, a movie, or an area change: silent — story is playing
+//     and a system message would talk over it.
+//
 // Liveness is MOVEMENT, never the action-queue depth: the engine drains its
 // queue to 0 transiently between walkmesh waypoints and UseObject's composite
 // queue never drains, so a depth read mistakes live walks for finished ones.
@@ -60,6 +70,17 @@ namespace acc::guidance {
 // the Enter and Shift+- trackers were deliberately separate).
 enum class ApproachOwner { Cycle, Interact };
 
+// What a legged walk (BeginLeggedApproach) does once the character is on its
+// last leg — the act the caller would have dispatched from where it stood.
+//   None       — plain coordinate walk to targetPos (map pins, transitions,
+//                landmarks).
+//   Use        — AddUseObjectAction, input disabled around it like every
+//                other use dispatch.
+//   Talk       — ActionInitiateDialog; input stays enabled (walk-then-talk).
+//   EngineVerb — the engine's default action through the click pipeline
+//                (doors, bash, mines — the walk-to-act verbs).
+enum class ArrivalAct { None, Use, Talk, EngineVerb };
+
 struct ApproachArm {
     ApproachOwner owner        = ApproachOwner::Interact;
     char          name[128]    = "";        // pre-resolved target name (way-blocked)
@@ -76,11 +97,41 @@ struct ApproachArm {
     // second press. Leave 0 for arms with nothing to re-fire (talk, coord walk
     // to a transition, engine-picker verbs).
     uint32_t      useHandle     = 0;
+    // Legged walks only (BeginLeggedApproach): the act to fire on the last leg
+    // and its server object handle. Ignored by a plain ArmApproach.
+    ArrivalAct    arrivalAct    = ArrivalAct::None;
+    uint32_t      arrivalHandle = 0;
 };
 
 // Arm / replace the single in-flight approach observation. A fresh arm
 // supersedes any prior one (only one walk in flight at a time).
 void ArmApproach(const ApproachArm& arm);
+
+// Long routes the engine cannot plan. KOTOR's path planner (both games, one
+// source file) searches the area's path-point network depth first and gives
+// up for good once a route needs 51 path points, or once one search pass
+// expands 4096 points ("we exceeded 4096 levels of searching"). The walk is
+// accepted, the character never moves, and the action queue churns re-plans.
+// Splitting KOTOR 2's path islands made such routes reachable (Malachor: a
+// 441 m route over 94 points, tester log patch-20261124-174110.log).
+//
+// Call this BEFORE dispatching. When our own route to the arm's target needs
+// more path points than the engine can take, it walks the character there in
+// legs of a safe length (coordinate walks to path points on our route), arms
+// the tracker for the whole journey, and on the last leg fires
+// arm.arrivalAct — from a distance the engine plans normally. Returns true
+// when it took over: the caller must NOT dispatch its own action (it may
+// still speak its pre-roll). Returns false for routes the engine handles
+// itself, unreadable maps and unreachable targets — the caller dispatches as
+// usual. The legs use input-enabled coordinate walks, so arm.inputDisabled
+// must be false.
+bool BeginLeggedApproach(const ApproachArm& arm);
+
+// The player started another action through the mod (a bare action key or the
+// action menu's Enter queued it). That press is the player's clear decision to
+// do something else: disarm silently, and leave the engine queue alone — a
+// ClearAllActions here would wipe the action they just queued.
+void YieldToPlayerAction(const char* reason);
 
 // Per-tick driver. Cheap when idle (one flag check). Call once per tick.
 void TickApproach();

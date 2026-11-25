@@ -42,6 +42,64 @@ player's installed language in-game; this only governs how we *describe* it
 here.) Where naming the exact spoken string matters, give the English term
 and add the German in parentheses if it genuinely aids clarity.
 
+<h2>v0.9.3</h2>
+
+<h3>Overview:</h3>
+
+- KOTOR 2 no longer stays stuck on the loading screen after a movie in
+  windowed mode, such as on arrival at Malachor (not yet tested in game).
+- Very long walks to far targets now arrive instead of never starting (not
+  yet tested in game).
+- A walk stopped by combat says "Movement cancelled, combat" instead of "way
+  blocked" (not yet tested in game).
+- Starting another action, a conversation, a movie or an area change ends a
+  walk silently instead of a later "way blocked" (not yet tested in game).
+- Time spent paused no longer counts toward a walk being called blocked (not
+  yet tested in game).
+- Log only: the engine's own window-active state, a state dump when a loading
+  screen outlives an area load, and each walk split into legs.
+
+<h3>Bug fixes:</h3>
+
+- **KOTOR 2 no longer stays stuck on the loading screen after a movie in
+  windowed mode** (not yet tested in game). Reported at the Malachor arrival:
+  the movie ended, the next area loaded, and the loading screen never left.
+  The game had wrongly marked itself as in the background at the movie's end,
+  and KOTOR 2 only closes the loading screen while it believes it is active —
+  Alt+Tab away and back un-stuck it. The mod now does the same thing itself:
+  when the game window holds focus but the game still thinks it is in the
+  background for a second and a half, outside a movie, it tells the game it is
+  active again. Applies to both games.
+
+<h3>Walking to targets:</h3>
+
+- **Very long walks to far targets now arrive** (not yet tested in game). The
+  game's route planner gives up on routes with too many waypoints, and the
+  character then never moves — Malachor's linked paths made such routes
+  reachable. Long routes are now walked in stages along the mod's own route,
+  and the action you chose (use, talk, open) happens on arrival at the last
+  stage. Both games.
+- **A walk stopped by combat says "Movement cancelled, combat"** instead of
+  "way blocked", and leaves the attacks the game queued for you running (not
+  yet tested in game).
+- **Starting another action ends the walk silently** — the action key, the
+  action menu or a medical item (not yet tested in game). Before, the walk
+  could still report "way blocked" afterwards.
+- **A conversation, a movie or an area change ends the walk without any
+  speech**, so the story is never interrupted by a mod message (not yet
+  tested in game).
+- **Time spent paused no longer counts toward "way blocked"** (not yet tested
+  in game). The automatic combat pause used to make a long walk look stalled.
+
+<h3>Log only:</h3>
+
+- `EngineActive` lines: every change of the engine's window-active state with
+  who holds focus, a `RESYNC` line when the mod re-activates the game, and a
+  `STUCK?` state dump when a loading screen is still up 5 seconds after an
+  area loaded.
+- Each walk that is split into stages logs its route length and stage count;
+  a walk ended by combat or another action logs why.
+
 <h2>v0.9.2</h2>
 
 <h3>Overview:</h3>

@@ -61,11 +61,18 @@ enum class PathFailure { None, Unreachable, MapUnreadable };
 //
 // O(N²) open-set scan; N < 200 in practice beats a heap. Every nav-graph
 // read is __try-wrapped; the function never raises.
+//
+// outRawNodes (optional) receives the unsmoothed A* chain: the position of
+// every path point the route passes, start node first, goal node last, WITHOUT
+// the appended goal. Its size is the route's length in path points — the unit
+// the engine's own planner is limited in (see guidance_approach's legged walk).
+// Empty for the degenerate single-point paths and on failure.
 bool ComputePath(void* area,
                  const Vector& start,
                  const Vector& goal,
                  std::vector<Vector>& outWaypoints,
-                 PathFailure* failure = nullptr);
+                 PathFailure* failure = nullptr,
+                 std::vector<Vector>* outRawNodes = nullptr);
 
 }  // namespace acc::guidance
 

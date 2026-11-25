@@ -7,8 +7,15 @@
 #include <cstring>
 
 #include "bringup_announce.h"
+#include "engine_app.h"        // GetClientApp — load-screen visible accessor
+#include "engine_area.h"       // GetCurrentArea — area-load edge
 #include "engine_input.h"
+#include "engine_manager.h"    // GetGuiManager / ReadModalStack / LogManagerStack
+#include "engine_panels.h"     // HasActiveDialogPanel / IdentifyPanel
+#include "engine_rebase.h"     // PickGlobal / Kotor2Only
+#include "engine_subscreen.h"  // WorldIsPaused
 #include "log.h"
+#include "transitions.h"       // IsModuleLoadPending
 #include "prism.h"
 #include "strings.h"
 
@@ -789,6 +796,187 @@ void ArmStartupForegroundGuard() {
     acclog::Write("Focus",
         "StartupForegroundGuard: armed for %lu ms (watching for overlay "
         "focus-theft, e.g. Game Bar)", kGuardWindowMs);
+}
+
+// --- Engine "render window active" diagnostic (see header) ---------------
+namespace {
+
+// The engine's own focus flag, a .data dword. KOTOR 1: read and set by
+// ActivateRenderWindow @0x00401e00 (MOV EAX,[0x007a3a38] ... MOV [0x007a3a38],1),
+// cleared by DeactivateRenderWindow @0x00401d90. KOTOR 2 Steam: the same pair
+// at 0x0040BCF0 / 0x0040BC40 on 0x00a1b4e0. Decompiled 2026-11-25.
+const uintptr_t kAddrRenderWindowActive =
+    acc::addr::PickGlobal(0x007a3a38, 0x00a1b4e0);
+
+// CClientExoApp::GetLoadScreenVisible, thiscall on the client app facade —
+// the engine's own answer to "is the loading screen up". Located on KOTOR 2
+// only (Lane's KOTOR 1 database has no such name); on KOTOR 1 the dump reports
+// n/a and the modal-stack readout stands in for it.
+const uintptr_t kAddrGetLoadScreenVisible = acc::addr::Kotor2Only(0x0073FFA0);
+
+// ActivateRenderWindow, void cdecl, no arguments, self-guarded (does nothing
+// unless the flag is 0). KOTOR 1 @0x00401e00, KOTOR 2 Steam @0x0040BCF0.
+// Sets the flag, lifts the focus-loss pause only if it was its own, turns the
+// client's input on, restores sound mode and gamma — exactly what the window
+// procedure runs on WM_ACTIVATEAPP(1), i.e. what an Alt+Tab back does.
+const uintptr_t kAddrActivateRenderWindow =
+    acc::addr::Pick(0x00401e00, 0x0040BCF0);
+
+// Re-sync: the flag must have been 0 while the game's render window held the
+// foreground, with no movie on screen or just ended, for this long.
+constexpr DWORD kResyncMismatchMs = 1500;
+constexpr DWORD kMovieQuietMs     = 2000;
+constexpr DWORD kResyncCooldownMs = 5000;
+
+constexpr DWORD kStuckFirstDumpMs = 5000;   // after the area pointer changed
+constexpr DWORD kStuckRepeatMs    = 10000;
+constexpr int   kStuckMaxDumps    = 3;      // per area load
+
+int  g_lastActiveFlag = -2;   // -2 = never read; -1 = unreadable
+void* g_lastArea      = nullptr;
+DWORD g_areaChangedAt = 0;
+DWORD g_nextDumpAt    = 0;
+int   g_dumpsThisArea = 0;
+DWORD g_mismatchSince = 0;   // 0 = no mismatch running
+DWORD g_lastResyncAt  = 0;
+
+int ReadRenderWindowActive() {
+    if (!acc::addr::Ok(kAddrRenderWindowActive)) return -1;
+    __try {
+        return *reinterpret_cast<volatile int*>(kAddrRenderWindowActive);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+}
+
+int ReadLoadScreenVisible() {
+    if (!acc::addr::Ok(kAddrGetLoadScreenVisible)) return -1;
+    void* client = acc::engine::GetClientApp();
+    if (!client) return -1;
+    __try {
+        auto fn = reinterpret_cast<int (__thiscall*)(void*)>(kAddrGetLoadScreenVisible);
+        return fn(client) != 0 ? 1 : 0;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+}
+
+// "own" / "other" / "none": who holds the Windows foreground.
+const char* ForegroundOwner() {
+    HWND fg = GetForegroundWindow();
+    if (!fg) return "none";
+    DWORD pid = 0;
+    GetWindowThreadProcessId(fg, &pid);
+    return pid == GetCurrentProcessId() ? "own" : "other";
+}
+
+bool CallActivateRenderWindow() {
+    if (!acc::addr::Ok(kAddrActivateRenderWindow)) return false;
+    __try {
+        reinterpret_cast<void (__cdecl*)()>(kAddrActivateRenderWindow)();
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+// True when the foreground is the game's live render window (not the movie
+// window, not a dialog of ours). Falls back to "any window of ours" before the
+// probe has seen a render window.
+bool RenderWindowOwnsForeground() {
+    HWND fg = GetForegroundWindow();
+    if (!fg) return false;
+    HWND render = g_liveRenderWindow.load(std::memory_order_acquire);
+    if (render) return fg == render;
+    DWORD pid = 0;
+    GetWindowThreadProcessId(fg, &pid);
+    return pid == GetCurrentProcessId();
+}
+
+// The fix for the stuck loading screen: the engine believes it is in the
+// background (flag 0) while its render window plainly holds the foreground and
+// no movie is playing. Nothing will send WM_ACTIVATEAPP(1) again, so run the
+// engine's own activate — the same thing an Alt+Tab back does.
+void ResyncRenderWindowActive(int flag, DWORD now) {
+    const bool mismatch = flag == 0 && RenderWindowOwnsForeground() &&
+        !acc::bringup_announce::MovieRecentlyPlaying(kMovieQuietMs);
+    if (!mismatch) { g_mismatchSince = 0; return; }
+    if (g_mismatchSince == 0) { g_mismatchSince = now; return; }
+    if (now - g_mismatchSince < kResyncMismatchMs) return;
+    if (g_lastResyncAt && now - g_lastResyncAt < kResyncCooldownMs) return;
+    g_lastResyncAt = now;
+    const DWORD heldMs = now - g_mismatchSince;
+    g_mismatchSince = 0;
+    const bool called = CallActivateRenderWindow();
+    acclog::Write("EngineActive", "RESYNC: flag 0 while the render window held "
+        "the foreground for %lums, no movie -> ActivateRenderWindow %s, flag now "
+        "%d (loadScreenVisible=%d)", static_cast<unsigned long>(heldMs),
+        called ? "called" : "FAILED", ReadRenderWindowActive(),
+        ReadLoadScreenVisible());
+}
+
+void DumpStuckState(DWORD sinceAreaMs) {
+    void* mgr = acc::engine::GetGuiManager();
+    void* modal[4] = {};
+    int modalCount = mgr ? acc::engine::ReadModalStack(mgr, modal, 4) : 0;
+    void* top = modalCount > 0 ? modal[modalCount - 1] : nullptr;
+    acclog::Write("EngineActive", "STUCK? %lums after area load: modal stack=%d "
+        "top=%p kind=%s loadScreenVisible=%d renderWindowActive=%d fg=%s "
+        "activeHwnd=%p worldPaused=%d moduleLoadPending=%d movie=%d",
+        static_cast<unsigned long>(sinceAreaMs), modalCount, top,
+        top ? acc::engine::PanelKindName(acc::engine::IdentifyPanel(top)) : "-",
+        ReadLoadScreenVisible(), ReadRenderWindowActive(), ForegroundOwner(),
+        static_cast<void*>(GetActiveWindow()),
+        acc::engine::WorldIsPaused() ? 1 : 0,
+        acc::transitions::IsModuleLoadPending() ? 1 : 0,
+        acc::bringup_announce::IsMoviePlaying() ? 1 : 0);
+    if (mgr) acc::engine::LogManagerStack(mgr, "EngineActive.stuck");
+}
+
+}  // namespace
+
+void TickEngineActive() {
+    const DWORD now = GetTickCount();
+
+    // Every flip of the engine's flag, with the foreground owner at that
+    // moment — the edge the loading-screen theory turns on.
+    const int flag = ReadRenderWindowActive();
+    if (flag != g_lastActiveFlag) {
+        acclog::Write("EngineActive", "renderWindowActive %d -> %d (fg=%s "
+            "movie=%d loadScreenVisible=%d)", g_lastActiveFlag, flag,
+            ForegroundOwner(), acc::bringup_announce::IsMoviePlaying() ? 1 : 0,
+            ReadLoadScreenVisible());
+        g_lastActiveFlag = flag;
+    }
+    ResyncRenderWindowActive(flag, now);
+
+    // A fresh area pointer starts the watch. No area probe while a module load
+    // is in flight (transitions' latch — the old module's arenas are being torn
+    // down), and the brief null reads mid-frame are ignored rather than taken
+    // as an area change.
+    if (acc::transitions::IsModuleLoadPending()) return;
+    void* area = acc::engine::GetCurrentArea();
+    if (area && area != g_lastArea) {
+        g_lastArea      = area;
+        g_areaChangedAt = now;
+        g_nextDumpAt    = now + kStuckFirstDumpMs;
+        g_dumpsThisArea = 0;
+    }
+    if (!g_lastArea || g_dumpsThisArea >= kStuckMaxDumps) return;
+    if (static_cast<int>(now - g_nextDumpAt) < 0) return;
+
+    // Still stuck = a modal panel up and no conversation (a cutscene
+    // conversation keeps its own panels, never a modal).
+    void* mgr = acc::engine::GetGuiManager();
+    void* modal[1] = {};
+    const bool modalUp = mgr && acc::engine::ReadModalStack(mgr, modal, 1) > 0;
+    if (!modalUp || acc::engine::HasActiveDialogPanel()) {
+        g_dumpsThisArea = kStuckMaxDumps;   // came up clean; done for this area
+        return;
+    }
+    DumpStuckState(now - g_areaChangedAt);
+    ++g_dumpsThisArea;
+    g_nextDumpAt = now + kStuckRepeatMs;
 }
 
 }  // namespace acc::focus_guard

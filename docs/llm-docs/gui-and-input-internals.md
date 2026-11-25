@@ -657,6 +657,22 @@ beta testers — no debug verbosity flag; reduce spam by dedup, never by droppin
 ---
 
 
+## render_window_active_flag
+_The engine's own focus flag, and why a stray deactivate can strand the loading screen (decompiled 2026-11-25, both games; K2 live symptom patch-20261124-174110.log)_
+
+**Known.** Each game keeps a .data dword "render window active": K1 `0x007a3a38`, K2 Steam `0x00a1b4e0`. `ActivateRenderWindow` (K1 `0x00401e00`, K2 `0x0040BCF0`) sets it, lifts the focus-loss pause only when that pause was its own, turns the client's input on (`CClientExoApp::SetInputActive(1,0)`), restores sound mode and gamma. `DeactivateRenderWindow` (K1 `0x00401d90`, K2 `0x0040BC40`) remembers whether the world was already paused, pauses it (`SetPauseState(2,1)`), turns client input off and clears the flag. Both run from the window procedure on WM_ACTIVATEAPP; the mod's "Pause" lines with the deactivate's call site are this pause.
+
+**Known (K2).** The post-load step (the function whose call site shows as `SubScreen.Status new_status=1` after every area load) hides the loading screen (`CClientExoAppInternal::HideLoadScreen`) only when the flag is set or one of two other conditions holds. The movie-end handler calls `ActivateRenderWindow` only in one window-mode state (two globals, read as full screen); in windowed play it leaves activation to WM_ACTIVATEAPP.
+
+**Known (K2, tester-confirmed 2026-11-25).** The 907MAL stuck loading screen: windowed, movie ends, WM_ACTIVATEAPP(1) then a stray WM_ACTIVATEAPP(0) with no other thread while the game's own render window holds the foreground, so the flag is 0 when the load completes and the hide is skipped; nothing ever sends WM_ACTIVATEAPP(1) again. An Alt+Tab away and back while stuck un-sticks it (the next movie starts).
+
+**Fix.** Both `ActivateRenderWindow` functions are `void __cdecl(void)` and self-guarded (no-op unless the flag is 0), so calling them is exactly the WM_ACTIVATEAPP(1) path. `focus_guard::TickEngineActive` calls it when the flag stays 0 for 1.5 s while the live render window holds the foreground and no movie is on screen or ended within 2 s (5 s cooldown); it logs `EngineActive: RESYNC`. It also keeps the flip log and the `STUCK?` dump.
+
+**Open.** K1's post-load hide condition (not decompiled); `CClientExoApp::GetLoadScreenVisible` on K1 (not in Lane's DB under that name; K2 `0x0073FFA0`).
+
+---
+
+
 ## directinput_device_lifecycle
 _A failed mouse device takes the keyboard with it: every failure branch of InitializeDirectInputMouse calls ShutDownDirectInput, which releases keyboard + joysticks + interface_
 

@@ -58,6 +58,25 @@ void ArmInteractApproach(const char* name, void* target, bool inputDisabled,
     acc::guidance::ArmApproach(arm);
 }
 
+// Hand a target too far for the engine's planner to the legged walk (see
+// guidance::BeginLeggedApproach), which fires `act` on `actHandle` from its
+// last leg. True when it took over — the caller dispatches nothing. Called
+// before any dispatch: talk and the engine verbs go out as messages the engine
+// processes later, so they cannot be taken back once sent.
+bool TryLeggedInteract(const char* name, void* target,
+                       acc::guidance::ArrivalAct act, uint32_t actHandle) {
+    acc::guidance::ApproachArm arm;
+    arm.owner         = acc::guidance::ApproachOwner::Interact;
+    std::snprintf(arm.name, sizeof(arm.name), "%s", (name && name[0]) ? name : "?");
+    arm.targetObj     = target;
+    Vector p{};
+    if (target && acc::engine::GetObjectPosition(target, p)) arm.targetPos = p;
+    arm.speakBlocked  = true;
+    arm.arrivalAct    = act;
+    arm.arrivalHandle = actHandle;
+    return acc::guidance::BeginLeggedApproach(arm);
+}
+
 // True iff the only thing blocking the action menu from opening is the
 // in-game menu itself (the Escape menu and its tabs — Inventory, Options,
 // Map, Messages, …). The game's own menu hotkeys (J → Messages, M → Map, …)
@@ -293,21 +312,28 @@ void DispatchInteractImpl(void* target, uint32_t handle, bool forceRadial) {
     if (cat == acc::filter::CycleCategory::Transition ||
         cat == acc::filter::CycleCategory::Landmark) {
         Vector tpos{};
+        bool legged = false;
         if (acc::engine::GetObjectPosition(target, tpos) &&
-            acc::guidance::WalkTo(tpos)) {
+            ((legged = TryLeggedInteract(name, target,
+                                         acc::guidance::ArrivalAct::None, 0u)) ||
+             acc::guidance::WalkTo(tpos))) {
             char tmsg[192];
             std::snprintf(tmsg, sizeof(tmsg),
                           acc::strings::Get(PreRollFor(cat)), name);
             prism::Speak(tmsg, /*interrupt=*/true);
             // Coord walk leaves input enabled, so the tracker doesn't own input
-            // restore (matches the cycle WalkTo path).
-            ArmInteractApproach(name, target, /*inputDisabled=*/false,
-                                /*isDialog=*/false);
-            acclog::Write("Interact", "%s -> [%s] %s via WalkTo(coord) "
+            // restore (matches the cycle WalkTo path). A legged walk armed the
+            // tracker itself.
+            if (!legged) {
+                ArmInteractApproach(name, target, /*inputDisabled=*/false,
+                                    /*isDialog=*/false);
+            }
+            acclog::Write("Interact", "%s -> [%s] %s via %s "
                 "target=0x%08x pos=(%.2f,%.2f,%.2f)",
                 forceRadial ? "Shift+Enter" : "Enter", tmsg,
                 cat == acc::filter::CycleCategory::Landmark
                     ? "landmark waypoint" : "transition trigger",
+                legged ? "legged walk" : "WalkTo(coord)",
                 handle, tpos.x, tpos.y, tpos.z);
             return;
         }
@@ -442,6 +468,30 @@ void DispatchInteractImpl(void* target, uint32_t handle, bool forceRadial) {
     acclog::Write("Interact", "dispatch handle=0x%08x (param=0x%08x "
         "snap.target_id=0x%08x) usable=%d",
         dispatchHandle, handle, snap.target_id, handleUsable ? 1 : 0);
+
+    // A target farther than the engine's planner reaches walks in legs, and the
+    // act below fires from the last one. Same act per verb as the dispatch
+    // that follows; verbs outside it (attack and co.) keep the engine's own
+    // movement.
+    if (handleUsable) {
+        using acc::guidance::ArrivalAct;
+        bool       legEligible = true;
+        ArrivalAct act         = ArrivalAct::Use;   // also the fallback UseObject
+        if (snap.valid) {
+            if (snap.action_id == 0x3f7)      act = ArrivalAct::Use;
+            else if (snap.action_id == 0x3ea) act = ArrivalAct::Talk;
+            else if (acc::picker::IsWalkToActVerb(snap.action_id))
+                                              act = ArrivalAct::EngineVerb;
+            else                              legEligible = false;
+        }
+        if (legEligible && TryLeggedInteract(name, target, act, dispatchHandle)) {
+            acclog::Write("Interact", "legged walk took the dispatch "
+                "(action_id=0x%x act=%d) target=0x%08x",
+                snap.valid ? snap.action_id : 0u, static_cast<int>(act),
+                dispatchHandle);
+            return;
+        }
+    }
 
     if (snap.valid && handleUsable) {
         // Open/use (0x3f7) → AddUseObjectAction via guidance::UseObject. As a

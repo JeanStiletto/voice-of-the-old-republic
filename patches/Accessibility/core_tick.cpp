@@ -637,6 +637,11 @@ void Dispatch() {
     // the poll thread; this just drains + speaks on a safe main-thread tick.
     acc::focus_guard::DrainInputBlockedWarning();
 
+    // Log-only: flips of the engine's own "window active" flag, and a state
+    // dump when a modal panel (the loading screen) outlives an area load —
+    // the KOTOR 2 907MAL stuck-loading-screen report.
+    acc::focus_guard::TickEngineActive();
+
     // Gamepad SAMPLE, both games. Runs before every input consumer: the
     // trigger state it reads is the modifier layer the pad's D-Pad bindings
     // consult, on KOTOR 2 the pad events themselves arrive asynchronously at

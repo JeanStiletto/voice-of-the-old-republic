@@ -130,6 +130,16 @@ Follow-ups to decide:
   Fuel Depot should load with the id=106 line. Remove the two test files
   from both Overrides before release.
 
+### KOTOR 2 stuck on the loading screen after a movie (Malachor, Trayus Core) — cause confirmed, fix built 2026-11-25, untested
+
+Reported on v0.9.2 by a beta tester, repeatable: "loaded, flew to the planet, then it hung". In patch-20261124-174110.log the Ebon Hawk conversation ends, a movie plays (skipped with Escape), 907MAL loads and announces its name, and the loading screen never leaves the modal stack. Not a hang: the mod's tick, the engine's input handling and the Escape quit box all kept working for 35 s. The tester plays windowed.
+
+Cause: a stray "app inactive" message at the movie's end cleared the engine's own window-active flag, and KOTOR 2 only hides the loading screen after a load while that flag is set. Mechanism in `docs/llm-docs/gui-and-input-internals.md` (render_window_active_flag). Confirmed by the tester 2026-11-25: Alt+Tab away and back while stuck, and the game continued (the next movie started).
+
+Fix (both games, `focus_guard::TickEngineActive`): when the flag stays 0 for 1.5 s while the game's render window holds the foreground and no movie is on screen or ended within 2 s, the mod calls the engine's own `ActivateRenderWindow` — what Alt+Tab back does. Logged as `EngineActive: RESYNC`. The diagnostic lines stay: every flag flip, and a `STUCK?` dump when a modal outlives an area load by 5 s.
+
+What the test log should show at the Malachor arrival: `renderWindowActive 1 -> 0` near the movie's end, a `RESYNC` line about 1.5 s after the movie, `renderWindowActive 0 -> 1`, and no `STUCK?` line. A `STUCK?` with `renderWindowActive=1` would mean a second cause.
+
 ### Exit direction WORDS are measured from the junction's map point, not from where the player stands — found 2026-10-28, revisit later
 
 Surfaced by 3D exit descriptions (docs/llm-docs/positional-speech.md "3D exit

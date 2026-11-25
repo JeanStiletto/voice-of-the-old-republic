@@ -165,6 +165,9 @@ enum class Id : int {
     //                                    compass direction word (`%s`).
     InteractWayBlocked,
     FmtInteractWayBlockedTarget,
+    // Same stall, but combat began after the walk was dispatched — the fight,
+    // not the walkmesh, stopped the character. No format args.
+    MovementInterruptedCombat,
 
     // Scoped dramatic cue for the Endar Spire command-module scripted
     // "spectator battle" (module END_M01AA): Republic soldiers make a doomed
